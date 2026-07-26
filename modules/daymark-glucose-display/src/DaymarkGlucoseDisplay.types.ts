@@ -1,3 +1,5 @@
+import { GlucoseAppearanceSettings } from '../../../src/domain/glucoseAppearance';
+
 export type GlucoseDisplayFreshness =
   | 'current'
   | 'delayed'
@@ -12,7 +14,12 @@ export interface GlucoseDisplayStatus {
   serviceRunning: boolean;
   aodDesired: boolean;
   aodServiceEnabled: boolean;
+  aodOverlayVisible: boolean;
+  aodLastEvent?: string;
+  aodLastError?: string;
   latestMmolL?: number;
   latestTimestamp?: number;
   freshness: GlucoseDisplayFreshness;
 }
+
+export type { GlucoseAppearanceSettings };

@@ -21,6 +21,7 @@ import { relativeAge } from '@/domain/time';
 import { useAppTheme } from '@/theme/theme';
 
 import { SectionCard } from './SectionCard';
+import { GlucoseAppearanceSettingsScreen } from './GlucoseAppearanceSettings';
 
 const NOTIFICATION_PERMISSION = 'android.permission.POST_NOTIFICATIONS';
 
@@ -47,6 +48,7 @@ export function GlucoseDisplayCard({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [appearanceVisible, setAppearanceVisible] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -62,6 +64,7 @@ export function GlucoseDisplayCard({
         serviceRunning: false,
         aodDesired: false,
         aodServiceEnabled: false,
+        aodOverlayVisible: false,
         freshness: 'missing',
       });
     }
@@ -214,7 +217,7 @@ export function GlucoseDisplayCard({
 
   const tone = statusTone(status, colors);
   const enabled = Boolean(status?.enabled);
-  const aodActive = Boolean(status?.aodDesired && status.aodServiceEnabled);
+  const aodReady = Boolean(status?.aodDesired && status.aodServiceEnabled);
   const badge = !enabled
     ? 'OFF'
     : status?.notificationsAllowed
@@ -294,19 +297,61 @@ export function GlucoseDisplayCard({
           />
           <SettingRow
             detail={
-              aodActive
-                ? 'Full value is enabled while the display dozes'
+              aodReady
+                ? 'Ready to appear after your Pixel enters always-on mode'
                 : status?.aodDesired
-                  ? 'Finish two Android permission steps'
-                  : 'Optional full-value Pixel always-on panel'
+                  ? 'Enable the Daymark service, not its shortcut button'
+                  : 'Optional value and direction on the locked dark screen'
             }
             disabled={busy}
-            label="Full value on always-on display"
+            label="Glucose on always-on display"
             onValueChange={requestAod}
             value={Boolean(status?.aodDesired)}
           />
         </>
       ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setAppearanceVisible(true)}
+        style={({ pressed }) => [
+          styles.appearanceButton,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            borderRadius: radius.md,
+          },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <View style={styles.appearanceIconRow}>
+          {[colors.low, colors.warning, colors.glucose, colors.high].map(
+            (color, index) => (
+              <View
+                accessibilityElementsHidden
+                key={`${color}-${index}`}
+                style={[styles.appearanceDot, { backgroundColor: color }]}
+              />
+            ),
+          )}
+        </View>
+        <View style={styles.appearanceCopy}>
+          <Text style={[styles.appearanceTitle, { color: colors.text }]}>
+            Glucose ranges and colours
+          </Text>
+          <Text
+            style={[styles.appearanceDetail, { color: colors.textSecondary }]}
+          >
+            Used in Daymark, the notification and always-on display
+          </Text>
+        </View>
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.textTertiary}
+          name="chevron-forward"
+          size={19}
+        />
+      </Pressable>
 
       {permissionDenied || (enabled && !status?.notificationsAllowed) ? (
         <Pressable
@@ -400,7 +445,9 @@ export function GlucoseDisplayCard({
             ]}
           >
             2. Return here, open Accessibility, select “Daymark glucose on
-            always-on display”, and allow it.
+            always-on display”, and turn on the main service switch. Leave its
+            Accessibility shortcut off—the floating Daymark button is not the
+            always-on display.
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -430,6 +477,42 @@ export function GlucoseDisplayCard({
         </View>
       ) : null}
 
+      {aodReady ? (
+        <View
+          style={[
+            styles.aodReadyPanel,
+            {
+              backgroundColor: `${colors.accent}0D`,
+              borderColor: `${colors.accent}55`,
+              borderRadius: radius.md,
+            },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.accent}
+            name="moon-outline"
+            size={21}
+          />
+          <View style={styles.aodReadyCopy}>
+            <Text style={[styles.aodReadyTitle, { color: colors.text }]}>
+              Always-on service enabled
+            </Text>
+            <Text
+              style={[
+                styles.aodReadyDetail,
+                { color: colors.textSecondary },
+              ]}
+            >
+              {status?.aodLastError
+                ? `Last display error: ${status.aodLastError}`
+                : status?.aodLastEvent ??
+                  'Lock your Pixel to test the low-power display.'}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {message ? (
         <View
           accessibilityLiveRegion="polite"
@@ -453,6 +536,10 @@ export function GlucoseDisplayCard({
         what is visible. Data age is always shown; stale glucose is never
         presented as current.
       </Text>
+      <GlucoseAppearanceSettingsScreen
+        onClose={() => setAppearanceVisible(false)}
+        visible={appearanceVisible}
+      />
     </SectionCard>
   );
 }
@@ -563,6 +650,42 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 2,
   },
+  appearanceButton: {
+    minHeight: 72,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginTop: 12,
+  },
+  appearanceIconRow: {
+    width: 42,
+    height: 42,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  appearanceDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+  },
+  appearanceCopy: {
+    flex: 1,
+  },
+  appearanceTitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  appearanceDetail: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
   recoveryButton: {
     minHeight: 50,
     borderWidth: 1,
@@ -600,6 +723,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  aodReadyPanel: {
+    minHeight: 64,
+    borderWidth: 1,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 10,
+  },
+  aodReadyCopy: {
+    flex: 1,
+  },
+  aodReadyTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  aodReadyDetail: {
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 2,
   },
   message: {
     minHeight: 44,

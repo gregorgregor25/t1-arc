@@ -3,6 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { DataProvider } from '@/providers/DataProvider';
+import { GlucoseAppearanceProvider } from '@/providers/GlucoseAppearanceProvider';
 import { AppThemeProvider, useAppTheme } from '@/theme/theme';
 
 function AppContent() {
@@ -10,9 +11,11 @@ function AppContent() {
   return (
     <>
       <StatusBar style={dark ? 'light' : 'dark'} />
-      <DataProvider>
-        <AppNavigator />
-      </DataProvider>
+      <GlucoseAppearanceProvider>
+        <DataProvider>
+          <AppNavigator />
+        </DataProvider>
+      </GlucoseAppearanceProvider>
     </>
   );
 }

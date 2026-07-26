@@ -1,6 +1,9 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { GlucoseDisplayStatus } from './DaymarkGlucoseDisplay.types';
+import {
+  GlucoseAppearanceSettings,
+  GlucoseDisplayStatus,
+} from './DaymarkGlucoseDisplay.types';
 
 declare class DaymarkGlucoseDisplayModule extends NativeModule<Record<string, never>> {
   getStatusAsync(): Promise<GlucoseDisplayStatus>;
@@ -10,6 +13,10 @@ declare class DaymarkGlucoseDisplayModule extends NativeModule<Record<string, ne
     visible: boolean,
   ): Promise<GlucoseDisplayStatus>;
   setAodDesiredAsync(desired: boolean): Promise<GlucoseDisplayStatus>;
+  getAppearanceSettingsAsync(): Promise<GlucoseAppearanceSettings>;
+  setAppearanceSettingsAsync(
+    settings: GlucoseAppearanceSettings,
+  ): Promise<GlucoseAppearanceSettings>;
   updateReadingAsync(
     mmolL: number,
     trend: string,

@@ -1,4 +1,5 @@
 import { GlucoseDisplayStatus } from './DaymarkGlucoseDisplay.types';
+import { DEFAULT_GLUCOSE_APPEARANCE } from '../../../src/domain/glucoseAppearance';
 
 const unavailable: GlucoseDisplayStatus = {
   supported: false,
@@ -8,6 +9,7 @@ const unavailable: GlucoseDisplayStatus = {
   serviceRunning: false,
   aodDesired: false,
   aodServiceEnabled: false,
+  aodOverlayVisible: false,
   freshness: 'missing',
 };
 
@@ -26,6 +28,12 @@ export default {
   },
   async setAodDesiredAsync() {
     return unavailable;
+  },
+  async getAppearanceSettingsAsync() {
+    return DEFAULT_GLUCOSE_APPEARANCE;
+  },
+  async setAppearanceSettingsAsync() {
+    return DEFAULT_GLUCOSE_APPEARANCE;
   },
   async updateReadingAsync() {
     return unavailable;

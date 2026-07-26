@@ -4,8 +4,14 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { DataSourceStatus, GlucoseReading } from '@/domain/models';
 import { freshnessCopy } from '@/domain/freshness';
+import {
+  GLUCOSE_RANGE_LABELS,
+  glucoseRangeForValue,
+  glucoseTone,
+} from '@/domain/glucoseAppearance';
 import { relativeAge } from '@/domain/time';
 import { presentTrend } from '@/domain/trend';
+import { useGlucoseAppearance } from '@/providers/GlucoseAppearanceProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { StatusPill } from './StatusPill';
@@ -20,9 +26,21 @@ export function CurrentGlucoseCard({
   now: number;
 }) {
   const { colors, dark, radius } = useAppTheme();
+  const { settings: appearance } = useGlucoseAppearance();
   const freshness = source?.freshness ?? 'missing';
   const trend = presentTrend(reading?.trend ?? 'unknown');
   const age = relativeAge(reading?.timestamp, now);
+  const valueTone = glucoseTone(
+    reading?.mmolL,
+    freshness,
+    appearance,
+    dark,
+  );
+  const valueRange = glucoseRangeForValue(
+    reading?.mmolL,
+    freshness,
+    appearance,
+  );
   const trendIcon: keyof typeof Ionicons.glyphMap =
     reading?.trend === 'doubleDown' ||
     reading?.trend === 'down' ||
@@ -78,12 +96,12 @@ export function CurrentGlucoseCard({
           <View style={styles.readingRow}>
             <Text
               maxFontSizeMultiplier={1.3}
-              style={[styles.value, { color: colors.text }]}
+              style={[styles.value, { color: valueTone }]}
             >
               {reading.mmolL.toFixed(1)}
             </Text>
             <View style={styles.unitBlock}>
-              <Text style={[styles.arrow, { color: colors.glucose }]}>
+              <Text style={[styles.arrow, { color: valueTone }]}>
                 {trend.arrow}
               </Text>
               <Text style={[styles.unit, { color: colors.textSecondary }]}>
@@ -96,11 +114,28 @@ export function CurrentGlucoseCard({
               <Ionicons
                 accessibilityElementsHidden
                 name={trendIcon}
-                color={colors.glucose}
+                color={valueTone}
                 size={18}
               />
               <Text style={[styles.detailStrong, { color: colors.text }]}>
                 {trend.label}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.rangePill,
+                {
+                  backgroundColor: `${valueTone}18`,
+                  borderColor: `${valueTone}66`,
+                },
+              ]}
+            >
+              <View
+                accessibilityElementsHidden
+                style={[styles.rangeDot, { backgroundColor: valueTone }]}
+              />
+              <Text style={[styles.rangeText, { color: valueTone }]}>
+                {GLUCOSE_RANGE_LABELS[valueRange]}
               </Text>
             </View>
             <View style={styles.detailRow}>
@@ -203,6 +238,25 @@ const styles = StyleSheet.create({
   detail: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  rangePill: {
+    minHeight: 30,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rangeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  rangeText: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
   },
   missing: {
     flex: 1,

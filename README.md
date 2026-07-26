@@ -160,14 +160,14 @@ Android app; Expo Go is not a valid runtime for this configuration.
 The packaged ARM64 build is:
 
 ```powershell
-adb install -r .\artifacts\Daymark-v1.4.0.apk
+adb install -r .\artifacts\Daymark-v1.5.0.apk
 ```
 
 The `-r` update path preserves existing app data and secure-store connections
-when the signing certificate matches. Version 1.4.0 also retains each captured
-Glooko source export in encrypted on-device storage, can re-read the saved
-archive after parser improvements, and does not use unreliable ZIP size
-metadata to decide whether a table can be normalised.
+when the signing certificate matches. Version 1.5.0 adds the Pixel always-on
+glucose overlay, encrypted display recovery after Android process restarts,
+and user-configurable glucose ranges and colours shared by the app,
+notification, and always-on display.
 
 To rebuild:
 
