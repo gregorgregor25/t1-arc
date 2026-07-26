@@ -1,25 +1,71 @@
 {
   "expo": {
-    "name": ".scaffold",
-    "slug": ".scaffold",
-    "version": "1.0.0",
+    "name": "Daymark",
+    "slug": "daymark",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "daymark",
+    "userInterfaceStyle": "automatic",
+    "description": "Private, evidence-first Type 1 diabetes health intelligence.",
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "app.daymark.personal",
+      "versionCode": 12,
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.VIBRATE"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0A6173",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "./plugins/with-main-activity-lint-workaround",
+      "./plugins/with-optional-camera-hardware",
+      "./plugins/with-health-connect-android",
+      "expo-secure-store",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-background-task",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Daymark to scan food barcodes. Images are not saved.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#F1F8FA",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#071519"
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ]
   }
 }

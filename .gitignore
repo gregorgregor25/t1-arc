@@ -31,6 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
 .env*.local
 
 # typescript
@@ -39,3 +42,25 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local build and source-research working directories
+/.build
+/.research
+/.tooling
+
+# private local-only material
+/.codex-remote-attachments/
+/.signing/
+*.apk
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+/imports/
+/private-data/
+
+# generated module output and local QA captures
+**/build/
+**/.gradle/
+/artifacts/
