@@ -11,6 +11,7 @@ import {
   saveTarvisUsage,
 } from './secureStore';
 import { classifyTarvisQuestion } from './scope';
+import { classifyTarvisSafety } from './safety';
 import { TARVIS_SYSTEM_PROMPT } from './prompt';
 import {
   TarvisConversationTurn,
@@ -95,6 +96,13 @@ export async function askTarvis(
     throw new Error(
       `Keep the question under ${MAX_QUESTION_LENGTH.toLocaleString()} characters.`,
     );
+  }
+  const safety = classifyTarvisSafety(prompt);
+  if (safety.kind !== 'allow') {
+    return {
+      answer: safety.answer,
+      usage: await loadTarvisUsage(),
+    };
   }
   const scope = classifyTarvisQuestion(prompt, history);
   if (scope !== 'in_scope') {

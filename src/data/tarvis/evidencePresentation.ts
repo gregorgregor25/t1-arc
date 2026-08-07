@@ -62,7 +62,10 @@ function coverageStatus(summary: TarvisInsightWindowSummary) {
 
 function questionSignals(question: string): QuestionSignals {
   const normalized = question.trim().toLocaleLowerCase('en-GB');
-  const mentionsGlucose = /\b(glucose|blood sugar|sugar|cgm)\b/.test(normalized);
+  const mentionsGlucose =
+    /\b(glucose|blood sugar|sugar|cgm|sensor|readings?|levels?|numbers?)\b/.test(
+      normalized,
+    );
   return {
     average:
       mentionsGlucose &&
@@ -92,8 +95,11 @@ function hasMetricSignal(signals: QuestionSignals) {
   );
 }
 
+// Only a genuinely compact follow-up may inherit a prior metric. In
+// particular, a complete standalone question containing the ordinary word
+// "and" must never inherit the previous answer's metric.
 const CONTEXTUAL_METRIC_FOLLOW_UP =
-  /\b(?:what|how) about\b|\b(?:and|compare)(?: it| that| them)?\b|\b(?:previous|prior|earlier|recent|current) period\b/i;
+  /^(?:(?:what|how) about(?: (?:that|it|them|the (?:previous|prior|earlier|recent|current) period))?|and (?:that|it|them|the (?:previous|prior|earlier|recent|current) period)|compare (?:it|that|them)|(?:the )?(?:previous|prior|earlier|recent|current) period)[?.! ]*$/i;
 
 function resolvedQuestionSignals(
   question: string,
@@ -225,7 +231,7 @@ function presentationDetail(
       .filter(Boolean)
       .join(' or ');
     details.push(
-      `A sustained event is ${thresholds}, with at least two readings spanning four minutes and no gap over 12 minutes`,
+      `A sustained event starts after readings remain ${thresholds} for at least 15 minutes and ends after readings remain back across the threshold for at least 15 minutes; a sensor gap over 12 minutes breaks continuity`,
     );
   }
   if (signals.timeInRange) {

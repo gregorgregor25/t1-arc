@@ -17,15 +17,12 @@ const DIABETES_AND_HEALTH_TERMS = [
   'breakfast',
   'carb',
   'cgm',
-  'claim',
   'comparison',
   'coverage',
-  'data',
   'dexcom',
   'diabetes',
   'dinner',
   'dose',
-  'evidence',
   'exercise',
   'food',
   'glucose',
@@ -34,6 +31,9 @@ const DIABETES_AND_HEALTH_TERMS = [
   'high',
   'hypo',
   'insulin',
+  'ketone',
+  'ketoacidosis',
+  'dka',
   'libre',
   'low',
   'lunch',
@@ -48,11 +48,8 @@ const DIABETES_AND_HEALTH_TERMS = [
   'pattern',
   'pump',
   'reading',
-  'research',
   'sleep',
-  'source',
   'steps',
-  'study',
   'stale',
   'spike',
   'sugar',
@@ -60,8 +57,6 @@ const DIABETES_AND_HEALTH_TERMS = [
   'timing range',
   'tir',
   'trend',
-  'guidance',
-  'guideline',
   'variability',
   'weight',
   'workout',
@@ -83,6 +78,14 @@ const PERSONAL_DATA_QUESTION =
 
 const PERIOD_DAY_VALUES = new Set<InsightPeriodDays>([3, 7, 14, 30, 90]);
 
+const PERIOD_NUMBER_WORDS: Record<string, number> = {
+  three: 3,
+  seven: 7,
+  fourteen: 14,
+  thirty: 30,
+  ninety: 90,
+};
+
 /**
  * Returns a supported T1 Arc comparison period when the user explicitly asks
  * for one. Unsupported periods remain undefined rather than silently changing
@@ -100,10 +103,11 @@ export function requestedTarvisPeriodDays(
     return 3;
   }
   const dayMatch = normalized.match(
-    /\b(?:last|past|previous|over|for|during|in)\s+(?:the\s+)?(\d{1,2})\s*(?:day|days|d)\b/,
+    /\b(?:last|past|previous|over|for|during|in)\s+(?:the\s+)?(\d{1,2}|three|seven|fourteen|thirty|ninety)\s*(?:day|days|d)\b/,
   );
   if (dayMatch) {
-    const value = Number(dayMatch[1]);
+    const rawValue = dayMatch[1]!;
+    const value = PERIOD_NUMBER_WORDS[rawValue] ?? Number(rawValue);
     if (PERIOD_DAY_VALUES.has(value as InsightPeriodDays)) {
       return value as InsightPeriodDays;
     }
@@ -138,7 +142,15 @@ export function classifyTarvisQuestion(
     return 'off_topic';
   }
   if (
-    DIABETES_AND_HEALTH_TERMS.some((term) => normalized.includes(term))
+    DIABETES_AND_HEALTH_TERMS.some((term) => {
+      const escaped = term
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\s+/g, '\\s+');
+      return new RegExp(
+        `(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`,
+        'i',
+      ).test(normalized);
+    })
   ) {
     return 'in_scope';
   }

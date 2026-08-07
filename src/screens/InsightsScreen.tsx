@@ -32,6 +32,7 @@ import {
   InsightKind,
 } from '@/domain/insights';
 import { InsightPeriodDays } from '@/domain/insightRanges';
+import { TimeRange } from '@/domain/models';
 import {
   saveInsightReport,
   SavedInsightReport,
@@ -287,20 +288,14 @@ export function InsightsScreen() {
   const [comparisonEndDate, setComparisonEndDate] =
     useState(latestCompleteDate);
   const insightState = useInsights(periodDays, comparisonEndDate);
-  const loadTarvisReportForPeriod = useCallback(
-    async (requestedDays: InsightPeriodDays) => {
+  const loadTarvisGlucoseReadings = useCallback(
+    async (range: TimeRange) => {
       if (!repository) {
-        throw new Error('Your local health data is not ready yet.');
+        throw new Error('Your local glucose data is not ready yet.');
       }
-      return loadInsightReport({
-        repository,
-        dataMode,
-        periodDays: requestedDays,
-        comparisonEndDate: latestCompleteDate,
-        now,
-      });
+      return (await repository.getTimeline(range)).glucose;
     },
-    [dataMode, latestCompleteDate, now, repository],
+    [repository],
   );
   const reviewHistory = useSavedInsightReports();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -312,6 +307,24 @@ export function InsightsScreen() {
     useState<EvidenceReference>();
   const [selectedReview, setSelectedReview] =
     useState<SavedInsightReport>();
+  const loadTarvisReportForPeriod = useCallback(
+    async (requestedDays: InsightPeriodDays) => {
+      if (!repository) {
+        throw new Error('Your local health data is not ready yet.');
+      }
+      const historicalEnd = selectedReview?.report.currentRange.end;
+      return loadInsightReport({
+        repository,
+        dataMode,
+        periodDays: requestedDays,
+        comparisonEndDate: historicalEnd
+          ? toDateKey(historicalEnd - 1)
+          : latestCompleteDate,
+        now: historicalEnd ?? now,
+      });
+    },
+    [dataMode, latestCompleteDate, now, repository, selectedReview],
+  );
   const requestedRangeEnd = dayRange(
     comparisonEndDate,
     Date.now(),
@@ -452,7 +465,10 @@ export function InsightsScreen() {
     return (
       <>
         <TarvisScreen
+          asOf={selectedReview?.report.currentRange.end ?? now}
+          liveData={dataMode === 'live' && !selectedReview}
           report={activeReport}
+          loadGlucoseReadings={loadTarvisGlucoseReadings}
           loadReportForPeriod={loadTarvisReportForPeriod}
           onBack={() => setTarvisVisible(false)}
           onInspectEvidence={setSelectedEvidence}

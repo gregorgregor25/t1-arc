@@ -27,6 +27,7 @@ import { RecordList } from './RecordList';
 import { HealthMetricRecordList } from './HealthMetricRecordList';
 import { FoodDiaryCard } from './FoodDiaryCard';
 import { EvidenceGlucoseOverlay } from './EvidenceGlucoseOverlay';
+import { EvidenceClockWindowOverlay } from './EvidenceClockWindowOverlay';
 import { FullscreenChartModal } from './FullscreenChart';
 import { useFoodLogs } from '@/hooks/useFoodLogs';
 
@@ -61,6 +62,12 @@ function timelineRecordIds(data: TimelineData) {
   ]);
 }
 
+function sentence(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 export function EvidenceRecordInspector({ evidence, onClose }: Props) {
   const { colors, radius } = useAppTheme();
   const { dataMode, repository, revision } = useDataContext();
@@ -81,6 +88,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
     start: evidence?.range.start ?? 0,
     end: evidence?.range.end ?? 1,
   });
+  const clockVisualization = evidence?.visualization;
 
   useEffect(() => {
     setVisibleCount(100);
@@ -90,13 +98,19 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
   }, [evidence]);
 
   const hasGlucoseEvidence = Boolean(
-    evidence?.examples.some((example) => example.kind === 'glucose') ||
+    clockVisualization ||
+      evidence?.examples.some((example) => example.kind === 'glucose') ||
       data?.glucose.length,
   );
 
   useEffect(() => {
     let active = true;
-    if (!evidence || view !== 'visual' || !hasGlucoseEvidence) {
+    if (
+      !evidence ||
+      view !== 'visual' ||
+      !hasGlucoseEvidence ||
+      clockVisualization
+    ) {
       return () => {
         active = false;
       };
@@ -121,7 +135,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
     return () => {
       active = false;
     };
-  }, [evidence, hasGlucoseEvidence, view]);
+  }, [clockVisualization, evidence, hasGlucoseEvidence, view]);
 
   useEffect(() => {
     let active = true;
@@ -313,9 +327,15 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                   <Text style={[styles.explainerTitle, { color: colors.text }]}>
                     No hidden evidence
                   </Text>
-                  <Text style={[styles.explainerBody, { color: colors.textSecondary }]}>
-                    {evidence.description}. Every record ID used for this claim
-                    is resolved against the same normalised local data.
+                  <Text
+                    style={[
+                      styles.explainerBody,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {sentence(evidence.description)} Every record ID used for
+                    this claim is resolved against the same normalised local
+                    data.
                   </Text>
                 </View>
               </View>
@@ -356,7 +376,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
             </View>
           ) : null}
 
-          {error ? (
+          {error && !clockVisualization ? (
             <View
               style={[
                 styles.stateCard,
@@ -377,7 +397,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                 {error}
               </Text>
             </View>
-          ) : !data || !evidence ? (
+          ) : (!data && !clockVisualization) || !evidence ? (
             <View style={styles.loading}>
               <ActivityIndicator color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -388,6 +408,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
             <>
               {hasGlucoseEvidence ? (
                 <View
+                  accessibilityRole="tablist"
                   style={[
                     styles.viewControl,
                     {
@@ -400,7 +421,11 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                   {(['visual', 'records'] as const).map((option) => (
                     <Pressable
                       key={option}
-                      accessibilityRole="button"
+                      accessibilityLabel={
+                        option === 'visual' ? 'Visualise data' : 'All records'
+                      }
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: view === option }}
                       onPress={() => setView(option)}
                       style={[
                         styles.viewOption,
@@ -475,7 +500,25 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                 </View>
               ) : null}
               {view === 'visual' && hasGlucoseEvidence ? (
-                visualLoading || !visualGlucose ? (
+                clockVisualization ? (
+                  <EvidenceClockWindowOverlay
+                    aggregatePoints={clockVisualization.aggregatePoints}
+                    coverageSummary={clockVisualization.coverageSummary}
+                    domain={clockVisualization.domain}
+                    minimumAggregateContributors={
+                      clockVisualization.minimumAggregateContributors
+                    }
+                    missingOccurrenceLabels={
+                      clockVisualization.missingOccurrenceLabels
+                    }
+                    onExpand={() => setVisualExpanded(true)}
+                    subtitle={clockVisualization.subtitle}
+                    targetRange={clockVisualization.targetRange}
+                    title={clockVisualization.title}
+                    units={clockVisualization.units}
+                    windows={clockVisualization.windows}
+                  />
+                ) : visualLoading || !visualGlucose ? (
                   <View style={styles.loading}>
                     <ActivityIndicator color={colors.primary} />
                     <Text
@@ -493,7 +536,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                     readings={visualGlucose}
                   />
                 )
-              ) : hasReferencedTimelineRecords ? (
+              ) : data && hasReferencedTimelineRecords ? (
                 <>
                   {referencedMeals.length ? (
                     <FoodDiaryCard
@@ -515,6 +558,42 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                   />
                 </>
               ) : null}
+              {clockVisualization && error ? (
+                <View
+                  accessibilityLiveRegion="polite"
+                  style={[
+                    styles.stateCard,
+                    {
+                      backgroundColor: `${colors.warning}10`,
+                      borderColor: `${colors.warning}55`,
+                      borderRadius: radius.lg,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={colors.warning}
+                    name="warning-outline"
+                    size={22}
+                  />
+                  <Text
+                    style={[styles.stateText, { color: colors.textSecondary }]}
+                  >
+                    {error} The saved chart remains available from the
+                    calculation evidence retained with this answer.
+                  </Text>
+                </View>
+              ) : null}
+              {clockVisualization && !data && !error && view === 'records' ? (
+                <View style={styles.loading}>
+                  <ActivityIndicator color={colors.primary} />
+                  <Text
+                    style={[styles.loadingText, { color: colors.textSecondary }]}
+                  >
+                    Resolving exact record IDs...
+                  </Text>
+                </View>
+              ) : null}
               <HealthMetricRecordList
                 initiallyExpanded
                 records={referencedHealthRecords}
@@ -524,12 +603,35 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
           )}
         </ScrollView>
         <FullscreenChartModal
-          detail="Up to seven days overlaid in Europe/London time"
+          detail={
+            clockVisualization?.subtitle ??
+            'Up to seven days overlaid in Europe/London time'
+          }
           onClose={() => setVisualExpanded(false)}
-          title="Day-to-day glucose"
-          visible={visualExpanded && Boolean(visualGlucose)}
+          title={clockVisualization?.title ?? 'Day-to-day glucose'}
+          visible={
+            visualExpanded && Boolean(clockVisualization || visualGlucose)
+          }
         >
-          {visualGlucose ? (
+          {clockVisualization ? (
+            <EvidenceClockWindowOverlay
+              aggregatePoints={clockVisualization.aggregatePoints}
+              coverageSummary={clockVisualization.coverageSummary}
+              domain={clockVisualization.domain}
+              expanded
+              minimumAggregateContributors={
+                clockVisualization.minimumAggregateContributors
+              }
+              missingOccurrenceLabels={
+                clockVisualization.missingOccurrenceLabels
+              }
+              subtitle={clockVisualization.subtitle}
+              targetRange={clockVisualization.targetRange}
+              title={clockVisualization.title}
+              units={clockVisualization.units}
+              windows={clockVisualization.windows}
+            />
+          ) : visualGlucose ? (
             <EvidenceGlucoseOverlay expanded readings={visualGlucose} />
           ) : null}
         </FullscreenChartModal>

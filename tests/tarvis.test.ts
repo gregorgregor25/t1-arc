@@ -14,7 +14,10 @@ import {
   classifyTarvisQuestion,
   requestedTarvisPeriodDays,
 } from '@/data/tarvis/scope';
-import { buildInsightReport } from '@/domain/insights';
+import {
+  buildInsightReport,
+  classifyInsightQuestion,
+} from '@/domain/insights';
 import { addDays, dayRange, toDateKey } from '@/domain/time';
 
 async function evidencePacket() {
@@ -178,6 +181,17 @@ describe('TARV1S evidence and spending guardrails', () => {
     expect(classifyTarvisQuestion('Summarise all of my data')).toBe(
       'in_scope',
     );
+    expect(
+      classifyTarvisQuestion('Highlight the workflow in this research study'),
+    ).toBe('off_topic');
+  });
+
+  it('does not treat midnight as a sleep keyword substring', () => {
+    const categories = classifyInsightQuestion(
+      'What were my average glucose readings between midnight and 7 a.m.?',
+    );
+    expect(categories).toContain('glucose');
+    expect(categories).not.toContain('sleep');
   });
 
   it('selects an explicit supported evidence period from the question', () => {
@@ -195,6 +209,9 @@ describe('TARV1S evidence and spending guardrails', () => {
       90,
     );
     expect(requestedTarvisPeriodDays('Why did I spike last night?')).toBe(3);
+    expect(
+      requestedTarvisPeriodDays('What were my readings over the last three days?'),
+    ).toBe(3);
     expect(requestedTarvisPeriodDays('Show the last 10 days')).toBeUndefined();
   });
 

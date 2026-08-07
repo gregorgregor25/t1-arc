@@ -28,6 +28,12 @@ import {
   toDateKey,
   zonedDateTimeToTimestamp,
 } from './time';
+import type {
+  EvidenceClockWindowOccurrence,
+  EvidenceClockWindowSegment,
+  EvidenceClockWindowTargetRange,
+  EvidenceClockWindowVisualization,
+} from './evidenceClockWindowChart';
 
 export type InsightCategory =
   | 'glucose'
@@ -62,6 +68,63 @@ export interface EvidenceRecordPreview {
   sourceId: string;
 }
 
+export interface EvidenceCalculationReference {
+  kind: 'tarvis-local-glucose-v1';
+  queryId: string;
+  algorithmVersion: string;
+  metrics: Array<{
+    id:
+      | 'glucose.mean'
+      | 'glucose.time_in_range'
+      | 'glucose.low_episodes'
+      | 'glucose.high_episodes';
+    value: number | null;
+    unit: 'mmol/L' | '%' | 'events';
+  }>;
+  thresholds: Array<{
+    operator: 'lt' | 'lte' | 'gt' | 'gte';
+    role: 'low' | 'high' | 'range_lower' | 'range_upper';
+    unit: 'mmol/L';
+    value: number;
+  }>;
+  requestedWindowCount: number;
+  windowsWithData: number;
+  coveragePercent: number;
+  episodeDefinitionVersion?: string;
+}
+
+export interface EvidenceClockWindowVisualizationReference
+  extends Omit<EvidenceClockWindowVisualization, 'windows'> {
+  kind: 'recurring-clock-overlay-v1';
+  timezone: 'Europe/London';
+  title: string;
+  subtitle: string;
+  coverageSummary: string;
+  missingOccurrenceLabels: string[];
+  targetRange?: EvidenceClockWindowTargetRange;
+  windows: Array<
+    Omit<EvidenceClockWindowOccurrence, 'segments'> & {
+      clockTransitions: Array<{
+        kind: 'gap' | 'fold';
+        atTimestamp: number;
+        utcOffsetBeforeMinutes: number;
+        utcOffsetAfterMinutes: number;
+        changeMinutes: number;
+        affectedStartMinute: number;
+        affectedEndMinute: number;
+      }>;
+      segments: Array<
+        EvidenceClockWindowSegment & {
+          startsAfter: {
+            sensorGap: boolean;
+            clockTransition: 'gap' | 'fold' | null;
+          };
+        }
+      >;
+    }
+  >;
+}
+
 export interface EvidenceReference {
   id: string;
   label: string;
@@ -69,6 +132,8 @@ export interface EvidenceReference {
   range: { start: number; end: number };
   recordIds: string[];
   examples: EvidenceRecordPreview[];
+  calculation?: EvidenceCalculationReference;
+  visualization?: EvidenceClockWindowVisualizationReference;
 }
 
 export interface InsightFinding {
@@ -154,9 +219,13 @@ const QUESTION_CATEGORY_KEYWORDS: Record<InsightCategory, string[]> = {
     'glucose',
     'sugar',
     'high',
+    'highs',
     'hyper',
     'low',
+    'lows',
     'hypo',
+    'reading',
+    'readings',
     'range',
     'variability',
     'stable',
@@ -288,7 +357,12 @@ export function classifyInsightQuestion(question: string): InsightCategory[] {
     QUESTION_CATEGORY_KEYWORDS,
   ) as InsightCategory[]).filter((category) =>
     QUESTION_CATEGORY_KEYWORDS[category].some((keyword) =>
-      normalized.includes(keyword),
+      new RegExp(
+        `(?:^|[^a-z0-9])${keyword
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .replace(/\s+/g, '\\s+')}(?:$|[^a-z0-9])`,
+        'i',
+      ).test(normalized),
     ),
   );
   if (
@@ -332,6 +406,7 @@ export function classifyInsightQuestion(question: string): InsightCategory[] {
 export interface GlucoseEpisode {
   id: string;
   kind: 'high' | 'low';
+  thresholdMmolL: number;
   start: number;
   end: number;
   readings: GlucoseReading[];
@@ -404,57 +479,165 @@ function representativeGlucose(readings: GlucoseReading[]) {
 }
 
 const MAX_EPISODE_GAP_MS = 12 * 60_000;
-const MIN_EPISODE_SPAN_MS = 4 * 60_000;
+const EPISODE_START_CONFIRMATION_MS = 15 * 60_000;
+const EPISODE_RECOVERY_CONFIRMATION_MS = 15 * 60_000;
+
+/** Versioned so persisted/replayed answers can state which event convention ran. */
+export const GLUCOSE_EPISODE_DEFINITION_VERSION =
+  'consensus-15m-start-recovery-daymark-gap12-v2';
+
+type GlucoseEpisodeDetectionState =
+  | { kind: 'idle' }
+  | {
+      kind: 'confirming-start';
+      qualifyingReadings: GlucoseReading[];
+    }
+  | {
+      kind: 'active';
+      qualifyingReadings: GlucoseReading[];
+    }
+  | {
+      kind: 'confirming-recovery';
+      qualifyingReadings: GlucoseReading[];
+      recoveryStartedAt: number;
+    };
 
 export function detectGlucoseEpisodes(
   readings: GlucoseReading[],
   kind: 'high' | 'low',
+  thresholdMmolL = kind === 'high' ? 10 : 3.9,
 ): GlucoseEpisode[] {
+  if (!Number.isFinite(thresholdMmolL) || thresholdMmolL <= 0) {
+    throw new RangeError('A glucose episode threshold must be a positive number.');
+  }
   const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
   const qualifies = (reading: GlucoseReading) =>
-    kind === 'high' ? reading.mmolL > 10 : reading.mmolL < 3.9;
+    kind === 'high'
+      ? reading.mmolL > thresholdMmolL
+      : reading.mmolL < thresholdMmolL;
   const episodes: GlucoseEpisode[] = [];
-  let run: GlucoseReading[] = [];
+  let state: GlucoseEpisodeDetectionState = { kind: 'idle' };
+  let previousObservedReading: GlucoseReading | undefined;
 
-  function finishRun() {
-    const first = run[0];
-    const last = run[run.length - 1];
-    if (
-      first &&
-      last &&
-      run.length >= 2 &&
-      last.timestamp - first.timestamp >= MIN_EPISODE_SPAN_MS
-    ) {
-      episodes.push({
-        id: `${kind}:${first.timestamp}:${last.timestamp}`,
-        kind,
-        start: first.timestamp,
-        end: last.timestamp,
-        readings: run,
-        extremeMmolL:
-          kind === 'high'
-            ? Math.max(...run.map((reading) => reading.mmolL))
-            : Math.min(...run.map((reading) => reading.mmolL)),
-      });
+  function emitEpisode(
+    qualifyingReadings: GlucoseReading[],
+    end: number,
+  ) {
+    const first = qualifyingReadings[0];
+    if (!first) return;
+    episodes.push({
+      id: `${kind}:${thresholdMmolL}:${first.timestamp}:${end}`,
+      kind,
+      thresholdMmolL,
+      start: first.timestamp,
+      end,
+      readings: qualifyingReadings,
+      extremeMmolL:
+        kind === 'high'
+          ? Math.max(...qualifyingReadings.map((reading) => reading.mmolL))
+          : Math.min(...qualifyingReadings.map((reading) => reading.mmolL)),
+    });
+  }
+
+  function lastQualifyingTimestamp(
+    qualifyingReadings: GlucoseReading[],
+  ) {
+    return qualifyingReadings[qualifyingReadings.length - 1]!.timestamp;
+  }
+
+  function endObservedEpisodeForSensorGap() {
+    if (state.kind === 'active' || state.kind === 'confirming-recovery') {
+      emitEpisode(
+        state.qualifyingReadings,
+        lastQualifyingTimestamp(state.qualifyingReadings),
+      );
     }
-    run = [];
+    state = { kind: 'idle' };
   }
 
   for (const reading of sorted) {
-    if (!qualifies(reading)) {
-      finishRun();
+    if (
+      previousObservedReading &&
+      reading.timestamp - previousObservedReading.timestamp >
+        MAX_EPISODE_GAP_MS
+    ) {
+      // Missing sensor continuity cannot confirm either persistence or
+      // recovery. Close an already-confirmed observed episode at its last
+      // qualifying reading and require a new 15-minute start afterwards.
+      endObservedEpisodeForSensorGap();
+    }
+    previousObservedReading = reading;
+
+    const isQualifying = qualifies(reading);
+    if (state.kind === 'idle') {
+      if (isQualifying) {
+        state = {
+          kind: 'confirming-start',
+          qualifyingReadings: [reading],
+        };
+      }
       continue;
     }
-    const previous = run[run.length - 1];
-    if (
-      previous &&
-      reading.timestamp - previous.timestamp > MAX_EPISODE_GAP_MS
-    ) {
-      finishRun();
+
+    if (state.kind === 'confirming-start') {
+      if (!isQualifying) {
+        state = { kind: 'idle' };
+        continue;
+      }
+      const qualifyingReadings: GlucoseReading[] = state.qualifyingReadings;
+      qualifyingReadings.push(reading);
+      const first: GlucoseReading = qualifyingReadings[0]!;
+      state =
+        reading.timestamp - first.timestamp >=
+        EPISODE_START_CONFIRMATION_MS
+          ? { kind: 'active', qualifyingReadings }
+          : { kind: 'confirming-start', qualifyingReadings };
+      continue;
     }
-    run.push(reading);
+
+    if (state.kind === 'active') {
+      if (isQualifying) {
+        state.qualifyingReadings.push(reading);
+      } else {
+        state = {
+          kind: 'confirming-recovery',
+          qualifyingReadings: state.qualifyingReadings,
+          recoveryStartedAt: reading.timestamp,
+        };
+      }
+      continue;
+    }
+
+    if (isQualifying) {
+      // A return across the event threshold lasting less than 15 minutes is
+      // a recovery attempt within the same episode, not a new episode.
+      state.qualifyingReadings.push(reading);
+      state = {
+        kind: 'active',
+        qualifyingReadings: state.qualifyingReadings,
+      };
+      continue;
+    }
+    if (
+      reading.timestamp - state.recoveryStartedAt >=
+      EPISODE_RECOVERY_CONFIRMATION_MS
+    ) {
+      // The first recovery reading is the event boundary. Later readings
+      // confirm that this boundary persisted for the required 15 minutes.
+      emitEpisode(state.qualifyingReadings, state.recoveryStartedAt);
+      state = { kind: 'idle' };
+    }
   }
-  finishRun();
+
+  if (state.kind === 'active' || state.kind === 'confirming-recovery') {
+    // The reporting window ended before a confirmed recovery (or while the
+    // event was still qualifying). Retain the confirmed observed episode and
+    // end its displayed span at the last qualifying sample.
+    emitEpisode(
+      state.qualifyingReadings,
+      lastQualifyingTimestamp(state.qualifyingReadings),
+    );
+  }
   return episodes;
 }
 
@@ -463,7 +646,7 @@ export function glucoseEpisodeDurationMinutes(episode: GlucoseEpisode) {
 }
 
 export function glucoseEpisodeBurden(episode: GlucoseEpisode) {
-  const threshold = episode.kind === 'high' ? 10 : 3.9;
+  const threshold = episode.thresholdMmolL;
   return round(
     episode.readings.slice(1).reduce((total, reading, index) => {
       const previous = episode.readings[index]!;
@@ -1890,7 +2073,7 @@ export function buildInsightReport(
       kind: 'observation',
       category: 'glucose',
       title: `${current.highGlucoseRuns} high and ${current.lowGlucoseRuns} low sustained glucose runs`,
-      summary: `The recent window contained ${current.highGlucoseRuns} high runs and ${current.lowGlucoseRuns} low runs, versus ${previous.highGlucoseRuns} high and ${previous.lowGlucoseRuns} low previously. A run requires at least two qualifying readings no more than 12 minutes apart.${
+      summary: `The recent window contained ${current.highGlucoseRuns} high runs and ${current.lowGlucoseRuns} low runs, versus ${previous.highGlucoseRuns} high and ${previous.lowGlucoseRuns} low previously. An event starts after readings remain across the threshold for at least 15 minutes and ends after they remain back across it for at least 15 minutes. A sensor gap over 12 minutes breaks continuity; gaps and reporting boundaries truncate the observed span rather than prove recovery.${
         leadingRun
           ? ` The largest recent observed excursion was a ${leadingRun.kind} run reaching ${leadingRun.extremeMmolL.toFixed(1)} mmol/L across ${glucoseEpisodeDurationMinutes(leadingRun)} minutes.`
           : ''

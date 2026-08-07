@@ -364,6 +364,24 @@ describe('Tarv1s response-card evidence presentation', () => {
     ]);
   });
 
+  it('does not inherit a previous metric through an ordinary and', () => {
+    const history: TarvisConversationTurn[] = [
+      { role: 'user', text: 'How many high-glucose events have I had?' },
+      { role: 'assistant', text: 'Twelve highs were observed.' },
+    ];
+    const presentation = buildTarvisEvidencePresentation(
+      'What were my average readings over the last three days between midnight and 7 a.m.?',
+      packet(),
+      answer(),
+      history,
+    );
+
+    expect(presentation?.kind).toBe('average-glucose');
+    expect(presentation?.windows[0]?.metrics.map((metric) => metric.id)).toEqual([
+      'average-glucose',
+    ]);
+  });
+
   it('uses real coverage evidence IDs for a low and zero-data report', () => {
     const end = Date.parse('2026-08-07T00:00:00+01:00');
     const duration = 30 * 86_400_000;

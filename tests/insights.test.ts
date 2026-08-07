@@ -9,7 +9,9 @@ import {
   buildInsightReport,
   classifyInsightQuestion,
   detectGlucoseEpisodes,
+  GLUCOSE_EPISODE_DEFINITION_VERSION,
   glucoseEpisodeBurden,
+  glucoseEpisodeDurationMinutes,
   glucoseTimeByDayPart,
   observedMealWindows,
   rankGlucoseEpisodes,
@@ -417,7 +419,7 @@ describe('evidence-backed insights', () => {
     ).toBe('T1 Arc does not give treatment advice');
   });
 
-  it('groups only consecutive threshold readings into sustained runs', () => {
+  it('groups continuously observed qualifying readings into sustained runs', () => {
     const start = Date.parse('2026-07-26T10:00:00+01:00');
     const reading = (
       minute: number,
@@ -435,11 +437,15 @@ describe('evidence-backed insights', () => {
       reading(0, 9.8),
       reading(5, 10.4),
       reading(10, 11.2),
-      reading(15, 9.9),
+      reading(15, 10.8),
+      reading(20, 10.6),
+      reading(25, 9.9),
       reading(40, 11.5),
       reading(60, 11.7),
       reading(65, 3.7),
       reading(70, 3.5),
+      reading(75, 3.6),
+      reading(80, 3.7),
     ];
 
     const highs = detectGlucoseEpisodes(readings, 'high');
@@ -449,6 +455,8 @@ describe('evidence-backed insights', () => {
     expect(highs[0]?.readings.map((item) => item.id)).toEqual([
       'reading-5',
       'reading-10',
+      'reading-15',
+      'reading-20',
     ]);
     expect(highs[0]?.extremeMmolL).toBe(11.2);
     expect(lows).toHaveLength(1);
@@ -506,6 +514,239 @@ describe('evidence-backed insights', () => {
     );
   });
 
+  describe('15-minute glucose episode confirmation', () => {
+    const start = Date.parse('2026-07-26T10:00:00+01:00');
+    const readings = (
+      points: Array<[minute: number, mmolL: number]>,
+    ): GlucoseReading[] =>
+      points.map(([minute, mmolL]) => ({
+        id: `state-reading-${minute}-${mmolL}`,
+        timestamp: start + minute * 60_000,
+        receivedAt: start + minute * 60_000,
+        mmolL,
+        trend: 'flat',
+        quality: 'measured',
+        sourceId: 'state-machine-test',
+      }));
+
+    it('publishes the complete start, recovery, and gap convention', () => {
+      expect(GLUCOSE_EPISODE_DEFINITION_VERSION).toBe(
+        'consensus-15m-start-recovery-daymark-gap12-v2',
+      );
+    });
+
+    it('uses an explicit personalised threshold without changing the state-machine rules', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 9.1],
+          [5, 9.3],
+          [10, 9.4],
+          [15, 9.2],
+        ]),
+        'high',
+        9,
+      );
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.thresholdMmolL).toBe(9);
+    });
+
+    it('does not confirm a start interrupted before 15 minutes', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 9.9],
+          [20, 10.6],
+          [25, 10.8],
+          [30, 10.7],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toEqual([]);
+    });
+
+    it('keeps a brief recovery inside one confirmed episode', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 11.4],
+          [20, 10.7],
+          [25, 9.8],
+          [30, 9.7],
+          [35, 10.6],
+          [40, 10.9],
+          [45, 9.9],
+          [50, 9.8],
+          [55, 9.7],
+          [60, 9.6],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.readings.map((reading) => reading.timestamp)).toEqual(
+        [0, 5, 10, 15, 20, 35, 40].map(
+          (minute) => start + minute * 60_000,
+        ),
+      );
+      expect(episodes[0]).toMatchObject({
+        start,
+        end: start + 45 * 60_000,
+      });
+      expect(glucoseEpisodeDurationMinutes(episodes[0]!)).toBe(45);
+    });
+
+    it('splits episodes only after a full 15-minute recovery', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 11.4],
+          [20, 9.9],
+          [25, 9.8],
+          [30, 9.7],
+          [35, 9.6],
+          [40, 10.5],
+          [45, 10.8],
+          [50, 11.1],
+          [55, 11.4],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toHaveLength(2);
+      expect(episodes.map(({ start: episodeStart, end }) => [
+        (episodeStart - start) / 60_000,
+        (end - start) / 60_000,
+      ])).toEqual([
+        [0, 20],
+        [40, 55],
+      ]);
+    });
+
+    it('accepts recovery confirmation with sensor intervals up to 12 minutes', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 11.4],
+          [20, 9.9],
+          [32, 9.8],
+          [35, 9.7],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.end).toBe(start + 20 * 60_000);
+    });
+
+    it('breaks continuity when any consecutive sensor gap exceeds 12 minutes', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 11.4],
+          [28, 10.6],
+          [33, 10.7],
+          [38, 10.8],
+          [43, 10.9],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toHaveLength(2);
+      expect(episodes.map(({ start: episodeStart, end }) => [
+        (episodeStart - start) / 60_000,
+        (end - start) / 60_000,
+      ])).toEqual([
+        [0, 15],
+        [28, 43],
+      ]);
+    });
+
+    it('does not mistake an unconfirmed recovery followed by a gap for recovery', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 10.5],
+          [5, 10.8],
+          [10, 11.1],
+          [15, 11.4],
+          [20, 9.9],
+          [33, 9.8],
+        ]),
+        'high',
+      );
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.end).toBe(start + 15 * 60_000);
+    });
+
+    it('applies the same recovery state machine to low episodes and treats the threshold as recovered', () => {
+      const episodes = detectGlucoseEpisodes(
+        readings([
+          [0, 3.6],
+          [5, 3.5],
+          [10, 3.4],
+          [15, 3.3],
+          [20, 3.9],
+          [25, 4.0],
+          [30, 3.7],
+          [35, 3.6],
+          [40, 3.9],
+          [45, 4.0],
+          [50, 4.1],
+          [55, 4.2],
+        ]),
+        'low',
+      );
+
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0]?.readings.map((reading) => reading.mmolL)).toEqual([
+        3.6,
+        3.5,
+        3.4,
+        3.3,
+        3.7,
+        3.6,
+      ]);
+      expect(episodes[0]?.end).toBe(start + 40 * 60_000);
+    });
+
+    it('does not count threshold-equal readings as high or low starts', () => {
+      expect(
+        detectGlucoseEpisodes(
+          readings([
+            [0, 10],
+            [5, 10],
+            [10, 10],
+            [15, 10],
+          ]),
+          'high',
+        ),
+      ).toEqual([]);
+      expect(
+        detectGlucoseEpisodes(
+          readings([
+            [0, 3.9],
+            [5, 3.9],
+            [10, 3.9],
+            [15, 3.9],
+          ]),
+          'low',
+        ),
+      ).toEqual([]);
+    });
+  });
+
   it('keeps sustained high and low run evidence in separate references', () => {
     const end = Date.parse('2026-07-26T00:00:00+01:00');
     const week = 7 * 24 * 60 * 60_000;
@@ -517,8 +758,8 @@ describe('evidence-backed insights', () => {
         timestamp += 5 * 60_000, index += 1
       ) {
         let mmolL = 6.5;
-        if (withExcursions && (index === 12 || index === 13)) mmolL = 11.2;
-        if (withExcursions && (index === 30 || index === 31)) mmolL = 3.5;
+        if (withExcursions && index >= 12 && index <= 15) mmolL = 11.2;
+        if (withExcursions && index >= 30 && index <= 33) mmolL = 3.5;
         glucose.push({
           id: `glucose:${timestamp}`,
           timestamp,
@@ -552,9 +793,17 @@ describe('evidence-backed insights', () => {
       makeWindow(end - 2 * week, false),
       end,
     );
-    const evidence = report.findings.find(
+    const finding = report.findings.find(
       (finding) => finding.id === 'glucose-runs',
-    )?.evidence;
+    );
+    const evidence = finding?.evidence;
+
+    expect(finding?.summary).toContain(
+      'ends after they remain back across it for at least 15 minutes',
+    );
+    expect(finding?.summary).toContain(
+      'reporting boundaries truncate the observed span rather than prove recovery',
+    );
 
     expect(
       evidence?.find(
