@@ -1,13 +1,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
 import {
   BasalDelivery,
   BolusDelivery,
   GlucoseReading,
   HealthContextEvent,
+  InsulinDailyTotal,
   TimelineData,
 } from '@/domain/models';
+import { contextNoteCategoryLabel } from '@/domain/contextNotes';
 import { formatTime } from '@/domain/time';
 import { presentTrend } from '@/domain/trend';
 import { useAppTheme } from '@/theme/theme';
@@ -20,6 +23,7 @@ type DisplayRecord =
   | { kind: 'glucose'; timestamp: number; value: GlucoseReading }
   | { kind: 'basal'; timestamp: number; value: BasalDelivery }
   | { kind: 'bolus'; timestamp: number; value: BolusDelivery }
+  | { kind: 'insulin-total'; timestamp: number; value: InsulinDailyTotal }
   | { kind: 'context'; timestamp: number; value: HealthContextEvent };
 
 function toDisplayRecords(
@@ -60,7 +64,15 @@ function toDisplayRecords(
           timestamp: value.start,
           value,
         }));
-  return [...glucose, ...basal, ...bolus, ...context]
+  const dailyTotals: DisplayRecord[] =
+    filter === 'glucose' || filter === 'context'
+      ? []
+      : (data.dailyInsulinTotals ?? []).map((value) => ({
+          kind: 'insulin-total' as const,
+          timestamp: value.timestamp,
+          value,
+        }));
+  return [...glucose, ...basal, ...bolus, ...dailyTotals, ...context]
     .filter((record) => !allowed || allowed.has(record.value.id))
     .sort((a, b) => b.timestamp - a.timestamp);
 }
@@ -69,10 +81,12 @@ function RecordRow({
   record,
   last,
   onDeleteManualContext,
+  onEditManualContext,
 }: {
   record: DisplayRecord;
   last: boolean;
   onDeleteManualContext?: (id: string, title: string) => void;
+  onEditManualContext?: (event: HealthContextEvent) => void;
 }) {
   const { colors } = useAppTheme();
   const isGlucose = record.kind === 'glucose';
@@ -90,6 +104,7 @@ function RecordRow({
     | 'pulse-outline'
     | 'water-outline'
     | 'analytics-outline'
+    | 'calculator-outline'
     | 'layers-outline';
 
   if (record.kind === 'glucose') {
@@ -97,10 +112,38 @@ function RecordRow({
     title = `${record.value.mmolL.toFixed(1)} mmol/L  ${trend.arrow}`;
     detail = `${trend.label} · ${record.value.quality}`;
     source = record.value.sourceId;
+    const provenanceParts = [
+      record.value.sourceFile,
+      record.value.sourceRow
+        ? `row ${record.value.sourceRow}`
+        : undefined,
+      record.value.sourceDeviceId
+        ? `device ${record.value.sourceDeviceId}`
+        : undefined,
+      record.value.sourceFactoryTimestamp
+        ? `source time ${record.value.sourceFactoryTimestamp}`
+        : undefined,
+    ].filter((value): value is string => Boolean(value));
+    provenance = provenanceParts.length
+      ? provenanceParts.join(' · ')
+      : undefined;
     icon = 'pulse-outline';
   } else if (record.kind === 'bolus') {
     title = `${record.value.units.toFixed(1)} U bolus`;
-    detail = 'Delivered event · delayed cloud record';
+    detail = [
+      record.value.deliveryType || 'Delivered insulin event',
+      record.value.carbsInputGrams === undefined
+        ? undefined
+        : `${record.value.carbsInputGrams.toFixed(0)} g carbohydrate input`,
+      record.value.bloodGlucoseInputMmolL === undefined
+        ? undefined
+        : `${record.value.bloodGlucoseInputMmolL.toFixed(1)} mmol/L input`,
+      record.value.carbRatioGramsPerUnit === undefined
+        ? undefined
+        : `1:${record.value.carbRatioGramsPerUnit.toFixed(1)} carb ratio`,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(' · ');
     source = record.value.sourceId;
     provenance = record.value.sourceFile
       ? `${record.value.sourceFile}${record.value.sourceRow ? ` · row ${record.value.sourceRow}` : ''}`
@@ -108,12 +151,40 @@ function RecordRow({
     icon = 'water-outline';
   } else if (record.kind === 'basal') {
     title = `${record.value.rateUnitsPerHour.toFixed(2)} U/h basal`;
-    detail = `${record.value.units.toFixed(2)} U delivered · until ${formatTime(record.value.end)}`;
+    detail = [
+      record.value.deliveryType,
+      `${record.value.units.toFixed(2)} U ${
+        record.value.unitsEstimated
+          ? 'calculated from rate and duration'
+          : 'reported delivered'
+      }`,
+      `until ${formatTime(record.value.end)}`,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(' · ');
     source = record.value.sourceId;
     provenance = record.value.sourceFile
       ? `${record.value.sourceFile}${record.value.sourceRow ? ` · row ${record.value.sourceRow}` : ''}`
       : undefined;
     icon = 'analytics-outline';
+  } else if (record.kind === 'insulin-total') {
+    title = `${record.value.totalUnits.toFixed(1)} U source daily total`;
+    const parts = [
+      record.value.basalUnits === undefined
+        ? undefined
+        : `${record.value.basalUnits.toFixed(1)} U basal`,
+      record.value.bolusUnits === undefined
+        ? undefined
+        : `${record.value.bolusUnits.toFixed(1)} U bolus`,
+    ].filter((part): part is string => Boolean(part));
+    detail = parts.length
+      ? parts.join(' · ')
+      : 'Reported aggregate insulin total';
+    source = record.value.sourceId;
+    provenance = record.value.sourceFile
+      ? `${record.value.sourceFile}${record.value.sourceRow ? ` · row ${record.value.sourceRow}` : ''}`
+      : undefined;
+    icon = 'calculator-outline';
   } else {
     title = record.value.title;
     switch (record.value.kind) {
@@ -134,6 +205,11 @@ function RecordRow({
           record.value.amount !== undefined
             ? `${record.value.amount}${record.value.unit ? ` ${record.value.unit}` : ''}`
             : 'Recorded medication event';
+        break;
+      case 'note':
+        detail = record.value.detail
+          ? `${contextNoteCategoryLabel(record.value.category)} · ${record.value.detail}`
+          : contextNoteCategoryLabel(record.value.category);
         break;
     }
     source = record.value.sourceId;
@@ -168,7 +244,9 @@ function RecordRow({
       <View style={styles.timeBlock}>
         <Text style={[styles.time, { color: colors.text }]}>{formatTime(record.timestamp)}</Text>
         <Text style={[styles.kind, { color: tone }]}>
-          {record.kind.toUpperCase()}
+          {record.kind === 'insulin-total'
+            ? 'TOTAL'
+            : record.kind.toUpperCase()}
         </Text>
       </View>
       <View style={styles.copy}>
@@ -180,28 +258,60 @@ function RecordRow({
         </Text>
       </View>
       {record.kind === 'context' && record.value.origin === 'manual' ? (
-        <Pressable
-          accessibilityLabel={`Delete manual entry ${record.value.title}`}
-          accessibilityRole="button"
-          hitSlop={6}
-          onPress={() =>
-            onDeleteManualContext?.(record.value.id, record.value.title)
-          }
-          style={({ pressed }) => [
-            styles.deleteButton,
-            {
-              backgroundColor: pressed ? `${colors.danger}16` : 'transparent',
-              borderRadius: 999,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.danger}
-            name="trash-outline"
-            size={19}
-          />
-        </Pressable>
+        <View style={styles.actions}>
+          {onEditManualContext &&
+          record.value.sourceId === MANUAL_CONTEXT_SOURCE_ID &&
+          record.value.kind !== 'meal' ? (
+            <Pressable
+              accessibilityLabel={`Edit manual entry ${record.value.title}`}
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={() => onEditManualContext(record.value)}
+              style={({ pressed }) => [
+                styles.actionButton,
+                {
+                  backgroundColor: pressed
+                    ? `${colors.primary}16`
+                    : 'transparent',
+                  borderRadius: 999,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.primary}
+                name="create-outline"
+                size={18}
+              />
+            </Pressable>
+          ) : null}
+          {onDeleteManualContext ? (
+            <Pressable
+              accessibilityLabel={`Delete manual entry ${record.value.title}`}
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={() =>
+                onDeleteManualContext(record.value.id, record.value.title)
+              }
+              style={({ pressed }) => [
+                styles.actionButton,
+                {
+                  backgroundColor: pressed
+                    ? `${colors.danger}16`
+                    : 'transparent',
+                  borderRadius: 999,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.danger}
+                name="trash-outline"
+                size={18}
+              />
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -215,6 +325,7 @@ export function RecordList({
   headerTitle = 'Normalised records',
   emptyMessage = 'No records match this date and filter.',
   onDeleteManualContext,
+  onEditManualContext,
   onShowMore,
 }: {
   data: TimelineData;
@@ -224,6 +335,7 @@ export function RecordList({
   headerTitle?: string;
   emptyMessage?: string;
   onDeleteManualContext?: (id: string, title: string) => void;
+  onEditManualContext?: (event: HealthContextEvent) => void;
   onShowMore: () => void;
 }) {
   const { colors, radius } = useAppTheme();
@@ -251,6 +363,7 @@ export function RecordList({
             record={record}
             last={index === visible.length - 1}
             onDeleteManualContext={onDeleteManualContext}
+            onEditManualContext={onEditManualContext}
           />
         ))
       )}
@@ -349,9 +462,15 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     marginTop: 2,
   },
-  deleteButton: {
-    width: 46,
-    height: 46,
+  actions: {
+    width: 40,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButton: {
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },

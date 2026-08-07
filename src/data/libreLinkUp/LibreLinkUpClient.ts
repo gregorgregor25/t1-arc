@@ -225,7 +225,7 @@ export class LibreLinkUpClient {
       const type = step && typeof step.type === 'string' ? step.type : 'account';
       return new LibreLinkUpError(
         'action-required',
-        `LibreLinkUp requires a ${type} step in the official account flow. Daymark will not accept legal terms automatically.`,
+        `LibreLinkUp requires a ${type} step in the official account flow. T1 Arc will not accept legal terms automatically.`,
         status,
       );
     }

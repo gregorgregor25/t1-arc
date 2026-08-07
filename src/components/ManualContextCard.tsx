@@ -1,8 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,13 +16,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ManualContextDraft } from '@/data/manualContext';
+import {
+  MANUAL_CONTEXT_SOURCE_ID,
+  manualContextDraftFromEvent,
+  ManualContextDraft,
+} from '@/data/manualContext';
 import {
   formatDate,
   formatTime,
   toDateKey,
   zonedDateTimeToTimestamp,
 } from '@/domain/time';
+import { suggestedMealType } from '@/domain/mealTiming';
+import { HealthContextEvent } from '@/domain/models';
 import { useDataContext } from '@/providers/DataProvider';
 import { useAppTheme } from '@/theme/theme';
 
@@ -37,6 +44,10 @@ type Intensity = Extract<
   ManualContextDraft,
   { kind: 'activity' }
 >['intensity'];
+type NoteCategory = Extract<
+  ManualContextDraft,
+  { kind: 'note' }
+>['category'];
 
 const kindOptions: {
   value: ContextKind;
@@ -48,6 +59,7 @@ const kindOptions: {
   { value: 'sleep', label: 'Sleep', icon: 'moon-outline' },
   { value: 'weight', label: 'Weight', icon: 'scale-outline' },
   { value: 'medication', label: 'Medication', icon: 'medical-outline' },
+  { value: 'note', label: 'Note', icon: 'document-text-outline' },
 ];
 
 function numberFromInput(value: string, label: string) {
@@ -153,6 +165,7 @@ function FormInput({
   placeholder,
   suffix,
   value,
+  multiline = false,
 }: {
   accessibilityLabel: string;
   keyboardType?: 'default' | 'decimal-pad' | 'number-pad';
@@ -160,6 +173,7 @@ function FormInput({
   placeholder: string;
   suffix?: string;
   value: string;
+  multiline?: boolean;
 }) {
   const { colors, radius } = useAppTheme();
   return (
@@ -176,11 +190,17 @@ function FormInput({
       <TextInput
         accessibilityLabel={accessibilityLabel}
         keyboardType={keyboardType}
+        multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
         selectionColor={colors.primary}
-        style={[styles.input, { color: colors.text }]}
+        style={[
+          styles.input,
+          multiline && styles.multilineInput,
+          { color: colors.text },
+        ]}
+        textAlignVertical={multiline ? 'top' : 'center'}
         value={value}
       />
       {suffix ? (
@@ -193,9 +213,19 @@ function FormInput({
 }
 
 export function ManualContextCard({
+  compact = false,
+  editingEvent,
   initialTimestamp,
+  launchRequest,
+  onEditEnd,
+  showLauncher = true,
 }: {
+  compact?: boolean;
+  editingEvent?: HealthContextEvent;
   initialTimestamp: number;
+  launchRequest?: number;
+  onEditEnd?(): void;
+  showLauncher?: boolean;
 }) {
   const { colors, radius } = useAppTheme();
   const { saveManualContext } = useDataContext();
@@ -207,7 +237,9 @@ export function ManualContextCard({
   const [timestamp, setTimestamp] = useState(initialTimestamp);
   const [title, setTitle] = useState('');
   const [carbs, setCarbs] = useState('');
-  const [mealType, setMealType] = useState<MealType>('lunch');
+  const [mealType, setMealType] = useState<MealType>(
+    suggestedMealType(initialTimestamp),
+  );
   const [activityType, setActivityType] = useState<ActivityType>('walk');
   const [duration, setDuration] = useState('');
   const [intensity, setIntensity] = useState<Intensity>('moderate');
@@ -215,16 +247,106 @@ export function ManualContextCard({
   const [weight, setWeight] = useState('');
   const [medicationAmount, setMedicationAmount] = useState('');
   const [medicationUnit, setMedicationUnit] = useState('');
+  const [noteCategory, setNoteCategory] =
+    useState<NoteCategory>('illness');
+  const [noteDetail, setNoteDetail] = useState('');
+  const handledLaunchRequest = useRef(0);
 
   const selectedKind = useMemo(
     () => kindOptions.find((option) => option.value === kind)!,
     [kind],
   );
 
-  function begin() {
-    setTimestamp(initialTimestamp);
+  function resetForm(nextTimestamp: number) {
+    setKind('meal');
+    setTimestamp(nextTimestamp);
+    setTitle('');
+    setCarbs('');
+    setMealType(suggestedMealType(nextTimestamp));
+    setActivityType('walk');
+    setDuration('');
+    setIntensity('moderate');
+    setSleepQuality('');
+    setWeight('');
+    setMedicationAmount('');
+    setMedicationUnit('');
+    setNoteCategory('illness');
+    setNoteDetail('');
     setError(undefined);
+  }
+
+  function populateForm(event: HealthContextEvent) {
+    const draft = manualContextDraftFromEvent(event);
+    resetForm(draft.timestamp);
+    setKind(draft.kind);
+    setTitle(draft.title ?? '');
+    switch (draft.kind) {
+      case 'meal':
+        setMealType(draft.mealType);
+        setCarbs(String(draft.carbsGrams));
+        break;
+      case 'activity':
+        setActivityType(draft.activityType);
+        setDuration(String(draft.durationMinutes));
+        setIntensity(draft.intensity);
+        break;
+      case 'sleep':
+        setDuration(String(draft.durationMinutes));
+        setSleepQuality(
+          draft.qualityPercent === undefined
+            ? ''
+            : String(draft.qualityPercent),
+        );
+        break;
+      case 'weight':
+        setWeight(String(draft.kilograms));
+        break;
+      case 'medication':
+        setMedicationAmount(
+          draft.amount === undefined ? '' : String(draft.amount),
+        );
+        setMedicationUnit(draft.unit ?? '');
+        break;
+      case 'note':
+        setNoteCategory(draft.category);
+        setNoteDetail(draft.detail ?? '');
+        break;
+    }
+  }
+
+  function begin() {
+    resetForm(initialTimestamp);
     setOpen(true);
+  }
+
+  useEffect(() => {
+    if (
+      launchRequest === undefined ||
+      launchRequest <= handledLaunchRequest.current
+    ) {
+      return;
+    }
+    handledLaunchRequest.current = launchRequest;
+    begin();
+  }, [launchRequest]);
+
+  useEffect(() => {
+    if (!editingEvent) return;
+    if (
+      editingEvent.origin !== 'manual' ||
+      editingEvent.sourceId !== MANUAL_CONTEXT_SOURCE_ID
+    ) {
+      onEditEnd?.();
+      return;
+    }
+    populateForm(editingEvent);
+    setOpen(true);
+  }, [editingEvent]);
+
+  function close() {
+    if (saving) return;
+    setOpen(false);
+    if (editingEvent) onEditEnd?.();
   }
 
   function chooseDate() {
@@ -313,6 +435,14 @@ export function ManualContextCard({
           ),
           unit: medicationUnit.trim() || undefined,
         };
+      case 'note':
+        return {
+          kind,
+          timestamp,
+          title: customTitle,
+          category: noteCategory,
+          detail: noteDetail.trim() || undefined,
+        };
     }
   }
 
@@ -332,16 +462,13 @@ export function ManualContextCard({
 
     setSaving(true);
     try {
-      const event = await saveManualContext(draft);
-      setSavedMessage(`${event.title} saved at ${formatTime(event.start)}.`);
+      const event = await saveManualContext(draft, editingEvent);
+      setSavedMessage(
+        `${event.title} ${editingEvent ? 'updated' : 'saved'} at ${formatTime(event.start)}.`,
+      );
       setOpen(false);
-      setTitle('');
-      setCarbs('');
-      setDuration('');
-      setSleepQuality('');
-      setWeight('');
-      setMedicationAmount('');
-      setMedicationUnit('');
+      if (editingEvent) onEditEnd?.();
+      resetForm(initialTimestamp);
     } catch (nextError) {
       setError(
         nextError instanceof Error
@@ -355,84 +482,151 @@ export function ManualContextCard({
 
   return (
     <>
-      <SectionCard style={styles.card}>
-        <View style={styles.cardTop}>
-          <View
-            style={[
-              styles.cardIcon,
-              {
-                backgroundColor: `${colors.accent}18`,
-                borderRadius: radius.md,
-              },
-            ]}
-          >
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.accent}
-              name="add-circle-outline"
-              size={25}
-            />
-          </View>
-          <View style={styles.cardCopy}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>
-              Add health context
-            </Text>
-            <Text style={[styles.cardBody, { color: colors.textSecondary }]}>
-              Record a meal, activity, sleep, weight or medication event. It
-              remains visibly labelled as your manual entry.
-            </Text>
-          </View>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={begin}
-          style={({ pressed }) => [
-            styles.addButton,
-            {
-              backgroundColor: colors.primary,
-              borderRadius: radius.md,
-              opacity: pressed ? 0.76 : 1,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.onPrimary}
-            name="add"
-            size={21}
-          />
-          <Text style={[styles.addButtonText, { color: colors.onPrimary }]}>
-            Log context
-          </Text>
-        </Pressable>
-        {savedMessage ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.savedBanner,
-              {
-                backgroundColor: `${colors.accent}12`,
-                borderColor: `${colors.accent}55`,
-                borderRadius: radius.sm,
-              },
-            ]}
-          >
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.accent}
-              name="checkmark-circle-outline"
-              size={18}
-            />
-            <Text style={[styles.savedText, { color: colors.textSecondary }]}>
-              {savedMessage}
-            </Text>
-          </View>
-        ) : null}
-      </SectionCard>
+      {showLauncher ? (
+        <SectionCard style={compact ? styles.compactCard : styles.card}>
+          {compact ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={begin}
+              style={({ pressed }) => [
+                styles.compactLauncher,
+                pressed && { opacity: 0.68 },
+              ]}
+            >
+              <View
+                style={[
+                  styles.compactIcon,
+                  {
+                    backgroundColor: `${colors.accent}18`,
+                    borderRadius: radius.sm,
+                  },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.accent}
+                  name="add"
+                  size={21}
+                />
+              </View>
+              <View style={styles.cardCopy}>
+                <Text style={[styles.compactTitle, { color: colors.text }]}>
+                  Log health context
+                </Text>
+                <Text
+                  style={[
+                    styles.compactDetail,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Activity, sleep, weight, medication or a note
+                </Text>
+              </View>
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.textTertiary}
+                name="chevron-forward"
+                size={19}
+              />
+            </Pressable>
+          ) : (
+            <>
+              <View style={styles.cardTop}>
+                <View
+                  style={[
+                    styles.cardIcon,
+                    {
+                      backgroundColor: `${colors.accent}18`,
+                      borderRadius: radius.md,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={colors.accent}
+                    name="add-circle-outline"
+                    size={25}
+                  />
+                </View>
+                <View style={styles.cardCopy}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>
+                    Add health context
+                  </Text>
+                  <Text
+                    style={[styles.cardBody, { color: colors.textSecondary }]}
+                  >
+                    Record meals, activity, sleep, weight, medication or what
+                    was happening around your glucose. Every entry stays
+                    labelled as yours.
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={begin}
+                style={({ pressed }) => [
+                  styles.addButton,
+                  {
+                    backgroundColor: colors.primary,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.76 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.onPrimary}
+                  name="add"
+                  size={21}
+                />
+                <Text
+                  style={[
+                    styles.addButtonText,
+                    { color: colors.onPrimary },
+                  ]}
+                >
+                  Log context
+                </Text>
+              </Pressable>
+            </>
+          )}
+          {savedMessage ? (
+            <View
+              accessibilityLiveRegion="polite"
+              style={[
+                styles.savedBanner,
+                {
+                  backgroundColor: `${colors.accent}12`,
+                  borderColor: `${colors.accent}55`,
+                  borderRadius: radius.sm,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.accent}
+                name="checkmark-circle-outline"
+                size={18}
+              />
+              <Text
+                style={[styles.savedText, { color: colors.textSecondary }]}
+              >
+                {savedMessage}
+              </Text>
+            </View>
+          ) : null}
+        </SectionCard>
+      ) : null}
 
       <Modal
         animationType="slide"
-        onRequestClose={() => !saving && setOpen(false)}
+        onRequestClose={() => {
+          if (Keyboard.isVisible()) {
+            Keyboard.dismiss();
+            return;
+          }
+          close();
+        }}
         presentationStyle="pageSheet"
         statusBarTranslucent
         visible={open}
@@ -459,7 +653,7 @@ export function ManualContextCard({
                   accessibilityRole="header"
                   style={[styles.modalTitle, { color: colors.text }]}
                 >
-                  Log context
+                  {editingEvent ? 'Edit context' : 'Log context'}
                 </Text>
               </View>
               <Pressable
@@ -467,7 +661,7 @@ export function ManualContextCard({
                 accessibilityRole="button"
                 disabled={saving}
                 hitSlop={6}
-                onPress={() => setOpen(false)}
+                onPress={close}
                 style={({ pressed }) => [
                   styles.closeButton,
                   {
@@ -492,65 +686,120 @@ export function ManualContextCard({
               showsVerticalScrollIndicator={false}
             >
               <Text style={[styles.helper, { color: colors.textSecondary }]}>
-                These entries add context to your evidence timeline. Daymark
-                does not use them to recommend doses.
+                {editingEvent
+                  ? 'Correct this entry without changing its source identity. T1 Arc will refresh any evidence built from it.'
+                  : 'These entries add context to your evidence timeline. T1 Arc does not use them to recommend doses.'}
               </Text>
 
-              <FieldLabel>What are you recording?</FieldLabel>
-              <View
-                accessibilityLabel="Context type"
-                accessibilityRole="radiogroup"
-                style={styles.kindGrid}
-              >
-                {kindOptions.map((option) => {
-                  const selected = option.value === kind;
-                  return (
-                    <Pressable
-                      accessibilityRole="radio"
-                      accessibilityState={{ checked: selected }}
-                      key={option.value}
-                      onPress={() => {
-                        setKind(option.value);
-                        setError(undefined);
-                      }}
-                      style={({ pressed }) => [
-                        styles.kindButton,
-                        {
-                          backgroundColor: selected
-                            ? `${colors.primary}16`
-                            : colors.surface,
-                          borderColor: selected
-                            ? colors.primary
-                            : colors.border,
-                          borderRadius: radius.md,
-                          opacity: pressed ? 0.68 : 1,
-                        },
+              {editingEvent ? (
+                <View
+                  accessibilityLabel={`${selectedKind.label} entry type, fixed while editing`}
+                  style={[
+                    styles.lockedKind,
+                    {
+                      backgroundColor: `${colors.primary}10`,
+                      borderColor: `${colors.primary}3D`,
+                      borderRadius: radius.md,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.lockedKindIcon,
+                      {
+                        backgroundColor: `${colors.primary}18`,
+                        borderRadius: radius.sm,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={colors.primary}
+                      name={selectedKind.icon}
+                      size={21}
+                    />
+                  </View>
+                  <View style={styles.lockedKindCopy}>
+                    <Text
+                      style={[styles.lockedKindTitle, { color: colors.text }]}
+                    >
+                      {selectedKind.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.lockedKindDetail,
+                        { color: colors.textSecondary },
                       ]}
                     >
-                      <Ionicons
-                        accessibilityElementsHidden
-                        color={
-                          selected ? colors.primary : colors.textSecondary
-                        }
-                        name={option.icon}
-                        size={21}
-                      />
-                      <Text
-                        style={[
-                          styles.kindText,
-                          {
-                            color: selected
-                              ? colors.primaryStrong
-                              : colors.textSecondary,
-                          },
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                      Entry type stays fixed while you correct its details.
+                    </Text>
+                  </View>
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={colors.primary}
+                    name="lock-closed-outline"
+                    size={17}
+                  />
+                </View>
+              ) : (
+                <>
+                  <FieldLabel>What are you recording?</FieldLabel>
+                  <View
+                    accessibilityLabel="Context type"
+                    accessibilityRole="radiogroup"
+                    style={styles.kindGrid}
+                  >
+                    {kindOptions.map((option) => {
+                      const selected = option.value === kind;
+                      return (
+                        <Pressable
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: selected }}
+                          key={option.value}
+                          onPress={() => {
+                            setKind(option.value);
+                            setError(undefined);
+                          }}
+                          style={({ pressed }) => [
+                            styles.kindButton,
+                            {
+                              backgroundColor: selected
+                                ? `${colors.primary}16`
+                                : colors.surface,
+                              borderColor: selected
+                                ? colors.primary
+                                : colors.border,
+                              borderRadius: radius.md,
+                              opacity: pressed ? 0.68 : 1,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            accessibilityElementsHidden
+                            color={
+                              selected ? colors.primary : colors.textSecondary
+                            }
+                            name={option.icon}
+                            size={21}
+                          />
+                          <Text
+                            style={[
+                              styles.kindText,
+                              {
+                                color: selected
+                                  ? colors.primaryStrong
+                                  : colors.textSecondary,
+                              },
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
 
               <View style={styles.fieldGroup}>
                 <FieldLabel>
@@ -759,6 +1008,35 @@ export function ManualContextCard({
                 </>
               ) : null}
 
+              {kind === 'note' ? (
+                <>
+                  <ChoiceChips<NoteCategory>
+                    label="What was happening?"
+                    onChange={setNoteCategory}
+                    options={[
+                      { value: 'illness', label: 'Illness' },
+                      { value: 'stress', label: 'Stress' },
+                      { value: 'pump', label: 'Pod / site' },
+                      { value: 'sensor', label: 'Sensor' },
+                      { value: 'hormones', label: 'Hormones' },
+                      { value: 'travel', label: 'Travel' },
+                      { value: 'other', label: 'Other' },
+                    ]}
+                    value={noteCategory}
+                  />
+                  <View style={styles.fieldGroup}>
+                    <FieldLabel optional>Details</FieldLabel>
+                    <FormInput
+                      accessibilityLabel="Context note details"
+                      multiline
+                      onChangeText={setNoteDetail}
+                      placeholder="What did you notice?"
+                      value={noteDetail}
+                    />
+                  </View>
+                </>
+              ) : null}
+
               {kind !== 'medication' ? (
                 <View style={styles.fieldGroup}>
                   <FieldLabel optional>Label</FieldLabel>
@@ -831,7 +1109,9 @@ export function ManualContextCard({
                 <Text
                   style={[styles.saveButtonText, { color: colors.onPrimary }]}
                 >
-                  {saving ? 'Saving securely…' : `Save ${kindLabel(kind).toLowerCase()}`}
+                  {saving
+                    ? 'Saving securely…'
+                    : `${editingEvent ? 'Update' : 'Save'} ${kindLabel(kind).toLowerCase()}`}
                 </Text>
               </Pressable>
             </View>
@@ -845,6 +1125,34 @@ export function ManualContextCard({
 const styles = StyleSheet.create({
   card: {
     gap: 16,
+  },
+  compactCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
+  compactLauncher: {
+    minHeight: 68,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  compactIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactTitle: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  compactDetail: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 1,
   },
   cardTop: {
     flexDirection: 'row',
@@ -977,6 +1285,34 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '700',
   },
+  lockedKind: {
+    minHeight: 66,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  lockedKindIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockedKindCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  lockedKindTitle: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  lockedKindDetail: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 1,
+  },
   fieldGroup: {},
   inputShell: {
     minHeight: 52,
@@ -989,6 +1325,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 14,
     fontSize: 16,
+  },
+  multilineInput: {
+    minHeight: 104,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
   suffix: {
     paddingHorizontal: 14,

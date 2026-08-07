@@ -37,7 +37,7 @@ export async function prepareGlookoImport(
   const digest = await Crypto.digest(
     Crypto.CryptoDigestAlgorithm.SHA256,
     digestInput,
-  );
+  ).finally(() => digestInput.fill(0));
   const fileSha256 = toHex(digest);
   const unpacked = await unpackGlookoExport(name, bytes);
   const preview = parseGlookoTextFiles(unpacked.files, importedAt);

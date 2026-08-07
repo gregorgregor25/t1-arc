@@ -1,0 +1,75 @@
+name: T1 Arc quality and private release
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t1arc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --run
+
+  private-android-release:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Generate the native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Build phone, companion and watch faces
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :app:assembleRelease \
+            :wear:assembleRelease \
+            :watchface-meridian:assembleRelease \
+            :watchface-chronograph:assembleRelease \
+            :watchface-orbit:assembleRelease \
+            --no-daemon
+      - name: Verify release contents and shared signing certificate
+        shell: pwsh
+        run: |
+          ./scripts/verify-android-apk.ps1 `
+            -ApkPath ./android/app/build/outputs/apk/release/app-release.apk
+          ./scripts/verify-wear-apks.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: t1arc-private-android-${{ github.run_number }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            wear/companion/build/outputs/apk/release/wear-release.apk
+            wear/watchface-meridian/build/outputs/apk/release/watchface-meridian-release.apk
+            wear/watchface-chronograph/build/outputs/apk/release/watchface-chronograph-release.apk
+            wear/watchface-orbit/build/outputs/apk/release/watchface-orbit-release.apk

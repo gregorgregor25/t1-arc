@@ -98,6 +98,55 @@ interface SearchableFood {
   words: string[];
 }
 
+const CONTEXT_TOKENS = new Set([
+  'a',
+  'an',
+  'available',
+  'bakery',
+  'co',
+  'coop',
+  'cooperative',
+  'from',
+  'made',
+  'of',
+  'op',
+  'the',
+  'with',
+]);
+
+function editDistanceAtMostOne(left: string, right: string) {
+  if (left === right) return true;
+  if (Math.abs(left.length - right.length) > 1) return false;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  let edits = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex] === right[rightIndex]) {
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (left.length > right.length) leftIndex += 1;
+    else if (right.length > left.length) rightIndex += 1;
+    else {
+      leftIndex += 1;
+      rightIndex += 1;
+    }
+  }
+  return edits + Number(leftIndex < left.length || rightIndex < right.length) <= 1;
+}
+
+function wordMatchesToken(word: string, token: string) {
+  return (
+    word === token ||
+    word.startsWith(token) ||
+    token.startsWith(word) ||
+    (token.length >= 5 && word.length >= 5 && editDistanceAtMostOne(word, token))
+  );
+}
+
 const searchable: SearchableFood[] = catalog.foods.map((food) => {
   const searchName = normaliseSearchText(food.name);
   return { food, searchName, words: searchName.split(' ') };
@@ -108,7 +157,7 @@ function scoreFood(item: SearchableFood, query: string, tokens: string[]) {
   if (item.searchName.startsWith(query)) {
     return 7_000 - item.searchName.length;
   }
-  if (!tokens.every((token) => item.searchName.includes(token))) {
+  if (!tokens.every((token) => item.words.some((word) => wordMatchesToken(word, token)))) {
     return -1;
   }
 
@@ -119,7 +168,7 @@ function scoreFood(item: SearchableFood, query: string, tokens: string[]) {
       score += 350 - Math.min(wordIndex, 20) * 5;
       continue;
     }
-    if (item.words.some((word) => word.startsWith(token))) {
+    if (item.words.some((word) => wordMatchesToken(word, token))) {
       score += 180;
     }
   }
@@ -129,10 +178,13 @@ function scoreFood(item: SearchableFood, query: string, tokens: string[]) {
 export function searchCofidFoods(query: string, limit = 30) {
   const normalised = normaliseSearchText(query);
   if (normalised.length < 2 || limit <= 0) return [];
-  const tokens = normalised.split(' ').filter(Boolean);
+  const rawTokens = normalised.split(' ').filter(Boolean);
+  const meaningfulTokens = rawTokens.filter((token) => !CONTEXT_TOKENS.has(token));
+  const tokens = meaningfulTokens.length ? meaningfulTokens : rawTokens;
+  const rankingQuery = tokens.join(' ');
 
   return searchable
-    .map((item) => ({ item, score: scoreFood(item, normalised, tokens) }))
+    .map((item) => ({ item, score: scoreFood(item, rankingQuery, tokens) }))
     .filter(({ score }) => score >= 0)
     .sort(
       (left, right) =>

@@ -26,7 +26,14 @@ export function useTimeline(range: TimeRange) {
         active = false;
       };
     }
-    setState((previous) => ({ ...previous, loading: true, error: undefined }));
+    // Keep the current page visible while fresh data is revalidated. Replacing
+    // it with a loading card made every silent glucose poll look like a full
+    // screen refresh.
+    setState((previous) => ({
+      ...previous,
+      loading: previous.data === undefined,
+      error: undefined,
+    }));
     repository
       .getTimeline(range)
       .then((data) => {

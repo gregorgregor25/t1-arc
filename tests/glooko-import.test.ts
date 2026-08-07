@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { strToU8, zipSync } from 'fflate';
 
-import { unpackGlookoFiles } from '@/data/import/glookoArchive';
 import {
+  glookoEntryLimitForName,
+  unpackGlookoFiles,
+} from '@/data/import/glookoArchive';
+import {
+  GLOOKO_CGM_SOURCE_ID,
   parseDelimitedText,
   parseGlookoTextFiles,
   parseGlookoTimestamp,
@@ -23,6 +27,11 @@ const BASAL_TSV = `Name:Example\tDate Range:2026-03-29 - 2026-03-30
 Timestamp\tBasal Rate (units/hr)\tDuration (min)\tType
 2026-03-29 00:00:00\t0.60\t30\tScheduled
 2026-03-29 00:30:00\t0.80\t30\tScheduled`;
+
+const CGM_TSV = `Name:Example\tDate Range:2026-03-29 - 2026-03-30
+Timestamp\tGlucose Value (mmol/L)\tTrend\tSerial Number
+2026-03-29 09:00:00\t6.2\tFlat\tLIBRE-ANONYMISED
+2026-03-29 09:05:00\t6.7\tFortyFiveUp\tLIBRE-ANONYMISED`;
 
 function overwriteFirstCentralUncompressedSize(
   archive: Uint8Array,
@@ -78,10 +87,9 @@ describe('Glooko ZIP/CSV normalisation', () => {
     expect(parseGlookoTextFiles(files, IMPORTED_AT).boluses).toHaveLength(2);
   });
 
-  it('retains oversized CGM data without decompressing it while importing pump files', async () => {
-    const oversizedCgm = new Uint8Array(25 * 1024 * 1024 + 1);
+  it('loads CGM files beyond the normal entry limit while importing pump files', async () => {
     const archive = zipSync({
-      'private/export/cgm_data_1.csv': oversizedCgm,
+      'private/export/cgm_data_1.csv': strToU8(CGM_TSV),
       'private/export/bolus_data_1.csv': strToU8(BOLUS_TSV),
     });
 
@@ -89,15 +97,14 @@ describe('Glooko ZIP/CSV normalisation', () => {
     const cgm = files.find((file) => file.name === 'cgm_data_1.csv');
     const bolus = files.find((file) => file.name === 'bolus_data_1.csv');
 
-    expect(cgm?.text).toBe('');
-    expect(cgm?.retainedOnly).toBe(true);
-    expect(cgm?.originalBytes).toBe(oversizedCgm.length);
+    expect(glookoEntryLimitForName('cgm_data_1.csv')).toBeGreaterThan(
+      glookoEntryLimitForName('bolus_data_1.csv'),
+    );
+    expect(cgm?.bytes).toBeInstanceOf(Uint8Array);
+    expect(cgm?.retainedOnly).toBeUndefined();
     expect(bolus?.text).toContain('Bolus Type');
     const preview = parseGlookoTextFiles(files, IMPORTED_AT);
-    expect(preview.retainedFiles).toContainEqual({
-      name: 'cgm_data_1.csv',
-      originalBytes: oversizedCgm.length,
-    });
+    expect(preview.glucose).toHaveLength(2);
     expect(preview.boluses).toHaveLength(2);
   });
 
@@ -125,12 +132,11 @@ describe('Glooko ZIP/CSV normalisation', () => {
     ]);
   });
 
-  it('retains oversized food and CGM files while normalising available insulin', async () => {
+  it('retains oversized food while normalising available CGM and insulin', async () => {
     const oversizedFood = new Uint8Array(25 * 1024 * 1024 + 7);
-    const oversizedCgm = new Uint8Array(25 * 1024 * 1024 + 9);
     const archive = zipSync({
       'private/export/food_data_1.csv': oversizedFood,
-      'private/export/cgm_data_1.csv': oversizedCgm,
+      'private/export/cgm_data_1.csv': strToU8(CGM_TSV),
       'private/export/bolus_data_1.csv': strToU8(BOLUS_TSV),
     });
 
@@ -140,18 +146,15 @@ describe('Glooko ZIP/CSV normalisation', () => {
     );
 
     expect(preview.boluses).toHaveLength(2);
+    expect(preview.glucose).toHaveLength(2);
     expect(preview.retainedFiles).toEqual([
       {
         name: 'food_data_1.csv',
         originalBytes: oversizedFood.length,
       },
-      {
-        name: 'cgm_data_1.csv',
-        originalBytes: oversizedCgm.length,
-      },
     ]);
     expect(preview.warnings).toContain(
-      '2 source files were retained exactly in the encrypted source archive for future processing.',
+      '1 source file was retained exactly in the encrypted source archive for future processing.',
     );
   });
 
@@ -194,8 +197,14 @@ describe('Glooko ZIP/CSV normalisation', () => {
       carbsGrams: 45,
       origin: 'imported',
     });
-    expect(preview.ignoredFiles).toContain('cgm_data_1.csv');
-    expect(preview.recognisedFiles).toHaveLength(2);
+    expect(preview.glucose).toHaveLength(1);
+    expect(preview.glucose[0]).toMatchObject({
+      mmolL: 6.2,
+      sourceId: GLOOKO_CGM_SOURCE_ID,
+      sourceFile: 'cgm_data_1.csv',
+      sourceRow: 2,
+    });
+    expect(preview.recognisedFiles).toHaveLength(3);
   });
 
   it('supports official-style delivered-insulin and carbohydrate headers', () => {
@@ -218,6 +227,214 @@ Timestamp,Insulin Type,Blood Glucose Input (mmol/L),Carbohydrate Intake (g),Deli
     });
   });
 
+  it('keeps exact Omnipod bolus inputs and scheduled-basal provenance', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Timestamp,Insulin type,Blood glucose input (mmol/L),Carbs input (g),Carbs ratio,Insulin delivered (U),Initial delivery (U),Extended delivery (U),Serial number
+2026-07-01 18:45:00,Normal,7.2,62,10,5.4,5.4,0,PDM-ANONYMISED`,
+        },
+        {
+          name: 'basal_data_1.csv',
+          text: `Timestamp,Insulin type,Duration (minutes),Percentage (%),Rate,Insulin delivered (U),Serial number
+2026-07-01 00:00:00,Scheduled,30,,0.6,,PDM-ANONYMISED`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses[0]).toMatchObject({
+      deliveryType: 'Normal',
+      bloodGlucoseInputMmolL: 7.2,
+      carbsInputGrams: 62,
+      carbRatioGramsPerUnit: 10,
+      initialUnits: 5.4,
+      extendedUnits: 0,
+      sourceDeviceId: 'PDM-ANONYMISED',
+    });
+    expect(preview.basal[0]).toMatchObject({
+      deliveryType: 'Scheduled',
+      rateUnitsPerHour: 0.6,
+      unitsEstimated: true,
+      sourceDeviceId: 'PDM-ANONYMISED',
+    });
+    expect(preview.rawRecords).toHaveLength(2);
+    expect(JSON.parse(preview.rawRecords[0]!.payloadJson)).toHaveProperty(
+      'headers',
+    );
+  });
+
+  it('normalises Glooko pump alarms while retaining every exact field', async () => {
+    const alarmCsv = `Timestamp,Alarm/Event,Serial number
+2026-07-01 10:00:00,Insulin Delivery Suspended,PDM-ANONYMISED
+2026-07-01 10:15:00,Insulin Delivery Suspension Ended,PDM-ANONYMISED`;
+    const files = await unpackGlookoFiles(
+      'glooko.zip',
+      zipSync({ 'private/export/alarms_data_1.csv': strToU8(alarmCsv) }),
+    );
+    const preview = parseGlookoTextFiles(files, IMPORTED_AT);
+
+    expect(files[0]?.retainedOnly).toBeUndefined();
+    expect(preview.context).toHaveLength(2);
+    expect(preview.context[0]).toMatchObject({
+      kind: 'note',
+      category: 'pump',
+      title: 'Insulin Delivery Suspended',
+    });
+    expect(preview.rawRecords).toHaveLength(2);
+    expect(preview.recognisedFiles[0]).toMatchObject({
+      kind: 'alarm',
+      records: 2,
+    });
+  });
+
+  it('normalises exported Glooko notes as encrypted factual context', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'notes_data_1.csv',
+          text: `Name:Example,Date Range:2026-07-01 - 2026-07-02
+Timestamp,Notes
+2026-07-01 21:15:00,"Changed pod site, absorption seemed unusual"`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.context).toHaveLength(1);
+    expect(preview.context[0]).toMatchObject({
+      kind: 'note',
+      category: 'other',
+      title: 'Changed pod site, absorption seemed unusual',
+      detail: 'Changed pod site, absorption seemed unusual',
+      origin: 'imported',
+      sourceFile: 'notes_data_1.csv',
+      sourceRow: 3,
+    });
+    expect(preview.recognisedFiles).toEqual([
+      {
+        name: 'notes_data_1.csv',
+        kind: 'note',
+        records: 1,
+        skippedRows: 0,
+      },
+    ]);
+  });
+
+  it('keeps manual blood-glucose checks distinct from the CGM trace', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bg_data_1.csv',
+          text: `Timestamp,Glucose Value (mmol/L),Manual reading,Serial number
+2026-07-01 21:15:00,5.8,Yes,METER-ANONYMISED`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.glucose).toHaveLength(0);
+    expect(preview.context).toEqual([
+      expect.objectContaining({
+        kind: 'note',
+        title: 'Blood glucose check · 5.8 mmol/L',
+        detail: 'Manual reading: Yes · Source device recorded by Glooko',
+      }),
+    ]);
+    expect(preview.rawRecords[0]?.recordKind).toBe('blood-glucose');
+  });
+
+  it('represents manually logged insulin as medication context, not pump delivery', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'manual_insulin_data_1.csv',
+          text: `Timestamp,Name,Value,Insulin type
+2026-07-01 21:15:00,Injected insulin,4.5,Rapid acting`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.context).toEqual([
+      expect.objectContaining({
+        kind: 'medication',
+        title: 'Injected insulin',
+        amount: 4.5,
+        unit: 'U',
+        medicationType: 'Rapid acting',
+      }),
+    ]);
+    expect(preview.rawRecords[0]?.recordKind).toBe('manual-insulin');
+  });
+
+  it('keeps Glooko food nutrition and serving fields available for analysis', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'food_data_1.csv',
+          text: `Timestamp,Name,Carbs (g),Fat,Protein,Calories,Serving quantity,Number of servings
+2026-07-01 12:30:00,Pasta bowl,64,18,24,620,350,1`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.context[0]).toMatchObject({
+      kind: 'meal',
+      title: 'Pasta bowl',
+      carbsGrams: 64,
+      fatGrams: 18,
+      proteinGrams: 24,
+      energyKcal: 620,
+      servingQuantity: 350,
+      servingCount: 1,
+    });
+    expect(preview.rawRecords).toHaveLength(1);
+  });
+
+  it('converts mg/dL CGM rows and retains exact row provenance', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'cgm_data_1.csv',
+          text: `Name:Example,Date Range:2026-07-01 - 2026-07-02
+Timestamp,Glucose Value (mg/dL),Direction,Device Serial Number
+2026-07-01 18:45:00,126,SingleUp,ANONYMISED
+2026-07-01 18:50:00,not-a-reading,Flat,ANONYMISED`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.glucose).toHaveLength(1);
+    expect(preview.glucose[0]).toMatchObject({
+      mmolL: 6.99,
+      trend: 'up',
+      sourceId: GLOOKO_CGM_SOURCE_ID,
+      sourceFile: 'cgm_data_1.csv',
+      sourceRow: 3,
+      sourceDeviceId: 'ANONYMISED',
+      importedAt: IMPORTED_AT,
+    });
+    expect(preview.skippedRows).toBe(1);
+  });
+
+  it('deduplicates overlapping CGM exports by source timestamp', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        { name: 'cgm_data_1.csv', text: CGM_TSV },
+        { name: 'cgm_data_2.csv', text: CGM_TSV },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.glucose).toHaveLength(2);
+    expect(preview.duplicateRows).toBe(2);
+  });
+
   it('does not mislabel aggregate insulin totals as delivered boluses', () => {
     const preview = parseGlookoTextFiles(
       [
@@ -231,16 +448,38 @@ Timestamp,Insulin Type,Blood Glucose Input (mmol/L),Carbohydrate Intake (g),Deli
     );
 
     expect(preview.boluses).toHaveLength(0);
-    expect(preview.ignoredFiles).toContain('insulin_data_1.csv');
-    expect(preview.unrecognisedFiles[0]).toMatchObject({
+    expect(preview.dailyInsulinTotals).toEqual([
+      expect.objectContaining({
+        dateKey: '2026-07-01',
+        basalUnits: 22.4,
+        bolusUnits: 18.2,
+        totalUnits: 40.6,
+        sourceFile: 'insulin_data_1.csv',
+        sourceRow: 2,
+      }),
+    ]);
+    expect(preview.recognisedFiles[0]).toMatchObject({
       name: 'insulin_data_1.csv',
-      headers: [
-        'Timestamp',
-        'Total Bolus (U)',
-        'Total Basal (U)',
-        'Total Insulin (U)',
-      ],
+      kind: 'daily-insulin',
+      records: 1,
     });
+  });
+
+  it('prioritises aggregate headers over bolus-like columns for renamed files', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'renamed_export.csv',
+          text: `Timestamp,Total Bolus (U),Total Basal (U),Total Insulin (U)
+2026-07-01 23:59:00,18.2,22.4,40.6`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.dailyInsulinTotals).toHaveLength(1);
+    expect(preview.recognisedFiles[0]?.kind).toBe('daily-insulin');
   });
 
   it('collapses repeated records across overlapping export files', () => {
@@ -321,6 +560,8 @@ describe('encrypted health-record store contract', () => {
       preview.boluses,
       preview.context,
       sourcePayload,
+      undefined,
+      preview.rawRecords,
     );
     const second = await store.writeImport(
       batch,
@@ -328,6 +569,8 @@ describe('encrypted health-record store contract', () => {
       preview.boluses,
       preview.context,
       sourcePayload,
+      undefined,
+      preview.rawRecords,
     );
 
     expect(first).toMatchObject({
@@ -342,6 +585,13 @@ describe('encrypted health-record store contract', () => {
     expect(second.sourcePayloadStored).toBe(true);
     expect((await store.getInsulinBounds()).count).toBe(4);
     expect((await store.getContextBounds()).count).toBe(1);
+    expect(
+      await store.getRawSourceRecords('glooko-export'),
+    ).toHaveLength(4);
+    const raw = await store.getRawSourceRecords('glooko-export');
+    expect(
+      await store.getRawSourceRecordsByIds([raw[0]!.id]),
+    ).toEqual([raw[0]]);
   });
 
   it('stores an exact source archive even when no rows are normalised yet', async () => {
@@ -378,6 +628,89 @@ describe('encrypted health-record store contract', () => {
       insertedContext: 0,
       sourcePayloadStored: true,
     });
+  });
+
+  it('summarises retained source snapshots without reading their health bytes', async () => {
+    const store = new MemoryHealthRecordStore();
+    await store.writeImport(
+      {
+        id: 'glooko-export:summary-1',
+        sourceId: 'glooko-export',
+        fileName: 'first.zip',
+        fileSha256: 'summary-1',
+        importedAt: IMPORTED_AT,
+        dataStart: IMPORTED_AT - 30 * 24 * 60 * 60 * 1000,
+        dataThrough: IMPORTED_AT - 60_000,
+        skippedCount: 0,
+        warnings: [],
+      },
+      [],
+      [],
+      [],
+      {
+        format: 'zip',
+        bytes: new Uint8Array(4),
+        entries: [
+          { name: 'bolus.csv', handling: 'loaded' },
+          { name: 'food.csv', handling: 'retained' },
+        ],
+      },
+    );
+    await store.writeImport(
+      {
+        id: 'glooko-export:summary-2',
+        sourceId: 'glooko-export',
+        fileName: 'second.zip',
+        fileSha256: 'summary-2',
+        importedAt: IMPORTED_AT + 24 * 60 * 60 * 1000,
+        dataStart: IMPORTED_AT - 29 * 24 * 60 * 60 * 1000,
+        dataThrough: IMPORTED_AT + 23 * 60 * 60 * 1000,
+        skippedCount: 0,
+        warnings: [],
+      },
+      [],
+      [],
+      [],
+      {
+        format: 'zip',
+        bytes: new Uint8Array(6),
+        entries: [{ name: 'basal.csv', handling: 'loaded' }],
+      },
+    );
+
+    expect(await store.getImportSourceSummary('glooko-export')).toEqual({
+      archiveCount: 2,
+      totalBytes: 10,
+      earliestStoredAt: IMPORTED_AT,
+      latestStoredAt: IMPORTED_AT + 24 * 60 * 60 * 1000,
+      dataStart: IMPORTED_AT - 30 * 24 * 60 * 60 * 1000,
+      dataThrough: IMPORTED_AT + 23 * 60 * 60 * 1000,
+      loadedEntryCount: 2,
+      retainedEntryCount: 1,
+      indexedRecordCount: 0,
+    });
+    expect(
+      await store.getImportSourcePayloadReferences('glooko-export'),
+    ).toEqual([
+      {
+        batchId: 'glooko-export:summary-1',
+        storedAt: IMPORTED_AT,
+      },
+      {
+        batchId: 'glooko-export:summary-2',
+        storedAt: IMPORTED_AT + 24 * 60 * 60 * 1000,
+      },
+    ]);
+    const firstPayload = await store.getImportSourcePayload(
+      'glooko-export:summary-1',
+    );
+    expect(firstPayload?.batch.fileName).toBe('first.zip');
+    expect(firstPayload?.payload.bytes).toEqual(new Uint8Array(4));
+    firstPayload?.payload.bytes.fill(9);
+    expect(
+      (await store.getImportSourcePayload('glooko-export:summary-1'))
+        ?.payload.bytes,
+    ).toEqual(new Uint8Array(4));
   });
 
   it('can reprocess a retained archive into an existing zero-row batch', async () => {
@@ -484,9 +817,11 @@ describe('encrypted health-record store contract', () => {
     });
 
     expect(await store.clearImportedSource('glooko-export')).toEqual({
+      glucose: 0,
       basal: 2,
       boluses: 2,
       context: 1,
+      dailyTotals: 0,
       batches: 1,
     });
     expect((await store.getInsulinBounds()).count).toBe(0);

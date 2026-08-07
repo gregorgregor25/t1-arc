@@ -6,6 +6,7 @@ import { LibreLinkUpCredentials, LibreLinkUpSession } from './types';
 const CREDENTIALS_KEY = 'daymark.librelinkup.credentials.v1';
 const SESSION_KEY = 'daymark.librelinkup.session.v1';
 const DATA_MODE_KEY = 'daymark.data.mode.v1';
+const ONBOARDING_KEY = 'daymark.onboarding.v1';
 
 export type DataMode = 'live' | 'demo';
 
@@ -47,4 +48,12 @@ export async function loadDataMode(): Promise<DataMode | undefined> {
 
 export async function saveDataMode(mode: DataMode) {
   await SecureStore.setItemAsync(DATA_MODE_KEY, mode);
+}
+
+export async function loadOnboardingComplete() {
+  return (await SecureStore.getItemAsync(ONBOARDING_KEY)) === 'complete';
+}
+
+export async function saveOnboardingComplete() {
+  await SecureStore.setItemAsync(ONBOARDING_KEY, 'complete');
 }

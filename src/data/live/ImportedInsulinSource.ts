@@ -4,17 +4,32 @@ import {
 } from '@/data/persistence/HealthRecordStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
+import {
+  GLOOKO_IMPORT_CAPABILITIES,
+  SourceCapability,
+} from '@/domain/sourceCapabilities';
 
 const SOURCE_ID = 'glooko-export';
 const RECENT_DATA_MS = 3 * 24 * 60 * 60 * 1000;
 const RECENT_IMPORT_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface LiveInsulinImporter {
+  readonly label: string;
+  readonly capabilities: readonly SourceCapability[];
+  refresh(): Promise<unknown>;
+}
 
 export class ImportedInsulinSource implements InsulinSource {
   readonly sourceId = SOURCE_ID;
 
   constructor(
     private readonly store: HealthRecordStore = new SqliteHealthRecordStore(),
+    private readonly liveImporter?: LiveInsulinImporter,
   ) {}
+
+  async refresh() {
+    await this.liveImporter?.refresh().catch(() => undefined);
+  }
 
   async getBasalDeliveries(range: TimeRange) {
     return this.store.getBasalDeliveries(range);
@@ -24,20 +39,47 @@ export class ImportedInsulinSource implements InsulinSource {
     return this.store.getBolusDeliveries(range);
   }
 
+  async getDailyTotals(range: TimeRange) {
+    return this.store.getDailyInsulinTotals(range);
+  }
+
+  async getPumpStates(range: TimeRange) {
+    return this.store.getPumpStateIntervals(range);
+  }
+
   async getStatus(now = Date.now()): Promise<DataSourceStatus> {
-    const [bounds, latestImport] = await Promise.all([
+    const [bounds, latestGlookoImport, latestNightscoutImport] = await Promise.all([
       this.store.getInsulinBounds(),
       this.store.getLatestImport(SOURCE_ID),
+      this.store.getLatestImport('nightscout'),
     ]);
+    const latestImport = [latestGlookoImport, latestNightscoutImport]
+      .filter((value): value is NonNullable<typeof value> => value !== undefined)
+      .sort((left, right) => right.importedAt - left.importedAt)[0];
+    const capabilities = this.liveImporter
+      ? [...GLOOKO_IMPORT_CAPABILITIES, ...this.liveImporter.capabilities].filter(
+          (capability, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.kind === capability.kind &&
+                candidate.fidelity === capability.fidelity,
+            ) === index,
+        )
+      : GLOOKO_IMPORT_CAPABILITIES;
     if (!bounds.count) {
       return {
         id: this.sourceId,
         label: 'Insulin',
-        detail: 'No Glooko export imported · never shown as live pump data',
+        detail: this.liveImporter
+          ? 'Nightscout connected; no insulin treatments supplied yet'
+          : 'No Glooko history imported',
         freshness: 'missing',
-        origin: 'imported',
+        origin: this.liveImporter ? 'live' : 'imported',
         recordCount: 0,
-        isLive: false,
+        lastAttemptAt: latestImport?.importedAt,
+        lastUpdatedAt: latestImport?.importedAt,
+        capabilities,
+        isLive: Boolean(this.liveImporter),
       };
     }
 
@@ -49,14 +91,20 @@ export class ImportedInsulinSource implements InsulinSource {
     return {
       id: this.sourceId,
       label: 'Insulin',
-      detail: 'Glooko export · delayed pump delivery records',
+      detail:
+        latestGlookoImport && latestNightscoutImport
+          ? 'Glooko and Nightscout insulin history'
+          : latestNightscoutImport
+            ? 'Nightscout insulin treatment history'
+            : 'Glooko pump delivery history',
       freshness: dataRecent && importRecent ? 'delayed' : 'stale',
-      origin: 'imported',
+      origin: latestNightscoutImport ? 'live' : 'imported',
       lastAttemptAt: latestImport?.importedAt,
       lastUpdatedAt: latestImport?.importedAt ?? bounds.lastRecordedAt,
       dataThrough: bounds.latest,
       recordCount: bounds.count,
-      isLive: false,
+      capabilities,
+      isLive: Boolean(this.liveImporter),
     };
   }
 }

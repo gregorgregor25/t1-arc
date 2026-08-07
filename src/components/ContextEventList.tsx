@@ -1,7 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { HealthContextEvent } from '@/domain/models';
+import { MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
+import { EvidenceReference, buildContextEventEvidence } from '@/domain/insights';
+import { HealthContextEvent, TimelineData } from '@/domain/models';
+import { contextNoteCategoryLabel } from '@/domain/contextNotes';
 import { formatTime } from '@/domain/time';
 import { useAppTheme } from '@/theme/theme';
 
@@ -40,15 +43,33 @@ function eventPresentation(event: HealthContextEvent) {
             ? `${event.amount}${event.unit ? ` ${event.unit}` : ''}`
             : 'Recorded event',
       };
+    case 'note':
+      return {
+        icon:
+          event.category === 'pump'
+            ? ('water-outline' as const)
+            : event.category === 'sensor'
+              ? ('radio-outline' as const)
+              : ('document-text-outline' as const),
+        detail: event.detail
+          ? `${contextNoteCategoryLabel(event.category)} · ${event.detail}`
+          : contextNoteCategoryLabel(event.category),
+      };
   }
 }
 
 export function ContextEventList({
   events,
   limit = 8,
+  onEditManualContext,
+  onInspect,
+  timeline,
 }: {
   events: HealthContextEvent[];
   limit?: number;
+  onEditManualContext?(event: HealthContextEvent): void;
+  onInspect?(evidence: EvidenceReference): void;
+  timeline?: TimelineData;
 }) {
   const { colors } = useAppTheme();
   if (events.length === 0) return null;
@@ -85,30 +106,84 @@ export function ContextEventList({
               },
             ]}
           >
-            <View
-              style={[
-                styles.icon,
-                { backgroundColor: `${colors.accent}16` },
+            <Pressable
+              accessibilityHint={
+                onInspect && timeline
+                  ? 'Opens the exact event with nearby glucose and insulin records'
+                  : undefined
+              }
+              accessibilityLabel={`${event.title}, ${presentation.detail}, ${formatTime(event.start)}`}
+              accessibilityRole={onInspect && timeline ? 'button' : undefined}
+              disabled={!onInspect || !timeline}
+              onPress={() =>
+                timeline &&
+                onInspect?.(buildContextEventEvidence(event, timeline))
+              }
+              style={({ pressed }) => [
+                styles.rowContent,
+                pressed && {
+                  backgroundColor: `${colors.primary}0A`,
+                },
               ]}
             >
-              <Ionicons
-                accessibilityElementsHidden
-                color={colors.accent}
-                name={presentation.icon}
-                size={19}
-              />
-            </View>
-            <View style={styles.copy}>
-              <Text style={[styles.eventTitle, { color: colors.text }]}>
-                {event.title}
+              <View
+                style={[
+                  styles.icon,
+                  { backgroundColor: `${colors.accent}16` },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.accent}
+                  name={presentation.icon}
+                  size={19}
+                />
+              </View>
+              <View style={styles.copy}>
+                <Text style={[styles.eventTitle, { color: colors.text }]}>
+                  {event.title}
+                </Text>
+                <Text style={[styles.detail, { color: colors.textSecondary }]}>
+                  {presentation.detail}
+                </Text>
+              </View>
+              <Text style={[styles.time, { color: colors.textTertiary }]}>
+                {formatTime(event.start)}
               </Text>
-              <Text style={[styles.detail, { color: colors.textSecondary }]}>
-                {presentation.detail}
-              </Text>
-            </View>
-            <Text style={[styles.time, { color: colors.textTertiary }]}>
-              {formatTime(event.start)}
-            </Text>
+              {onInspect && timeline ? (
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.textTertiary}
+                  name="chevron-forward"
+                  size={17}
+                />
+              ) : null}
+            </Pressable>
+            {event.origin === 'manual' &&
+            event.sourceId === MANUAL_CONTEXT_SOURCE_ID &&
+            onEditManualContext ? (
+              <Pressable
+                accessibilityLabel={`Edit ${event.title}`}
+                accessibilityRole="button"
+                hitSlop={4}
+                onPress={() => onEditManualContext(event)}
+                style={({ pressed }) => [
+                  styles.editButton,
+                  {
+                    backgroundColor: pressed
+                      ? `${colors.primary}12`
+                      : 'transparent',
+                  },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  name="create-outline"
+                  size={18}
+                />
+              </Pressable>
+            ) : null}
           </View>
         );
       })}
@@ -152,9 +227,21 @@ const styles = StyleSheet.create({
   row: {
     minHeight: 68,
     flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  rowContent: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 68,
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 10,
+  },
+  editButton: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   icon: {
     width: 38,

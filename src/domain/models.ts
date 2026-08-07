@@ -1,3 +1,5 @@
+import type { SourceCapability } from './sourceCapabilities';
+
 export const APP_TIME_ZONE = 'Europe/London';
 export const MG_DL_PER_MMOL_L = 18.016;
 export const TARGET_LOW_MMOL_L = 3.9;
@@ -27,6 +29,11 @@ export interface GlucoseReading {
   sourceFactoryTimestamp?: string;
   sourceLocalTimestamp?: string;
   timestampDiscrepancyMinutes?: number;
+  /** Present for delayed/imported readings so every value can be audited. */
+  importedAt?: number;
+  sourceFile?: string;
+  sourceRow?: number;
+  sourceDeviceId?: string;
 }
 
 export interface BasalDelivery {
@@ -35,20 +42,61 @@ export interface BasalDelivery {
   end: number;
   rateUnitsPerHour: number;
   units: number;
+  /** Glooko's delivery label, for example Scheduled. */
+  deliveryType?: string;
+  /** Present for percentage-based temporary basal rows. */
+  percentage?: number;
+  /** True when units were derived from rate x duration, not reported directly. */
+  unitsEstimated?: boolean;
   sourceId: string;
   importedAt?: number;
   sourceFile?: string;
   sourceRow?: number;
+  sourceDeviceId?: string;
 }
 
 export interface BolusDelivery {
   id: string;
   timestamp: number;
   units: number;
+  deliveryType?: string;
+  bloodGlucoseInputMmolL?: number;
+  carbsInputGrams?: number;
+  carbRatioGramsPerUnit?: number;
+  initialUnits?: number;
+  extendedUnits?: number;
   sourceId: string;
   importedAt?: number;
   sourceFile?: string;
   sourceRow?: number;
+  sourceDeviceId?: string;
+}
+
+export interface InsulinDailyTotal {
+  id: string;
+  timestamp: number;
+  dateKey: string;
+  basalUnits?: number;
+  bolusUnits?: number;
+  totalUnits: number;
+  sourceId: string;
+  importedAt?: number;
+  sourceFile?: string;
+  sourceRow?: number;
+  sourceDeviceId?: string;
+}
+
+export type PumpStateKind = 'activity-mode' | 'automated-pause';
+
+export interface PumpStateInterval {
+  id: string;
+  start: number;
+  end: number;
+  kind: PumpStateKind;
+  sourceId: string;
+  importedAt?: number;
+  sourceFile?: string;
+  sourcePage?: number;
 }
 
 export type InsulinDelivery = BasalDelivery | BolusDelivery;
@@ -72,6 +120,7 @@ export interface DataSourceStatus {
   dataThrough?: number;
   recordCount?: number;
   errorCode?: string;
+  capabilities?: readonly SourceCapability[];
   isLive: boolean;
 }
 
@@ -80,6 +129,8 @@ export interface TimelineData {
   glucose: GlucoseReading[];
   basal: BasalDelivery[];
   boluses: BolusDelivery[];
+  dailyInsulinTotals?: InsulinDailyTotal[];
+  pumpStates?: PumpStateInterval[];
   context: HealthContextEvent[];
   sources: DataSourceStatus[];
 }
@@ -117,6 +168,11 @@ export interface MealEvent extends HealthContextBase {
   title: string;
   mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   carbsGrams: number;
+  energyKcal?: number;
+  proteinGrams?: number;
+  fatGrams?: number;
+  servingQuantity?: number;
+  servingCount?: number;
 }
 
 export interface ActivityEvent extends HealthContextBase {
@@ -125,6 +181,7 @@ export interface ActivityEvent extends HealthContextBase {
   activityType: 'walk' | 'run' | 'cycle' | 'strength' | 'other';
   durationMinutes: number;
   intensity: 'light' | 'moderate' | 'vigorous';
+  caloriesBurned?: number;
 }
 
 export interface SleepEvent extends HealthContextBase {
@@ -146,6 +203,28 @@ export interface MedicationEvent extends HealthContextBase {
   title: string;
   amount?: number;
   unit?: string;
+  medicationType?: string;
+}
+
+export type ContextNoteCategory =
+  | 'illness'
+  | 'stress'
+  | 'pump'
+  | 'sensor'
+  | 'hormones'
+  | 'travel'
+  | 'other';
+
+/**
+ * User-observed context that may help explain a period later. Notes are kept
+ * deliberately factual: their presence is evidence of what the user recorded,
+ * not evidence that the note caused a glucose outcome.
+ */
+export interface ContextNoteEvent extends HealthContextBase {
+  kind: 'note';
+  title: string;
+  category: ContextNoteCategory;
+  detail?: string;
 }
 
 export type HealthContextEvent =
@@ -153,4 +232,5 @@ export type HealthContextEvent =
   | ActivityEvent
   | SleepEvent
   | WeightEvent
-  | MedicationEvent;
+  | MedicationEvent
+  | ContextNoteEvent;

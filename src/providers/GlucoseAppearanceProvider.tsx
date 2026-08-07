@@ -19,6 +19,7 @@ interface GlucoseAppearanceContextValue {
   settings: GlucoseAppearanceSettings;
   ready: boolean;
   save(settings: GlucoseAppearanceSettings): Promise<void>;
+  reload(): Promise<void>;
 }
 
 const GlucoseAppearanceContext =
@@ -27,6 +28,12 @@ const GlucoseAppearanceContext =
 export function GlucoseAppearanceProvider({ children }: PropsWithChildren) {
   const [settings, setSettings] = useState(DEFAULT_GLUCOSE_APPEARANCE);
   const [ready, setReady] = useState(false);
+
+  const reload = useCallback(async () => {
+    const stored = await DaymarkGlucoseDisplay.getAppearanceSettingsAsync();
+    if (validateGlucoseAppearance(stored)) return;
+    setSettings(stored);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -51,8 +58,8 @@ export function GlucoseAppearanceProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ settings, ready, save }),
-    [ready, save, settings],
+    () => ({ settings, ready, reload, save }),
+    [ready, reload, save, settings],
   );
 
   return (

@@ -2,6 +2,7 @@ import { NativeModule, requireNativeModule } from 'expo';
 
 import {
   HealthConnectCategoryId,
+  HealthConnectChangesPage,
   HealthConnectDiscoveryStatus,
   HealthConnectOpenResult,
   HealthConnectPage,
@@ -30,6 +31,13 @@ declare class DaymarkHealthConnectModule extends NativeModule<Record<string, nev
     sourcePackages: string[],
     pageToken: string | null,
   ): Promise<HealthConnectPage>;
+  getChangesTokenAsync(
+    category: HealthConnectCategoryId,
+    sourcePackages: string[],
+  ): Promise<string>;
+  readChangesPageAsync(
+    changesToken: string,
+  ): Promise<HealthConnectChangesPage>;
 }
 
 export default requireNativeModule<DaymarkHealthConnectModule>(

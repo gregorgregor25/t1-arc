@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/daymark_widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/daymark_widget_background"
+  android:gravity="center_vertical"
+  android:orientation="vertical">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:fontFamily="sans-serif-medium"
+      android:includeFontPadding="false"
+      android:letterSpacing="0.12"
+      android:text="T1 ARC"
+      android:textColor="#8FABB2"
+      android:textSize="10sp" />
+
+    <TextView
+      android:id="@+id/daymark_widget_age"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:fontFamily="sans-serif-medium"
+      android:includeFontPadding="false"
+      android:text="NO DATA"
+      android:textColor="#8FABB2"
+      android:textSize="10sp" />
+  </LinearLayout>
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="7dp"
+    android:gravity="bottom"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/daymark_widget_value"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:fontFamily="sans-serif"
+      android:includeFontPadding="false"
+      android:text="—"
+      android:textColor="#65D2E7"
+      android:textSize="38sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/daymark_widget_trend"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginLeft="9dp"
+      android:layout_marginBottom="4dp"
+      android:fontFamily="sans-serif"
+      android:includeFontPadding="false"
+      android:text=""
+      android:textColor="#65D2E7"
+      android:textSize="27sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginLeft="7dp"
+      android:layout_marginBottom="7dp"
+      android:fontFamily="sans-serif-medium"
+      android:includeFontPadding="false"
+      android:text="mmol/L"
+      android:textColor="#B7CDD2"
+      android:textSize="11sp" />
+  </LinearLayout>
+
+  <TextView
+    android:id="@+id/daymark_widget_status"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="5dp"
+    android:ellipsize="end"
+    android:fontFamily="sans-serif"
+    android:includeFontPadding="false"
+    android:maxLines="1"
+    android:text="Waiting for personal glucose"
+    android:textColor="#B7CDD2"
+    android:textSize="11sp" />
+</LinearLayout>

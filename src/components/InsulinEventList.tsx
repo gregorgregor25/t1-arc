@@ -26,7 +26,7 @@ export function InsulinEventList({
       </View>
       {recent.length === 0 ? (
         <Text style={[styles.empty, { color: colors.textSecondary }]}>
-          No bolus deliveries are present in this delayed export range.
+          No bolus deliveries are present in this range.
         </Text>
       ) : (
         recent.map((delivery, index) => (
@@ -53,9 +53,16 @@ export function InsulinEventList({
                 {formatTime(delivery.timestamp)}
               </Text>
               <Text style={[styles.meta, { color: colors.textSecondary }]}>
-                {multiDay
-                  ? formatShortDate(toDateKey(delivery.timestamp))
-                  : 'Delivered bolus'}
+                {[
+                  multiDay
+                    ? formatShortDate(toDateKey(delivery.timestamp))
+                    : delivery.deliveryType || 'Delivered bolus',
+                  delivery.carbsInputGrams === undefined
+                    ? undefined
+                    : `${delivery.carbsInputGrams.toFixed(0)} g entered`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             </View>
             <Text style={[styles.units, { color: colors.insulin }]}>

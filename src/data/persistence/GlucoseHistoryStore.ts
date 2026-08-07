@@ -18,7 +18,10 @@ export interface GlucoseHistoryBounds {
 export interface GlucoseHistoryStore {
   initialize(): Promise<void>;
   upsertReadings(readings: GlucoseReading[]): Promise<void>;
-  getReadings(range: TimeRange): Promise<GlucoseReading[]>;
+  getReadings(
+    range: TimeRange,
+    sourceId?: string,
+  ): Promise<GlucoseReading[]>;
   getLatestReading(sourceId?: string): Promise<GlucoseReading | undefined>;
   getBounds(sourceId?: string): Promise<GlucoseHistoryBounds>;
   getSyncState(sourceId: string): Promise<SourceSyncState | undefined>;
@@ -45,11 +48,13 @@ export class MemoryGlucoseHistoryStore implements GlucoseHistoryStore {
     });
   }
 
-  async getReadings(range: TimeRange) {
+  async getReadings(range: TimeRange, sourceId?: string) {
     return [...this.readings.values()]
       .filter(
         (reading) =>
-          reading.timestamp >= range.start && reading.timestamp < range.end,
+          reading.timestamp >= range.start &&
+          reading.timestamp < range.end &&
+          (!sourceId || reading.sourceId === sourceId),
       )
       .sort((a, b) => a.timestamp - b.timestamp);
   }

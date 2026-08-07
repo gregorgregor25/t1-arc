@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Daymark",
+    "name": "T1 Arc",
     "slug": "daymark",
-    "version": "1.5.0",
+    "version": "1.6.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "daymark",
@@ -13,7 +13,8 @@
     },
     "android": {
       "package": "app.daymark.personal",
-      "versionCode": 13,
+      "versionCode": 22,
+      "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -34,7 +35,11 @@
     "plugins": [
       "./plugins/with-main-activity-lint-workaround",
       "./plugins/with-optional-camera-hardware",
+      "./plugins/with-daymark-shortcuts",
+      "./plugins/with-t1arc-release-signing",
+      "./plugins/with-xdrip-local-network",
       "./plugins/with-health-connect-android",
+      "./plugins/with-daymark-wear",
       "expo-secure-store",
       [
         "expo-sqlite",
@@ -46,7 +51,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Daymark to scan food barcodes. Images are not saved.",
+          "cameraPermission": "Allow T1 Arc to scan food barcodes. Images are not saved.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }

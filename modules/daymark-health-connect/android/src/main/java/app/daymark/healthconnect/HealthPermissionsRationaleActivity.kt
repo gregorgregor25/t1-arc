@@ -44,7 +44,7 @@ class HealthPermissionsRationaleActivity : Activity() {
                 "such as steps, workouts, sleep, heart rate and weight. Records " +
                 "are copied into this device's encrypted local database so they " +
                 "can be shown beside glucose and insulin. They are not uploaded " +
-                "to a Daymark-operated server, sold, or used to recommend insulin doses."
+                "to a T1 Arc-operated server, sold, or used to recommend insulin doses."
             textSize = 17f
             setLineSpacing(0f, 1.25f)
             setTextColor(resolveTextColor())

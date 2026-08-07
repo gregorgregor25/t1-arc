@@ -5,6 +5,12 @@ import {
   normaliseLibreMeasurement,
   parseLibreTimestamp,
 } from '@/data/libreLinkUp/LibreLinkUpClient';
+import {
+  DIRECT_LIBRE_CATCH_UP_REFRESH_MS,
+  DIRECT_LIBRE_NORMAL_REFRESH_MS,
+  DIRECT_LIBRE_RATE_LIMIT_BACKOFF_MS,
+  directLibreRefreshInterval,
+} from '@/data/libreLinkUp/refreshPolicy';
 import { persistVerifiedLibreSnapshot } from '@/data/libreLinkUp/activateSnapshot';
 import { LibreLinkUpError } from '@/data/libreLinkUp/types';
 import { MemoryGlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore';
@@ -69,6 +75,34 @@ describe('LibreLinkUp normalisation', () => {
       sourceLocalTimestamp: '7/25/2026 3:30:00 PM',
       timestampDiscrepancyMinutes: 120,
     });
+  });
+});
+
+describe('LibreLinkUp refresh policy', () => {
+  const now = Date.parse('2026-07-27T12:00:00+01:00');
+
+  it('checks rapidly when the next five-minute reading is expected', () => {
+    expect(
+      directLibreRefreshInterval(now - 4.5 * 60_000, undefined, now),
+    ).toBe(DIRECT_LIBRE_CATCH_UP_REFRESH_MS);
+  });
+
+  it('uses the lower-impact baseline between expected readings', () => {
+    expect(
+      directLibreRefreshInterval(now - 2 * 60_000, undefined, now),
+    ).toBe(DIRECT_LIBRE_NORMAL_REFRESH_MS);
+  });
+
+  it('returns to baseline once data is stale instead of polling aggressively', () => {
+    expect(
+      directLibreRefreshInterval(now - 13 * 60_000, undefined, now),
+    ).toBe(DIRECT_LIBRE_NORMAL_REFRESH_MS);
+  });
+
+  it('backs off explicitly when LibreLinkUp rate limits the account', () => {
+    expect(
+      directLibreRefreshInterval(now - 6 * 60_000, 'rate-limited', now),
+    ).toBe(DIRECT_LIBRE_RATE_LIMIT_BACKOFF_MS);
   });
 });
 

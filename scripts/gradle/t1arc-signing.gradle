@@ -1,0 +1,51 @@
+/*
+ * Shared phone/Wear release signing policy.
+ *
+ * Ordinary assembleRelease builds remain install-compatible with the private
+ * sideload certificate. Supplying all four T1ARC_RELEASE_* environment
+ * variables switches every Android module to the same production certificate.
+ * A store bundle is refused unless that production configuration is complete.
+ */
+def signingEnvironment = [
+  storeFile: System.getenv('T1ARC_RELEASE_STORE_FILE'),
+  storePassword: System.getenv('T1ARC_RELEASE_STORE_PASSWORD'),
+  keyAlias: System.getenv('T1ARC_RELEASE_KEY_ALIAS'),
+  keyPassword: System.getenv('T1ARC_RELEASE_KEY_PASSWORD'),
+]
+def suppliedSigningValues = signingEnvironment.values().count {
+  it != null && !it.trim().isEmpty()
+}
+if (suppliedSigningValues > 0 && suppliedSigningValues < signingEnvironment.size()) {
+  throw new GradleException(
+    'T1 Arc production signing is incomplete. Supply all four T1ARC_RELEASE_* environment variables.'
+  )
+}
+
+def productionSigningConfigured =
+  suppliedSigningValues == signingEnvironment.size()
+def productionStore = productionSigningConfigured
+  ? rootProject.file(signingEnvironment.storeFile)
+  : null
+if (productionStore != null && !productionStore.isFile()) {
+  throw new GradleException(
+    'T1ARC_RELEASE_STORE_FILE does not point to a readable keystore.'
+  )
+}
+
+ext.t1ArcProductionSigningConfigured = productionSigningConfigured
+ext.t1ArcProductionStoreFile = productionStore
+ext.t1ArcProductionStorePassword = signingEnvironment.storePassword
+ext.t1ArcProductionKeyAlias = signingEnvironment.keyAlias
+ext.t1ArcProductionKeyPassword = signingEnvironment.keyPassword
+
+gradle.taskGraph.whenReady { graph ->
+  def storePublicationRequested = graph.allTasks.any { task ->
+    task.project == project &&
+      (task.name == 'bundleRelease' || task.name == 'publishReleaseBundle')
+  }
+  if (storePublicationRequested && !project.ext.t1ArcProductionSigningConfigured) {
+    throw new GradleException(
+      'T1 Arc refuses to create a store bundle with the private test certificate. Configure the T1ARC_RELEASE_* environment variables first.'
+    )
+  }
+}

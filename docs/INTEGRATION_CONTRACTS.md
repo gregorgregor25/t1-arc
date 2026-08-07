@@ -6,26 +6,29 @@ Tailscale keys, device serials, or identifiable exports.
 
 ## Independent source boundaries
 
-Daymark keeps each input independent:
+T1 Arc keeps each input independent:
 
-1. **Current and historical glucose:** Daymark's direct LibreLinkUp connector
-   reads the accepted follower connection and writes normalised readings to an
-   encrypted local database. It has no GDH runtime dependency.
+1. **Current and historical glucose:** T1 Arc's direct LibreLinkUp,
+   Nightscout, xDrip-compatible and notification connectors write normalised
+   readings to an encrypted local database through the same source contract.
+   The direct LibreLinkUp route has no GDH runtime dependency.
 2. **Insulin:** the UK Omnipod 5 PDM reaches Glooko through its own delayed
    cloud route. Version 1.3.6 can request an export through a local Glooko
    WebView session or read a manually selected ZIP/CSV fallback. This source is
    always labelled delayed and never presented as live pump state. Automated
    capture accepts only a genuine ZIP signature; intermediate export responses
-   remain in the secure window while Daymark waits for the archive. A
+   remain in the secure window while T1 Arc waits for the archive. A
    privacy-safe stage/timing trace is stored on-device for the last attempt.
    The exact captured export is retained in SQLCipher. Bounded extraction keeps
    oversized or not-yet-supported files compressed while supported records are
    normalised, so one large file cannot reject the whole export.
-3. **Food:** CoFID search is bundled and offline. Barcode lookup uses Open Food
-   Facts and transmits only the barcode. Each saved item keeps a nutrient and
-   provenance snapshot so later catalog changes cannot rewrite history.
+3. **Food:** CoFID search is bundled and offline. Explicit branded text search
+   and barcode lookup use Open Food Facts and transmit only the typed food
+   query or barcode. Search is never performed on each keystroke. Each saved
+   item keeps a nutrient and provenance snapshot so later catalog changes
+   cannot rewrite history.
 4. **Phone and wearable context:** Health Connect is the Android aggregation
-   boundary. Daymark stores normalized records with their originating package,
+   boundary. T1 Arc stores normalized records with their originating package,
    while permission decisions remain in Android's Health Connect controls.
 5. **Other context:** manual entries and imported pump carbohydrate rows use the
    same independent `ContextSource` boundary.
@@ -54,20 +57,32 @@ MIT-licensed source:
 6. Convert mg/dL to mmol/L using `18.016`.
 7. Store stable normalised readings keyed by source and timestamp.
 
-Daymark retains both `FactoryTimestamp` and `Timestamp` from Libre where they
+T1 Arc retains both `FactoryTimestamp` and `Timestamp` from Libre where they
 are present. Factory UTC time is authoritative for the record; a material
 factory/local disagreement is exposed as a source warning rather than hidden.
 
-If a future response reports `unsupported-api`, provide only Daymark's
+If a future response reports `unsupported-api`, provide only T1 Arc's
 non-secret error code and message. Do not copy request headers, bearer tokens,
-encrypted payloads, or passwords. Daymark will not accept legal terms
+encrypted payloads, or passwords. T1 Arc will not accept legal terms
 automatically or attempt to bypass a newer encrypted interface.
 
-## Optional glucose migration
+## xDrip-compatible glucose
 
-The old xDrip response adapter remains available as an import/migration
-boundary, not a runtime dependency. For a VPS import, provide 5–10 anonymised
-records in this minimum shape:
+T1 Arc can poll a bounded xDrip-compatible `/sgv.json` endpoint directly, as
+well as use the same adapter for a historical migration. The default
+same-phone request is:
+
+```text
+GET http://127.0.0.1:17580/sgv.json
+```
+
+Release network policy permits cleartext only for `127.0.0.1` and
+`localhost`; every remote endpoint must use HTTPS. Connection validation
+rejects URL credentials, query material and non-`/sgv.json` paths. A response
+is limited to 1,000,000 characters and 512 readings, and timestamps outside
+the year-2000-to-five-minutes-in-the-future window are withheld.
+
+The minimum accepted object is:
 
 ```json
 {
@@ -77,7 +92,8 @@ records in this minimum shape:
 }
 ```
 
-Also provide:
+An array of the same objects is also accepted. For a separate VPS migration,
+provide 5–10 anonymised records plus:
 
 - Whether the response is one object or an array.
 - The response shape for empty, delayed, and unavailable data.
@@ -99,42 +115,132 @@ The normalised result is:
 }
 ```
 
-## Glooko insulin: foreground sync, fallback import, and exact input needed
+## Nightscout read-only glucose
 
-Daymark opens Glooko's own HTTPS sign-in page inside a screenshot-protected,
+T1 Arc can connect directly to a user-owned Nightscout site without a T1 Arc
+server. The accepted configuration is:
+
+```json
+{
+  "baseUrl": "https://your-nightscout.example",
+  "accessToken": "reader-anonymised-token"
+}
+```
+
+The token is optional for a publicly readable site. For a secured site, create
+a Nightscout subject with the `readable` role and paste either the token or the
+full `?token=...` link. Do not provide an API secret or an admin token.
+
+T1 Arc makes an HTTPS read request shaped like:
+
+```text
+GET /api/v1/entries/sgv.json?count=96&token=<readable-token>
+```
+
+An initial connection may add a bounded `find[date][$gte]` value and request up
+to 5,000 entries, covering up to 14 recent days. If the user chooses an
+earliest-history date, subsequent requests add both `find[date][$gte]` and
+`find[date][$lt]` and walk backwards through exact, continuous 14-day ranges:
+
+```text
+GET /api/v1/entries/sgv.json?count=5000&find[date][$gte]=<start>&find[date][$lt]=<end>&token=<readable-token>
+```
+
+The cursor is encrypted on the device, advances even when a range is empty,
+and resumes opportunistically at most once every 15 minutes while Android
+allows the app to run. A process-level single-flight guard prevents foreground
+and background refreshes from importing the same block concurrently. This makes sparse
+history continuous without repeatedly asking the user to trigger imports. A
+representative response is:
+
+```json
+[
+  {
+    "_id": "anonymised",
+    "sgv": 126,
+    "direction": "FortyFiveUp",
+    "date": 1785128100000,
+    "dateString": "2026-07-27T04:55:00.000Z",
+    "device": "anonymised"
+  }
+]
+```
+
+`sgv`, `direction`, and the millisecond `date` are sufficient. T1 Arc converts
+the stored mg/dL SGV to mmol/L, retains the source and timestamp in its stable
+normalised record, ignores malformed entries, and rejects a non-array response
+or a response where every entry is unusable. No treatment, profile, food,
+insulin, or write endpoint is called.
+
+## Glooko history: on-device sync, fallback import, and exact input needed
+
+T1 Arc opens Glooko's own HTTPS sign-in page inside a screenshot-protected,
 domain-restricted Android WebView. The native connector does not receive or
 store the password. Glooko's WebView cookies and site storage stay local to the
 app so subsequent syncs can reuse the session; **Forget saved Glooko sign-in**
 clears them without removing normalized insulin.
 
-After sign-in, Daymark attempts Glooko's normal Export to CSV flow for an
-overlapping 30-day window. It handles normal attachments, octet-stream
+After sign-in, T1 Arc attempts Glooko's normal Export to CSV flow for an
+overlapping 30-day window. The retained WebView session also supports a
+windowless on-device connector: one-day updates become due every two hours and
+a 30-day reconciliation becomes due every 24 hours. App foregrounding checks
+whether work is due, while Android background scheduling is best effort and
+not exact. It handles normal attachments, octet-stream
 responses, generated browser blobs, links and secondary download windows. The
 compressed download is capped at 50 MB and must use HTTPS. Glooko cookies are
 sent only to Glooko domains; a separate signed file host never receives them.
-The transient cache file is deleted after the exact source bytes are committed
-to encrypted SQLCipher storage. Supported records are normalised separately.
+The transient cache file is deleted after processing. Manual and scheduled
+30-day source archives are committed to encrypted SQLCipher storage; frequent
+one-day snapshots are normalised without retaining redundant raw copies.
+Supported records are normalised separately.
 Overlapping exports are expected and stable record IDs prevent duplication;
 identical whole exports are content-addressed by SHA-256.
 
-This is a foreground convenience bridge, not a claimed official API or
-guaranteed killed-app background sync. Glooko can change the page at any time.
-When automation cannot locate the export control, the protected page remains
-interactive and manual ZIP/CSV selection remains available as a fallback. If
-the user returns without a captured file, the Sources card shows a selectable,
+Glooko's documented maximum is 90 days per CSV export, including a custom
+range. T1 Arc therefore exposes a resumable historical backfill rather than
+pretending one download can contain an entire account. Starting from the
+earliest represented source date, each deliberate step requests the next older
+non-overlapping 90 calendar days through the protected foreground connector.
+The start cursor advances only after a genuine archive is captured and stored,
+including for an empty period, while normalised records continue to deduplicate
+by stable IDs.
+
+An optional earliest-date target removes the repeated manual step. The silent
+connector requests no more than one historical range per 24 hours, shortens
+the final request to the exact target, and uses the same complete-archive
+retention path. The schedule prioritises a due 30-day reconciliation and any
+recent window older than four hours. Authentication failure marks the retained
+session as needing sign-in and pauses both recent and historical automation.
+
+This is a personal WebView automation bridge, not a claimed official API.
+Glooko can change the page at any time, and Android can defer background work.
+The silent connector never presents a login form: an expired session pauses
+automatic work until the user deliberately opens the protected foreground
+connector. When automation cannot locate the export control, manual ZIP/CSV
+selection remains available as a fallback. If the user returns without a
+captured file, the Sources card shows a selectable,
 privacy-safe event trace containing stages only—never URLs, filenames,
 credentials, cookies, account identifiers, or response bodies.
 
-The parser already recognises the public Glooko-shaped basal and bolus headers
-listed below, tab/comma/semicolon delimiters, quoted fields, naive London
-timestamps, ISO timestamps, overlapping exports, and pump carbohydrate rows.
-Glooko CGM/BG files are retained in the source archive but are not currently
-normalised, so direct Libre glucose remains the independent displayed source.
-Retained archives are device-local in this version and are not yet included in
-portable `.daymark` backups.
+The parser recognises Glooko-shaped CGM, basal, bolus, reported daily insulin
+total, exercise, food, medication and note headers,
+tab/comma/semicolon delimiters, quoted fields, naive London timestamps, ISO
+timestamps, overlapping exports, and pump carbohydrate rows. CGM values in
+mmol/L or mg/dL are normalised into a dedicated historical source with the
+original filename, row number, timestamp and anonymisable device identifier.
+Phone-derived Libre readings always win clear overlaps and remain the source
+for the current-glucose surface; Glooko fills older history. Retained archives
+are device-local and included in passphrase-encrypted `.t1arc` backups.
+Reported daily totals remain aggregate verification records and are never
+converted into bolus deliveries. The Data map compares the latest total for
+each date with the detailed basal and bolus rows it can organise, with exact
+source file and row provenance and no dosing interpretation. Multi-day
+reconciliation uses only complete London dates represented on both sides. A
+material mismatch becomes an evidence-linked Insights limitation and suppresses
+the detailed-row insulin comparison for that report.
 
 For this account's final compatibility check, import a normal Glooko ZIP in
-Daymark first. If the preview reports an unrecognised file, provide only:
+T1 Arc first. If the preview reports an unrecognised file, provide only:
 
 - The exact filename and header row of that CSV.
 - Two or three anonymised data rows with names, account identifiers, serials,
@@ -154,6 +260,7 @@ filenames and unmodified header rows for:
 
 - Basal delivery.
 - Bolus delivery.
+- CGM history.
 - Daily insulin totals, if present.
 - Export metadata or timezone information.
 - At least one day crossing midnight. A UK daylight-saving transition is
@@ -246,19 +353,19 @@ The Android bridge currently supports:
 
 The in-app setup chooses categories, requests the matching permissions, and
 opens Android's source/settings surface when source-app consent must be
-changed. Daymark discovers actual data origins from record metadata and can
+changed. T1 Arc discovers actual data origins from record metadata and can
 filter each category to a preferred package. It cannot grant Samsung Health,
 Google Fit, or another app permission to write into Health Connect on the
 user's behalf; Android deliberately keeps that consent under user control.
 
 For a source compatibility problem, provide the source app package name,
-category, Daymark's non-secret status/error text, and a description of the
+category, T1 Arc's non-secret status/error text, and a description of the
 expected time range. Do not provide a Health Connect database dump.
 
 ## Food data boundary
 
 The offline baseline is the UK Composition of Foods Integrated Dataset 2021.
-For a packaged product, Daymark calls Open Food Facts by barcode and caches the
+For a packaged product, T1 Arc calls Open Food Facts by barcode and caches the
 normalized product locally. A saved food log contains immutable item snapshots,
 quantities, nutrition, provider, source label, barcode and source URL.
 
@@ -268,26 +375,45 @@ For an unrecognized product, the smallest useful test input is:
 - Product name and brand
 - Nutrition per 100 g or 100 ml
 - Whether the package reports serving size
-- The non-secret lookup error shown by Daymark
+- The non-secret lookup error shown by T1 Arc
 
 No food diary or account login is required.
 
 ## Portable backup boundary
 
-A `.daymark` backup is a versioned logical export of normalized records. The
-file is gzip-compressed and encrypted with AES-256-GCM. Its passphrase key is
-derived using PBKDF2-HMAC-SHA256 with a random 16-byte salt and 600,000
-iterations; the header is authenticated as additional data. Restore validates
-the table schema and counts, then inserts missing records in one transaction.
-It never deletes or replaces newer local records.
+A `.t1arc` backup is a versioned logical export of normalised records,
+retained original Glooko exports, raw notification-source evidence and saved
+deterministic reviews. The file is gzip-compressed and encrypted with
+AES-256-GCM. Its passphrase key is derived using PBKDF2-HMAC-SHA256 with a
+random 16-byte salt and 600,000 iterations; the header is authenticated as
+additional data. Restore validates the table schema and counts, then inserts
+missing records in one transaction. It never deletes or replaces newer local
+records. Version 5 introduced bounded binary frames so retained source archives and
+large record sets are validated and merged incrementally instead of being
+materialised as one JavaScript string.
+
+Version 7 also preserves each food's last personally used portion without
+changing its labelled serving. Version 8 adds Glooko-reported daily insulin
+totals as provenance-rich verification records, kept separate from individual
+deliveries. Version 9 preserves meals pinned for one-tap repeat. Version 10
+adds saved recipes and their ingredient snapshots. Versions 1–9 remain
+readable, and the picker continues to accept legacy `.daymark` files.
 
 Backups explicitly exclude:
 
 - LibreLinkUp email, password, tickets and tokens
 - Glooko WebView cookies and site storage
 - SQLCipher database keys
+- device-specific background execution diagnostics
+- Health Connect change tokens, which must be reissued for the destination
+  Android data store
 
-There is intentionally no Daymark recovery service. Losing the backup
+Backup creation checks the live migrated database schema before writing. Every
+application table and column must be either portable or explicitly classified
+as device-bound, so adding a future health field cannot silently produce an
+incomplete successful-looking backup.
+
+There is intentionally no T1 Arc recovery service. Losing the backup
 passphrase makes that file unrecoverable.
 
 ## Context contracts
@@ -337,7 +463,7 @@ snapshots, and imports supported context from Health Connect.
   range.
 - Every evidence block can resolve and open the complete normalised record set;
   missing referenced IDs are shown as an incomplete-evidence warning.
-- A glucose conclusion is withheld when either seven-day window has under 70%
+- A glucose conclusion is withheld when either selected comparison window has under 70%
   coverage or fewer than 100 readings.
 - Missing intervals remain gaps and reduce coverage.
 - Context is described as an association to inspect, not a cause.

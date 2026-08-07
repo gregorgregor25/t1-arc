@@ -1,12 +1,18 @@
 import { PropsWithChildren, ReactNode, RefObject } from 'react';
 import {
   RefreshControl,
+  Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Edge, SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Edge,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/theme/theme';
 
@@ -14,6 +20,7 @@ interface AppScreenProps extends PropsWithChildren {
   title: string;
   eyebrow?: string;
   trailing?: ReactNode;
+  footer?: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
   edges?: Edge[];
@@ -24,6 +31,7 @@ export function AppScreen({
   title,
   eyebrow,
   trailing,
+  footer,
   refreshing = false,
   onRefresh,
   children,
@@ -31,15 +39,30 @@ export function AppScreen({
   scrollViewRef,
 }: AppScreenProps) {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const includesTopEdge = edges.includes('top');
+  const topInset = includesTopEdge
+    ? Math.max(
+        insets.top,
+        Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+      )
+    : 0;
   return (
     <SafeAreaView
-      edges={edges}
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
+      edges={edges.filter((edge) => edge !== 'top')}
+      style={[
+        styles.safeArea,
+        {
+          backgroundColor: colors.background,
+          paddingTop: topInset,
+        },
+      ]}
     >
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        style={styles.scrollView}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -70,6 +93,7 @@ export function AppScreen({
         </View>
         {children}
       </ScrollView>
+      {footer ? <View style={styles.footer}>{footer}</View> : null}
     </SafeAreaView>
   );
 }
@@ -98,10 +122,18 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
   content: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 116,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
+  },
+  footer: {
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',

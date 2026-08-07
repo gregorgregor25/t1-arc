@@ -42,6 +42,13 @@ describe('offline UK food catalogue', () => {
       }),
     ).toBe(true);
   });
+
+  it('ignores retailer context and tolerates a small spelling error', () => {
+    expect(searchCofidFoods('co-op bakery cheese twist', 3)[0]?.name).toMatch(
+      /cheese straws\/twists/i,
+    );
+    expect(searchCofidFoods('digestve biscuit', 10).length).toBeGreaterThan(0);
+  });
 });
 
 describe('food nutrition calculation', () => {

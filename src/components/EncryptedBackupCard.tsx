@@ -1,13 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
-import {
-  Directory,
-  File,
-  FileMode,
-} from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -20,15 +17,16 @@ import {
 
 import DaymarkBackupCrypto from '../../modules/daymark-backup-crypto';
 import {
-  createHealthBackupJson,
+  createHealthBackupFile,
   HEALTH_BACKUP_MIME,
-  HealthBackupDocument,
+  PreparedHealthBackupRestore,
   healthBackupFileName,
   isFilePickerCancellation,
-  mergeHealthBackup,
-  readHealthBackupJson,
+  mergePreparedHealthBackup,
+  readHealthBackupFile,
 } from '@/data/backup/healthBackup';
 import { formatDate, formatTime, toDateKey } from '@/domain/time';
+import { useGlucoseAppearance } from '@/providers/GlucoseAppearanceProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { SectionCard } from './SectionCard';
@@ -49,27 +47,9 @@ function formatCount(value: number) {
   return new Intl.NumberFormat('en-GB').format(value);
 }
 
-function copyFileInChunks(source: File, destination: File) {
-  const input = source.open(FileMode.ReadOnly);
-  const output = destination.open(FileMode.Truncate);
-  try {
-    let remaining = input.size ?? 0;
-    while (remaining > 0) {
-      const bytes = input.readBytes(Math.min(COPY_BUFFER_BYTES, remaining));
-      if (!bytes.length) {
-        throw new Error('The encrypted backup ended unexpectedly while saving.');
-      }
-      output.writeBytes(bytes);
-      remaining -= bytes.length;
-    }
-  } finally {
-    input.close();
-    output.close();
-  }
-}
-
 export function EncryptedBackupCard({ onDataChanged }: Props) {
   const { colors, radius } = useAppTheme();
+  const { reload: reloadGlucoseAppearance } = useGlucoseAppearance();
   const [busy, setBusy] = useState<BusyState>('idle');
   const [workingLabel, setWorkingLabel] = useState('');
   const [message, setMessage] = useState<
@@ -82,8 +62,11 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
   const [passphraseVisible, setPassphraseVisible] = useState(false);
   const [passphraseError, setPassphraseError] = useState<string>();
   const [selectedBackup, setSelectedBackup] = useState<SelectedBackup>();
-  const [preview, setPreview] = useState<HealthBackupDocument>();
-  const previewRef = useRef<HealthBackupDocument | undefined>(undefined);
+  const [preview, setPreview] = useState<PreparedHealthBackupRestore>();
+  const previewRef = useRef<PreparedHealthBackupRestore | undefined>(
+    undefined,
+  );
+  const confirmationInputRef = useRef<TextInput | null>(null);
 
   function clearPassphraseFields() {
     setPassphrase('');
@@ -110,6 +93,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           HEALTH_BACKUP_MIME,
+          'application/vnd.daymark.health-backup',
           'application/octet-stream',
           'application/zip',
           '*/*',
@@ -141,8 +125,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
     let plaintextUri: string | undefined;
     let encryptedUri: string | undefined;
     try {
-      const directory = await Directory.pickDirectoryAsync();
-      const prepared = await createHealthBackupJson();
+      const prepared = await createHealthBackupFile();
       plaintextUri = prepared.file.uri;
       setWorkingLabel('Compressing and encrypting with your passphrase…');
       const encrypted = await DaymarkBackupCrypto.encryptJsonFileAsync(
@@ -151,12 +134,22 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
       );
       encryptedUri = encrypted.uri;
       const fileName = healthBackupFileName(prepared.summary.createdAt);
-      setWorkingLabel('Writing the encrypted file to your chosen folder…');
-      const destination = directory.createFile(fileName, HEALTH_BACKUP_MIME);
-      copyFileInChunks(new File(encrypted.uri), destination);
+      setWorkingLabel('Choose where to save the encrypted file…');
+      const saved = await DaymarkBackupCrypto.saveTemporaryFileAsync(
+        encrypted.uri,
+        fileName,
+        HEALTH_BACKUP_MIME,
+      );
+      if (saved.status === 'cancelled') return;
       setMessage({
         tone: 'success',
-        text: `${formatCount(prepared.summary.totalRecords)} records encrypted and saved as ${destination.name}.`,
+        text: `Complete encrypted backup saved as ${fileName}. It contains ${formatCount(
+          prepared.summary.totalRecords,
+        )} stored rows${
+          prepared.summary.preferencesIncluded
+            ? ' plus your portable preferences'
+            : ''
+        }.`,
       });
     } catch (error) {
       if (!isFilePickerCancellation(error)) {
@@ -200,9 +193,14 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
         secret,
       );
       decryptedUri = decrypted.uri;
-      const document = await readHealthBackupJson(decrypted.uri);
-      previewRef.current = document;
-      setPreview(document);
+      const prepared = await readHealthBackupFile(decrypted.uri);
+      if (prepared.kind === 'stream') {
+        // The merge reads the validated container directly from this private
+        // temporary file, so keep it until the user commits or cancels.
+        decryptedUri = undefined;
+      }
+      previewRef.current = prepared;
+      setPreview(prepared);
     } catch (error) {
       setPassphraseMode('restore');
       setSelectedBackup(selected);
@@ -250,14 +248,32 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
     setWorkingLabel('Merging records without deleting local data…');
     setMessage(undefined);
     try {
-      const result = await mergeHealthBackup(document);
+      const result = await mergePreparedHealthBackup(document);
+      if (result.preferenceRestore === 'restored') {
+        await reloadGlucoseAppearance();
+      }
       await onDataChanged?.();
+      const preferenceText =
+        result.preferenceRestore === 'restored'
+          ? ' Display, review and inactive alert preferences were restored.'
+          : result.preferenceRestore === 'failed'
+            ? ` Health records were restored, but preferences were not: ${
+                result.preferenceWarning ?? 'the preference restore failed'
+              }.`
+            : '';
       setMessage({
-        tone: 'success',
+        tone: result.preferenceRestore === 'failed' ? 'error' : 'success',
         text: result.inserted
-          ? `${formatCount(result.inserted)} records restored; ${formatCount(result.duplicates)} already existed.`
-          : `Nothing changed; all ${formatCount(result.duplicates)} records were already on this phone.`,
+          ? `${formatCount(result.inserted)} stored rows restored; ${formatCount(result.duplicates)} already existed.${preferenceText}`
+          : result.preferenceRestore === 'restored'
+            ? `All ${formatCount(result.duplicates)} stored rows already existed.${preferenceText}`
+            : `Nothing changed; all ${formatCount(result.duplicates)} stored rows were already on this phone.${preferenceText}`,
       });
+      if (document.kind === 'stream') {
+        await DaymarkBackupCrypto.removeTemporaryFileAsync(
+          document.sourceUri,
+        ).catch(() => false);
+      }
       previewRef.current = undefined;
       setPreview(undefined);
       setSelectedBackup(undefined);
@@ -276,6 +292,12 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
   }
 
   function cancelRestore() {
+    const prepared = previewRef.current;
+    if (prepared?.kind === 'stream') {
+      void DaymarkBackupCrypto.removeTemporaryFileAsync(
+        prepared.sourceUri,
+      ).catch(() => false);
+    }
     previewRef.current = undefined;
     setPreview(undefined);
     setSelectedBackup(undefined);
@@ -308,8 +330,10 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
               Your encrypted backup
             </Text>
             <Text style={[styles.body, { color: colors.textSecondary }]}>
-              Save a portable copy you control. Health records are compressed,
-              then protected with your passphrase before leaving the app.
+              Save a portable copy you control. Health history, saved reviews,
+              retained source evidence, and non-secret display, review and
+              alert preferences are compressed, then protected with your
+              passphrase before leaving the app.
             </Text>
           </View>
         </View>
@@ -398,13 +422,43 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                 value={preview.manifest.counts.food_logs}
               />
               <BackupMetric
-                label="All records"
+                label="Recipes"
+                value={preview.manifest.counts.food_recipes}
+              />
+              <BackupMetric
+                label="Context"
+                value={
+                  preview.manifest.counts.context_events +
+                  preview.manifest.counts.context_notes
+                }
+              />
+              <BackupMetric
+                label="Source files"
+                value={preview.manifest.counts.import_source_payloads}
+              />
+              <BackupMetric
+                label="Source events"
+                value={preview.manifest.counts.notification_source_events}
+              />
+              <BackupMetric
+                label="Reviews"
+                value={preview.manifest.counts.insight_reports}
+              />
+              <BackupMetric
+                label="Preferences"
+                value={preview.manifest.preferences ? 'Included' : 'Not included'}
+              />
+              <BackupMetric
+                label="Stored rows"
                 value={preview.manifest.totalRecords}
               />
             </View>
             <Text style={[styles.mergeNote, { color: colors.textSecondary }]}>
               Restore only adds missing records. It does not erase or replace
-              newer data already on this phone.
+              newer data already on this phone. Included display, review and
+              alert-threshold preferences replace their matching settings;
+              restored alerts stay off, and sign-ins, Android permissions, and
+              active services never transfer.
             </Text>
             <View style={styles.previewActions}>
               <Pressable
@@ -546,13 +600,20 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
 
       <Modal
         animationType="fade"
-        onRequestClose={closePassphraseModal}
+        onRequestClose={() => {
+          if (Keyboard.isVisible()) {
+            Keyboard.dismiss();
+            return;
+          }
+          closePassphraseModal();
+        }}
         statusBarTranslucent
         transparent
         visible={passphraseMode !== null}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'android' ? 16 : 0}
           style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}
         >
           <View
@@ -624,10 +685,13 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                   setPassphraseError(undefined);
                 }}
                 onSubmitEditing={
-                  passphraseMode === 'restore' ? submitPassphrase : undefined
+                  passphraseMode === 'restore'
+                    ? submitPassphrase
+                    : () => confirmationInputRef.current?.focus()
                 }
                 placeholder="Backup passphrase"
                 placeholderTextColor={colors.textTertiary}
+                returnKeyType={passphraseMode === 'restore' ? 'done' : 'next'}
                 secureTextEntry={!passphraseVisible}
                 style={[styles.passwordInput, { color: colors.text }]}
                 value={passphrase}
@@ -652,6 +716,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
 
             {passphraseMode === 'export' ? (
               <TextInput
+                ref={confirmationInputRef}
                 accessibilityLabel="Confirm backup passphrase"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -662,6 +727,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                 onSubmitEditing={submitPassphrase}
                 placeholder="Repeat passphrase"
                 placeholderTextColor={colors.textTertiary}
+                returnKeyType="done"
                 secureTextEntry={!passphraseVisible}
                 style={[
                   styles.confirmInput,
@@ -722,12 +788,18 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
   );
 }
 
-function BackupMetric({ label, value }: { label: string; value: number }) {
+function BackupMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
   const { colors } = useAppTheme();
   return (
     <View style={styles.metric}>
       <Text style={[styles.metricValue, { color: colors.text }]}>
-        {formatCount(value)}
+        {typeof value === 'number' ? formatCount(value) : value}
       </Text>
       <Text style={[styles.metricLabel, { color: colors.textTertiary }]}>
         {label}
@@ -736,7 +808,6 @@ function BackupMetric({ label, value }: { label: string; value: number }) {
   );
 }
 
-const COPY_BUFFER_BYTES = 1024 * 1024;
 
 const styles = StyleSheet.create({
   card: {

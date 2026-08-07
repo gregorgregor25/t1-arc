@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+apply from: rootProject.file('../scripts/gradle/t1arc-signing.gradle')
+
+android {
+    namespace 'app.daymark.watchface.orbit'
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId 'app.daymark.watchface.orbit'
+        minSdk 33
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    signingConfigs {
+        privateTest {
+            storeFile rootProject.file('app/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (t1ArcProductionSigningConfigured) {
+            production {
+                storeFile t1ArcProductionStoreFile
+                storePassword t1ArcProductionStorePassword
+                keyAlias t1ArcProductionKeyAlias
+                keyPassword t1ArcProductionKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled true
+        }
+        release {
+            minifyEnabled true
+            shrinkResources false
+            signingConfig t1ArcProductionSigningConfigured
+                ? signingConfigs.production
+                : signingConfigs.privateTest
+        }
+    }
+}

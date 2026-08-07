@@ -1,0 +1,309 @@
+import {
+  BasalDelivery,
+  GlucoseReading,
+  TimeRange,
+  TimelineData,
+} from './models';
+import { calculateInsulinStats } from './stats';
+import { addDays, DateKey, zonedDateTimeToTimestamp } from './time';
+
+const GLUCOSE_OBSERVED_WINDOW_MS = 12 * 60 * 1000;
+
+export interface CoverageGap {
+  start: number;
+  end: number;
+  minutes: number;
+}
+
+export interface CoverageSummary {
+  recordCount: number;
+  coveredMinutes: number;
+  missingMinutes: number;
+  coveragePercent: number;
+  gaps: CoverageGap[];
+  longestGapMinutes: number;
+}
+
+export interface DataCompletenessReport {
+  glucose: CoverageSummary & {
+    sourceCounts: Array<{ sourceId: string; count: number }>;
+  };
+  basal: CoverageSummary;
+  bolusCount: number;
+  contextCount: number;
+  insulinReconciliation?: InsulinReconciliation;
+}
+
+export interface InsulinReconciliation {
+  reportedDays: number;
+  dateKeys: string[];
+  reportedRecordIds: string[];
+  organisedRecordIds: string[];
+  reportedBasalUnits?: number;
+  reportedBolusUnits?: number;
+  reportedTotalUnits: number;
+  organisedBasalUnits: number;
+  organisedBolusUnits: number;
+  organisedTotalUnits: number;
+  differenceUnits: number;
+}
+
+interface Interval {
+  start: number;
+  end: number;
+}
+
+function round(value: number, decimals = 1) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function clippedInterval(
+  start: number,
+  end: number,
+  range: TimeRange,
+): Interval | undefined {
+  const clipped = {
+    start: Math.max(start, range.start),
+    end: Math.min(end, range.end),
+  };
+  return clipped.end > clipped.start ? clipped : undefined;
+}
+
+function coverageFromIntervals(
+  recordCount: number,
+  intervals: Interval[],
+  range: TimeRange,
+): CoverageSummary {
+  const totalMs = Math.max(0, range.end - range.start);
+  const merged: Interval[] = [];
+  intervals
+    .filter((interval) => interval.end > interval.start)
+    .sort((a, b) => a.start - b.start)
+    .forEach((interval) => {
+      const previous = merged[merged.length - 1];
+      if (previous && interval.start <= previous.end) {
+        previous.end = Math.max(previous.end, interval.end);
+      } else {
+        merged.push({ ...interval });
+      }
+    });
+
+  const gaps: CoverageGap[] = [];
+  let cursor = range.start;
+  for (const interval of merged) {
+    if (interval.start > cursor) {
+      gaps.push({
+        start: cursor,
+        end: interval.start,
+        minutes: round((interval.start - cursor) / 60_000),
+      });
+    }
+    cursor = Math.max(cursor, interval.end);
+  }
+  if (cursor < range.end) {
+    gaps.push({
+      start: cursor,
+      end: range.end,
+      minutes: round((range.end - cursor) / 60_000),
+    });
+  }
+
+  const coveredMs = merged.reduce(
+    (total, interval) => total + interval.end - interval.start,
+    0,
+  );
+  const coveredMinutes = round(coveredMs / 60_000);
+  const missingMinutes = round(Math.max(0, totalMs - coveredMs) / 60_000);
+  return {
+    recordCount,
+    coveredMinutes,
+    missingMinutes,
+    coveragePercent:
+      totalMs > 0 ? round(Math.min(100, (coveredMs / totalMs) * 100)) : 0,
+    gaps,
+    longestGapMinutes: gaps.length
+      ? Math.max(...gaps.map((gap) => gap.minutes))
+      : 0,
+  };
+}
+
+function glucoseCoverage(readings: GlucoseReading[], range: TimeRange) {
+  const inRange = readings
+    .filter(
+      (reading) =>
+        reading.timestamp >= range.start && reading.timestamp < range.end,
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const intervals = inRange
+    .map((reading, index) =>
+      clippedInterval(
+        reading.timestamp,
+        Math.min(
+          reading.timestamp + GLUCOSE_OBSERVED_WINDOW_MS,
+          inRange[index + 1]?.timestamp ?? range.end,
+        ),
+        range,
+      ),
+    )
+    .filter((interval): interval is Interval => Boolean(interval));
+  const counts = new Map<string, number>();
+  inRange.forEach((reading) => {
+    counts.set(reading.sourceId, (counts.get(reading.sourceId) ?? 0) + 1);
+  });
+  return {
+    ...coverageFromIntervals(inRange.length, intervals, range),
+    sourceCounts: [...counts.entries()]
+      .map(([sourceId, count]) => ({ sourceId, count }))
+      .sort((a, b) => b.count - a.count || a.sourceId.localeCompare(b.sourceId)),
+  };
+}
+
+function basalCoverage(deliveries: BasalDelivery[], range: TimeRange) {
+  const overlapping = deliveries.filter(
+    (delivery) => delivery.start < range.end && delivery.end > range.start,
+  );
+  const intervals = overlapping
+    .map((delivery) => clippedInterval(delivery.start, delivery.end, range))
+    .filter((interval): interval is Interval => Boolean(interval));
+  return coverageFromIntervals(overlapping.length, intervals, range);
+}
+
+export function buildInsulinReconciliation(
+  data: TimelineData,
+): InsulinReconciliation | undefined {
+  const latestTotalByDate = new Map<
+    string,
+    NonNullable<TimelineData['dailyInsulinTotals']>[number]
+  >();
+  (data.dailyInsulinTotals ?? [])
+    .filter(
+      (total) =>
+        total.timestamp >= data.range.start &&
+        total.timestamp < data.range.end,
+    )
+    .forEach((total) => {
+      const previous = latestTotalByDate.get(total.dateKey);
+      if (
+        !previous ||
+        (total.importedAt ?? 0) > (previous.importedAt ?? 0) ||
+        ((total.importedAt ?? 0) === (previous.importedAt ?? 0) &&
+          total.timestamp > previous.timestamp)
+      ) {
+        latestTotalByDate.set(total.dateKey, total);
+      }
+    });
+  const reportedTotals = [...latestTotalByDate.values()]
+    .filter((total) => {
+      const dateKey = total.dateKey as DateKey;
+      const start = zonedDateTimeToTimestamp(dateKey);
+      const end = zonedDateTimeToTimestamp(addDays(dateKey, 1));
+      // A source daily total represents the whole London calendar day. Do
+      // not compare it with a partial slice of detailed rows.
+      return start >= data.range.start && end <= data.range.end;
+    })
+    .sort(
+      (left, right) =>
+        left.dateKey.localeCompare(right.dateKey) ||
+        left.timestamp - right.timestamp,
+    );
+  if (!reportedTotals.length) return undefined;
+
+  const reportedRanges = reportedTotals.map((total) => {
+    const dateKey = total.dateKey as DateKey;
+    return {
+      start: zonedDateTimeToTimestamp(dateKey),
+      end: zonedDateTimeToTimestamp(addDays(dateKey, 1)),
+    };
+  });
+  const selectedBasal = data.basal.filter((delivery) =>
+    reportedRanges.some(
+      (range) => delivery.start < range.end && delivery.end > range.start,
+    ),
+  );
+  const selectedBoluses = data.boluses.filter((delivery) =>
+    reportedRanges.some(
+      (range) =>
+        delivery.timestamp >= range.start &&
+        delivery.timestamp < range.end,
+    ),
+  );
+  const organised = reportedRanges.reduce(
+    (total, range) => {
+      const day = calculateInsulinStats(
+        selectedBasal,
+        selectedBoluses,
+        range,
+      );
+      return {
+        basalUnits: total.basalUnits + day.basalUnits,
+        bolusUnits: total.bolusUnits + day.bolusUnits,
+        totalUnits: total.totalUnits + day.totalUnits,
+      };
+    },
+    { basalUnits: 0, bolusUnits: 0, totalUnits: 0 },
+  );
+  const reportedTotalUnits = round(
+    reportedTotals.reduce((sum, total) => sum + total.totalUnits, 0),
+    2,
+  );
+  const reportedBasal = reportedTotals.every(
+    (total) => total.basalUnits !== undefined,
+  )
+    ? round(
+        reportedTotals.reduce(
+          (sum, total) => sum + (total.basalUnits ?? 0),
+          0,
+        ),
+        2,
+      )
+    : undefined;
+  const reportedBolus = reportedTotals.every(
+    (total) => total.bolusUnits !== undefined,
+  )
+    ? round(
+        reportedTotals.reduce(
+          (sum, total) => sum + (total.bolusUnits ?? 0),
+          0,
+        ),
+        2,
+      )
+    : undefined;
+  return {
+    reportedDays: reportedTotals.length,
+    dateKeys: reportedTotals.map((total) => total.dateKey),
+    reportedRecordIds: reportedTotals.map((total) => total.id),
+    organisedRecordIds: [
+      ...selectedBasal.map((delivery) => delivery.id),
+      ...selectedBoluses.map((delivery) => delivery.id),
+    ],
+    reportedBasalUnits: reportedBasal,
+    reportedBolusUnits: reportedBolus,
+    reportedTotalUnits,
+    organisedBasalUnits: round(organised.basalUnits, 2),
+    organisedBolusUnits: round(organised.bolusUnits, 2),
+    organisedTotalUnits: round(organised.totalUnits, 2),
+    differenceUnits: round(
+      reportedTotalUnits - organised.totalUnits,
+      2,
+    ),
+  };
+}
+
+export function buildDataCompletenessReport(
+  data: TimelineData,
+): DataCompletenessReport {
+  return {
+    glucose: glucoseCoverage(data.glucose, data.range),
+    basal: basalCoverage(data.basal, data.range),
+    bolusCount: data.boluses.filter(
+      (delivery) =>
+        delivery.timestamp >= data.range.start &&
+        delivery.timestamp < data.range.end,
+    ).length,
+    contextCount: data.context.filter(
+      (event) => event.start < data.range.end && (event.end ?? event.start) >= data.range.start,
+    ).length,
+    insulinReconciliation: buildInsulinReconciliation(data),
+  };
+}

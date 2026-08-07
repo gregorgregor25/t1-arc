@@ -1,8 +1,10 @@
 import {
   ActivityEvent,
+  ContextNoteEvent,
   HealthContextEvent,
   MealEvent,
 } from '@/domain/models';
+import { contextNoteCategoryLabel } from '@/domain/contextNotes';
 
 export const MANUAL_CONTEXT_SOURCE_ID = 'daymark-manual';
 
@@ -36,6 +38,11 @@ export type ManualContextDraft =
       kind: 'medication';
       amount?: number;
       unit?: string;
+    })
+  | (DraftBase & {
+      kind: 'note';
+      category: ContextNoteEvent['category'];
+      detail?: string;
     });
 
 function assertTimestamp(value: number) {
@@ -70,12 +77,91 @@ function defaultTitle(draft: ManualContextDraft) {
       return 'Weight';
     case 'medication':
       return 'Medication';
+    case 'note':
+      return contextNoteCategoryLabel(draft.category);
   }
+}
+
+function optionalText(value: string | undefined, maximum: number, label: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > maximum) {
+    throw new Error(
+      `${label} must be ${maximum.toLocaleString('en-GB')} characters or fewer.`,
+    );
+  }
+  return trimmed;
 }
 
 function createLocalId(kind: ManualContextDraft['kind'], timestamp: number) {
   const entropy = Math.random().toString(36).slice(2, 12);
   return `${MANUAL_CONTEXT_SOURCE_ID}:${kind}:${timestamp}:${Date.now().toString(36)}-${entropy}`;
+}
+
+function customTitle(
+  event: HealthContextEvent,
+  draft: ManualContextDraft,
+) {
+  if (event.kind === 'medication') return event.title;
+  return event.title === defaultTitle(draft) ? undefined : event.title;
+}
+
+export function manualContextDraftFromEvent(
+  event: HealthContextEvent,
+): ManualContextDraft {
+  let draft: ManualContextDraft;
+  switch (event.kind) {
+    case 'meal':
+      draft = {
+        kind: 'meal',
+        timestamp: event.start,
+        mealType: event.mealType,
+        carbsGrams: event.carbsGrams,
+      };
+      break;
+    case 'activity':
+      draft = {
+        kind: 'activity',
+        timestamp: event.start,
+        activityType: event.activityType,
+        durationMinutes: event.durationMinutes,
+        intensity: event.intensity,
+      };
+      break;
+    case 'sleep':
+      draft = {
+        kind: 'sleep',
+        timestamp: event.end,
+        durationMinutes: event.durationMinutes,
+        qualityPercent: event.qualityPercent,
+      };
+      break;
+    case 'weight':
+      draft = {
+        kind: 'weight',
+        timestamp: event.start,
+        kilograms: event.kilograms,
+      };
+      break;
+    case 'medication':
+      draft = {
+        kind: 'medication',
+        timestamp: event.start,
+        amount: event.amount,
+        unit: event.unit,
+      };
+      break;
+    case 'note':
+      draft = {
+        kind: 'note',
+        timestamp: event.start,
+        category: event.category,
+        detail: event.detail,
+      };
+      break;
+  }
+  const title = customTitle(event, draft);
+  return title ? { ...draft, title } : draft;
 }
 
 export function createManualContextEvent(
@@ -86,7 +172,7 @@ export function createManualContextEvent(
   const recordedAt = options.recordedAt ?? Date.now();
   const id =
     options.id ?? createLocalId(draft.kind, draft.timestamp);
-  const title = draft.title?.trim() || defaultTitle(draft);
+  const title = optionalText(draft.title, 120, 'Label') || defaultTitle(draft);
   const base = {
     id,
     start: draft.timestamp,
@@ -172,7 +258,33 @@ export function createManualContextEvent(
         ...base,
         kind: 'medication',
         amount: draft.amount,
-        unit: draft.unit?.trim() || undefined,
+        unit: optionalText(draft.unit, 40, 'Medication unit'),
+      };
+    case 'note':
+      return {
+        ...base,
+        kind: 'note',
+        category: draft.category,
+        detail: optionalText(draft.detail, 1_000, 'Detail'),
       };
   }
+}
+
+export function reviseManualContextEvent(
+  existing: HealthContextEvent,
+  draft: ManualContextDraft,
+): HealthContextEvent {
+  if (
+    existing.origin !== 'manual' ||
+    existing.sourceId !== MANUAL_CONTEXT_SOURCE_ID
+  ) {
+    throw new Error('Only entries created in T1 Arc can be edited.');
+  }
+  if (existing.kind !== draft.kind) {
+    throw new Error('The type of an existing context entry cannot be changed.');
+  }
+  return createManualContextEvent(draft, {
+    id: existing.id,
+    recordedAt: existing.recordedAt,
+  });
 }

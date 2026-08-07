@@ -13,10 +13,12 @@ import type {
   HealthConnectCategoryId,
   HealthConnectStatus,
 } from '../../modules/daymark-health-connect';
+import { updateHealthConnectBackgroundSyncRegistration } from '@/data/background/healthConnectSyncTask';
 import {
   getHealthConnectOverview,
   getHealthConnectStatus,
   HealthConnectOverview,
+  HealthConnectSyncResult,
   openHealthConnectInstall,
   openHealthConnectSettings,
   openHealthConnectSourceDiscovery,
@@ -24,6 +26,7 @@ import {
   saveHealthConnectPreferences,
   savePreferredHealthConnectSource,
   syncHealthConnect,
+  useAutomaticHealthConnectSource,
 } from '@/data/healthConnect/healthConnectRepository';
 import {
   DEFAULT_HEALTH_CONNECT_CATEGORIES,
@@ -51,9 +54,41 @@ const categoryIcons: Record<
   heart_rate: 'heart-outline',
   sleep: 'moon-outline',
   weight: 'scale-outline',
+  body_composition: 'body-outline',
+  blood_glucose: 'water-outline',
+  vitals: 'pulse-outline',
+  cycle: 'calendar-outline',
+  hydration: 'water-outline',
+  nutrition: 'nutrition-outline',
   distance: 'navigate-outline',
   active_calories: 'flame-outline',
 };
+
+function healthCategoryLabel(category: HealthConnectCategoryId) {
+  return (
+    HEALTH_CONNECT_CATEGORIES.find((item) => item.id === category)?.label ??
+    category
+  );
+}
+
+function syncResultMessage(
+  result: HealthConnectSyncResult,
+  emptyMessage: string,
+) {
+  const checked = result.recordsProcessed
+    ? `${result.recordsProcessed.toLocaleString('en-GB')} records checked and stored locally.`
+    : emptyMessage;
+  const removed = result.recordsRemoved
+    ? ` ${result.recordsRemoved.toLocaleString('en-GB')} deleted ${
+        result.recordsRemoved === 1 ? 'record was' : 'records were'
+      } removed locally.`
+    : '';
+  if (!result.failures.length) return `${checked}${removed}`;
+  const failedLabels = result.failures
+    .map((failure) => healthCategoryLabel(failure.category))
+    .join(', ');
+  return `${checked}${removed} ${failedLabels} could not be updated and will be retried separately.`;
+}
 
 export function HealthConnectCard({
   onDataChanged,
@@ -119,6 +154,28 @@ export function HealthConnectCard({
   const connected = Boolean(
     status?.categories.some((category) => category.granted),
   );
+  const selectedSyncStates = useMemo(
+    () =>
+      selected.map((category) => ({
+        category,
+        state: overview?.sync.find((item) => item.category === category),
+      })),
+    [overview?.sync, selected],
+  );
+  const latestSuccessfulSync = Math.max(
+    0,
+    ...selectedSyncStates.map((item) => item.state?.lastSuccessAt ?? 0),
+  );
+  const latestHealthData = Math.max(
+    0,
+    ...selectedSyncStates.map((item) => item.state?.dataThrough ?? 0),
+  );
+  const syncFailures = selectedSyncStates.filter(
+    (item) => item.state?.lastErrorMessage,
+  );
+  const changeTrackingReady =
+    selectedSyncStates.length > 0 &&
+    selectedSyncStates.every((item) => item.state?.changesToken);
 
   function toggleCategory(category: HealthConnectCategoryId) {
     if (busy) return;
@@ -131,8 +188,37 @@ export function HealthConnectCard({
   }
 
   async function finishRefresh() {
+    await updateHealthConnectBackgroundSyncRegistration().catch(
+      () => false,
+    );
     await load();
     await onDataChanged?.();
+  }
+
+  async function enableBackgroundUpdates() {
+    if (!status || busy || !selected.length) return;
+    setOperation('connecting');
+    setError(undefined);
+    setMessage(undefined);
+    try {
+      const nextStatus = await requestHealthConnectPermissions(selected);
+      setStatus(nextStatus);
+      const enabled =
+        await updateHealthConnectBackgroundSyncRegistration();
+      setMessage(
+        enabled
+          ? 'Automatic health updates are enabled. Android schedules them around battery use.'
+          : 'Background access was not enabled. T1 Arc will still refresh health data whenever you open it.',
+      );
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Background health updates could not be enabled.',
+      );
+    } finally {
+      setOperation(undefined);
+    }
   }
 
   async function connectOrSync() {
@@ -179,9 +265,10 @@ export function HealthConnectCard({
       });
       await finishRefresh();
       setMessage(
-        result.recordsProcessed
-          ? `${result.recordsProcessed.toLocaleString('en-GB')} records checked and stored locally.`
-          : 'Connected successfully. No records were available from the selected sources yet.',
+        syncResultMessage(
+          result,
+          'Connected successfully. No records were available from the selected sources yet.',
+        ),
       );
     } catch (actionError) {
       setError(
@@ -214,9 +301,14 @@ export function HealthConnectCard({
       }
       await openHealthConnectSourceDiscovery(granted);
       setOperation('syncing');
-      await syncHealthConnect({ categories: granted });
+      const result = await syncHealthConnect({ categories: granted });
       await finishRefresh();
-      setMessage('Source apps checked and available records imported.');
+      setMessage(
+        syncResultMessage(
+          result,
+          'Source apps checked. No new records were available.',
+        ),
+      );
     } catch (actionError) {
       setError(
         actionError instanceof Error
@@ -228,6 +320,55 @@ export function HealthConnectCard({
     }
   }
 
+  async function recheckFullHistory() {
+    if (!status || busy) return;
+    const granted = selected.filter((category) =>
+      status.categories.find((item) => item.id === category)?.granted,
+    );
+    if (!granted.length) {
+      setMessage('Allow a health category before rechecking its history.');
+      return;
+    }
+    setError(undefined);
+    setMessage(undefined);
+    setOperation('syncing');
+    try {
+      const result = await syncHealthConnect({
+        categories: granted,
+        fullHistory: true,
+      });
+      await finishRefresh();
+      setMessage(
+        syncResultMessage(
+          result,
+          'Full history was rechecked; no available records were returned.',
+        ),
+      );
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Full health history could not be rechecked.',
+      );
+    } finally {
+      setOperation(undefined);
+    }
+  }
+
+  function confirmFullHistoryRecheck() {
+    Alert.alert(
+      'Recheck all health history?',
+      'T1 Arc will reread every available record for the selected categories. This can take a while for heart-rate history, but it stays on this phone and safely merges with existing records.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Recheck all',
+          onPress: () => void recheckFullHistory(),
+        },
+      ],
+    );
+  }
+
   async function chooseSource(
     category: HealthConnectCategoryId,
     packageName?: string,
@@ -236,12 +377,20 @@ export function HealthConnectCard({
     setOperation('choosing_source');
     setError(undefined);
     try {
-      await savePreferredHealthConnectSource(category, packageName);
+      if (packageName) {
+        await savePreferredHealthConnectSource(
+          category,
+          packageName,
+          'manual',
+        );
+      } else {
+        await useAutomaticHealthConnectSource(category);
+      }
       await finishRefresh();
       setMessage(
         packageName
-          ? 'Preferred source saved. Other copies stay archived but are excluded from the active view.'
-          : 'All sources will be included. Overlapping records may appear twice.',
+          ? 'Source locked. Other copies stay archived but are excluded from the active view.'
+          : 'Automatic source selection restored. Only its chosen source is used in the active view.',
       );
     } catch (actionError) {
       setError(
@@ -344,6 +493,7 @@ export function HealthConnectCard({
           return (
             <Pressable
               key={category.id}
+              accessibilityLabel={`${category.label}. ${category.detail}`}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: active, disabled: busy }}
               disabled={busy}
@@ -374,30 +524,23 @@ export function HealthConnectCard({
                 />
               </View>
               <View style={styles.categoryCopy}>
-                <View style={styles.categoryTitleRow}>
-                  <Text style={[styles.categoryTitle, { color: colors.text }]}>
-                    {category.label}
-                  </Text>
-                  {granted ? (
-                    <Text style={[styles.allowed, { color: colors.accent }]}>
-                      ALLOWED
-                    </Text>
-                  ) : null}
-                </View>
                 <Text
-                  style={[
-                    styles.categoryDetail,
-                    { color: colors.textSecondary },
-                  ]}
+                  numberOfLines={2}
+                  style={[styles.categoryTitle, { color: colors.text }]}
                 >
-                  {category.detail}
+                  {category.label}
                 </Text>
+                {granted ? (
+                  <Text style={[styles.allowed, { color: colors.accent }]}>
+                    ALLOWED
+                  </Text>
+                ) : null}
               </View>
               <Ionicons
                 accessibilityElementsHidden
                 color={active ? colors.primary : colors.textTertiary}
                 name={active ? 'checkbox' : 'square-outline'}
-                size={24}
+                size={21}
               />
             </Pressable>
           );
@@ -446,13 +589,45 @@ export function HealthConnectCard({
                 </Text>
                 {!preference?.preferredSourcePackage ? (
                   <Text style={[styles.sourceWarning, { color: colors.warning }]}>
-                    Choose one to prevent overlapping copies.
+                    A single source will be locked on the next refresh.
                   </Text>
-                ) : null}
+                ) : (
+                  <View style={styles.sourceModeRow}>
+                    <Text
+                      style={[
+                        styles.sourceModeText,
+                        { color: colors.textTertiary },
+                      ]}
+                    >
+                      {preference.preferredSourceMode === 'manual'
+                        ? 'Chosen by you'
+                        : 'Automatically locked using freshness and coverage'}
+                    </Text>
+                    {preference.preferredSourceMode === 'manual' ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={busy}
+                        onPress={() => void chooseSource(category.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.automaticLink,
+                            { color: colors.primary },
+                          ]}
+                        >
+                          Use automatic
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                )}
                 <View style={styles.chips}>
                   {candidates.map((source) => {
                     const active =
                       preference?.preferredSourcePackage === source.packageName;
+                    const stats = source.categoryStats.find(
+                      (item) => item.category === category.id,
+                    );
                     return (
                       <Pressable
                         key={source.packageName}
@@ -494,6 +669,9 @@ export function HealthConnectCard({
                           ]}
                         >
                           {source.displayName}
+                          {stats
+                            ? ` · ${stats.recordCount.toLocaleString('en-GB')}`
+                            : ''}
                         </Text>
                       </Pressable>
                     );
@@ -528,6 +706,233 @@ export function HealthConnectCard({
               : ''}
           </Text>
         </View>
+      ) : null}
+      {connected ? (
+        <View
+          style={[
+            styles.syncPanel,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: syncFailures.length
+                ? `${colors.warning}66`
+                : colors.border,
+              borderRadius: radius.md,
+            },
+          ]}
+        >
+          <View style={styles.syncPanelHeader}>
+            <View>
+              <Text style={[styles.syncPanelTitle, { color: colors.text }]}>
+                Health refresh
+              </Text>
+              <Text
+                style={[
+                  styles.syncPanelMode,
+                  {
+                    color:
+                      status?.backgroundGranted && status.backgroundAvailable
+                        ? colors.accent
+                        : colors.textSecondary,
+                  },
+                ]}
+              >
+                {status?.backgroundGranted && status.backgroundAvailable
+                  ? 'AUTOMATIC UPDATES ALLOWED'
+                  : 'REFRESHES WHEN THE APP OPENS'}
+              </Text>
+            </View>
+            <Ionicons
+              accessibilityElementsHidden
+              color={syncFailures.length ? colors.warning : colors.accent}
+              name={
+                syncFailures.length
+                  ? 'alert-circle-outline'
+                  : 'checkmark-circle-outline'
+              }
+              size={23}
+            />
+          </View>
+          <View style={styles.syncFacts}>
+            <View style={styles.syncFact}>
+              <Text style={[styles.syncFactLabel, { color: colors.textTertiary }]}>
+                Last successful check
+              </Text>
+              <Text style={[styles.syncFactValue, { color: colors.text }]}>
+                {latestSuccessfulSync
+                  ? relativeAge(latestSuccessfulSync)
+                  : 'Not completed yet'}
+              </Text>
+            </View>
+            <View style={styles.syncFact}>
+              <Text style={[styles.syncFactLabel, { color: colors.textTertiary }]}>
+                Newest health record
+              </Text>
+              <Text style={[styles.syncFactValue, { color: colors.text }]}>
+                {latestHealthData
+                  ? relativeAge(latestHealthData)
+                  : 'No records yet'}
+              </Text>
+            </View>
+          </View>
+          {status?.backgroundGranted && status.backgroundAvailable ? (
+            <Text
+              style={[
+                styles.backgroundAuditText,
+                {
+                  color:
+                    overview?.background?.outcome === 'failed' ||
+                    overview?.background?.outcome === 'partial'
+                      ? colors.warning
+                      : colors.textTertiary,
+                },
+              ]}
+            >
+              {overview?.background
+                ? `Android worker ran ${relativeAge(
+                    overview.background.lastRunAt,
+                  )} · ${overview.background.outcome}${
+                    overview.background.recordsProcessed
+                      ? ` · ${overview.background.recordsProcessed.toLocaleString(
+                          'en-GB',
+                        )} records checked`
+                      : ''
+                  }${
+                    overview.background.recordsRemoved
+                      ? ` · ${overview.background.recordsRemoved.toLocaleString(
+                          'en-GB',
+                        )} deleted records removed`
+                      : ''
+                  }${overview.background.failures ? ` · ${overview.background.failures} failed category` : ''}.`
+                : 'Android background access is allowed; the worker is waiting for its first system run.'}
+            </Text>
+          ) : null}
+          <View style={styles.syncCategoryList}>
+            {selectedSyncStates.map(({ category, state }) => {
+              const failed = Boolean(state?.lastErrorMessage);
+              return (
+                <View key={category} style={styles.syncCategoryRow}>
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={
+                      failed
+                        ? colors.warning
+                        : state?.lastSuccessAt
+                          ? colors.accent
+                          : colors.textTertiary
+                    }
+                    name={
+                      failed
+                        ? 'alert-circle-outline'
+                        : state?.lastSuccessAt
+                          ? 'checkmark-circle-outline'
+                          : 'time-outline'
+                    }
+                    size={16}
+                  />
+                  <Text
+                    style={[styles.syncCategoryName, { color: colors.text }]}
+                  >
+                    {healthCategoryLabel(category)}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.syncCategoryMeta,
+                      {
+                        color: failed
+                          ? colors.warning
+                          : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {failed
+                      ? state?.lastErrorMessage
+                      : state?.lastSuccessAt
+                        ? `${state.recordCount.toLocaleString('en-GB')} records`
+                        : 'Waiting for first import'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <Text style={[styles.syncNote, { color: colors.textTertiary }]}>
+            {changeTrackingReady
+              ? 'Historical edits and deletions are tracked for every selected category. Categories still update independently, so one source problem cannot stop the rest.'
+              : 'The next complete refresh will establish historical edit and deletion tracking. Categories update independently.'}
+          </Text>
+        </View>
+      ) : null}
+      {status?.availability === 'available' &&
+      status.backgroundAvailable &&
+      connected &&
+      !status.backgroundGranted ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={() => void enableBackgroundUpdates()}
+          style={({ pressed }) => [
+            styles.backgroundButton,
+            {
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              backgroundColor: colors.surfaceMuted,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.primary}
+            name="sync-outline"
+            size={18}
+          />
+          <View style={styles.backgroundCopy}>
+            <Text style={[styles.backgroundTitle, { color: colors.text }]}>
+              Allow automatic health updates
+            </Text>
+            <Text
+              style={[styles.backgroundDetail, { color: colors.textSecondary }]}
+            >
+              One Android permission; no T1 Arc server involved.
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
+      {status?.availability === 'available' &&
+      status.historyGranted &&
+      Boolean(overview?.totalRecords) ? (
+        <Pressable
+          accessibilityHint="Rereads all available selected-category history and merges it locally."
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={confirmFullHistoryRecheck}
+          style={({ pressed }) => [
+            styles.historyButton,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              opacity: busy ? 0.5 : pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.primary}
+            name="archive-outline"
+            size={18}
+          />
+          <View style={styles.backgroundCopy}>
+            <Text style={[styles.backgroundTitle, { color: colors.text }]}>
+              Recheck all health history
+            </Text>
+            <Text
+              style={[styles.backgroundDetail, { color: colors.textSecondary }]}
+            >
+              Use after changing source apps or correcting older records.
+            </Text>
+          </View>
+        </Pressable>
       ) : null}
 
       {error ? (
@@ -735,47 +1140,42 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
   categoryList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   categoryRow: {
-    minHeight: 66,
+    width: '48.5%',
+    minHeight: 64,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: 8,
   },
   categoryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   categoryCopy: {
     flex: 1,
-  },
-  categoryTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
+    minWidth: 0,
   },
   categoryTitle: {
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: '700',
-  },
-  categoryDetail: {
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 16,
-    marginTop: 2,
+    fontWeight: '700',
   },
   allowed: {
     fontSize: 8,
     lineHeight: 11,
     letterSpacing: 0.55,
     fontWeight: '900',
+    marginTop: 1,
   },
   sourcesBlock: {
     marginTop: 3,
@@ -818,6 +1218,23 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 2,
   },
+  sourceModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 2,
+  },
+  sourceModeText: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 15,
+  },
+  automaticLink: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -848,6 +1265,112 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     lineHeight: 17,
+  },
+  syncPanel: {
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 14,
+    padding: 13,
+  },
+  syncPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  syncPanelTitle: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  syncPanelMode: {
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: '900',
+    letterSpacing: 0.45,
+    marginTop: 2,
+  },
+  syncFacts: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  syncFact: {
+    flex: 1,
+  },
+  syncFactLabel: {
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  syncFactValue: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  backgroundAuditText: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 9,
+  },
+  syncCategoryList: {
+    gap: 7,
+    marginTop: 13,
+  },
+  syncCategoryRow: {
+    minHeight: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  syncCategoryName: {
+    width: 92,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  syncCategoryMeta: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 15,
+    textAlign: 'right',
+  },
+  syncNote: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 12,
+  },
+  backgroundButton: {
+    minHeight: 62,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  historyButton: {
+    minHeight: 62,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  backgroundCopy: {
+    flex: 1,
+  },
+  backgroundTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  backgroundDetail: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 1,
   },
   feedback: {
     borderWidth: StyleSheet.hairlineWidth,

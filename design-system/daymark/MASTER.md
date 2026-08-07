@@ -1,208 +1,96 @@
-# Design System Master File
+# T1 Arc design system
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+T1 Arc is a calm personal health instrument, not a clinical dashboard and not
+a gamified wellness app. The interface should reduce diabetes administration:
+show what matters immediately, make logging fast, and keep every interpretation
+inspectable.
 
----
+## Product character
 
-**Project:** Daymark
-**Generated:** 2026-07-25 22:58:08
-**Category:** Biohacking / Longevity App
+- Calm, precise, private and human.
+- Premium comes from typography, spacing, restraint and dependable behaviour.
+- Glucose, insulin and freshness are more visually important than connector
+  names or implementation details.
+- No decorative glass, fake gauges, pulsing readings, celebratory confetti or
+  movement that competes with health data.
+- Never use colour as the only indication of range, freshness or failure.
 
----
+## Native colour tokens
 
-## Global Rules
+The source of truth is `src/theme/theme.tsx`.
 
-### Color Palette
+| Role | Light | Dark |
+|---|---|---|
+| Background | `#F1F8FA` | `#071519` |
+| Surface | `#FFFFFF` | `#102328` |
+| Elevated surface | `#FFFFFF` | `#153038` |
+| Primary text | `#102B34` | `#F2FAFB` |
+| Secondary text | `#46636D` | `#B7CDD2` |
+| Primary / glucose | `#087F99` | `#65D2E7` |
+| Insulin | `#6C4FB3` | `#BBA6F5` |
+| Positive accent | `#087A5C` | `#69D5AC` |
+| Low / danger | `#B74F64` | `#FF9BAE` |
+| High / warning | `#A75C13` | `#F1B66F` |
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#0891B2` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#22D3EE` | `--color-secondary` |
-| Accent/CTA | `#059669` | `--color-accent` |
-| Background | `#ECFEFF` | `--color-background` |
-| Foreground | `#164E63` | `--color-foreground` |
-| Muted | `#E8F1F6` | `--color-muted` |
-| Border | `#A5F3FC` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#0891B2` | `--color-ring` |
+Use the configurable glucose range colours for glucose presentation once the
+user has chosen them. Maintain readable labels and trend arrows alongside the
+colour.
 
-**Color Notes:** Calm cyan + health green
+## Type and hierarchy
 
-### Typography
+- Use the Android system sans-serif stack; do not require a network font.
+- Current glucose is the largest value in the product.
+- Screen titles: 28–32sp, bold, compact tracking.
+- Card titles: 16–18sp, 700–800 weight.
+- Body: 13–15sp with generous line height.
+- Metadata: 10–12sp, never used for essential actions or safety state.
+- Numbers and units stay together; use `mmol/L`, `U`, `g`, `kg` and London time.
 
-- **Heading Font:** Lora
-- **Body Font:** Raleway
-- **Mood:** calm, wellness, health, relaxing, natural, organic
-- **Google Fonts:** [Lora + Raleway](https://fonts.google.com/share?selection.family=Lora:wght@400;500;600;700|Raleway:wght@300;400;500;600;700)
+## Spacing and shape
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');
-```
+- Base spacing: 4, 8, 16, 24, 32 and 48dp.
+- Minimum interactive target: 48×48dp.
+- Cards: 22dp radius; nested controls: 10–16dp; pills only for short states.
+- Prefer whitespace and a thin border to heavy shadows.
+- Bottom navigation has at most five destinations and must never cover content.
 
-### Spacing Variables
+## Interaction rules
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+- One primary action per card or step.
+- Common actions such as refresh, repeat meal and log food should take one tap
+  from their relevant surface.
+- Connection details and diagnostics are progressive disclosure, not page
+  headlines.
+- Destructive actions require confirmation and explain what is retained.
+- Background work must show its last successful data time, not just a spinner.
+- Respect reduced-motion settings. No automatic glucose animation or AOD
+  repositioning.
 
-### Shadow Depths
+## Data presentation
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+- Every current value shows reading time/freshness and trend in plain language.
+- Stale, missing and failed are distinct states.
+- Glooko freshness is stored and visible in sync details without dominating the
+  private app’s everyday UI.
+- Charts support exact inspection and align glucose, basal, bolus and context in
+  Europe/London time.
+- Insights name the period, calculation and evidence records. They never
+  recommend insulin doses, correction boluses or pump-setting changes.
 
----
+## Wear and always-on display
 
-## Component Specs
+- Pure black ambient background, restrained pixels and no blinking.
+- Glucose remains legible at arm’s length; trend and age remain available.
+- User-selected position and size are stable.
+- Burn-in protection may be platform-managed, but T1 Arc must not visibly jump
+  the reading itself.
 
-### Buttons
+## Accessibility and QA
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #059669;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #0891B2;
-  border: 2px solid #0891B2;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
-
-### Cards
-
-```css
-.card {
-  background: #ECFEFF;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
-
-### Inputs
-
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
-
-.input:focus {
-  border-color: #0891B2;
-  outline: none;
-  box-shadow: 0 0 0 3px #0891B220;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Exaggerated Minimalism
-
-**Keywords:** Bold minimalism, oversized typography, high contrast, negative space, loud minimal, statement design
-
-**Best For:** Fashion, architecture, portfolios, agency landing pages, luxury brands, editorial
-
-**Key Effects:** font-size: clamp(3rem 10vw 12rem), font-weight: 900, letter-spacing: -0.05em, massive whitespace
-
-### Page Pattern
-
-**Pattern Name:** Minimal Single Column
-
-- **Conversion Strategy:** Single CTA focus. Large typography. Lots of whitespace. No nav clutter. Mobile-first.
-- **CTA Placement:** Center, large CTA button
-- **Section Order:** 1. Hero headline, 2. Short description, 3. Benefit bullets (3 max), 4. CTA, 5. Footer
-
----
-
-## Anti-Patterns (Do NOT Use)
-
-- ❌ Generic health app
-- ❌ No privacy
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- Support system font scaling without clipping key values or controls.
+- Text contrast should meet WCAG AA; state colours need labels/icons.
+- Icon-only actions require accessibility labels.
+- Test 360dp and 412dp phone widths, dark and light themes, large text, stale
+  data, missing data and offline conditions.
+- Verify all modal footers remain reachable above system navigation and the
+  keyboard.

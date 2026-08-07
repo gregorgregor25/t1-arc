@@ -1,7 +1,16 @@
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 
-import { DateKey, formatDate } from '@/domain/time';
+import {
+  DateKey,
+  formatDate,
+  toDateKey,
+  zonedDateTimeToTimestamp,
+} from '@/domain/time';
 import { useAppTheme } from '@/theme/theme';
 
 export function DateNavigator({
@@ -10,16 +19,35 @@ export function DateNavigator({
   canGoForward,
   onBack,
   onForward,
+  onDateChange,
+  earliestDate,
+  latestDate,
   isToday,
+  caption,
 }: {
   date: DateKey;
   canGoBack: boolean;
   canGoForward: boolean;
   onBack: () => void;
   onForward: () => void;
+  onDateChange?: (date: DateKey) => void;
+  earliestDate?: DateKey;
+  latestDate?: DateKey;
   isToday: boolean;
+  caption?: string;
 }) {
   const { colors, radius } = useAppTheme();
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const pickerDate = new Date(zonedDateTimeToTimestamp(date, 12));
+
+  function chooseDate(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS === 'android' || event.type === 'dismissed') {
+      setPickerVisible(false);
+    }
+    if (event.type === 'set' && selected) {
+      onDateChange?.(toDateKey(selected.getTime()));
+    }
+  }
   const arrow = (
     direction: 'back' | 'forward',
     enabled: boolean,
@@ -55,15 +83,53 @@ export function DateNavigator({
       style={styles.container}
     >
       {arrow('back', canGoBack, onBack)}
-      <View style={styles.dateCopy}>
+      <Pressable
+        accessibilityHint={
+          onDateChange ? 'Opens a calendar to jump to another date.' : undefined
+        }
+        accessibilityLabel={`Selected date ${formatDate(date)}${isToday ? ', today' : ''}`}
+        accessibilityRole={onDateChange ? 'button' : undefined}
+        disabled={!onDateChange}
+        onPress={() => setPickerVisible(true)}
+        style={({ pressed }) => [
+          styles.dateCopy,
+          { opacity: pressed && onDateChange ? 0.65 : 1 },
+        ]}
+      >
         <Text style={[styles.date, { color: colors.text }]}>
           {formatDate(date, { weekday: 'short', day: 'numeric', month: 'long' })}
         </Text>
         <Text style={[styles.today, { color: colors.primary }]}>
-          {isToday ? 'TODAY' : date}
+          {caption
+            ? caption.toUpperCase()
+            : isToday
+            ? onDateChange
+              ? 'TODAY · TAP TO CHOOSE'
+              : 'TODAY'
+            : onDateChange
+              ? 'TAP TO CHOOSE DATE'
+              : date}
         </Text>
-      </View>
+      </Pressable>
       {arrow('forward', canGoForward, onForward)}
+      {pickerVisible ? (
+        <DateTimePicker
+          display="default"
+          maximumDate={
+            latestDate
+              ? new Date(zonedDateTimeToTimestamp(latestDate, 12))
+              : undefined
+          }
+          minimumDate={
+            earliestDate
+              ? new Date(zonedDateTimeToTimestamp(earliestDate, 12))
+              : undefined
+          }
+          mode="date"
+          onChange={chooseDate}
+          value={pickerDate}
+        />
+      ) : null}
     </View>
   );
 }

@@ -12,49 +12,176 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EvidenceReference } from '@/domain/insights';
+import { DailyMetricRecord } from '@/domain/dailyHealthMetrics';
 import { TimelineData } from '@/domain/models';
+import { getDailyHealthMetricSnapshot } from '@/data/healthConnect/dailyHealthMetrics';
+import { getHealthMetricRecordsByIds } from '@/data/healthConnect/dailyHealthMetrics';
+import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
+import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
+import { ImportRawRecord } from '@/data/persistence/HealthRecordStore';
 import { formatDate, toDateKey } from '@/domain/time';
 import { useDataContext } from '@/providers/DataProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { RecordList } from './RecordList';
+import { HealthMetricRecordList } from './HealthMetricRecordList';
+import { FoodDiaryCard } from './FoodDiaryCard';
+import { EvidenceGlucoseOverlay } from './EvidenceGlucoseOverlay';
+import { FullscreenChartModal } from './FullscreenChart';
+import { useFoodLogs } from '@/hooks/useFoodLogs';
 
 interface Props {
   evidence?: EvidenceReference;
   onClose(): void;
 }
 
-function timelineIds(data: TimelineData) {
+function timelineIds(
+  data: TimelineData,
+  healthRecords: DailyMetricRecord[],
+  sourceRecords: ImportRawRecord[],
+) {
   return new Set([
     ...data.glucose.map((record) => record.id),
     ...data.basal.map((record) => record.id),
     ...data.boluses.map((record) => record.id),
+    ...(data.dailyInsulinTotals ?? []).map((record) => record.id),
+    ...data.context.map((record) => record.id),
+    ...healthRecords.map((record) => record.id),
+    ...sourceRecords.map((record) => record.id),
+  ]);
+}
+
+function timelineRecordIds(data: TimelineData) {
+  return new Set([
+    ...data.glucose.map((record) => record.id),
+    ...data.basal.map((record) => record.id),
+    ...data.boluses.map((record) => record.id),
+    ...(data.dailyInsulinTotals ?? []).map((record) => record.id),
     ...data.context.map((record) => record.id),
   ]);
 }
 
 export function EvidenceRecordInspector({ evidence, onClose }: Props) {
   const { colors, radius } = useAppTheme();
-  const { repository, revision } = useDataContext();
+  const { dataMode, repository, revision } = useDataContext();
   const [data, setData] = useState<TimelineData>();
+  const [healthRecords, setHealthRecords] = useState<
+    DailyMetricRecord[]
+  >([]);
+  const [sourceRecords, setSourceRecords] = useState<ImportRawRecord[]>([]);
   const [error, setError] = useState<string>();
   const [visibleCount, setVisibleCount] = useState(100);
+  const [view, setView] = useState<'visual' | 'records'>('visual');
+  const [visualExpanded, setVisualExpanded] = useState(false);
+  const [visualGlucose, setVisualGlucose] = useState<
+    TimelineData['glucose']
+  >();
+  const [visualLoading, setVisualLoading] = useState(false);
+  const foodHistory = useFoodLogs({
+    start: evidence?.range.start ?? 0,
+    end: evidence?.range.end ?? 1,
+  });
+
+  useEffect(() => {
+    setVisibleCount(100);
+    setView('visual');
+    setVisualExpanded(false);
+    setVisualGlucose(undefined);
+  }, [evidence]);
+
+  const hasGlucoseEvidence = Boolean(
+    evidence?.examples.some((example) => example.kind === 'glucose') ||
+      data?.glucose.length,
+  );
 
   useEffect(() => {
     let active = true;
-    setData(undefined);
-    setError(undefined);
-    setVisibleCount(100);
-    if (!evidence || !repository) {
+    if (!evidence || view !== 'visual' || !hasGlucoseEvidence) {
       return () => {
         active = false;
       };
     }
-    void repository
-      .getTimeline(evidence.range)
-      .then((timeline) => {
-        if (active) setData(timeline);
+    setVisualLoading(true);
+    void new SqliteGlucoseHistoryStore()
+      .getReadingsByIds(evidence.recordIds)
+      .then((readings) => {
+        if (active) setVisualGlucose(readings);
       })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'The glucose visualisation could not be loaded.',
+        );
+      })
+      .finally(() => {
+        if (active) setVisualLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [evidence, hasGlucoseEvidence, view]);
+
+  useEffect(() => {
+    let active = true;
+    setData(undefined);
+    setHealthRecords([]);
+    setSourceRecords([]);
+    setError(undefined);
+    if (!evidence || (!repository && dataMode !== 'live')) {
+      return () => {
+        active = false;
+      };
+    }
+    const visibleRecordIds = evidence.recordIds.slice(0, visibleCount);
+    const load =
+      dataMode === 'live'
+        ? Promise.all([
+            new SqliteGlucoseHistoryStore().getReadingsByIds(
+              visibleRecordIds,
+            ),
+            new SqliteHealthRecordStore().getRecordsByIds(visibleRecordIds),
+            getHealthMetricRecordsByIds(visibleRecordIds),
+            new SqliteHealthRecordStore().getRawSourceRecordsByIds(
+              visibleRecordIds,
+            ),
+          ]).then(([glucose, health, metrics, raw]) => ({
+            timeline: {
+              range: evidence.range,
+              glucose,
+              basal: health.basal,
+              boluses: health.boluses,
+              dailyInsulinTotals: health.dailyInsulinTotals,
+              context: health.context,
+              sources: [],
+            } satisfies TimelineData,
+            healthRecords: metrics,
+            sourceRecords: raw,
+          }))
+        : Promise.all([
+            repository!.getTimeline(evidence.range),
+            getDailyHealthMetricSnapshot(evidence.range),
+          ]).then(([timeline, health]) => ({
+            timeline,
+            healthRecords: health.records.filter((record) =>
+              visibleRecordIds.includes(record.id),
+            ),
+            sourceRecords: [],
+          }));
+    void load
+      .then(
+        ({
+          timeline,
+          healthRecords: loadedHealthRecords,
+          sourceRecords: loadedSourceRecords,
+        }) => {
+        if (!active) return;
+        setData(timeline);
+        setHealthRecords(loadedHealthRecords);
+        setSourceRecords(loadedSourceRecords);
+        },
+      )
       .catch((reason: unknown) => {
         if (!active) return;
         setError(
@@ -66,15 +193,40 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
     return () => {
       active = false;
     };
-  }, [evidence, repository, revision]);
+  }, [dataMode, evidence, repository, revision, visibleCount]);
 
-  const resolution = useMemo(() => {
+  const loadedResolution = useMemo(() => {
     if (!data || !evidence) return undefined;
-    const available = timelineIds(data);
-    const requested = new Set(evidence.recordIds);
+    const available = timelineIds(data, healthRecords, sourceRecords);
+    const requested = new Set(evidence.recordIds.slice(0, visibleCount));
     const resolved = [...requested].filter((id) => available.has(id)).length;
-    return { requested: requested.size, resolved };
+    return { checked: requested.size, resolved };
+  }, [data, evidence, healthRecords, sourceRecords, visibleCount]);
+
+  const referencedHealthRecords = useMemo(() => {
+    if (!evidence) return [];
+    const requested = new Set(evidence.recordIds);
+    return healthRecords.filter((record) => requested.has(record.id));
+  }, [evidence, healthRecords]);
+  const hasReferencedTimelineRecords = useMemo(() => {
+    if (!data || !evidence) return false;
+    const available = timelineRecordIds(data);
+    return evidence.recordIds.some((id) => available.has(id));
   }, [data, evidence]);
+  const referencedMeals = useMemo(() => {
+    if (!data || !evidence) return [];
+    const requested = new Set(evidence.recordIds);
+    return data.context.filter(
+      (record) => record.kind === 'meal' && requested.has(record.id),
+    );
+  }, [data, evidence]);
+  const referencedFoodLogs = useMemo(() => {
+    if (!evidence) return [];
+    const requested = new Set(evidence.recordIds);
+    return foodHistory.logs.filter((log) =>
+      requested.has(log.contextEventId),
+    );
+  }, [evidence, foodHistory.logs]);
 
   return (
     <Modal
@@ -170,20 +322,18 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
               <View style={[styles.summaryRow, { borderColor: colors.divider }]}>
                 <View style={styles.summaryMetric}>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>
-                    {resolution?.resolved ?? evidence.recordIds.length}
+                    {loadedResolution?.resolved ?? 0}
                   </Text>
                   <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
-                    RESOLVED
+                    SHOWN
                   </Text>
                 </View>
                 <View style={styles.summaryMetric}>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>
-                    {resolution
-                      ? resolution.requested - resolution.resolved
-                      : 0}
+                    {evidence.recordIds.length}
                   </Text>
                   <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
-                    MISSING
+                    REFERENCED
                   </Text>
                 </View>
                 <View style={styles.summaryDates}>
@@ -236,7 +386,66 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
             </View>
           ) : (
             <>
-              {resolution && resolution.resolved < resolution.requested ? (
+              {hasGlucoseEvidence ? (
+                <View
+                  style={[
+                    styles.viewControl,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderRadius: radius.lg,
+                    },
+                  ]}
+                >
+                  {(['visual', 'records'] as const).map((option) => (
+                    <Pressable
+                      key={option}
+                      accessibilityRole="button"
+                      onPress={() => setView(option)}
+                      style={[
+                        styles.viewOption,
+                        view === option && {
+                          backgroundColor: colors.surfaceElevated,
+                          borderColor: colors.primary,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        accessibilityElementsHidden
+                        color={
+                          view === option
+                            ? colors.primary
+                            : colors.textSecondary
+                        }
+                        name={
+                          option === 'visual'
+                            ? 'analytics-outline'
+                            : 'list-outline'
+                        }
+                        size={18}
+                      />
+                      <Text
+                        style={[
+                          styles.viewOptionText,
+                          {
+                            color:
+                              view === option
+                                ? colors.primary
+                                : colors.textSecondary,
+                          },
+                        ]}
+                      >
+                        {option === 'visual'
+                          ? 'Visualise data'
+                          : 'All records'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              {loadedResolution &&
+              loadedResolution.resolved < loadedResolution.checked ? (
                 <View
                   style={[
                     styles.stateCard,
@@ -254,28 +463,195 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                     size={22}
                   />
                   <Text style={[styles.stateText, { color: colors.textSecondary }]}>
-                    {resolution.requested - resolution.resolved} referenced
+                    {loadedResolution.checked - loadedResolution.resolved}{' '}
+                    loaded
                     record ID
-                    {resolution.requested - resolution.resolved === 1 ? '' : 's'}{' '}
+                    {loadedResolution.checked - loadedResolution.resolved === 1
+                      ? ''
+                      : 's'}{' '}
                     could not be resolved. This claim should be treated as
                     incomplete until the source history is restored.
                   </Text>
                 </View>
               ) : null}
-              <RecordList
-                data={data}
-                emptyMessage="None of the referenced records could be resolved locally."
-                filter="all"
-                headerTitle="All supporting records"
-                recordIds={evidence.recordIds}
-                visibleCount={visibleCount}
-                onShowMore={() => setVisibleCount((count) => count + 100)}
+              {view === 'visual' && hasGlucoseEvidence ? (
+                visualLoading || !visualGlucose ? (
+                  <View style={styles.loading}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text
+                      style={[
+                        styles.loadingText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      Preparing the comparison…
+                    </Text>
+                  </View>
+                ) : (
+                  <EvidenceGlucoseOverlay
+                    onExpand={() => setVisualExpanded(true)}
+                    readings={visualGlucose}
+                  />
+                )
+              ) : hasReferencedTimelineRecords ? (
+                <>
+                  {referencedMeals.length ? (
+                    <FoodDiaryCard
+                      events={referencedMeals}
+                      logs={referencedFoodLogs}
+                      readOnly
+                    />
+                  ) : null}
+                  <RecordList
+                    data={data}
+                    emptyMessage="None of the referenced records could be resolved locally."
+                    filter="all"
+                    headerTitle="All supporting records"
+                    recordIds={evidence.recordIds}
+                    visibleCount={visibleCount}
+                    onShowMore={() =>
+                      setVisibleCount((count) => count + 100)
+                    }
+                  />
+                </>
+              ) : null}
+              <HealthMetricRecordList
+                initiallyExpanded
+                records={referencedHealthRecords}
               />
+              <SourceEvidenceRecordList records={sourceRecords} />
             </>
           )}
         </ScrollView>
+        <FullscreenChartModal
+          detail="Up to seven days overlaid in Europe/London time"
+          onClose={() => setVisualExpanded(false)}
+          title="Day-to-day glucose"
+          visible={visualExpanded && Boolean(visualGlucose)}
+        >
+          {visualGlucose ? (
+            <EvidenceGlucoseOverlay expanded readings={visualGlucose} />
+          ) : null}
+        </FullscreenChartModal>
       </SafeAreaView>
     </Modal>
+  );
+}
+
+function sourceRecordRows(record: ImportRawRecord) {
+  try {
+    const payload = JSON.parse(record.payloadJson) as Record<string, unknown>;
+    const ignored = new Set(['reportStart', 'reportEnd']);
+    return Object.entries(payload)
+      .filter(([key, value]) => !ignored.has(key) && value !== undefined)
+      .map(([key, value]) => {
+        if (Array.isArray(value)) {
+          const schedule = value
+            .map((segment) => {
+              if (typeof segment !== 'object' || segment === null) return '';
+              const item = segment as Record<string, unknown>;
+              return `${String(item.startTime ?? '')} ${String(
+                item.value ?? '',
+              )} ${String(item.unit ?? '')}`.trim();
+            })
+            .filter(Boolean)
+            .join(', ');
+          return [key, schedule || 'None'] as const;
+        }
+        if (typeof value === 'boolean') {
+          return [key, value ? 'On' : 'Off'] as const;
+        }
+        return [key, String(value)] as const;
+      });
+  } catch {
+    return [['Source record', 'The retained payload could not be displayed.']] as const;
+  }
+}
+
+function sourceRecordLabel(kind: string) {
+  if (kind === 'pump-mode-summary') return 'Omnipod operating modes';
+  if (kind === 'pump-mode-daily') return 'Daily Omnipod operating modes';
+  if (kind === 'pump-state-interval') return 'Timed Omnipod pump state';
+  if (kind === 'pump-settings') return 'Omnipod settings snapshot';
+  return kind.replace(/[-_]+/g, ' ');
+}
+
+function SourceEvidenceRecordList({
+  records,
+}: {
+  records: ImportRawRecord[];
+}) {
+  const { colors, radius } = useAppTheme();
+  if (!records.length) return null;
+  return (
+    <View style={styles.sourceRecords}>
+      <Text style={[styles.sourceRecordsTitle, { color: colors.text }]}>
+        Source report evidence
+      </Text>
+      {records.map((record) => (
+        <View
+          key={record.id}
+          style={[
+            styles.sourceRecord,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.lg,
+            },
+          ]}
+        >
+          <View style={styles.sourceRecordHeader}>
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.insulin}
+              name="document-text-outline"
+              size={18}
+            />
+            <View style={styles.sourceRecordHeaderCopy}>
+              <Text style={[styles.sourceRecordTitle, { color: colors.text }]}>
+                {sourceRecordLabel(record.recordKind)}
+              </Text>
+              <Text
+                style={[
+                  styles.sourceRecordMeta,
+                  { color: colors.textTertiary },
+                ]}
+              >
+                {record.sourceFile}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={[
+              styles.sourceRecordRows,
+              { borderTopColor: colors.divider },
+            ]}
+          >
+            {sourceRecordRows(record).map(([label, value]) => (
+              <View key={label} style={styles.sourceRecordRow}>
+                <Text
+                  style={[
+                    styles.sourceRecordLabel,
+                    { color: colors.textTertiary },
+                  ]}
+                >
+                  {label.replace(/([a-z])([A-Z])/g, '$1 $2')}
+                </Text>
+                <Text
+                  selectable
+                  style={[
+                    styles.sourceRecordValue,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {value}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -316,6 +692,57 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 42,
     gap: 14,
+  },
+  sourceRecords: {
+    gap: 10,
+  },
+  sourceRecordsTitle: {
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: '800',
+  },
+  sourceRecord: {
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+  },
+  sourceRecordHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  sourceRecordHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sourceRecordTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  sourceRecordMeta: {
+    fontSize: 9,
+    lineHeight: 14,
+    marginTop: 1,
+  },
+  sourceRecordRows: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    marginTop: 11,
+    paddingTop: 11,
+  },
+  sourceRecordRow: {
+    gap: 2,
+  },
+  sourceRecordLabel: {
+    fontSize: 8,
+    lineHeight: 12,
+    fontWeight: '800',
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
+  },
+  sourceRecordValue: {
+    fontSize: 11,
+    lineHeight: 17,
   },
   explainer: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -400,5 +827,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  viewControl: {
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 5,
+    flexDirection: 'row',
+    gap: 5,
+  },
+  viewOption: {
+    flex: 1,
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  viewOptionText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
 });

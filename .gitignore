@@ -64,3 +64,5 @@ yarn-error.*
 **/build/
 **/.gradle/
 /artifacts/
+/test-builds/
+/tmp/

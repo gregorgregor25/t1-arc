@@ -4,6 +4,8 @@ import {
   DataSourceStatus,
   GlucoseReading,
   HealthContextEvent,
+  InsulinDailyTotal,
+  PumpStateInterval,
   TimeRange,
   TimelineData,
 } from '@/domain/models';
@@ -21,6 +23,8 @@ export interface InsulinSource {
   refresh?(): Promise<void>;
   getBasalDeliveries(range: TimeRange): Promise<BasalDelivery[]>;
   getBolusDeliveries(range: TimeRange): Promise<BolusDelivery[]>;
+  getDailyTotals?(range: TimeRange): Promise<InsulinDailyTotal[]>;
+  getPumpStates?(range: TimeRange): Promise<PumpStateInterval[]>;
   getStatus(now?: number): Promise<DataSourceStatus>;
 }
 
@@ -60,6 +64,8 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       glucose,
       basal,
       boluses,
+      dailyInsulinTotals,
+      pumpStates,
       context,
       glucoseStatus,
       insulinStatus,
@@ -68,6 +74,8 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       this.glucoseSource.getReadings(range),
       this.insulinSource.getBasalDeliveries(range),
       this.insulinSource.getBolusDeliveries(range),
+      this.insulinSource.getDailyTotals?.(range) ?? Promise.resolve([]),
+      this.insulinSource.getPumpStates?.(range) ?? Promise.resolve([]),
       this.contextSource?.getEvents(range) ?? Promise.resolve([]),
       this.glucoseSource.getStatus(),
       this.insulinSource.getStatus(),
@@ -79,6 +87,8 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       glucose,
       basal,
       boluses,
+      dailyInsulinTotals,
+      pumpStates,
       context,
       sources: [
         glucoseStatus,

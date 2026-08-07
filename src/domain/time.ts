@@ -2,6 +2,21 @@ import { APP_TIME_ZONE, TimeRange } from './models';
 
 export type DateKey = `${number}-${number}-${number}`;
 
+export function isDateKey(value: unknown): value is DateKey {
+  if (typeof value !== 'string') return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return (
+    candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day
+  );
+}
+
 const dateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: APP_TIME_ZONE,
   year: 'numeric',

@@ -1,40 +1,57 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
 import { AppScreen, SectionHeading } from '@/components/AppScreen';
-import { DataModeBadge } from '@/components/DataModeBadge';
+import { DateNavigator } from '@/components/DateNavigator';
 import { ErrorCard } from '@/components/ErrorCard';
+import { EmptyState } from '@/components/EmptyState';
 import { EvidenceRecordInspector } from '@/components/EvidenceRecordInspector';
+import { InsightReviewHistoryCard } from '@/components/InsightReviewHistoryCard';
+import { InsightReviewScheduleCard } from '@/components/InsightReviewScheduleCard';
 import { LoadingCard } from '@/components/LoadingCard';
 import { SafetyNote } from '@/components/SafetyNote';
 import { SectionCard } from '@/components/SectionCard';
+import { SegmentedControl } from '@/components/SegmentedControl';
 import {
-  answerInsightQuestion,
   EvidenceReference,
-  InsightAnswer,
   InsightCategory,
   InsightFinding,
   InsightKind,
 } from '@/domain/insights';
-import { formatDate, formatTime, toDateKey } from '@/domain/time';
+import { InsightPeriodDays } from '@/domain/insightRanges';
+import {
+  saveInsightReport,
+  SavedInsightReport,
+} from '@/data/insights/insightReportRepository';
+import {
+  addDays,
+  dayRange,
+  formatDate,
+  formatTime,
+  toDateKey,
+} from '@/domain/time';
 import { useInsights } from '@/hooks/useInsights';
+import { loadInsightReport } from '@/data/insights/loadInsightReport';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
+import { useSavedInsightReports } from '@/hooks/useSavedInsightReports';
 import { useDataContext } from '@/providers/DataProvider';
+import { TarvisScreen } from '@/screens/TarvisScreen';
 import { useAppTheme } from '@/theme/theme';
 
-const SUGGESTED_QUESTIONS = [
-  'Why was glucose worse?',
-  'When were highs different?',
-  'What changed with food?',
-  'Did sleep change?',
-];
+type InsightPeriodChoice = '3' | '7' | '14' | '30';
 
 const CATEGORY_ICON: Record<
   InsightCategory,
@@ -45,6 +62,13 @@ const CATEGORY_ICON: Record<
   food: 'restaurant-outline',
   sleep: 'moon-outline',
   activity: 'walk-outline',
+  heart: 'heart-outline',
+  weight: 'scale-outline',
+  body: 'body-outline',
+  vitals: 'pulse-outline',
+  hydration: 'water-outline',
+  medication: 'medical-outline',
+  context: 'document-text-outline',
   'data-quality': 'shield-checkmark-outline',
 };
 
@@ -249,50 +273,151 @@ export function InsightsScreen() {
   const { colors, radius } = useAppTheme();
   const {
     dataMode,
+    earliestDate,
+    now,
+    repository,
     refreshData,
-    setDataMode,
     syncing,
+    today,
   } = useDataContext();
-  const insightState = useInsights();
+  const latestCompleteDate = addDays(today, -1);
+  const [periodChoice, setPeriodChoice] =
+    useState<InsightPeriodChoice>('7');
+  const periodDays = Number(periodChoice) as InsightPeriodDays;
+  const [comparisonEndDate, setComparisonEndDate] =
+    useState(latestCompleteDate);
+  const insightState = useInsights(periodDays, comparisonEndDate);
+  const loadTarvisReportForPeriod = useCallback(
+    async (requestedDays: InsightPeriodDays) => {
+      if (!repository) {
+        throw new Error('Your local health data is not ready yet.');
+      }
+      return loadInsightReport({
+        repository,
+        dataMode,
+        periodDays: requestedDays,
+        comparisonEndDate: latestCompleteDate,
+        now,
+      });
+    },
+    [dataMode, latestCompleteDate, now, repository],
+  );
+  const reviewHistory = useSavedInsightReports();
   const scrollViewRef = useRef<ScrollView>(null);
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState<InsightAnswer>();
-  const [answerOffset, setAnswerOffset] = useState<number>();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [reviewsVisible, setReviewsVisible] = useState(false);
+  const [allFindingsVisible, setAllFindingsVisible] = useState(false);
+  const [tarvisVisible, setTarvisVisible] = useState(false);
   const [selectedEvidence, setSelectedEvidence] =
     useState<EvidenceReference>();
+  const [selectedReview, setSelectedReview] =
+    useState<SavedInsightReport>();
+  const requestedRangeEnd = dayRange(
+    comparisonEndDate,
+    Date.now(),
+  ).end;
+  const cachedReport = reviewHistory.reports.find(
+    (saved) =>
+      Math.round(
+        (saved.report.currentRange.end -
+          saved.report.currentRange.start) /
+          86_400_000,
+      ) === periodDays &&
+      saved.report.currentRange.end === requestedRangeEnd,
+  )?.report;
+  const activeReport =
+    selectedReview?.report ?? insightState.report ?? cachedReport;
+  const hasGlucoseEvidence = Boolean(
+    activeReport &&
+      activeReport.current.glucoseReadings +
+        activeReport.previous.glucoseReadings >
+        0,
+  );
+  const isLatestRollingWeek =
+    periodDays === 7 && comparisonEndDate === latestCompleteDate;
+  const activeReviewId =
+    selectedReview?.id ??
+    (isLatestRollingWeek && activeReport
+      ? `rolling-week:${activeReport.currentRange.end}`
+      : undefined);
+  const activePeriodDays = activeReport
+    ? Math.max(
+        1,
+        Math.round(
+          (activeReport.currentRange.end - activeReport.currentRange.start) /
+            86_400_000,
+        ),
+      )
+    : periodDays;
 
-  const findings = useMemo(() => {
-    const report = insightState.report;
-    if (!report || !answer?.findingIds.length) return report?.findings ?? [];
-    return [...report.findings].sort((a, b) => {
-      const aRelevant = answer.findingIds.includes(a.id) ? 1 : 0;
-      const bRelevant = answer.findingIds.includes(b.id) ? 1 : 0;
-      return bRelevant - aRelevant;
-    });
-  }, [answer, insightState.report]);
+  const findings = useMemo(
+    () => activeReport?.findings ?? [],
+    [activeReport],
+  );
+  const visibleFindings = allFindingsVisible
+    ? findings
+    : findings.slice(0, 3);
 
   useEffect(() => {
-    if (!answer || answerOffset === undefined) return;
-    const timeout = setTimeout(() => {
-      scrollViewRef.current?.scrollTo({
-        y: Math.max(0, answerOffset - 24),
-        animated: true,
-      });
-    }, 120);
-    return () => clearTimeout(timeout);
-  }, [answer, answerOffset]);
+    if (dataMode !== 'live') {
+      setSelectedReview(undefined);
+      return;
+    }
+    const currentSaved = reviewHistory.reports.find(
+      (report) => report.id === activeReviewId,
+    );
+    if (currentSaved && !currentSaved.viewedAt) {
+      void reviewHistory.markViewed(currentSaved.id);
+    }
+  }, [
+    activeReviewId,
+    dataMode,
+    reviewHistory.markViewed,
+    reviewHistory.reports,
+  ]);
 
-  function ask(value = question) {
-    if (!insightState.report || !value.trim()) return;
-    setQuestion(value);
-    const nextAnswer = answerInsightQuestion(value, insightState.report);
-    setAnswer(nextAnswer);
-    setExpanded((current) => {
-      const next = new Set(current);
-      nextAnswer.findingIds.forEach((id) => next.add(id));
-      return next;
-    });
+  useEffect(() => {
+    if (
+      dataMode !== 'live' ||
+      !isLatestRollingWeek ||
+      !insightState.report ||
+      !insightState.report.ready
+    ) {
+      return;
+    }
+    void saveInsightReport(insightState.report)
+      .then(() => reviewHistory.reload())
+      .catch(() => undefined);
+  }, [
+    dataMode,
+    isLatestRollingWeek,
+    insightState.report,
+    reviewHistory.reload,
+  ]);
+
+  function selectReview(report: SavedInsightReport) {
+    setPeriodChoice('7');
+    setComparisonEndDate(toDateKey(report.report.currentRange.end - 1));
+    setSelectedReview(report);
+    setExpanded(new Set());
+    setSelectedEvidence(undefined);
+    void reviewHistory.markViewed(report.id);
+  }
+
+  function resetComparisonState() {
+    setSelectedReview(undefined);
+    setExpanded(new Set());
+    setSelectedEvidence(undefined);
+  }
+
+  function choosePeriod(next: InsightPeriodChoice) {
+    setPeriodChoice(next);
+    resetComparisonState();
+  }
+
+  function chooseEndDate(next: typeof comparisonEndDate) {
+    setComparisonEndDate(next);
+    resetComparisonState();
   }
 
   function toggleFinding(id: string) {
@@ -304,44 +429,214 @@ export function InsightsScreen() {
     });
   }
 
+  const handleNestedBack = useCallback(() => {
+    if (selectedReview) {
+      setSelectedReview(undefined);
+      return;
+    }
+    if (allFindingsVisible) {
+      setAllFindingsVisible(false);
+      return;
+    }
+    if (reviewsVisible) {
+      setReviewsVisible(false);
+    }
+  }, [allFindingsVisible, reviewsVisible, selectedReview]);
+  useAndroidBack(
+    !tarvisVisible &&
+      Boolean(selectedReview || allFindingsVisible || reviewsVisible),
+    handleNestedBack,
+  );
+
+  if (tarvisVisible && activeReport) {
+    return (
+      <>
+        <TarvisScreen
+          report={activeReport}
+          loadReportForPeriod={loadTarvisReportForPeriod}
+          onBack={() => setTarvisVisible(false)}
+          onInspectEvidence={setSelectedEvidence}
+        />
+        <EvidenceRecordInspector
+          evidence={selectedEvidence}
+          onClose={() => setSelectedEvidence(undefined)}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <AppScreen
       title="Insights"
       eyebrow="Evidence, not guesses"
-      trailing={<DataModeBadge mode={dataMode} />}
       refreshing={syncing}
       onRefresh={() => void refreshData()}
       scrollViewRef={scrollViewRef}
     >
-      {dataMode === 'demo' ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: !activeReport || !hasGlucoseEvidence,
+        }}
+        disabled={!activeReport || !hasGlucoseEvidence}
+        onPress={() => setTarvisVisible(true)}
+        style={({ pressed }) => [
+          styles.tarvisLaunch,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderColor: `${colors.accent}66`,
+            borderRadius: radius.lg,
+            opacity:
+              !activeReport || !hasGlucoseEvidence
+                ? 0.55
+                : pressed
+                  ? 0.72
+                  : 1,
+          },
+        ]}
+      >
         <View
           style={[
-            styles.demoNotice,
+            styles.tarvisIcon,
             {
-              backgroundColor: `${colors.primary}12`,
-              borderColor: `${colors.primary}55`,
+              backgroundColor: `${colors.accent}18`,
               borderRadius: radius.md,
             },
           ]}
         >
           <Ionicons
             accessibilityElementsHidden
-            color={colors.primary}
-            name="flask-outline"
-            size={20}
+            color={colors.accent}
+            name="sparkles"
+            size={24}
           />
-          <Text style={[styles.demoText, { color: colors.textSecondary }]}>
-            This demonstrates the explanation method using synthetic glucose,
-            insulin and health context.
+        </View>
+        <View style={styles.tarvisCopy}>
+          <Text style={[styles.tarvisEyebrow, { color: colors.accent }]}>
+            TARV1S
           </Text>
+          <Text style={[styles.tarvisTitle, { color: colors.text }]}>
+            Ask Tarv1s
+          </Text>
+          <Text
+            style={[styles.tarvisDetail, { color: colors.textSecondary }]}
+          >
+            Ask naturally about your data, continue the conversation, then
+            inspect the records behind every supported claim.
+          </Text>
+        </View>
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.primary}
+          name="arrow-forward"
+          size={20}
+        />
+      </Pressable>
+
+      <SectionHeading
+        title="Comparison window"
+        detail="One completed period against the same period immediately before it."
+      />
+      <SectionCard style={styles.comparisonCard}>
+        <SegmentedControl
+          accessibilityLabel="Insight comparison window"
+          options={[
+            { value: '3', label: '3D' },
+            { value: '7', label: '7D' },
+            { value: '14', label: '14D' },
+            { value: '30', label: '30D' },
+          ]}
+          value={periodChoice}
+          onChange={choosePeriod}
+        />
+        <View style={styles.periodNavigator}>
+          <DateNavigator
+            date={comparisonEndDate}
+            canGoBack={comparisonEndDate > earliestDate}
+            canGoForward={comparisonEndDate < latestCompleteDate}
+            onBack={() => chooseEndDate(addDays(comparisonEndDate, -1))}
+            onForward={() => chooseEndDate(addDays(comparisonEndDate, 1))}
+            onDateChange={chooseEndDate}
+            earliestDate={earliestDate}
+            latestDate={latestCompleteDate}
+            isToday={false}
+            caption={
+              comparisonEndDate === latestCompleteDate
+                ? 'Latest complete day'
+                : 'Period ends'
+            }
+          />
+        </View>
+      </SectionCard>
+
+      {dataMode === 'live' && hasGlucoseEvidence ? (
+        <View style={styles.reviewArea}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: reviewsVisible }}
+            onPress={() => setReviewsVisible((visible) => !visible)}
+            style={({ pressed }) => [
+              styles.reviewToggle,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: radius.md,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}
+          >
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.primary}
+              name="calendar-outline"
+              size={19}
+            />
+            <View style={styles.reviewCopy}>
+              <Text style={[styles.reviewTitle, { color: colors.text }]}>
+                Weekly reviews
+              </Text>
+              <Text
+                style={[styles.reviewDetail, { color: colors.textSecondary }]}
+              >
+                Schedule and previously saved comparisons
+              </Text>
+            </View>
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.textTertiary}
+              name={reviewsVisible ? 'chevron-up' : 'chevron-down'}
+              size={18}
+            />
+          </Pressable>
+          {reviewsVisible ? (
+            <View style={styles.reviewStack}>
+              <InsightReviewScheduleCard />
+              {periodDays === 7 && reviewHistory.reports.length ? (
+                <InsightReviewHistoryCard
+                  reports={reviewHistory.reports}
+                  selectedId={activeReviewId}
+                  onSelect={selectReview}
+                />
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
       {insightState.error ? (
         <ErrorCard message={insightState.error} />
-      ) : insightState.loading || !insightState.report ? (
-        <LoadingCard label="Comparing evidence across two weeks…" />
+      ) : !activeReport ? (
+        <LoadingCard
+          label={`Comparing two ${periodDays}-day evidence windows…`}
+        />
+      ) : !hasGlucoseEvidence ? (
+        <SectionCard>
+          <EmptyState
+            title="No glucose evidence yet"
+            detail="Connect a glucose source and let the encrypted history build. T1 Arc will not create a comparison or review from an empty record."
+          />
+        </SectionCard>
       ) : (
         <>
           <SectionCard
@@ -351,13 +646,23 @@ export function InsightsScreen() {
             ]}
           >
             <Text style={[styles.heroEyebrow, { color: colors.accent }]}>
-              LAST 7 COMPLETE DAYS VS PREVIOUS 7
+              {activePeriodDays} DAYS ENDING{' '}
+              {formatDate(
+                toDateKey(activeReport.currentRange.end - 1),
+                { day: 'numeric', month: 'short' },
+              ).toUpperCase()}{' '}
+              VS PREVIOUS {activePeriodDays}
             </Text>
+            {insightState.loading ? (
+              <Text style={[styles.updating, { color: colors.textTertiary }]}>
+                Updating with the latest local records…
+              </Text>
+            ) : null}
             <Text style={[styles.heroTitle, { color: colors.text }]}>
-              {insightState.report.headline}
+              {activeReport.headline}
             </Text>
             <Text style={[styles.heroSummary, { color: colors.textSecondary }]}>
-              {insightState.report.summary}
+              {activeReport.summary}
             </Text>
             <View style={[styles.metricRow, { borderColor: colors.divider }]}>
               <View style={styles.metric}>
@@ -365,10 +670,10 @@ export function InsightsScreen() {
                   Time in range
                 </Text>
                 <Text style={[styles.metricValue, { color: colors.text }]}>
-                  {insightState.report.current.timeInRangePercent}%
+                  {activeReport.current.timeInRangePercent}%
                 </Text>
                 <Text style={[styles.metricDelta, { color: colors.textTertiary }]}>
-                  was {insightState.report.previous.timeInRangePercent}%
+                  was {activeReport.previous.timeInRangePercent}%
                 </Text>
               </View>
               <View style={styles.metric}>
@@ -376,10 +681,10 @@ export function InsightsScreen() {
                   Coverage
                 </Text>
                 <Text style={[styles.metricValue, { color: colors.text }]}>
-                  {insightState.report.current.coveragePercent}%
+                  {activeReport.current.coveragePercent}%
                 </Text>
                 <Text style={[styles.metricDelta, { color: colors.textTertiary }]}>
-                  {insightState.report.current.glucoseReadings} readings
+                  {activeReport.current.glucoseReadings} readings
                 </Text>
               </View>
             </View>
@@ -399,7 +704,7 @@ export function InsightsScreen() {
                   Average
                 </Text>
                 <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {insightState.report.current.glucoseAverage?.toFixed(1) ??
+                  {activeReport.current.glucoseAverage?.toFixed(1) ??
                     '—'}
                 </Text>
                 <Text
@@ -423,9 +728,9 @@ export function InsightsScreen() {
                   Variability
                 </Text>
                 <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {insightState.report.current.glucoseCvPercent === null
+                  {activeReport.current.glucoseCvPercent === null
                     ? '—'
-                    : `${insightState.report.current.glucoseCvPercent}%`}
+                    : `${activeReport.current.glucoseCvPercent}%`}
                 </Text>
                 <Text
                   style={[styles.signalUnit, { color: colors.textTertiary }]}
@@ -448,8 +753,8 @@ export function InsightsScreen() {
                   Sustained runs
                 </Text>
                 <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {insightState.report.current.highGlucoseRuns +
-                    insightState.report.current.lowGlucoseRuns}
+                  {activeReport.current.highGlucoseRuns +
+                    activeReport.current.lowGlucoseRuns}
                 </Text>
                 <Text
                   style={[styles.signalUnit, { color: colors.textTertiary }]}
@@ -458,159 +763,52 @@ export function InsightsScreen() {
                 </Text>
               </View>
             </View>
-            {!insightState.report.ready && dataMode === 'live' ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void setDataMode('demo')}
-                style={({ pressed }) => [
-                  styles.previewButton,
-                  {
-                    borderColor: colors.border,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.previewText, { color: colors.primary }]}>
-                  Preview the method in Demo lab
-                </Text>
-              </Pressable>
-            ) : null}
           </SectionCard>
-
-          <SectionHeading
-            title="Ask the evidence"
-            detail="Questions are answered from deterministic comparisons in this build."
-          />
-          <SectionCard>
-            <View
-              style={[
-                styles.askRow,
-                {
-                  backgroundColor: colors.surfaceMuted,
-                  borderColor: colors.border,
-                  borderRadius: radius.md,
-                },
-              ]}
-            >
-              <TextInput
-                accessibilityLabel="Question for Daymark"
-                onChangeText={setQuestion}
-                onSubmitEditing={() => ask()}
-                placeholder="Why was my glucose different?"
-                placeholderTextColor={colors.textTertiary}
-                returnKeyType="send"
-                style={[styles.askInput, { color: colors.text }]}
-                value={question}
-              />
-              <Pressable
-                accessibilityLabel="Ask Daymark"
-                accessibilityRole="button"
-                disabled={!question.trim()}
-                onPress={() => ask()}
-                style={({ pressed }) => [
-                  styles.askButton,
-                  {
-                    backgroundColor: question.trim()
-                      ? colors.primary
-                      : colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Ionicons
-                  accessibilityElementsHidden
-                  color={
-                    question.trim() ? colors.onPrimary : colors.textTertiary
-                  }
-                  name="arrow-up"
-                  size={20}
-                />
-              </Pressable>
-            </View>
-            <View style={styles.suggestions}>
-              {SUGGESTED_QUESTIONS.map((suggestion) => (
-                <Pressable
-                  key={suggestion}
-                  accessibilityRole="button"
-                  onPress={() => ask(suggestion)}
-                  style={({ pressed }) => [
-                    styles.suggestion,
-                    {
-                      borderColor: colors.border,
-                      borderRadius: radius.pill,
-                      backgroundColor: pressed
-                        ? colors.surfaceMuted
-                        : colors.surface,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[styles.suggestionText, { color: colors.textSecondary }]}
-                  >
-                    {suggestion}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </SectionCard>
-
-          {answer ? (
-            <View
-              accessibilityLiveRegion="polite"
-              onLayout={(event) => setAnswerOffset(event.nativeEvent.layout.y)}
-            >
-              <SectionCard
-                style={[
-                  styles.answerCard,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: `${colors.accent}55`,
-                  },
-                ]}
-              >
-                <View style={styles.answerHeader}>
-                  <Ionicons
-                    accessibilityElementsHidden
-                    color={colors.accent}
-                    name="sparkles-outline"
-                    size={22}
-                  />
-                  <Text style={[styles.answerTitle, { color: colors.text }]}>
-                    {answer.title}
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.answerText, { color: colors.textSecondary }]}
-                >
-                  {answer.answer}
-                </Text>
-                <Text
-                  style={[styles.answerMeta, { color: colors.textTertiary }]}
-                >
-                  Supported by {answer.findingIds.length} finding
-                  {answer.findingIds.length === 1 ? '' : 's'} below
-                </Text>
-              </SectionCard>
-            </View>
-          ) : null}
 
           <SectionHeading
             title="Findings and evidence"
-            detail="Inspect each calculation window and its representative normalised records."
+            detail={
+              findings.length > 3 && !allFindingsVisible
+                ? `Showing the three most relevant of ${findings.length} findings.`
+                : 'Open a finding only when you want its calculation and records.'
+            }
           />
           <View style={styles.findingStack}>
-            {findings.map((finding) => (
+            {visibleFindings.map((finding) => (
               <FindingCard
                 key={finding.id}
                 finding={finding}
                 expanded={expanded.has(finding.id)}
-                highlighted={Boolean(answer?.findingIds.includes(finding.id))}
+                highlighted={false}
                 onToggle={() => toggleFinding(finding.id)}
                 onInspectRecords={setSelectedEvidence}
               />
             ))}
           </View>
+          {findings.length > 3 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                setAllFindingsVisible((visible) => !visible)
+              }
+              style={({ pressed }) => [
+                styles.allFindingsButton,
+                {
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.allFindingsText, { color: colors.primary }]}
+              >
+                {allFindingsVisible
+                  ? 'Show top three'
+                  : `View all ${findings.length} findings`}
+              </Text>
+            </Pressable>
+          ) : null}
           <View style={styles.safety}>
             <SafetyNote />
           </View>
@@ -626,23 +824,80 @@ export function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
-  demoNotice: {
-    minHeight: 62,
+  tarvisLaunch: {
+    minHeight: 112,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 2,
+  },
+  tarvisIcon: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tarvisCopy: {
+    flex: 1,
+  },
+  tarvisEyebrow: {
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  tarvisTitle: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  tarvisDetail: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  comparisonCard: {
+    padding: 12,
+  },
+  periodNavigator: {
+    marginTop: 10,
+  },
+  reviewArea: {
+    marginBottom: 12,
+    marginTop: 12,
+  },
+  reviewToggle: {
+    minHeight: 68,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
   },
-  demoText: {
+  reviewCopy: {
     flex: 1,
-    fontSize: 12,
+  },
+  reviewTitle: {
+    fontSize: 13,
     lineHeight: 18,
+    fontWeight: '800',
+  },
+  reviewDetail: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  reviewStack: {
+    gap: 10,
+    marginTop: 10,
   },
   hero: {
-    padding: 20,
+    paddingHorizontal: 17,
+    paddingTop: 17,
+    paddingBottom: 20,
   },
   heroEyebrow: {
     fontSize: 10,
@@ -651,16 +906,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.9,
   },
   heroTitle: {
-    fontSize: 25,
-    lineHeight: 32,
+    fontSize: 22,
+    lineHeight: 29,
     fontWeight: '800',
     letterSpacing: -0.45,
     marginTop: 8,
   },
   heroSummary: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 8,
+  },
+  updating: {
+    fontSize: 9,
+    lineHeight: 13,
+    marginTop: 5,
   },
   metricRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -712,18 +972,6 @@ const styles = StyleSheet.create({
   signalUnit: {
     fontSize: 9,
     lineHeight: 13,
-  },
-  previewButton: {
-    minHeight: 48,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-  },
-  previewText: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
   },
   askRow: {
     minHeight: 54,
@@ -788,6 +1036,18 @@ const styles = StyleSheet.create({
   },
   findingStack: {
     gap: 12,
+  },
+  allFindingsButton: {
+    minHeight: 46,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  allFindingsText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
   findingCard: {
     padding: 18,

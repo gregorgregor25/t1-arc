@@ -1,6 +1,9 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { BackupCryptoResult } from './DaymarkBackupCrypto.types';
+import {
+  BackupCryptoResult,
+  BackupSaveResult,
+} from './DaymarkBackupCrypto.types';
 
 declare class DaymarkBackupCryptoModule extends NativeModule<
   Record<string, never>
@@ -13,6 +16,11 @@ declare class DaymarkBackupCryptoModule extends NativeModule<
     encryptedUri: string,
     passphrase: string,
   ): Promise<BackupCryptoResult>;
+  saveTemporaryFileAsync(
+    sourceUri: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<BackupSaveResult>;
   removeTemporaryFileAsync(uri: string): Promise<boolean>;
 }
 

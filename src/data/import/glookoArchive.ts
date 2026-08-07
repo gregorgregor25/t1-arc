@@ -2,11 +2,12 @@ import { inflateSync, strFromU8 } from 'fflate';
 
 import {
   GlookoTextFile,
-  isExplicitlyIgnoredGlookoFileName,
+  isGlookoCgmFileName,
 } from './glookoCsv';
 
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 25 * 1024 * 1024;
+const MAX_CGM_ENTRY_BYTES = 48 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES = 120 * 1024 * 1024;
 const MAX_CSV_FILES = 40;
 const EOCD_SIGNATURE = 0x06054b50;
@@ -16,6 +17,12 @@ const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
 const UINT16_MAX = 0xffff;
 const UINT32_MAX = 0xffffffff;
+
+export function glookoEntryLimitForName(name: string) {
+  return isGlookoCgmFileName(name)
+    ? MAX_CGM_ENTRY_BYTES
+    : MAX_ENTRY_BYTES;
+}
 
 export interface GlookoArchiveEntrySummary {
   name: string;
@@ -265,9 +272,16 @@ export async function unpackGlookoExport(
       throw new Error('Choose a Glooko .zip export or one of its .csv files.');
     }
     const fileName = safeGlookoFileName(name);
+    const cgmBytes = isGlookoCgmFileName(fileName) ? bytes.slice() : undefined;
     return {
       format: 'csv',
-      files: [{ name: fileName, text: strFromU8(bytes) }],
+      files: [
+        {
+          name: fileName,
+          text: cgmBytes ? undefined : strFromU8(bytes),
+          bytes: cgmBytes,
+        },
+      ],
       entries: [
         {
           name: fileName,
@@ -307,21 +321,6 @@ export async function unpackGlookoExport(
     }
 
     csvFiles += 1;
-    if (isExplicitlyIgnoredGlookoFileName(fileName)) {
-      summaries.push({
-        name: fileName,
-        ...sizes,
-        handling: 'retained',
-        reason: 'not-normalised',
-      });
-      files.push({
-        name: fileName,
-        text: '',
-        retainedOnly: true,
-        originalBytes: entry.reportedOriginalBytes,
-      });
-      continue;
-    }
     if (selectedFiles >= MAX_CSV_FILES) {
       summaries.push({
         name: fileName,
@@ -349,7 +348,9 @@ export async function unpackGlookoExport(
     const content = extractEntry(bytes, entry, nextBoundary);
     const measuredBytes = content.byteLength;
     let reason: GlookoArchiveEntrySummary['reason'];
-    if (measuredBytes > MAX_ENTRY_BYTES) reason = 'entry-limit';
+    if (measuredBytes > glookoEntryLimitForName(fileName)) {
+      reason = 'entry-limit';
+    }
     else if (extractedBytes + measuredBytes > MAX_EXTRACTED_BYTES) {
       reason = 'archive-limit';
     }
@@ -381,7 +382,8 @@ export async function unpackGlookoExport(
     });
     files.push({
       name: fileName,
-      text: strFromU8(content),
+      text: isGlookoCgmFileName(fileName) ? undefined : strFromU8(content),
+      bytes: isGlookoCgmFileName(fileName) ? content : undefined,
       originalBytes: measuredBytes,
     });
   }

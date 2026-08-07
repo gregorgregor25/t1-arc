@@ -1,6 +1,9 @@
 import { NativeModule, registerWebModule } from 'expo';
 
-import { BackupCryptoResult } from './DaymarkBackupCrypto.types';
+import {
+  BackupCryptoResult,
+  BackupSaveResult,
+} from './DaymarkBackupCrypto.types';
 
 class DaymarkBackupCryptoModule extends NativeModule<Record<string, never>> {
   async encryptJsonFileAsync(
@@ -14,6 +17,14 @@ class DaymarkBackupCryptoModule extends NativeModule<Record<string, never>> {
     _encryptedUri: string,
     _passphrase: string,
   ): Promise<BackupCryptoResult> {
+    throw new Error('Encrypted health backups require Android.');
+  }
+
+  async saveTemporaryFileAsync(
+    _sourceUri: string,
+    _fileName: string,
+    _mimeType: string,
+  ): Promise<BackupSaveResult> {
     throw new Error('Encrypted health backups require Android.');
   }
 

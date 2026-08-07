@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -140,7 +141,7 @@ export function GlucoseAppearanceSettingsScreen({
 
   function confirmReset() {
     Alert.alert(
-      'Restore Daymark defaults?',
+      'Restore T1 Arc defaults?',
       'This resets the four glucose boundaries and all display colours.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -160,7 +161,13 @@ export function GlucoseAppearanceSettingsScreen({
   return (
     <Modal
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        if (Keyboard.isVisible()) {
+          Keyboard.dismiss();
+          return;
+        }
+        onClose();
+      }}
       presentationStyle="fullScreen"
       visible={visible}
     >
@@ -332,7 +339,7 @@ export function GlucoseAppearanceSettingsScreen({
               Range colours
             </Text>
             <Text style={[styles.helper, { color: themeColors.textSecondary }]}>
-              Tap a row, then choose a colour. Daymark adapts it for light,
+              Tap a row, then choose a colour. T1 Arc adapts it for light,
               dark and low-power displays.
             </Text>
             <View
@@ -574,7 +581,7 @@ export function GlucoseAppearanceSettingsScreen({
                   { color: themeColors.textSecondary },
                 ]}
               >
-                Restore Daymark defaults
+                Restore T1 Arc defaults
               </Text>
             </Pressable>
           </ScrollView>

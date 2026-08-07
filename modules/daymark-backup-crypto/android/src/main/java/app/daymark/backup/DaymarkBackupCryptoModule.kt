@@ -1,7 +1,11 @@
 package app.daymark.backup
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import expo.modules.kotlin.activityresult.AppContextActivityResultContract
+import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -13,6 +17,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.Serializable
 import java.security.SecureRandom
 import java.util.UUID
 import java.util.zip.GZIPInputStream
@@ -27,9 +32,48 @@ import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private data class SaveRequest(
+  val sourceUri: String,
+  val fileName: String,
+  val mimeType: String,
+) : Serializable
+
+private data class SavePickerResult(
+  val destinationUri: String?,
+)
+
+private class SaveBackupContract :
+  AppContextActivityResultContract<SaveRequest, SavePickerResult> {
+  override fun createIntent(context: Context, input: SaveRequest): Intent =
+    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type = input.mimeType.ifBlank { "application/octet-stream" }
+      putExtra(Intent.EXTRA_TITLE, input.fileName)
+    }
+
+  override fun parseResult(
+    input: SaveRequest,
+    resultCode: Int,
+    intent: Intent?,
+  ): SavePickerResult =
+    SavePickerResult(
+      destinationUri =
+        intent?.data
+          ?.takeIf { resultCode == Activity.RESULT_OK }
+          ?.toString(),
+    )
+}
+
 class DaymarkBackupCryptoModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("DaymarkBackupCrypto")
+
+    lateinit var saveLauncher:
+      AppContextActivityResultLauncher<SaveRequest, SavePickerResult>
+
+    RegisterActivityContracts {
+      saveLauncher = registerForActivityResult(SaveBackupContract())
+    }
 
     AsyncFunction("encryptJsonFileAsync") Coroutine {
         plaintextUri: String,
@@ -57,6 +101,60 @@ class DaymarkBackupCryptoModule : Module() {
         file?.delete() ?: false
       }
     }
+
+    AsyncFunction("saveTemporaryFileAsync") Coroutine {
+        sourceUri: String,
+        fileName: String,
+        mimeType: String,
+      ->
+      require(fileName.isNotBlank() && !fileName.contains('/')) {
+        "The backup filename is invalid."
+      }
+      val source =
+        internalFileForUri(sourceUri)
+          ?: throw IllegalArgumentException("The temporary backup file is unavailable.")
+      val picked =
+        saveLauncher.launch(
+          SaveRequest(
+            sourceUri = sourceUri,
+            fileName = fileName,
+            mimeType = mimeType,
+          ),
+        )
+      val destinationValue = picked.destinationUri
+        ?: return@Coroutine mapOf("status" to "cancelled")
+      val destination = Uri.parse(destinationValue)
+      val context = requireNotNull(appContext.reactContext)
+
+      withContext(Dispatchers.IO) {
+        try {
+          FileInputStream(source).use { input ->
+            val output =
+              context.contentResolver.openOutputStream(destination, "wt")
+                ?: throw IllegalStateException("The selected backup file cannot be written.")
+            output.use {
+              copyWithLimit(
+                input = BufferedInputStream(input, BUFFER_SIZE),
+                output = BufferedOutputStream(it, BUFFER_SIZE),
+                maximumBytes = MAX_ENCRYPTED_BYTES,
+                limitMessage = "The encrypted backup is larger than the 256 MB safety limit.",
+              )
+            }
+          }
+          mapOf(
+            "status" to "saved",
+            "uri" to destinationValue,
+            "byteLength" to source.length().toDouble(),
+          )
+        } catch (error: Exception) {
+          runCatching { context.contentResolver.delete(destination, null, null) }
+          throw IllegalStateException(
+            error.message ?: "The encrypted backup could not be saved.",
+            error,
+          )
+        }
+      }
+    }
   }
 
   private fun encryptJsonFile(
@@ -78,7 +176,7 @@ class DaymarkBackupCryptoModule : Module() {
     SecureRandom().nextBytes(nonce)
     val header = buildHeader(salt, nonce)
     val keyBytes = deriveKey(passphrase, salt, PBKDF2_ITERATIONS)
-    val output = newTemporaryFile(context, ".daymark")
+    val output = newTemporaryFile(context, ".t1arc")
 
     try {
       val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)

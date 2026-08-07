@@ -2,6 +2,8 @@ import { NativeModule, registerWebModule } from 'expo';
 
 import {
   HealthConnectCategoryId,
+  HealthConnectChangesPage,
+  HealthConnectPage,
   HealthConnectStatus,
 } from './DaymarkHealthConnect.types';
 
@@ -13,6 +15,10 @@ const categories: HealthConnectCategoryId[] = [
   'heart_rate',
   'sleep',
   'weight',
+  'body_composition',
+  'vitals',
+  'hydration',
+  'nutrition',
 ];
 
 class DaymarkHealthConnectModule extends NativeModule<Record<string, never>> {
@@ -31,6 +37,18 @@ class DaymarkHealthConnectModule extends NativeModule<Record<string, never>> {
         partiallyGranted: false,
       })),
     };
+  }
+
+  async getChangesTokenAsync(): Promise<string> {
+    throw new Error('Health Connect is unavailable on the web.');
+  }
+
+  async readChangesPageAsync(): Promise<HealthConnectChangesPage> {
+    throw new Error('Health Connect is unavailable on the web.');
+  }
+
+  async readRecordsPageAsync(): Promise<HealthConnectPage> {
+    throw new Error('Health Connect is unavailable on the web.');
   }
 }
 

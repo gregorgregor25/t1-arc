@@ -16,7 +16,7 @@ export class UnavailableInsulinSource implements InsulinSource {
     return {
       id: this.sourceId,
       label: 'Insulin',
-      detail: 'Not connected · Glooko will remain a separate delayed source',
+      detail: 'Not connected · add Glooko history from Sources',
       freshness: 'missing',
       origin: 'delayed',
       recordCount: 0,

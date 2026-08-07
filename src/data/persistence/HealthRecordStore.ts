@@ -2,6 +2,8 @@ import {
   BasalDelivery,
   BolusDelivery,
   HealthContextEvent,
+  InsulinDailyTotal,
+  PumpStateInterval,
   TimeRange,
 } from '@/domain/models';
 
@@ -28,6 +30,7 @@ export interface StoredImportBatch extends ImportBatch {
   basalCount: number;
   bolusCount: number;
   contextCount: number;
+  dailyTotalCount: number;
   duplicateCount: number;
 }
 
@@ -48,25 +51,101 @@ export interface ImportSourcePayload {
   entries: ImportSourceEntry[];
 }
 
+/**
+ * Exact field/value evidence from a source row. The original archive remains
+ * authoritative; this encrypted, deduplicated index makes every field usable
+ * without reparsing a ZIP for each screen or analysis.
+ */
+export interface ImportRawRecord {
+  id: string;
+  sourceId: string;
+  recordKind: string;
+  timestamp?: number;
+  sourceFile: string;
+  sourceRow: number;
+  payloadJson: string;
+  importedAt: number;
+}
+
+export function pumpStateIntervalFromRawRecord(
+  record: ImportRawRecord,
+): PumpStateInterval | undefined {
+  if (record.recordKind !== 'pump-state-interval') return undefined;
+  try {
+    const payload = JSON.parse(record.payloadJson) as {
+      start?: unknown;
+      end?: unknown;
+      kind?: unknown;
+      sourcePage?: unknown;
+    };
+    if (
+      typeof payload.start !== 'number' ||
+      typeof payload.end !== 'number' ||
+      payload.end <= payload.start ||
+      (payload.kind !== 'activity-mode' &&
+        payload.kind !== 'automated-pause')
+    ) {
+      return undefined;
+    }
+    return {
+      id: record.id,
+      start: payload.start,
+      end: payload.end,
+      kind: payload.kind,
+      sourceId: record.sourceId,
+      importedAt: record.importedAt,
+      sourceFile: record.sourceFile,
+      sourcePage:
+        typeof payload.sourcePage === 'number'
+          ? payload.sourcePage
+          : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export interface StoredImportSourcePayload {
   batch: StoredImportBatch;
   payload: ImportSourcePayload;
 }
 
+export interface StoredImportSourceSummary {
+  archiveCount: number;
+  totalBytes: number;
+  earliestStoredAt?: number;
+  latestStoredAt?: number;
+  dataStart?: number;
+  dataThrough?: number;
+  loadedEntryCount: number;
+  retainedEntryCount: number;
+  indexedRecordCount?: number;
+}
+
+export interface StoredImportSourceReference {
+  batchId: string;
+  storedAt: number;
+}
+
 export interface ImportWriteResult {
   alreadyImported: boolean;
+  /** Historical CGM rows are written by the glucose store alongside this import. */
+  insertedGlucose: number;
   insertedBasal: number;
   insertedBoluses: number;
   insertedContext: number;
+  insertedDailyTotals: number;
   duplicateCount: number;
   sourcePayloadStored: boolean;
   batch: StoredImportBatch;
 }
 
 export interface ImportedSourceDeleteResult {
+  glucose: number;
   basal: number;
   boluses: number;
   context: number;
+  dailyTotals: number;
   batches: number;
 }
 
@@ -74,6 +153,8 @@ export interface HealthRecordStore {
   initialize(): Promise<void>;
   getBasalDeliveries(range: TimeRange): Promise<BasalDelivery[]>;
   getBolusDeliveries(range: TimeRange): Promise<BolusDelivery[]>;
+  getDailyInsulinTotals(range: TimeRange): Promise<InsulinDailyTotal[]>;
+  getPumpStateIntervals(range: TimeRange): Promise<PumpStateInterval[]>;
   getContextEvents(range: TimeRange): Promise<HealthContextEvent[]>;
   getInsulinBounds(): Promise<StoredRecordBounds>;
   getContextBounds(): Promise<StoredRecordBounds>;
@@ -81,6 +162,23 @@ export interface HealthRecordStore {
   getLatestImportSourcePayload(
     sourceId: string,
   ): Promise<StoredImportSourcePayload | undefined>;
+  getImportSourcePayloadReferences(
+    sourceId: string,
+  ): Promise<StoredImportSourceReference[]>;
+  getImportSourcePayload(
+    batchId: string,
+  ): Promise<StoredImportSourcePayload | undefined>;
+  getImportSourceSummary(
+    sourceId: string,
+  ): Promise<StoredImportSourceSummary>;
+  getRawSourceRecords(
+    sourceId: string,
+    range?: TimeRange,
+    recordKinds?: string[],
+  ): Promise<ImportRawRecord[]>;
+  getRawSourceRecordsByIds(
+    recordIds: readonly string[],
+  ): Promise<ImportRawRecord[]>;
   hasImportSourcePayload(sourceId: string): Promise<boolean>;
   writeImport(
     batch: ImportBatch,
@@ -88,6 +186,8 @@ export interface HealthRecordStore {
     boluses: BolusDelivery[],
     context: HealthContextEvent[],
     sourcePayload?: ImportSourcePayload,
+    dailyTotals?: InsulinDailyTotal[],
+    rawRecords?: ImportRawRecord[],
   ): Promise<ImportWriteResult>;
   saveManualContext(event: HealthContextEvent): Promise<void>;
   deleteManualContext(id: string): Promise<boolean>;
@@ -102,8 +202,10 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
   private readonly basal = new Map<string, BasalDelivery>();
   private readonly boluses = new Map<string, BolusDelivery>();
   private readonly context = new Map<string, HealthContextEvent>();
+  private readonly dailyTotals = new Map<string, InsulinDailyTotal>();
   private readonly batches = new Map<string, StoredImportBatch>();
   private readonly sourcePayloads = new Map<string, ImportSourcePayload>();
+  private readonly rawRecords = new Map<string, ImportRawRecord>();
 
   async initialize() {}
 
@@ -122,12 +224,72 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
       .sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  async getPumpStateIntervals(range: TimeRange) {
+    return [...this.rawRecords.values()]
+      .filter(
+        (record) =>
+          record.recordKind === 'pump-state-interval',
+      )
+      .flatMap((record) => {
+        const interval = pumpStateIntervalFromRawRecord(record);
+        return interval &&
+          interval.start < range.end &&
+          interval.end > range.start
+          ? [interval]
+          : [];
+      })
+      .sort((left, right) => left.start - right.start);
+  }
+
+  async getDailyInsulinTotals(range: TimeRange) {
+    return [...this.dailyTotals.values()]
+      .filter(
+        (total) =>
+          total.timestamp >= range.start && total.timestamp < range.end,
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
   async getContextEvents(range: TimeRange) {
     return [...this.context.values()]
       .filter(
         (event) => event.start < range.end && eventEnd(event) >= range.start,
       )
       .sort((a, b) => a.start - b.start);
+  }
+
+  async getRawSourceRecords(
+    sourceId: string,
+    range?: TimeRange,
+    recordKinds?: string[],
+  ) {
+    const kinds = recordKinds?.length ? new Set(recordKinds) : undefined;
+    return [...this.rawRecords.values()]
+      .filter(
+        (record) =>
+          record.sourceId === sourceId &&
+          (!kinds || kinds.has(record.recordKind)) &&
+          (!range ||
+            record.timestamp === undefined ||
+            (record.timestamp >= range.start &&
+              record.timestamp < range.end)),
+      )
+      .sort(
+        (left, right) =>
+          (left.timestamp ?? left.importedAt) -
+          (right.timestamp ?? right.importedAt),
+      );
+  }
+
+  async getRawSourceRecordsByIds(recordIds: readonly string[]) {
+    const requested = new Set(recordIds);
+    return [...this.rawRecords.values()]
+      .filter((record) => requested.has(record.id))
+      .sort(
+        (left, right) =>
+          (left.timestamp ?? left.importedAt) -
+          (right.timestamp ?? right.importedAt),
+      );
   }
 
   async getInsulinBounds(): Promise<StoredRecordBounds> {
@@ -138,6 +300,11 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
         recordedAt: item.importedAt,
       })),
       ...[...this.boluses.values()].map((item) => ({
+        start: item.timestamp,
+        end: item.timestamp,
+        recordedAt: item.importedAt,
+      })),
+      ...[...this.dailyTotals.values()].map((item) => ({
         start: item.timestamp,
         end: item.timestamp,
         recordedAt: item.importedAt,
@@ -195,10 +362,89 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     };
   }
 
+  async getImportSourcePayloadReferences(sourceId: string) {
+    return [...this.batches.entries()]
+      .filter(
+        ([key, batch]) =>
+          batch.sourceId === sourceId && this.sourcePayloads.has(key),
+      )
+      .map(([, batch]) => ({
+        batchId: batch.id,
+        storedAt: batch.importedAt,
+      }))
+      .sort((a, b) => a.storedAt - b.storedAt);
+  }
+
+  async getImportSourcePayload(batchId: string) {
+    const entry = [...this.batches.entries()].find(
+      ([, batch]) => batch.id === batchId,
+    );
+    if (!entry) return undefined;
+    const [key, batch] = entry;
+    const payload = this.sourcePayloads.get(key);
+    if (!payload) return undefined;
+    return {
+      batch: { ...batch, warnings: [...batch.warnings] },
+      payload: {
+        format: payload.format,
+        bytes: payload.bytes.slice(),
+        entries: payload.entries.map((item) => ({ ...item })),
+      },
+    };
+  }
+
   async hasImportSourcePayload(sourceId: string) {
     return [...this.sourcePayloads.keys()].some((key) =>
       key.startsWith(`${sourceId}:`),
     );
+  }
+
+  async getImportSourceSummary(
+    sourceId: string,
+  ): Promise<StoredImportSourceSummary> {
+    const summary: StoredImportSourceSummary = {
+      archiveCount: 0,
+      totalBytes: 0,
+      loadedEntryCount: 0,
+      retainedEntryCount: 0,
+    };
+    for (const [key, payload] of this.sourcePayloads) {
+      if (!key.startsWith(`${sourceId}:`)) continue;
+      const batch = this.batches.get(key);
+      summary.archiveCount += 1;
+      summary.totalBytes += payload.bytes.length;
+      summary.loadedEntryCount += payload.entries.filter(
+        (entry) => entry.handling === 'loaded',
+      ).length;
+      summary.retainedEntryCount += payload.entries.filter(
+        (entry) => entry.handling === 'retained',
+      ).length;
+      if (!batch) continue;
+      summary.earliestStoredAt =
+        summary.earliestStoredAt === undefined
+          ? batch.importedAt
+          : Math.min(summary.earliestStoredAt, batch.importedAt);
+      summary.latestStoredAt =
+        summary.latestStoredAt === undefined
+          ? batch.importedAt
+          : Math.max(summary.latestStoredAt, batch.importedAt);
+      if (batch.dataStart !== undefined) {
+        summary.dataStart =
+          summary.dataStart === undefined
+            ? batch.dataStart
+            : Math.min(summary.dataStart, batch.dataStart);
+      }
+      if (batch.dataThrough !== undefined) {
+        summary.dataThrough =
+          summary.dataThrough === undefined
+            ? batch.dataThrough
+            : Math.max(summary.dataThrough, batch.dataThrough);
+      }
+    }
+    summary.indexedRecordCount = [...this.rawRecords.values()].filter(
+      (record) => record.sourceId === sourceId,
+    ).length;
+    return summary;
   }
 
   async writeImport(
@@ -207,6 +453,8 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     boluses: BolusDelivery[],
     context: HealthContextEvent[],
     sourcePayload?: ImportSourcePayload,
+    dailyTotals: InsulinDailyTotal[] = [],
+    rawRecords: ImportRawRecord[] = [],
   ): Promise<ImportWriteResult> {
     const key = `${batch.sourceId}:${batch.fileSha256}`;
     if (sourcePayload && !this.sourcePayloads.has(key)) {
@@ -221,6 +469,7 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     let insertedBasal = 0;
     let insertedBoluses = 0;
     let insertedContext = 0;
+    let insertedDailyTotals = 0;
     basal.forEach((delivery) => {
       if (!this.basal.has(delivery.id)) {
         this.basal.set(delivery.id, { ...delivery });
@@ -239,14 +488,33 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
         insertedContext += 1;
       }
     });
+    dailyTotals.forEach((total) => {
+      if (!this.dailyTotals.has(total.id)) {
+        this.dailyTotals.set(total.id, { ...total });
+        insertedDailyTotals += 1;
+      }
+    });
+    rawRecords.forEach((record) => {
+      const existingRaw = this.rawRecords.get(record.id);
+      if (!existingRaw) {
+        this.rawRecords.set(record.id, { ...record });
+      } else if (record.importedAt > existingRaw.importedAt) {
+        this.rawRecords.set(record.id, {
+          ...existingRaw,
+          importedAt: record.importedAt,
+        });
+      }
+    });
 
     const duplicateCount =
       basal.length +
       boluses.length +
-      context.length -
+      context.length +
+      dailyTotals.length -
       insertedBasal -
       insertedBoluses -
-      insertedContext;
+      insertedContext -
+      insertedDailyTotals;
     const stored: StoredImportBatch = existing
       ? {
           ...existing,
@@ -265,6 +533,8 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
           basalCount: existing.basalCount + insertedBasal,
           bolusCount: existing.bolusCount + insertedBoluses,
           contextCount: existing.contextCount + insertedContext,
+          dailyTotalCount:
+            existing.dailyTotalCount + insertedDailyTotals,
           duplicateCount: existing.duplicateCount + duplicateCount,
           skippedCount: batch.skippedCount,
           warnings: [...batch.warnings],
@@ -274,15 +544,18 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
           basalCount: insertedBasal,
           bolusCount: insertedBoluses,
           contextCount: insertedContext,
+          dailyTotalCount: insertedDailyTotals,
           duplicateCount,
           warnings: [...batch.warnings],
         };
     this.batches.set(key, stored);
     return {
       alreadyImported: Boolean(existing),
+      insertedGlucose: 0,
       insertedBasal,
       insertedBoluses,
       insertedContext,
+      insertedDailyTotals,
       duplicateCount,
       sourcePayloadStored: this.sourcePayloads.has(key),
       batch: stored,
@@ -308,6 +581,7 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     let basal = 0;
     let boluses = 0;
     let context = 0;
+    let dailyTotals = 0;
     let batches = 0;
     for (const [id, delivery] of this.basal) {
       if (delivery.sourceId === sourceId) {
@@ -327,15 +601,31 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
         context += 1;
       }
     }
+    for (const [id, total] of this.dailyTotals) {
+      if (total.sourceId === sourceId) {
+        this.dailyTotals.delete(id);
+        dailyTotals += 1;
+      }
+    }
     for (const [key, batch] of this.batches) {
       if (batch.sourceId === sourceId) {
         this.batches.delete(key);
         batches += 1;
       }
     }
+    for (const [id, record] of this.rawRecords) {
+      if (record.sourceId === sourceId) this.rawRecords.delete(id);
+    }
     for (const key of this.sourcePayloads.keys()) {
       if (key.startsWith(`${sourceId}:`)) this.sourcePayloads.delete(key);
     }
-    return { basal, boluses, context, batches };
+    return {
+      glucose: 0,
+      basal,
+      boluses,
+      context,
+      dailyTotals,
+      batches,
+    };
   }
 }

@@ -38,6 +38,10 @@ export interface FoodCandidate {
   nutritionQuality: FoodNutritionQuality;
   defaultServingAmount?: number;
   defaultServingUnit?: FoodBasisUnit;
+  /** Source-provided portion wording, for example "1 twist (85 g)". */
+  servingLabel?: string;
+  lastPortionAmount?: number;
+  lastPortionUnit?: FoodBasisUnit;
   sourceLabel: string;
   sourceUrl?: string;
   rawPayload?: unknown;
@@ -80,4 +84,42 @@ export interface FoodLog {
   nutrition: FoodNutrition;
   items: FoodLogItemSnapshot[];
   createdAt: number;
+  isFavorite?: boolean;
+}
+
+export interface FoodMealPreset {
+  id: string;
+  title: string;
+  mealType: MealEvent['mealType'];
+  nutrition: FoodNutrition;
+  items: FoodLogItemDraft[];
+  isFavorite: boolean;
+}
+
+export interface FoodRecipe {
+  id: string;
+  name: string;
+  mealType: MealEvent['mealType'];
+  servings: number;
+  nutrition: FoodNutrition;
+  ingredients: FoodLogItemDraft[];
+  isFavorite: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FoodRecipeDraft {
+  name: string;
+  mealType: MealEvent['mealType'];
+  servings: number;
+  ingredients: FoodLogItemDraft[];
+}
+
+export interface UserFoodDraft {
+  name: string;
+  brand?: string;
+  barcode?: string;
+  servingAmount: number;
+  servingUnit: FoodBasisUnit;
+  nutritionPerServing: FoodNutrition;
 }

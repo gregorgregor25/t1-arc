@@ -8,6 +8,32 @@ import { useAppTheme } from '@/theme/theme';
 import { SectionCard } from './SectionCard';
 import { StatusPill } from './StatusPill';
 
+function SourceAvailabilityPill({
+  label,
+  available,
+}: {
+  label: string;
+  available: boolean;
+}) {
+  const { colors } = useAppTheme();
+  const tone = available ? colors.accent : colors.textTertiary;
+  return (
+    <View
+      accessibilityLabel={`Source status: ${label}`}
+      style={[
+        styles.availabilityPill,
+        {
+          backgroundColor: `${tone}18`,
+          borderColor: `${tone}55`,
+        },
+      ]}
+    >
+      <View style={[styles.statusDot, { backgroundColor: tone }]} />
+      <Text style={[styles.availabilityLabel, { color: tone }]}>{label}</Text>
+    </View>
+  );
+}
+
 function SourceRow({
   source,
   now,
@@ -30,6 +56,16 @@ function SourceRow({
     : isContext
       ? 'layers-outline'
       : 'water-outline';
+  const primaryTiming = isGlucose
+    ? source.dataThrough
+      ? `Through ${formatTime(source.dataThrough)}`
+      : 'No reading time'
+    : source.lastUpdatedAt
+      ? `Last synced ${relativeAge(source.lastUpdatedAt, now)}`
+      : source.dataThrough
+        ? `Through ${formatTime(source.dataThrough)}`
+        : 'No records yet';
+
   return (
     <View
       style={[
@@ -57,27 +93,37 @@ function SourceRow({
         />
       </View>
       <View style={styles.copy}>
-        <View style={styles.nameRow}>
-          <Text style={[styles.name, { color: colors.text }]}>{source.label}</Text>
-          {!source.isLive ? (
-            <Text style={[styles.notLive, { color: colors.warning }]}>NOT LIVE</Text>
-          ) : null}
-        </View>
+        <Text style={[styles.name, { color: colors.text }]}>{source.label}</Text>
         <Text style={[styles.detail, { color: colors.textSecondary }]}>
           {source.detail}
         </Text>
         <Text style={[styles.meta, { color: colors.textTertiary }]}>
-          {source.dataThrough
-            ? `Data through ${formatTime(source.dataThrough)}`
-            : 'No data timestamp'}
-          {'  ·  '}
-          {relativeAge(source.lastUpdatedAt, now)}
+          {primaryTiming}
+          {!isGlucose && source.lastUpdatedAt && source.dataThrough
+            ? `  ·  Through ${formatTime(source.dataThrough)}`
+            : ''}
+          {isGlucose && source.lastUpdatedAt
+            ? `  ·  ${relativeAge(source.lastUpdatedAt, now)}`
+            : ''}
           {source.recordCount !== undefined
             ? `  ·  ${source.recordCount} records`
             : ''}
         </Text>
       </View>
-      <StatusPill freshness={source.freshness} compact />
+      {isGlucose ? (
+        <StatusPill freshness={source.freshness} compact />
+      ) : (
+        <SourceAvailabilityPill
+          available={source.freshness !== 'missing'}
+          label={
+            source.freshness === 'missing'
+              ? 'No data'
+              : isContext
+                ? 'Available'
+                : 'Synced'
+          }
+        />
+      )}
     </View>
   );
 }
@@ -90,14 +136,19 @@ export function SourceStatusCard({
   now: number;
 }) {
   const { colors } = useAppTheme();
-  const synthetic = sources.length > 0 && sources.every(
-    (source) => source.origin === 'synthetic',
-  );
+  const synthetic =
+    sources.length > 0 &&
+    sources.every((source) => source.origin === 'synthetic');
   return (
     <SectionCard>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Data sources</Text>
-        <Text style={[styles.fixture, { color: synthetic ? colors.primary : colors.accent }]}>
+        <Text
+          style={[
+            styles.fixture,
+            { color: synthetic ? colors.primary : colors.accent },
+          ]}
+        >
           {synthetic ? 'DEMO FIXTURES' : 'PERSONAL DATA'}
         </Text>
       </View>
@@ -149,22 +200,10 @@ const styles = StyleSheet.create({
   copy: {
     flex: 1,
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
   name: {
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '700',
-  },
-  notLive: {
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '800',
-    letterSpacing: 0.7,
   },
   detail: {
     fontSize: 12,
@@ -175,5 +214,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     marginTop: 3,
+  },
+  availabilityPill: {
+    minHeight: 28,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+  },
+  availabilityLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
   },
 });

@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,27 +12,32 @@ import {
 } from 'react-native';
 
 import { AppScreen, SectionHeading } from '@/components/AppScreen';
-import { DataModeBadge } from '@/components/DataModeBadge';
+import { AutomationStatusCard } from '@/components/AutomationStatusCard';
+import { DexcomClarityImportCard } from '@/components/DexcomClarityImportCard';
 import { EncryptedBackupCard } from '@/components/EncryptedBackupCard';
 import { GlookoImportCard } from '@/components/GlookoImportCard';
 import { GlucoseDisplayCard } from '@/components/GlucoseDisplayCard';
+import { GlucoseAlertSettingsCard } from '@/components/GlucoseAlertSettingsCard';
 import { HealthConnectCard } from '@/components/HealthConnectCard';
+import { HomeGlucoseWidgetCard } from '@/components/HomeGlucoseWidgetCard';
+import { LocalDataControlCard } from '@/components/LocalDataControlCard';
+import { NightscoutSourceCard } from '@/components/NightscoutSourceCard';
+import { NotificationSourceCard } from '@/components/NotificationSourceCard';
 import { SectionCard } from '@/components/SectionCard';
-import { LibreLinkUpClient } from '@/data/libreLinkUp/LibreLinkUpClient';
+import { WearCompanionCard } from '@/components/WearCompanionCard';
+import { XdripSourceCard } from '@/components/XdripSourceCard';
+import { connectLibreLinkUp } from '@/data/libreLinkUp/connectLibreLinkUp';
 import { disableGlucoseDisplay } from '@/data/glucoseDisplay/glucoseDisplayCoordinator';
 import {
   clearLibreLinkUpCredentials,
   loadLibreLinkUpCredentials,
-  loadLibreLinkUpSession,
-  saveLibreLinkUpCredentials,
-  saveLibreLinkUpSession,
-  sha256,
 } from '@/data/libreLinkUp/secureStore';
 import {
   LibreLinkUpError,
   LibreLinkUpSnapshot,
 } from '@/data/libreLinkUp/types';
 import { formatTime, relativeAge } from '@/domain/time';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useLatestData } from '@/hooks/useTimeline';
 import { useDataContext } from '@/providers/DataProvider';
 import { useAppTheme } from '@/theme/theme';
@@ -41,6 +47,17 @@ type TestState =
   | { kind: 'testing' }
   | { kind: 'success'; snapshot: LibreLinkUpSnapshot; testedAt: number }
   | { kind: 'error'; error: LibreLinkUpError };
+
+type SourceJump =
+  | 'libre'
+  | 'dexcom'
+  | 'nightscout'
+  | 'xdrip'
+  | 'notification'
+  | 'health'
+  | 'glooko'
+  | 'display'
+  | 'privacy';
 
 function maskEmail(value: string) {
   const [name = '', domain = ''] = value.split('@');
@@ -52,9 +69,7 @@ function maskEmail(value: string) {
 export function SourcesScreen() {
   const { colors, radius } = useAppTheme();
   const {
-    backgroundSyncAvailable,
     activateLibreSnapshot,
-    dataMode,
     refreshData,
     reloadSources,
     setDataMode,
@@ -67,6 +82,8 @@ export function SourcesScreen() {
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(true);
   const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const [activeSource, setActiveSource] = useState<SourceJump>();
 
   useEffect(() => {
     let active = true;
@@ -93,8 +110,11 @@ export function SourcesScreen() {
   }, [testState]);
 
   const liveStatus = latest.sources.find(
-    (source) => source.id === 'daymark-librelinkup',
+    (source) =>
+      source.id === 'daymark-live-glucose' ||
+      source.id === 'daymark-librelinkup',
   );
+  const glucoseSourceReady = saved || Boolean(liveStatus?.isLive);
 
   async function testConnection() {
     if (!canTest) return;
@@ -105,23 +125,7 @@ export function SourcesScreen() {
       topLevelDomain: 'io' as const,
     };
     try {
-      const [storedCredentials, session] = await Promise.all([
-        loadLibreLinkUpCredentials(),
-        loadLibreLinkUpSession(),
-      ]);
-      const sameCredentials =
-        storedCredentials?.email.trim().toLowerCase() ===
-          credentials.email.toLowerCase() &&
-        storedCredentials?.password === credentials.password;
-      const client = new LibreLinkUpClient(
-        credentials,
-        sha256,
-        globalThis.fetch,
-        sameCredentials ? session : undefined,
-        saveLibreLinkUpSession,
-      );
-      const snapshot = await client.getSnapshot();
-      await saveLibreLinkUpCredentials(credentials);
+      const snapshot = await connectLibreLinkUp(credentials);
       await activateLibreSnapshot(snapshot);
       setSaved(true);
       setEditing(false);
@@ -160,7 +164,7 @@ export function SourcesScreen() {
               setSaved(false);
               setEditing(true);
               setTestState({ kind: 'idle' });
-              await setDataMode('demo');
+              await setDataMode('live');
             })();
           },
         },
@@ -168,25 +172,47 @@ export function SourcesScreen() {
     );
   }
 
-  async function chooseMode(mode: 'live' | 'demo') {
-    if (mode === 'live' && !saved) {
-      Alert.alert(
-        'Connect LibreLinkUp first',
-        'Verify and save a follower connection before using personal glucose.',
-      );
-      return;
-    }
-    await setDataMode(mode);
+  const showChangedPersonalData = useCallback(async () => {
+    await reloadSources();
+  }, [reloadSources]);
+
+  function resetConnectionUiAfterErase() {
+    setEmail('');
+    setPassword('');
+    setSaved(false);
+    setEditing(true);
+    setTestState({ kind: 'idle' });
   }
+
+  function showSource(source: SourceJump) {
+    setActiveSource(source);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }
+
+  const showSourceOverview = useCallback(() => {
+    setActiveSource(undefined);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+
+  useAndroidBack(Boolean(activeSource), showSourceOverview);
 
   return (
     <AppScreen
       title="Data sources"
       eyebrow="Private connections"
-      trailing={<DataModeBadge mode={dataMode} />}
       refreshing={syncing}
       onRefresh={() => void refreshData()}
+      scrollViewRef={scrollViewRef}
     >
+      {activeSource ? (
+        <SourceDetailHeader
+          onBack={showSourceOverview}
+          source={activeSource}
+        />
+      ) : (
+        <>
       <SectionCard
         style={[styles.hero, { backgroundColor: colors.surfaceElevated }]}
       >
@@ -209,73 +235,39 @@ export function SourcesScreen() {
         <View style={styles.heroCopy}>
           <View style={styles.titleRow}>
             <Text style={[styles.cardTitle, { color: colors.text }]}>
-              Daymark direct glucose
+              Private, on-device connections
             </Text>
-            <View
-              style={[
-                styles.tag,
-                {
-                  backgroundColor: `${colors.accent}18`,
-                  borderColor: `${colors.accent}55`,
-                },
-              ]}
-            >
-              <Text style={[styles.tagText, { color: colors.accent }]}>
-                NO GDH APP
-              </Text>
-            </View>
           </View>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Daymark connects to your accepted LibreLinkUp follower connection,
-            stores credentials with Android secure storage, and keeps glucose
-            history in an encrypted SQLCipher database.
+            Pick what you want to manage. Only that panel opens; your
+            credentials and copied health data remain encrypted on this phone.
           </Text>
         </View>
       </SectionCard>
 
       <SectionHeading
-        title="Active experience"
-        detail="Personal and synthetic records are never silently combined."
+        title="Connections"
+        detail="Open one source, display or privacy area at a time."
       />
-      <SectionCard>
-        <View style={styles.modeRow}>
-          <ModeButton
-            active={dataMode === 'live'}
-            detail={
-              saved
-                ? liveStatus?.dataThrough
-                  ? `Data through ${formatTime(liveStatus.dataThrough)}`
-                  : 'Saved connection ready'
-                : 'Connection required'
-            }
-            icon="pulse-outline"
-            label="Personal glucose"
-            onPress={() => void chooseMode('live')}
-          />
-          <ModeButton
-            active={dataMode === 'demo'}
-            detail="Explore the full product"
-            icon="flask-outline"
-            label="Demo lab"
-            onPress={() => void chooseMode('demo')}
-          />
-        </View>
-        <Text style={[styles.modeFootnote, { color: colors.textSecondary }]}>
-          {saved
-            ? backgroundSyncAvailable
-              ? 'Encrypted glucose collection is scheduled opportunistically in the background and refreshes every minute while Daymark is open.'
-              : 'Glucose refreshes every minute while Daymark is open. Android background scheduling is currently unavailable.'
-            : 'Connect LibreLinkUp below to begin collecting personal glucose.'}
-        </Text>
-      </SectionCard>
+      <SourceJumpGrid active={activeSource} onSelect={showSource} />
 
-      <SectionHeading
-        title={saved && !editing ? 'Saved connection' : 'Connect LibreLinkUp'}
-        detail="UK follower accounts use the libreview.io service. Daymark never accepts account terms for you."
-      />
+          <SectionHeading
+            title="Automatic updates"
+            detail="What Android has actually refreshed in the background."
+          />
+          <AutomationStatusCard />
+        </>
+      )}
 
-      {saved && !editing ? (
-        <SectionCard>
+      {activeSource === 'libre' ? (
+      <View>
+        <SectionHeading
+          title={saved && !editing ? 'Saved connection' : 'Connect LibreLinkUp'}
+          detail="UK follower accounts use the libreview.io service. T1 Arc never accepts account terms for you."
+        />
+
+        {saved && !editing ? (
+          <SectionCard>
           <View style={styles.savedRow}>
             <View
               style={[
@@ -363,9 +355,9 @@ export function SourcesScreen() {
               </Text>
             </Pressable>
           </View>
-        </SectionCard>
-      ) : (
-        <SectionCard>
+          </SectionCard>
+        ) : (
+          <SectionCard>
           <View style={styles.fieldGroup}>
             <Text style={[styles.label, { color: colors.text }]}>
               LibreLinkUp email
@@ -492,11 +484,11 @@ export function SourcesScreen() {
               </Text>
             </Pressable>
           ) : null}
-        </SectionCard>
-      )}
+          </SectionCard>
+        )}
 
-      {testState.kind === 'success' && currentReading ? (
-        <SectionCard
+        {testState.kind === 'success' && currentReading ? (
+          <SectionCard
           accessibilityLabel="LibreLinkUp connection verified"
           style={[
             styles.resultCard,
@@ -532,16 +524,16 @@ export function SourcesScreen() {
             {(currentReading.timestampDiscrepancyMinutes ?? 0) > 5 ? (
               <Text style={[styles.timestampWarning, { color: colors.warning }]}>
                 LibreLinkUp supplied factory and local timestamps that differ by{' '}
-                {currentReading.timestampDiscrepancyMinutes} minutes. Daymark
+                {currentReading.timestampDiscrepancyMinutes} minutes. T1 Arc
                 retained both for diagnosis.
               </Text>
             ) : null}
           </View>
-        </SectionCard>
-      ) : null}
+          </SectionCard>
+        ) : null}
 
-      {testState.kind === 'error' ? (
-        <SectionCard
+        {testState.kind === 'error' ? (
+          <SectionCard
           accessibilityLabel="LibreLinkUp connection error"
           style={[
             styles.resultCard,
@@ -572,136 +564,283 @@ export function SourcesScreen() {
               Error: {testState.error.code}
             </Text>
           </View>
-        </SectionCard>
+          </SectionCard>
+        ) : null}
+      </View>
       ) : null}
 
-      <SectionHeading
-        title="Outside the app"
-        detail="Keep current personal glucose visible with clear freshness and privacy controls."
-      />
-      <GlucoseDisplayCard connected={saved} />
-
-      <SectionHeading
-        title="Phone and wearable health"
-        detail="Choose categories and compatible source apps without leaving this setup flow."
-      />
-      <HealthConnectCard onDataChanged={reloadSources} />
-
-      <SectionHeading
-        title="Delayed insulin import"
-        detail="Review a Glooko export locally before adding any pump records."
-      />
-      <GlookoImportCard />
-
-      <SectionHeading
-        title="Your data, your copy"
-        detail="Keep a portable encrypted backup without sending health data to a Daymark server."
-      />
-      <EncryptedBackupCard onDataChanged={reloadSources} />
-
-      <SectionHeading title="Integration boundaries" />
-      <View style={styles.stack}>
-        <InfoCard
-          color={colors.warning}
-          icon="information-circle-outline"
-          title="LibreLinkUp compatibility"
-        >
-          The connector implements the legacy JSON flow found in GDH’s
-          MIT-licensed source. Daymark stops on encrypted responses and never
-          bypasses encryption or accepts legal terms automatically.
-        </InfoCard>
-        <InfoCard color={colors.insulin} icon="water-outline" title="Glooko insulin">
-          Complete Glooko exports are retained in encrypted on-device storage.
-          Supported files are also normalised into basal, bolus and context
-          records. They remain a separate delayed source and are never
-          presented as a live pump connection.
-        </InfoCard>
+      {activeSource === 'nightscout' ? (
+      <View>
+        <SectionHeading
+          title="Nightscout glucose and treatments"
+          detail="Connect a user-owned Nightscout site with read-only access to the records its uploader supplies."
+        />
+        <NightscoutSourceCard />
       </View>
+      ) : null}
+
+      {activeSource === 'dexcom' ? (
+      <View>
+        <SectionHeading
+          title="Dexcom history"
+          detail="Bring a user-controlled Clarity CSV into the same encrypted glucose timeline."
+        />
+        <DexcomClarityImportCard />
+      </View>
+      ) : null}
+
+      {activeSource === 'xdrip' ? (
+      <View>
+        <SectionHeading
+          title="Local glucose endpoint"
+          detail="Read a same-phone xDrip-compatible feed without another T1 Arc server."
+        />
+        <XdripSourceCard />
+      </View>
+      ) : null}
+
+      {activeSource === 'display' ? (
+        <View>
+          <SectionHeading
+            title="Glucose at a glance"
+            detail="Notification, lock-screen, widget and alert controls."
+          />
+          <View style={styles.cardStack}>
+            <GlucoseDisplayCard connected={glucoseSourceReady} />
+            <GlucoseAlertSettingsCard connected={glucoseSourceReady} />
+            <HomeGlucoseWidgetCard />
+          </View>
+          <SectionHeading
+            title="Wear OS"
+            detail="Current glucose and explicit freshness on your wrist."
+          />
+          <WearCompanionCard />
+        </View>
+      ) : null}
+
+      {activeSource === 'notification' ? (
+      <View>
+        <SectionHeading
+          title="Notification source"
+          detail="Read glucose posted by a compatible CGM app on this phone."
+        />
+        <NotificationSourceCard onConnected={showChangedPersonalData} />
+      </View>
+      ) : null}
+
+      {activeSource === 'health' ? (
+      <View>
+        <SectionHeading
+          title="Phone and wearable health"
+          detail="Samsung Health, Renpho and other approved Health Connect data."
+        />
+        <HealthConnectCard onDataChanged={showChangedPersonalData} />
+      </View>
+      ) : null}
+
+      {activeSource === 'glooko' ? (
+      <View>
+        <SectionHeading
+          title="Insulin history"
+          detail="Keep your Omnipod history up to date from Glooko."
+        />
+        <GlookoImportCard />
+      </View>
+      ) : null}
+
+      {activeSource === 'privacy' ? (
+        <View>
+          <SectionHeading
+            title="Your data, your copy"
+            detail="Portable encrypted backup without a T1 Arc server."
+          />
+          <EncryptedBackupCard onDataChanged={showChangedPersonalData} />
+          <SectionHeading
+            title="Device data controls"
+            detail="Inspect or remove local data from this device."
+          />
+          <LocalDataControlCard onErased={resetConnectionUiAfterErase} />
+        </View>
+      ) : null}
+
     </AppScreen>
   );
 }
 
-function ModeButton({
-  active,
-  detail,
-  icon,
-  label,
-  onPress,
-}: {
-  active: boolean;
+const SOURCE_JUMPS: Array<{
+  source: SourceJump;
+  label: string;
   detail: string;
   icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress(): void;
+}> = [
+  {
+    source: 'libre',
+    label: 'LibreLinkUp',
+    detail: 'Direct follower',
+    icon: 'pulse-outline',
+  },
+  {
+    source: 'dexcom',
+    label: 'Dexcom',
+    detail: 'Clarity history',
+    icon: 'analytics-outline',
+  },
+  {
+    source: 'nightscout',
+    label: 'Nightscout',
+    detail: 'Read-only site',
+    icon: 'cloud-outline',
+  },
+  {
+    source: 'xdrip',
+    label: 'xDrip endpoint',
+    detail: 'Local /sgv.json',
+    icon: 'git-network-outline',
+  },
+  {
+    source: 'notification',
+    label: 'Notifications',
+    detail: 'Compatible CGM app',
+    icon: 'notifications-outline',
+  },
+  {
+    source: 'health',
+    label: 'Health Connect',
+    detail: 'Health, activity and food',
+    icon: 'fitness-outline',
+  },
+  {
+    source: 'glooko',
+    label: 'Glooko',
+    detail: 'Pump history',
+    icon: 'archive-outline',
+  },
+  {
+    source: 'display',
+    label: 'Displays & watch',
+    detail: 'Glanceable glucose',
+    icon: 'watch-outline',
+  },
+  {
+    source: 'privacy',
+    label: 'Backup & privacy',
+    detail: 'Your local data',
+    icon: 'shield-checkmark-outline',
+  },
+];
+
+function SourceDetailHeader({
+  onBack,
+  source,
+}: {
+  onBack(): void;
+  source: SourceJump;
 }) {
   const { colors, radius } = useAppTheme();
-  const tone = active ? colors.accent : colors.textSecondary;
+  const item = SOURCE_JUMPS.find((candidate) => candidate.source === source)!;
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ checked: active }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.modeButton,
-        {
-          backgroundColor: active ? `${colors.accent}12` : colors.surfaceMuted,
-          borderColor: active ? `${colors.accent}88` : colors.border,
-          borderRadius: radius.md,
-        },
-        pressed && { opacity: 0.72 },
-      ]}
-    >
-      <View style={styles.modeTitleRow}>
+    <View style={styles.detailHeader}>
+      <Pressable
+        accessibilityLabel="Back to all connections"
+        accessibilityRole="button"
+        onPress={onBack}
+        style={({ pressed }) => [
+          styles.backButton,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            borderRadius: radius.pill,
+            opacity: pressed ? 0.68 : 1,
+          },
+        ]}
+      >
         <Ionicons
           accessibilityElementsHidden
-          color={tone}
-          name={icon}
-          size={21}
+          color={colors.primary}
+          name="arrow-back"
+          size={17}
         />
-        {active ? (
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.accent}
-            name="checkmark-circle"
-            size={18}
-          />
-        ) : null}
-      </View>
-      <Text style={[styles.modeLabel, { color: colors.text }]}>{label}</Text>
-      <Text style={[styles.modeDetail, { color: colors.textSecondary }]}>
-        {detail}
+        <Text style={[styles.backText, { color: colors.primary }]}>
+          All connections
+        </Text>
+      </Pressable>
+      <Text style={[styles.detailName, { color: colors.text }]}>
+        {item.label}
       </Text>
-    </Pressable>
+    </View>
   );
 }
 
-function InfoCard({
-  children,
-  color,
-  icon,
-  title,
+function SourceJumpGrid({
+  active,
+  onSelect,
 }: {
-  children: string;
-  color: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
+  active?: SourceJump;
+  onSelect(source: SourceJump): void;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, radius } = useAppTheme();
   return (
-    <SectionCard>
-      <View style={styles.infoHeader}>
-        <Ionicons
-          accessibilityElementsHidden
-          color={color}
-          name={icon}
-          size={23}
-        />
-        <Text style={[styles.infoTitle, { color: colors.text }]}>{title}</Text>
-      </View>
-      <Text style={[styles.body, { color: colors.textSecondary }]}>
-        {children}
-      </Text>
-    </SectionCard>
+    <View style={styles.sourceJumpGrid}>
+      {SOURCE_JUMPS.map((item) => {
+        const selected = active === item.source;
+        return (
+        <Pressable
+          key={item.source}
+          accessibilityHint={`Opens ${item.label} controls.`}
+          accessibilityRole="button"
+          accessibilityState={{ selected }}
+          onPress={() => onSelect(item.source)}
+          style={({ pressed }) => [
+            styles.sourceJump,
+            {
+              backgroundColor: selected
+                ? `${colors.primary}12`
+                : colors.surface,
+              borderColor: selected ? colors.primary : colors.border,
+              borderRadius: radius.md,
+              opacity: pressed ? 0.68 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sourceJumpIcon,
+              {
+                backgroundColor: `${colors.primary}14`,
+                borderRadius: radius.sm,
+              },
+            ]}
+          >
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.primary}
+              name={item.icon}
+              size={19}
+            />
+          </View>
+          <View style={styles.sourceJumpCopy}>
+            <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+              {item.label}
+            </Text>
+            <Text
+              style={[
+                styles.sourceJumpDetail,
+                { color: colors.textSecondary },
+              ]}
+            >
+              {item.detail}
+            </Text>
+          </View>
+          <Ionicons
+            accessibilityElementsHidden
+            color={selected ? colors.primary : colors.textTertiary}
+            name={selected ? 'checkmark-circle' : 'chevron-forward'}
+            size={16}
+          />
+        </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -730,54 +869,75 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     fontWeight: '700',
   },
-  tag: {
-    minHeight: 24,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    justifyContent: 'center',
-  },
-  tagText: {
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: '800',
-    letterSpacing: 0.75,
-  },
   body: {
     fontSize: 13,
     lineHeight: 20,
     marginTop: 5,
   },
-  modeRow: {
+  sourceJumpGrid: {
     flexDirection: 'row',
-    gap: 10,
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  modeButton: {
-    flex: 1,
-    minHeight: 122,
-    padding: 14,
-    borderWidth: 1,
+  cardStack: {
+    gap: 12,
   },
-  modeTitleRow: {
-    minHeight: 24,
+  detailHeader: {
+    minHeight: 54,
+    marginTop: 18,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
-  modeLabel: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '800',
-    marginTop: 9,
+  backButton: {
+    minHeight: 38,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  modeDetail: {
+  backText: {
     fontSize: 11,
     lineHeight: 16,
-    marginTop: 3,
+    fontWeight: '800',
   },
-  modeFootnote: {
+  detailName: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  sourceJump: {
+    width: '48.5%',
+    minHeight: 68,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sourceJumpIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceJumpCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sourceJumpLabel: {
     fontSize: 12,
-    lineHeight: 18,
-    marginTop: 14,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+  sourceJumpDetail: {
+    fontSize: 9,
+    lineHeight: 13,
+    marginTop: 1,
   },
   savedRow: {
     flexDirection: 'row',
@@ -904,18 +1064,5 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '600',
     marginTop: 7,
-  },
-  stack: {
-    gap: 12,
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  infoTitle: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '700',
   },
 });

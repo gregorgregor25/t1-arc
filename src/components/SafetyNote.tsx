@@ -7,7 +7,7 @@ export function SafetyNote() {
   const { colors, radius } = useAppTheme();
   return (
     <View
-      accessibilityLabel="For personal review only. Do not use Daymark to calculate or change insulin doses."
+      accessibilityLabel="For personal review only. Do not use T1 Arc to calculate or change insulin doses."
       style={[
         styles.container,
         {
@@ -24,7 +24,7 @@ export function SafetyNote() {
         size={20}
       />
       <Text style={[styles.text, { color: colors.textSecondary }]}>
-        Personal review only. Daymark never recommends doses or pump-setting changes.
+        Personal review only. T1 Arc never recommends doses or pump-setting changes.
       </Text>
     </View>
   );

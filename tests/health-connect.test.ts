@@ -95,4 +95,88 @@ describe('Health Connect record normalisation', () => {
       ),
     ).toBeUndefined();
   });
+
+  it('materialises Health Connect nutrition as a local meal with carbs', () => {
+    expect(
+      healthConnectRecordToContext(
+        record({
+          kind: 'nutrition',
+          title: 'Chicken wrap',
+          mealType: 2,
+          value: 42.6,
+          unit: 'g',
+        }),
+        123,
+      ),
+    ).toMatchObject({
+      kind: 'meal',
+      title: 'Chicken wrap',
+      mealType: 'lunch',
+      carbsGrams: 42.6,
+      sourceFile: 'Health Connect',
+    });
+  });
+
+  it('materialises cycle records as factual hormone context', () => {
+    expect(
+      healthConnectRecordToContext(
+        record({
+          kind: 'menstruation_period',
+          startTimeMs: 1_000,
+          endTimeMs: 86_401_000,
+        }),
+        123,
+      ),
+    ).toMatchObject({
+      kind: 'note',
+      title: 'Menstrual period',
+      category: 'hormones',
+      start: 1_000,
+      end: 86_401_000,
+    });
+
+    expect(
+      healthConnectRecordToContext(
+        record({
+          kind: 'menstruation_flow',
+          flow: 3,
+        }),
+        123,
+      ),
+    ).toMatchObject({
+      kind: 'note',
+      title: 'Menstrual flow',
+      category: 'hormones',
+      detail: 'Heavy flow',
+    });
+
+    expect(
+      healthConnectRecordToContext(
+        record({
+          kind: 'ovulation_test',
+          result: 1,
+        }),
+        123,
+      ),
+    ).toMatchObject({
+      kind: 'note',
+      title: 'Ovulation test',
+      detail: 'Positive result',
+    });
+
+    expect(
+      healthConnectRecordToContext(
+        record({
+          kind: 'basal_body_temperature',
+          value: 36.57,
+          unit: 'celsius',
+        }),
+        123,
+      ),
+    ).toMatchObject({
+      kind: 'note',
+      title: 'Basal body temperature',
+      detail: '36.6 °C',
+    });
+  });
 });

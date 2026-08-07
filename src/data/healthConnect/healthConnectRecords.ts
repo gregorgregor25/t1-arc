@@ -4,6 +4,7 @@ import type {
 } from '../../../modules/daymark-health-connect';
 
 import { HealthContextEvent } from '@/domain/models';
+import { suggestedMealType } from '@/domain/mealTiming';
 
 export const HEALTH_CONNECT_CATEGORIES: Array<{
   id: HealthConnectCategoryId;
@@ -18,7 +19,7 @@ export const HEALTH_CONNECT_CATEGORIES: Array<{
   {
     id: 'workouts',
     label: 'Workouts',
-    detail: 'Exercise sessions and duration',
+    detail: 'Sessions, duration, speed, power and cadence',
   },
   {
     id: 'heart_rate',
@@ -36,14 +37,44 @@ export const HEALTH_CONNECT_CATEGORIES: Array<{
     detail: 'Measurements from connected scales and apps',
   },
   {
+    id: 'body_composition',
+    label: 'Body composition',
+    detail: 'Body fat, lean mass, water, bone, height and metabolism',
+  },
+  {
+    id: 'blood_glucose',
+    label: 'Health glucose',
+    detail: 'Meter and other blood-glucose measurements from connected apps',
+  },
+  {
+    id: 'vitals',
+    label: 'Vitals',
+    detail: 'Blood pressure, oxygen, breathing, HRV, VO₂ max and temperature',
+  },
+  {
+    id: 'cycle',
+    label: 'Cycle tracking',
+    detail: 'Periods, flow, ovulation and related hormone context',
+  },
+  {
+    id: 'hydration',
+    label: 'Hydration',
+    detail: 'Water and other logged drinks',
+  },
+  {
+    id: 'nutrition',
+    label: 'Nutrition',
+    detail: 'Meals and carbohydrates logged by connected apps',
+  },
+  {
     id: 'distance',
     label: 'Distance',
-    detail: 'Walking, running and cycling distance',
+    detail: 'Distance, elevation and floors climbed',
   },
   {
     id: 'active_calories',
     label: 'Active energy',
-    detail: 'Estimated activity energy from your source',
+    detail: 'Active and total exercise energy from your source',
   },
 ];
 
@@ -131,6 +162,48 @@ function activityIntensity(
   return 'moderate';
 }
 
+function mealType(
+  value: number | undefined,
+  timestamp: number,
+): Extract<HealthContextEvent, { kind: 'meal' }>['mealType'] {
+  if (value === 1) return 'breakfast';
+  if (value === 2) return 'lunch';
+  if (value === 3) return 'dinner';
+  if (value === 4) return 'snack';
+  return suggestedMealType(timestamp);
+}
+
+function menstruationFlowLabel(value: number | undefined) {
+  if (value === 1) return 'Light';
+  if (value === 2) return 'Medium';
+  if (value === 3) return 'Heavy';
+  return 'Recorded';
+}
+
+function ovulationResultLabel(value: number | undefined) {
+  if (value === 1) return 'Positive';
+  if (value === 2) return 'High';
+  if (value === 3) return 'Negative';
+  return 'Inconclusive';
+}
+
+function cervicalMucusAppearanceLabel(value: number | undefined) {
+  if (value === 1) return 'Dry';
+  if (value === 2) return 'Sticky';
+  if (value === 3) return 'Creamy';
+  if (value === 4) return 'Watery';
+  if (value === 5) return 'Egg-white';
+  if (value === 6) return 'Unusual';
+  return undefined;
+}
+
+function cervicalMucusSensationLabel(value: number | undefined) {
+  if (value === 1) return 'Light sensation';
+  if (value === 2) return 'Medium sensation';
+  if (value === 3) return 'Heavy sensation';
+  return undefined;
+}
+
 export function healthConnectRecordToContext(
   record: HealthConnectRecord,
   importedAt: number,
@@ -183,6 +256,89 @@ export function healthConnectRecordToContext(
       kind: 'weight',
       title: 'Weight',
       kilograms: record.value,
+    };
+  }
+
+  if (record.kind === 'nutrition' && record.value != null) {
+    const type = mealType(record.mealType, record.startTimeMs);
+    return {
+      ...base,
+      kind: 'meal',
+      title:
+        record.title?.trim() ||
+        `${type[0]!.toUpperCase()}${type.slice(1)}`,
+      mealType: type,
+      carbsGrams: Math.max(0, record.value),
+    };
+  }
+
+  if (record.kind === 'menstruation_period') {
+    return {
+      ...base,
+      kind: 'note',
+      end: record.endTimeMs,
+      title: 'Menstrual period',
+      category: 'hormones',
+      detail: 'Recorded through Health Connect',
+    };
+  }
+
+  if (record.kind === 'menstruation_flow') {
+    return {
+      ...base,
+      kind: 'note',
+      title: 'Menstrual flow',
+      category: 'hormones',
+      detail: `${menstruationFlowLabel(record.flow)} flow`,
+    };
+  }
+
+  if (record.kind === 'ovulation_test') {
+    return {
+      ...base,
+      kind: 'note',
+      title: 'Ovulation test',
+      category: 'hormones',
+      detail: `${ovulationResultLabel(record.result)} result`,
+    };
+  }
+
+  if (
+    record.kind === 'basal_body_temperature' &&
+    record.value != null
+  ) {
+    return {
+      ...base,
+      kind: 'note',
+      title: 'Basal body temperature',
+      category: 'hormones',
+      detail: `${record.value.toFixed(1)} °C`,
+    };
+  }
+
+  if (record.kind === 'cervical_mucus') {
+    const detail = [
+      cervicalMucusAppearanceLabel(record.appearance),
+      cervicalMucusSensationLabel(record.sensation),
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return {
+      ...base,
+      kind: 'note',
+      title: 'Cervical mucus',
+      category: 'hormones',
+      detail: detail || 'Recorded through Health Connect',
+    };
+  }
+
+  if (record.kind === 'intermenstrual_bleeding') {
+    return {
+      ...base,
+      kind: 'note',
+      title: 'Intermenstrual bleeding',
+      category: 'hormones',
+      detail: 'Recorded through Health Connect',
     };
   }
 

@@ -181,7 +181,7 @@ export class SyntheticGlucoseSource implements GlucoseSource {
     return {
       id: SOURCE_ID,
       label: 'Glucose',
-      detail: 'Synthetic Daymark glucose fixture',
+      detail: 'Synthetic T1 Arc glucose fixture',
       freshness: glucoseFreshness(latest?.timestamp, now),
       origin: 'synthetic',
       lastUpdatedAt: latest?.receivedAt,

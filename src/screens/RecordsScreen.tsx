@@ -1,185 +1,295 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, SectionHeading } from '@/components/AppScreen';
-import { DataModeBadge } from '@/components/DataModeBadge';
+import { ContextEventList } from '@/components/ContextEventList';
 import { DateNavigator } from '@/components/DateNavigator';
+import { EmptyState } from '@/components/EmptyState';
 import { ErrorCard } from '@/components/ErrorCard';
-import { FoodLoggerCard } from '@/components/FoodLoggerCard';
+import { EvidenceRecordInspector } from '@/components/EvidenceRecordInspector';
+import { HealthConnectSourceRecordList } from '@/components/HealthConnectSourceRecordList';
+import { HealthOverviewCard } from '@/components/HealthOverviewCard';
+import { HealthTrendsCard } from '@/components/HealthTrendsCard';
 import { LoadingCard } from '@/components/LoadingCard';
 import { ManualContextCard } from '@/components/ManualContextCard';
-import { RecordFilter, RecordList } from '@/components/RecordList';
 import { SafetyNote } from '@/components/SafetyNote';
 import { SegmentedControl } from '@/components/SegmentedControl';
-import { SourceStatusCard } from '@/components/SourceStatusCard';
-import {
-  addDays,
-  DateKey,
-  dayRange,
-  zonedDateTimeToTimestamp,
-} from '@/domain/time';
+import { addDays, DateKey, dayRange } from '@/domain/time';
+import { EvidenceReference } from '@/domain/insights';
+import { HealthContextEvent } from '@/domain/models';
+import { useDailyHealthMetrics } from '@/hooks/useDailyHealthMetrics';
+import { useHealthConnectSourceRecords } from '@/hooks/useHealthConnectSourceRecords';
+import { useHealthTrend } from '@/hooks/useHealthTrend';
 import { useTimeline } from '@/hooks/useTimeline';
 import { useDataContext } from '@/providers/DataProvider';
 import { useAppTheme } from '@/theme/theme';
 
-export function RecordsScreen() {
+type HealthTrendRange = '7' | '30' | '90';
+
+export function HealthScreen() {
   const { colors, radius } = useAppTheme();
   const {
-    dataMode,
-    deleteManualContext,
+    earliestDate,
     now,
     refreshData,
     syncing,
     today,
-    earliestDate,
   } = useDataContext();
   const [selectedDate, setSelectedDate] = useState<DateKey>(today);
-  const [filter, setFilter] = useState<RecordFilter>('all');
-  const [visibleCount, setVisibleCount] = useState(60);
-  const range = useMemo(() => dayRange(selectedDate, now), [now, selectedDate]);
+  const [trendRange, setTrendRange] =
+    useState<HealthTrendRange>('30');
+  const [recordsVisible, setRecordsVisible] = useState(false);
+  const [selectedEvidence, setSelectedEvidence] =
+    useState<EvidenceReference>();
+  const [selectedContextToEdit, setSelectedContextToEdit] =
+    useState<HealthContextEvent>();
+  const healthTimeBucket = Math.floor(now / (5 * 60_000)) * 5 * 60_000;
+  const range = useMemo(
+    () => dayRange(selectedDate, healthTimeBucket),
+    [healthTimeBucket, selectedDate],
+  );
   const timeline = useTimeline(range);
+  const dailyHealth = useDailyHealthMetrics(range);
+  const healthTrend = useHealthTrend(selectedDate);
+  const longerHealthTrend = useHealthTrend(
+    selectedDate,
+    Number(trendRange),
+  );
+  const sourceHealth = useHealthConnectSourceRecords(
+    range,
+    recordsVisible,
+  );
 
-  useEffect(() => {
-    setVisibleCount(60);
-  }, [filter, selectedDate]);
-
-  function confirmDeleteContext(id: string, title: string) {
-    Alert.alert(
-      'Delete manual entry?',
-      `"${title}" will be removed from Daymark. Imported records are unaffected.`,
-      [
-        { text: 'Keep entry', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void deleteManualContext(id).then((deleted) => {
-              if (!deleted) {
-                Alert.alert(
-                  'Entry not removed',
-                  'Only context entered manually in Daymark can be deleted here.',
-                );
-              }
-            });
-          },
-        },
-      ],
-    );
-  }
+  const dailyError =
+    timeline.error ?? dailyHealth.error ?? healthTrend.error;
+  const noDailyRecords = Boolean(
+    dailyHealth.metrics?.recordCount === 0 &&
+      !timeline.data?.context.some((event) => event.kind !== 'meal'),
+  );
 
   return (
-    <AppScreen
-      title="Records"
-      eyebrow="Inspect the source data"
-      trailing={<DataModeBadge mode={dataMode} />}
-      refreshing={syncing}
-      onRefresh={() => void refreshData()}
-    >
-      <View
-        style={[
-          styles.explainer,
-          {
-            backgroundColor: colors.surfaceMuted,
-            borderColor: colors.border,
-            borderRadius: radius.md,
-          },
-        ]}
+    <>
+      <AppScreen
+        title="Health"
+        eyebrow="Movement, recovery and context"
+        refreshing={syncing}
+        onRefresh={() => void refreshData()}
       >
-        <Text style={[styles.explainerTitle, { color: colors.text }]}>
-          Values before conclusions
-        </Text>
-        <Text style={[styles.explainerText, { color: colors.textSecondary }]}>
-          These are the normalised records used by the chart and statistics.
-          {dataMode === 'demo' ? ' They are explicitly synthetic.' : ''}
-          {' '}No hidden scoring or AI interpretation is applied.
-        </Text>
-      </View>
+        <DateNavigator
+          date={selectedDate}
+          canGoBack={selectedDate > earliestDate}
+          canGoForward={selectedDate < today}
+          onBack={() => setSelectedDate((date) => addDays(date, -1))}
+          onForward={() => setSelectedDate((date) => addDays(date, 1))}
+          onDateChange={setSelectedDate}
+          earliestDate={earliestDate}
+          latestDate={today}
+          isToday={selectedDate === today}
+        />
 
-      {dataMode === 'live' ? (
-        <>
-          <SectionHeading
-            title="Log"
-            detail="Food search stays offline; personal entries stay separate from imported device records."
-          />
-          <FoodLoggerCard
-            initialTimestamp={
-              selectedDate === today
-                ? now
-                : zonedDateTimeToTimestamp(selectedDate, 12)
-            }
-          />
-          <ManualContextCard
-            initialTimestamp={
-              selectedDate === today
-                ? now
-                : zonedDateTimeToTimestamp(selectedDate, 12)
-            }
-          />
-        </>
-      ) : null}
+        <SectionHeading
+          title="Daily overview"
+          detail="The health signals that add useful context to this day."
+        />
+        {dailyError ? (
+          <ErrorCard message={dailyError} />
+        ) : timeline.loading || !timeline.data ? (
+          <LoadingCard label="Loading health data…" />
+        ) : (
+          <View style={styles.stack}>
+            <HealthOverviewCard
+              events={timeline.data.context}
+              contextNeedsSource={dailyHealth.contextNeedsSource}
+              isToday={selectedDate === today}
+              metrics={dailyHealth.metrics}
+              range={range}
+              trend={healthTrend.data}
+            />
+            {noDailyRecords ? (
+              <View
+                style={[
+                  styles.empty,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    borderRadius: radius.md,
+                  },
+                ]}
+              >
+                <EmptyState
+                  title="No health records for this day"
+                  detail="Connect Samsung Health in Sources or add context below."
+                />
+              </View>
+            ) : null}
+            <ManualContextCard
+              compact
+              editingEvent={selectedContextToEdit}
+              initialTimestamp={now}
+              onEditEnd={() => setSelectedContextToEdit(undefined)}
+            />
+            <ContextEventList
+              events={timeline.data.context.filter(
+                (event) => event.kind !== 'meal',
+              )}
+              limit={3}
+              onEditManualContext={setSelectedContextToEdit}
+              onInspect={setSelectedEvidence}
+              timeline={timeline.data}
+            />
+          </View>
+        )}
 
-      <SectionHeading title="Date and record type" />
-      <DateNavigator
-        date={selectedDate}
-        canGoBack={selectedDate > earliestDate}
-        canGoForward={selectedDate < today}
-        onBack={() => setSelectedDate((date) => addDays(date, -1))}
-        onForward={() => setSelectedDate((date) => addDays(date, 1))}
-        isToday={selectedDate === today}
-      />
-      <SegmentedControl
-        accessibilityLabel="Record type"
-        options={[
-          { value: 'all', label: 'All' },
-          { value: 'glucose', label: 'Glucose' },
-          { value: 'insulin', label: 'Insulin' },
-          { value: 'context', label: 'Context' },
-        ]}
-        value={filter}
-        onChange={setFilter}
-      />
+        <SectionHeading
+          title="Explore patterns"
+          detail="Choose a period, then move between health categories inside the card."
+        />
+        <SegmentedControl
+          accessibilityLabel="Health trend range"
+          options={[
+            { value: '7', label: '7 days' },
+            { value: '30', label: '30 days' },
+            { value: '90', label: '90 days' },
+          ]}
+          value={trendRange}
+          onChange={setTrendRange}
+        />
+        <View style={styles.trend}>
+          {longerHealthTrend.error ? (
+            <ErrorCard message={longerHealthTrend.error} />
+          ) : longerHealthTrend.loading ? (
+            <LoadingCard label="Loading health trends…" />
+          ) : (
+            <HealthTrendsCard
+              days={Number(trendRange)}
+              trend={longerHealthTrend.data}
+            />
+          )}
+        </View>
 
-      <SectionHeading
-        title="Underlying records"
-        detail="Times are shown in Europe/London."
-      />
-      {timeline.error ? (
-        <ErrorCard message={timeline.error} />
-      ) : timeline.loading || !timeline.data ? (
-        <LoadingCard label="Loading source records…" />
-      ) : (
-        <View style={styles.stack}>
-          <SourceStatusCard sources={timeline.data.sources} now={now} />
-          <RecordList
-            data={timeline.data}
-            filter={filter}
-            visibleCount={visibleCount}
-            onDeleteManualContext={confirmDeleteContext}
-            onShowMore={() => setVisibleCount((count) => count + 60)}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: recordsVisible }}
+          onPress={() => setRecordsVisible((visible) => !visible)}
+          style={({ pressed }) => [
+            styles.recordsButton,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              opacity: pressed ? 0.72 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.recordsIcon,
+              {
+                backgroundColor: `${colors.primary}14`,
+                borderRadius: radius.sm,
+              },
+            ]}
+          >
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.primary}
+              name="list-outline"
+              size={19}
+            />
+          </View>
+          <View style={styles.recordsCopy}>
+            <Text style={[styles.recordsTitle, { color: colors.text }]}>
+              Exact health records
+            </Text>
+            <Text
+              style={[
+                styles.recordsDetail,
+                { color: colors.textSecondary },
+              ]}
+            >
+              Open the underlying Health Connect entries for this day.
+            </Text>
+          </View>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textTertiary}
+            name={recordsVisible ? 'chevron-up' : 'chevron-down'}
+            size={19}
           />
+        </Pressable>
+
+        {recordsVisible ? (
+          <View style={styles.records}>
+            {sourceHealth.error ? (
+              <ErrorCard message={sourceHealth.error} />
+            ) : sourceHealth.loading ? (
+              <LoadingCard label="Loading exact health records…" />
+            ) : (
+              <HealthConnectSourceRecordList
+                loadingMore={sourceHealth.loadingMore}
+                onShowMore={sourceHealth.loadMore}
+                records={sourceHealth.records}
+                totalRecords={sourceHealth.totalRecords}
+              />
+            )}
+          </View>
+        ) : null}
+        <View style={styles.safety}>
           <SafetyNote />
         </View>
-      )}
-    </AppScreen>
+      </AppScreen>
+      <EvidenceRecordInspector
+        evidence={selectedEvidence}
+        onClose={() => setSelectedEvidence(undefined)}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  explainer: {
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 16,
-  },
-  explainerTitle: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '700',
-  },
-  explainerText: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 4,
-  },
   stack: {
     gap: 12,
+  },
+  empty: {
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+  },
+  trend: {
+    marginTop: 10,
+  },
+  recordsButton: {
+    minHeight: 76,
+    marginTop: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  recordsIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordsCopy: {
+    flex: 1,
+  },
+  recordsTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  recordsDetail: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  records: {
+    marginTop: 10,
+  },
+  safety: {
+    marginTop: 14,
   },
 });

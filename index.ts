@@ -2,11 +2,14 @@ import { registerRootComponent } from 'expo';
 import { AppRegistry } from 'react-native';
 
 import App from './App';
+import './src/data/background/glookoSyncTask';
+import './src/data/background/healthConnectSyncTask';
+import './src/data/background/insightReviewTask';
+import './src/data/background/libreSyncTask';
 import {
   GLUCOSE_DISPLAY_HEADLESS_TASK,
   runGlucoseDisplayForegroundSync,
 } from './src/data/glucoseDisplay/glucoseDisplayCoordinator';
-import './src/data/background/libreSyncTask';
 
 AppRegistry.registerHeadlessTask(GLUCOSE_DISPLAY_HEADLESS_TASK, () =>
   runGlucoseDisplayForegroundSync,

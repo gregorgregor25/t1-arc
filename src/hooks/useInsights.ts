@@ -1,27 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { buildInsightReport, InsightReport } from '@/domain/insights';
-import { addDays, dayRange } from '@/domain/time';
+import { InsightReport } from '@/domain/insights';
+import { loadInsightReport } from '@/data/insights/loadInsightReport';
+import {
+  buildInsightComparisonRanges,
+  InsightPeriodDays,
+} from '@/domain/insightRanges';
+import { DateKey } from '@/domain/time';
 import { useDataContext } from '@/providers/DataProvider';
 
 interface InsightState {
   report?: InsightReport;
   loading: boolean;
   error?: string;
+  requestKey?: string;
 }
 
-export function useInsights() {
-  const { now, repository, revision, today } = useDataContext();
-  const ranges = useMemo(() => {
-    const todayStart = dayRange(today, now).start;
-    const currentStart = dayRange(addDays(today, -7), now).start;
-    const previousStart = dayRange(addDays(today, -14), now).start;
-    return {
-      current: { start: currentStart, end: todayStart },
-      previous: { start: previousStart, end: currentStart },
-    };
-  }, [now, today]);
+export function useInsights(
+  periodDays: InsightPeriodDays,
+  comparisonEndDate: DateKey,
+) {
+  const { dataMode, now, repository, revision } = useDataContext();
+  const ranges = useMemo(
+    () =>
+      buildInsightComparisonRanges(comparisonEndDate, periodDays, now),
+    [comparisonEndDate, now, periodDays],
+  );
   const [state, setState] = useState<InsightState>({ loading: true });
+  const requestKey = `${ranges.current.start}:${ranges.current.end}:${dataMode}`;
 
   useEffect(() => {
     let active = true;
@@ -33,25 +39,34 @@ export function useInsights() {
     }
 
     setState((previous) => ({
-      ...previous,
+      report:
+        previous.requestKey === requestKey
+          ? previous.report
+          : undefined,
       loading: true,
       error: undefined,
+      requestKey,
     }));
-    Promise.all([
-      repository.getTimeline(ranges.current),
-      repository.getTimeline(ranges.previous),
-    ])
-      .then(([current, previous]) => {
+    loadInsightReport({
+      repository,
+      dataMode,
+      periodDays,
+      comparisonEndDate,
+      now,
+    })
+      .then((report) => {
         if (!active) return;
         setState({
           loading: false,
-          report: buildInsightReport(current, previous, Date.now()),
+          requestKey,
+          report,
         });
       })
       .catch((error: unknown) => {
         if (!active) return;
         setState({
           loading: false,
+          requestKey,
           error:
             error instanceof Error
               ? error.message
@@ -67,8 +82,13 @@ export function useInsights() {
     ranges.current.start,
     ranges.previous.end,
     ranges.previous.start,
+    comparisonEndDate,
+    dataMode,
+    now,
+    periodDays,
     repository,
     revision,
+    requestKey,
   ]);
 
   return state;

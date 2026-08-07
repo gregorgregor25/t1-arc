@@ -1,0 +1,8 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": [
+      "app.daymark.notificationsource.DaymarkNotificationSourceModule"
+    ]
+  }
+}

@@ -47,6 +47,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class GlookoExportActivity : Activity(), DownloadListener {
   companion object {
     const val EXTRA_DAYS = "days"
+    const val EXTRA_START_DATE = "startDate"
+    const val EXTRA_END_DATE = "endDate"
     const val RESULT_URI = "uri"
     const val RESULT_FILE_NAME = "fileName"
     const val RESULT_BYTE_LENGTH = "byteLength"
@@ -73,13 +75,22 @@ class GlookoExportActivity : Activity(), DownloadListener {
   private var backInvokedCallback: OnBackInvokedCallback? = null
   private var automationAttempts = 0
   private var requestedDays = 30
+  private var requestedStartDate: String? = null
+  private var requestedEndDate: String? = null
+  private var credentialLoginAttempted = false
 
   @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val forceFreshLogin =
+      getSharedPreferences(GLOOKO_TRACE_PREFERENCES, MODE_PRIVATE)
+        .getString(GLOOKO_LAST_TRACE_KEY, null)
+        ?.contains("requires sign-in", ignoreCase = true) == true
     window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
     traceEvent("Secure Glooko window opened")
     requestedDays = intent.getIntExtra(EXTRA_DAYS, 30).coerceIn(1, 90)
+    requestedStartDate = intent.getStringExtra(EXTRA_START_DATE)
+    requestedEndDate = intent.getStringExtra(EXTRA_END_DATE)
     cleanOldDownloads()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       backInvokedCallback =
@@ -181,9 +192,14 @@ class GlookoExportActivity : Activity(), DownloadListener {
             1f,
           ),
         )
-      }
+    }
     setContentView(root)
-    webView.loadUrl(LOGIN_URL)
+    GlookoSessionVault(this).prepareInteractiveSession(
+      CookieManager.getInstance(),
+      forceFreshLogin,
+    ) {
+      webView.loadUrl(LOGIN_URL)
+    }
   }
 
   @SuppressLint("SetJavaScriptEnabled", "AddJavascriptInterface")
@@ -318,8 +334,15 @@ class GlookoExportActivity : Activity(), DownloadListener {
         automationAttempts = 0
         if (looksLikeLogin(url)) {
           traceEvent("Glooko sign-in page loaded")
-          setStatus("Sign into Glooko once. Your password stays on Glooko’s page.")
+          attemptCredentialLogin(view)
         } else {
+          val retainedCookieNames = retainGlookoSession(url)
+          if (retainedCookieNames.isNotEmpty()) {
+            traceEvent(
+              "Signed-in session retained securely " +
+                "(${retainedCookieNames.joinToString(", ")})",
+            )
+          }
           traceEvent("Signed-in Glooko dashboard loaded")
           setStatus("Signed in. Preparing a $requestedDays-day delayed export…")
           scheduleAutomationAttempt(900)
@@ -368,7 +391,13 @@ class GlookoExportActivity : Activity(), DownloadListener {
           return@postDelayed
         }
         automationAttempts += 1
-        webView.evaluateJavascript(automationScript(requestedDays)) { rawResult ->
+        webView.evaluateJavascript(
+          automationScript(
+            requestedDays,
+            requestedStartDate,
+            requestedEndDate,
+          ),
+        ) { rawResult ->
           val result = rawResult?.trim('"') ?: ""
           when (result) {
             "submitted" -> {
@@ -380,8 +409,7 @@ class GlookoExportActivity : Activity(), DownloadListener {
               setStatus("Export options opened. Preparing the date range…")
               scheduleAutomationAttempt(1300)
             }
-            "login" ->
-              setStatus("Sign into Glooko once. Your password stays on Glooko’s page.")
+            "login" -> attemptCredentialLogin(webView)
             else -> scheduleAutomationAttempt(1600)
           }
         }
@@ -642,6 +670,8 @@ class GlookoExportActivity : Activity(), DownloadListener {
       return
     }
     runOnUiThread {
+      CookieManager.getInstance().flush()
+      retainGlookoSession(webView.url)
       setResult(
         RESULT_OK,
         Intent().apply {
@@ -667,6 +697,10 @@ class GlookoExportActivity : Activity(), DownloadListener {
   }
 
   private fun cancelAndFinish() {
+    if (::webView.isInitialized && !looksLikeLogin(webView.url.orEmpty())) {
+      CookieManager.getInstance().flush()
+      retainGlookoSession(webView.url)
+    }
     traceEvent("Returned to the app without a captured file")
     setResult(
       RESULT_OK,
@@ -718,6 +752,46 @@ class GlookoExportActivity : Activity(), DownloadListener {
     val lower = url.lowercase(Locale.ROOT)
     return lower.contains("/users/sign_in") || lower.contains("/login")
   }
+
+  private fun attemptCredentialLogin(view: WebView?) {
+    val credentials = GlookoCredentialVault(this).read()
+    if (credentials == null) {
+      setStatus("Sign into Glooko, or enable encrypted automatic sign-in in Sources.")
+      return
+    }
+    if (credentialLoginAttempted) {
+      traceEvent("Encrypted Glooko sign-in was not accepted")
+      setStatus(
+        "Glooko did not accept the encrypted sign-in. Update it in Sources or sign in here.",
+      )
+      return
+    }
+    credentialLoginAttempted = true
+    traceEvent("Encrypted Glooko sign-in submitted")
+    setStatus("Signing into Glooko securely on this phone…")
+    view?.evaluateJavascript(glookoLoginScript(credentials)) { raw ->
+      when (raw?.trim('"')) {
+        "submitted" -> Unit
+        "missing-form" -> {
+          traceEvent("Glooko sign-in form was not available")
+          setStatus("Sign into Glooko on this page to continue.")
+        }
+        else -> {
+          traceEvent("Encrypted Glooko sign-in could not be submitted")
+          setStatus("Automatic sign-in could not be completed. Sign in here to continue.")
+        }
+      }
+    }
+  }
+
+  private fun retainGlookoSession(vararg urls: String?): Set<String> =
+    GlookoSessionVault(this).capture(
+      CookieManager.getInstance(),
+      buildList {
+        add(LOGIN_URL)
+        urls.filterNotNullTo(this)
+      },
+    )
 
   private fun openExternal(uri: Uri) {
     try {
@@ -849,8 +923,18 @@ class GlookoExportActivity : Activity(), DownloadListener {
 
   private fun resolveBackgroundColor() = resolveSurfaceColor()
 
-  private fun automationScript(days: Int) =
-    """
+  private fun automationScript(
+    days: Int,
+    requestedStartDate: String?,
+    requestedEndDate: String?,
+  ): String {
+    val isoDate = Regex("""\d{4}-\d{2}-\d{2}""")
+    val safeStart = requestedStartDate?.takeIf(isoDate::matches)
+    val safeEnd = requestedEndDate?.takeIf(isoDate::matches)
+    val customRange = safeStart != null && safeEnd != null
+    val startValue = if (customRange) "'$safeStart'" else "iso(start)"
+    val endValue = if (customRange) "'$safeEnd'" else "iso(now)"
+    return """
       (function () {
         try {
           const visible = (el) => {
@@ -864,29 +948,92 @@ class GlookoExportActivity : Activity(), DownloadListener {
               /users\/sign_in|\/login/i.test(location.pathname)) return 'login';
 
           const all = Array.from(document.querySelectorAll('button,a,input[type="button"],input[type="submit"]'));
-          const modal = document.querySelector('[role="dialog"],.modal,[class*="Modal"]');
-          if (!modal || !visible(modal)) {
-            const opener = all.find((el) => visible(el) &&
-              (text(el) === 'export to csv' || text(el).includes('export to csv')));
-            if (opener && !opener.dataset.daymarkOpened) {
-              opener.dataset.daymarkOpened = '1';
-              opener.click();
-              return 'opened';
-            }
-            return 'waiting';
+          const opener = all.find((el) => visible(el) &&
+            (text(el) === 'export to csv' || text(el).includes('export to csv')));
+          const standardOverlay = document.querySelector(
+            '[role="dialog"],[aria-modal="true"],.modal,' +
+            '[class*="modal" i],[class*="dialog" i]'
+          );
+          const promptOverlay = Array.from(document.querySelectorAll(
+            'form,section,div'
+          )).filter((el) =>
+            visible(el) &&
+            text(el).includes('export') &&
+            text(el).includes('sensitive information') &&
+            el.querySelector('button,input,select,[role="button"]')
+          ).sort((left, right) =>
+            left.getBoundingClientRect().width * left.getBoundingClientRect().height -
+            right.getBoundingClientRect().width * right.getBoundingClientRect().height
+          )[0];
+          const overlay = standardOverlay && visible(standardOverlay)
+            ? standardOverlay
+            : promptOverlay;
+          if (!overlay && opener && !opener.dataset.daymarkOpened) {
+            opener.dataset.daymarkOpened = '1';
+            opener.click();
+            return 'opened';
           }
-
-          const selects = Array.from(modal.querySelectorAll('select'));
+          const scope = overlay || document;
+          const targetLabels = $customRange
+            ? ['custom']
+            : ${days} <= 14
+              ? ['2 weeks', '14 days']
+              : ${days} <= 30
+                ? ['30 days', '4 weeks', '1 month']
+                : ['90 days', '3 months'];
+          let rangeSelected =
+            document.documentElement.dataset.daymarkRangeSelected === '1';
+          const selects = Array.from(scope.querySelectorAll('select'));
           selects.forEach((select) => {
             const options = Array.from(select.options);
-            const exact = options.find((option) =>
-              text(option).includes('${days} day') || option.value === '${days}');
+            const exact = $customRange
+              ? options.find((option) =>
+                  text(option).includes('custom') ||
+                  String(option.value || '').toLowerCase().includes('custom'))
+              : options.find((option) =>
+                  targetLabels.some((label) => text(option).includes(label)) ||
+                  option.value === '${days}');
             if (exact) {
-              select.value = exact.value;
+              const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLSelectElement.prototype, 'value'
+              )?.set;
+              if (setter) setter.call(select, exact.value);
+              else select.value = exact.value;
               select.dispatchEvent(new Event('input', { bubbles: true }));
               select.dispatchEvent(new Event('change', { bubbles: true }));
+              rangeSelected = true;
+              document.documentElement.dataset.daymarkRangeSelected = '1';
             }
           });
+          if (!$customRange && !rangeSelected) {
+            const rangeControls = Array.from(scope.querySelectorAll(
+              'button,[role="button"],[role="option"],li,label'
+            )).filter(visible);
+            const desired = rangeControls.find((el) =>
+              targetLabels.some((label) => text(el) === label) &&
+              el.getAttribute('aria-selected') !== 'true');
+            const current = rangeControls.find((el) =>
+              /^(2 weeks|14 days|30 days|4 weeks|1 month|90 days|3 months)$/i
+                .test(text(el)));
+            if (desired && desired !== current) {
+              desired.click();
+              document.documentElement.dataset.daymarkRangeSelected = '1';
+              return 'opened';
+            }
+            if (
+              current &&
+              !targetLabels.some((label) => text(current) === label)
+            ) {
+              current.click();
+              return 'opened';
+            }
+            if (
+              current &&
+              targetLabels.some((label) => text(current) === label)
+            ) {
+              document.documentElement.dataset.daymarkRangeSelected = '1';
+            }
+          }
 
           const now = new Date();
           const start = new Date(now.getTime() - (${days} - 1) * 86400000);
@@ -895,32 +1042,54 @@ class GlookoExportActivity : Activity(), DownloadListener {
             String(date.getMonth() + 1).padStart(2, '0'),
             String(date.getDate()).padStart(2, '0')
           ].join('-');
-          const dateInputs = Array.from(modal.querySelectorAll('input[type="date"]'));
+          let dateInputs = Array.from(scope.querySelectorAll('input[type="date"]'));
+          if ($customRange && dateInputs.length < 2) {
+            const customControl = Array.from(scope.querySelectorAll(
+              'button,label,[role="option"],[role="radio"]'
+            )).find((el) => visible(el) && text(el).includes('custom'));
+            if (customControl && !customControl.dataset.daymarkCustomSelected) {
+              customControl.dataset.daymarkCustomSelected = '1';
+              customControl.click();
+            }
+            return 'opened';
+          }
           if (dateInputs.length >= 2) {
-            dateInputs[0].value = iso(start);
-            dateInputs[1].value = iso(now);
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype, 'value'
+            )?.set;
+            if (nativeSetter) {
+              nativeSetter.call(dateInputs[0], $startValue);
+              nativeSetter.call(dateInputs[1], $endValue);
+            } else {
+              dateInputs[0].value = $startValue;
+              dateInputs[1].value = $endValue;
+            }
             dateInputs.forEach((input) => {
               input.dispatchEvent(new Event('input', { bubbles: true }));
               input.dispatchEvent(new Event('change', { bubbles: true }));
             });
           }
 
-          const modalButtons = Array.from(modal.querySelectorAll(
+          const modalButtons = Array.from(scope.querySelectorAll(
             'button,input[type="button"],input[type="submit"],a'
           ));
           const submit = modalButtons.find((el) =>
-            visible(el) && (text(el) === 'export' || text(el) === 'download'));
+            visible(el) &&
+            !el.disabled &&
+            el !== opener &&
+            (text(el) === 'export' || text(el) === 'download'));
           if (submit && !submit.dataset.daymarkSubmitted) {
             submit.dataset.daymarkSubmitted = '1';
             submit.click();
             return 'submitted';
           }
-          return 'modal';
+          return overlay ? 'modal' : 'waiting';
         } catch (_) {
           return 'waiting';
         }
       })();
     """.trimIndent()
+  }
 
   private fun downloadCaptureScript() =
     """

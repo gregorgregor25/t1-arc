@@ -16,20 +16,20 @@ MIT-licensed GlucoDataHandler repository at commit
 - `WearPhoneConnection.kt` and the Wear complication providers: phone/watch
   transport separated from watch-face rendering.
 
-Daymark does not copy GDH's broad accessibility configuration, notification
+T1 Arc does not copy GDH's broad accessibility configuration, notification
 listener, overlay permission, exact alarms, wallpaper replacement, key-event
 filtering, or unrelated device integrations.
 
-## Daymark v1.4 flow
+## T1 Arc v1.4 flow
 
 ```text
 user enables Glucose at a glance
   -> Android notification permission
   -> special-use foreground display service
-  -> one-minute Headless JS trigger
-  -> existing Daymark LibreLinkUp connector
+  -> adaptive Headless JS source trigger
+  -> existing T1 Arc LibreLinkUp connector
   -> SQLCipher glucose history
-  -> minimal display snapshot
+  -> display snapshot + bounded graph window
        value, trend, reading timestamp, source error state
   -> ongoing status-bar/lock-screen notification
   -> optional doze-only AOD overlay
@@ -37,24 +37,35 @@ user enables Glucose at a glance
 
 Credentials and LibreLinkUp sessions remain in Android secure storage. The
 native service never receives them. The full glucose history remains in
-SQLCipher. Only the current in-memory display snapshot crosses the native
-bridge, and it is discarded when the service/process stops.
+SQLCipher. The current snapshot and a bounded six-hour display window cross
+the native bridge. The window is used for the expanded notification graph and
+Wear OS; it contains only timestamps and normalised mmol/L values.
 
 The notification:
 
 - is silent, ongoing, and `CATEGORY_STATUS`;
 - shows mmol/L, trend, reading age, London reading time and
   current/delayed/stale state;
+- uses a compact value/trend-first hierarchy and an expanded three-hour graph
+  when enough history is present;
 - uses the reading timestamp rather than the notification update time;
 - has an optional redacted public version for a locked phone;
-- opens Daymark for inspection;
+- opens T1 Arc for inspection;
 - never offers dosing or pump-setting actions.
 
 The foreground service is started only from the user's in-app control. It uses
 Android's `specialUse` type because an indefinite personal glucose display and
 collector does not fit another foreground-service category. It requests
-LibreLinkUp no more than once a minute; the existing connector deduplicates
-readings and preserves cached history on source failure.
+LibreLinkUp on an adaptive schedule: once a minute normally, every 15 seconds
+around the expected next sensor reading, and less often after a stale source
+or rate-limit response. The existing connector deduplicates readings and
+preserves cached history on source failure.
+
+Android ranks notifications across apps. T1 Arc can request the correct
+ongoing foreground importance and sort its own notifications, but it cannot
+guarantee placement above another app such as ChatGPT or GDH. A
+high-importance alert channel would add intrusive heads-up behaviour and is
+reserved for explicit glucose alerts, not the quiet persistent status surface.
 
 ## Always-on display
 
@@ -62,8 +73,8 @@ Android does not provide an ordinary third-party API for drawing arbitrary
 full-value content onto Pixel AOD. A normal notification can contribute its
 icon, but full content depends on system/OEM lock-screen behaviour.
 
-Daymark therefore makes full-value AOD a separate advanced opt-in. Android
-shows its Accessibility warning before enabling it. Daymark's service:
+T1 Arc therefore makes full-value AOD a separate advanced opt-in. Android
+shows its Accessibility warning before enabling it. T1 Arc's service:
 
 - cannot retrieve window content;
 - cannot request or filter keys;
@@ -71,14 +82,16 @@ shows its Accessibility warning before enabling it. Daymark's service:
 - draws only while the default display is off/dozing and non-interactive;
 - removes the overlay as soon as the display becomes interactive;
 - uses `TYPE_ACCESSIBILITY_OVERLAY`, is non-focusable and non-touchable;
-- moves a few pixels each minute to reduce OLED burn-in.
+- keeps the value at the explicit position and size chosen in T1 Arc. This
+  private-build choice favours a stable glance surface; a public design must
+  revisit OLED burn-in mitigation without reintroducing visible blinking.
 
 Turning the in-app AOD control off removes the overlay. Android retains final
 control over whether the Accessibility service itself remains enabled.
 
-## Wear OS expansion contract
+## Wear OS contract
 
-The future phone and watch apps should share a versioned snapshot:
+The phone and watch share a versioned current snapshot:
 
 ```json
 {
@@ -92,12 +105,16 @@ The future phone and watch apps should share a versioned snapshot:
 }
 ```
 
-The phone will publish the snapshot as a Wear Data Layer `DataItem`, and the
-watch will keep its own last-known copy rather than treating Data Layer as
-storage. A Wear complication data-source service can then expose short text
-(`6.4`) plus direction/freshness, while a watch app provides the detailed
-timeline. Phone and watch packages and signatures must match. No Wear
-dependency is included in the phone APK until the companion module is built.
+The phone publishes the snapshot through the Message Client for immediate
+delivery and as an urgent retained `DataItem` for recovery. A second versioned
+payload carries no more than 144 timestamp/value pairs from the latest six
+hours. The watch encrypts both locally rather than treating Data Layer as
+storage.
+
+The glucose complication exposes short text (`6.4→`) plus
+direction/freshness. Tapping it opens the detailed three-hour graph; another
+tap changes to six hours. Phone and watch packages and signatures match so
+Google Play services permits the Data Layer connection.
 
 ## Glooko independence
 

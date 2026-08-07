@@ -1,27 +1,50 @@
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 
+import {
+  backgroundTaskSchedulerAvailable,
+  reconcileBackgroundTaskRegistration,
+  shouldRegisterGlucoseBackgroundSync,
+} from './backgroundTaskRegistration';
+import {
+  beginAutomationRun,
+  finishAutomationRun,
+} from './automationRunLog';
+import { LIBRE_BACKGROUND_TASK } from './backgroundTaskNames';
 import { updateGlucoseDisplayFromHistory } from '@/data/glucoseDisplay/glucoseDisplayCoordinator';
-import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
-import { loadLibreLinkUpCredentials } from '@/data/libreLinkUp/secureStore';
-import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
-
-export const LIBRE_BACKGROUND_TASK = 'daymark-librelinkup-sync-v1';
+import {
+  configuredGlucoseSources,
+  refreshConfiguredGlucoseSources,
+} from '@/data/live/configuredGlucoseSources';
+import { glucoseAutomationSummary } from '@/data/live/glucoseSourceRefresh';
 
 if (!TaskManager.isTaskDefined(LIBRE_BACKGROUND_TASK)) {
   TaskManager.defineTask(LIBRE_BACKGROUND_TASK, async () => {
-    const credentials = await loadLibreLinkUpCredentials();
-    if (!credentials) return BackgroundTask.BackgroundTaskResult.Success;
-
+    const runId = await beginAutomationRun('glucose').catch(
+      () => undefined,
+    );
     try {
-      const source = new DirectLibreLinkUpSource(
-        credentials,
-        new SqliteGlucoseHistoryStore(),
-      );
-      await source.refresh();
-      await updateGlucoseDisplayFromHistory();
-      return BackgroundTask.BackgroundTaskResult.Success;
+      const results = await refreshConfiguredGlucoseSources();
+      const displayUpdated = await updateGlucoseDisplayFromHistory()
+        .then((updated) => updated)
+        .catch(() => false);
+      const summary = glucoseAutomationSummary(results, displayUpdated);
+      if (runId) {
+        await finishAutomationRun(runId, {
+          outcome: summary.outcome,
+          detail: summary.detail,
+        }).catch(() => undefined);
+      }
+      return summary.outcome === 'failed'
+        ? BackgroundTask.BackgroundTaskResult.Failed
+        : BackgroundTask.BackgroundTaskResult.Success;
     } catch {
+      if (runId) {
+        await finishAutomationRun(runId, {
+          outcome: 'failed',
+          detail: 'Glucose sources could not update. T1 Arc will try again.',
+        }).catch(() => undefined);
+      }
       await updateGlucoseDisplayFromHistory().catch(() => undefined);
       return BackgroundTask.BackgroundTaskResult.Failed;
     }
@@ -29,24 +52,19 @@ if (!TaskManager.isTaskDefined(LIBRE_BACKGROUND_TASK)) {
 }
 
 export async function registerLibreBackgroundSync() {
-  const status = await BackgroundTask.getStatusAsync();
-  if (status !== BackgroundTask.BackgroundTaskStatus.Available) return false;
-  const registered = await TaskManager.isTaskRegisteredAsync(
+  const [available, sources] = await Promise.all([
+    backgroundTaskSchedulerAvailable(),
+    configuredGlucoseSources(),
+  ]);
+  return reconcileBackgroundTaskRegistration(
     LIBRE_BACKGROUND_TASK,
+    shouldRegisterGlucoseBackgroundSync(available, sources.length),
   );
-  if (!registered) {
-    await BackgroundTask.registerTaskAsync(LIBRE_BACKGROUND_TASK, {
-      minimumInterval: 15,
-    });
-  }
-  return true;
 }
 
 export async function unregisterLibreBackgroundSync() {
-  const registered = await TaskManager.isTaskRegisteredAsync(
+  await reconcileBackgroundTaskRegistration(
     LIBRE_BACKGROUND_TASK,
+    false,
   );
-  if (registered) {
-    await BackgroundTask.unregisterTaskAsync(LIBRE_BACKGROUND_TASK);
-  }
 }

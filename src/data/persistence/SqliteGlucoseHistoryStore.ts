@@ -27,6 +27,10 @@ interface GlucoseRow {
   source_factory_timestamp: string | null;
   source_local_timestamp: string | null;
   timestamp_discrepancy_minutes: number | null;
+  imported_at_ms: number | null;
+  source_file: string | null;
+  source_row: number | null;
+  source_device_id: string | null;
 }
 
 interface SyncRow {
@@ -51,6 +55,10 @@ function readingFromRow(row: GlucoseRow): GlucoseReading {
     sourceLocalTimestamp: row.source_local_timestamp ?? undefined,
     timestampDiscrepancyMinutes:
       row.timestamp_discrepancy_minutes ?? undefined,
+    importedAt: row.imported_at_ms ?? undefined,
+    sourceFile: row.source_file ?? undefined,
+    sourceRow: row.source_row ?? undefined,
+    sourceDeviceId: row.source_device_id ?? undefined,
   };
 }
 
@@ -68,49 +76,95 @@ export class SqliteGlucoseHistoryStore implements GlucoseHistoryStore {
 
   async upsertReadings(readings: GlucoseReading[]) {
     if (readings.length === 0) return;
-    const database = await this.getDatabase();
+    await this.getDatabase();
     await withDaymarkTransaction(async (transaction) => {
-      for (const reading of readings) {
-        await transaction.runAsync(
-          `INSERT INTO glucose_readings (
-             id, source_id, timestamp_ms, received_at_ms, mmol_l, trend, quality,
-             source_factory_timestamp, source_local_timestamp,
-             timestamp_discrepancy_minutes
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(source_id, timestamp_ms) DO UPDATE SET
-             id = excluded.id,
-             mmol_l = excluded.mmol_l,
-             trend = excluded.trend,
-             quality = excluded.quality,
-             source_factory_timestamp = excluded.source_factory_timestamp,
-             source_local_timestamp = excluded.source_local_timestamp,
-             timestamp_discrepancy_minutes =
-               excluded.timestamp_discrepancy_minutes`,
-          reading.id,
-          reading.sourceId,
-          reading.timestamp,
-          reading.receivedAt,
-          reading.mmolL,
-          reading.trend,
-          reading.quality,
-          reading.sourceFactoryTimestamp ?? null,
-          reading.sourceLocalTimestamp ?? null,
-          reading.timestampDiscrepancyMinutes ?? null,
-        );
+      const statement = await transaction.prepareAsync(
+        `INSERT INTO glucose_readings (
+           id, source_id, timestamp_ms, received_at_ms, mmol_l, trend, quality,
+           source_factory_timestamp, source_local_timestamp,
+           timestamp_discrepancy_minutes, imported_at_ms, source_file,
+           source_row, source_device_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(source_id, timestamp_ms) DO UPDATE SET
+           id = excluded.id,
+           received_at_ms = MIN(
+             glucose_readings.received_at_ms, excluded.received_at_ms
+           ),
+           mmol_l = excluded.mmol_l,
+           trend = excluded.trend,
+           quality = excluded.quality,
+           source_factory_timestamp = excluded.source_factory_timestamp,
+           source_local_timestamp = excluded.source_local_timestamp,
+           timestamp_discrepancy_minutes =
+             excluded.timestamp_discrepancy_minutes,
+           imported_at_ms = excluded.imported_at_ms,
+           source_file = excluded.source_file,
+           source_row = excluded.source_row,
+           source_device_id = excluded.source_device_id`,
+      );
+      try {
+        for (const reading of readings) {
+          await statement.executeAsync([
+            reading.id,
+            reading.sourceId,
+            reading.timestamp,
+            reading.receivedAt,
+            reading.mmolL,
+            reading.trend,
+            reading.quality,
+            reading.sourceFactoryTimestamp ?? null,
+            reading.sourceLocalTimestamp ?? null,
+            reading.timestampDiscrepancyMinutes ?? null,
+            reading.importedAt ?? null,
+            reading.sourceFile ?? null,
+            reading.sourceRow ?? null,
+            reading.sourceDeviceId ?? null,
+          ]);
+        }
+      } finally {
+        await statement.finalizeAsync();
       }
     });
   }
 
-  async getReadings(range: TimeRange) {
+  async getReadings(range: TimeRange, sourceId?: string) {
     const database = await this.getDatabase();
-    const rows = await database.getAllAsync<GlucoseRow>(
-      `SELECT * FROM glucose_readings
-       WHERE timestamp_ms >= ? AND timestamp_ms < ?
-       ORDER BY timestamp_ms ASC`,
-      range.start,
-      range.end,
-    );
+    const rows = sourceId
+      ? await database.getAllAsync<GlucoseRow>(
+          `SELECT * FROM glucose_readings
+           WHERE timestamp_ms >= ? AND timestamp_ms < ? AND source_id = ?
+           ORDER BY timestamp_ms ASC`,
+          range.start,
+          range.end,
+          sourceId,
+        )
+      : await database.getAllAsync<GlucoseRow>(
+          `SELECT * FROM glucose_readings
+           WHERE timestamp_ms >= ? AND timestamp_ms < ?
+           ORDER BY timestamp_ms ASC`,
+          range.start,
+          range.end,
+        );
     return rows.map(readingFromRow);
+  }
+
+  async getReadingsByIds(recordIds: readonly string[]) {
+    if (!recordIds.length) return [];
+    const database = await this.getDatabase();
+    const rows: GlucoseRow[] = [];
+    for (let offset = 0; offset < recordIds.length; offset += 400) {
+      const batch = recordIds.slice(offset, offset + 400);
+      const placeholders = batch.map(() => '?').join(',');
+      rows.push(
+        ...(await database.getAllAsync<GlucoseRow>(
+          `SELECT * FROM glucose_readings
+           WHERE id IN (${placeholders})
+           ORDER BY timestamp_ms ASC`,
+          ...batch,
+        )),
+      );
+    }
+    return rows.map(readingFromRow).sort((a, b) => a.timestamp - b.timestamp);
   }
 
   async getLatestReading(sourceId?: string) {

@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 
 import DaymarkGlucoseDisplay, {
+  AodPosition,
+  AodSize,
   GlucoseDisplayStatus,
 } from '../../modules/daymark-glucose-display';
 import { updateGlucoseDisplayFromHistory } from '@/data/glucoseDisplay/glucoseDisplayCoordinator';
@@ -24,6 +26,24 @@ import { SectionCard } from './SectionCard';
 import { GlucoseAppearanceSettingsScreen } from './GlucoseAppearanceSettings';
 
 const NOTIFICATION_PERMISSION = 'android.permission.POST_NOTIFICATIONS';
+
+const AOD_POSITIONS: Array<{ label: string; value: AodPosition }> = [
+  { label: 'Top left', value: 'topLeft' },
+  { label: 'Top centre', value: 'topCenter' },
+  { label: 'Top right', value: 'topRight' },
+  { label: 'Middle left', value: 'middleLeft' },
+  { label: 'Middle centre', value: 'middleCenter' },
+  { label: 'Middle right', value: 'middleRight' },
+  { label: 'Bottom left', value: 'bottomLeft' },
+  { label: 'Bottom centre', value: 'bottomCenter' },
+  { label: 'Bottom right', value: 'bottomRight' },
+];
+
+const AOD_SIZES: Array<{ label: string; value: AodSize }> = [
+  { label: 'Small', value: 'small' },
+  { label: 'Standard', value: 'standard' },
+  { label: 'Large', value: 'large' },
+];
 
 interface GlucoseDisplayCardProps {
   connected: boolean;
@@ -63,8 +83,11 @@ export function GlucoseDisplayCard({
         lockScreenVisible: false,
         serviceRunning: false,
         aodDesired: false,
+        aodPosition: 'bottomCenter',
+        aodSize: 'standard',
         aodServiceEnabled: false,
         aodOverlayVisible: false,
+        androidAutoEnabled: false,
         freshness: 'missing',
       });
     }
@@ -101,7 +124,7 @@ export function GlucoseDisplayCard({
       {
         title: 'Show your current glucose',
         message:
-          'Daymark needs notification access to keep your glucose, direction and freshness visible outside the app.',
+          'T1 Arc needs notification access to keep your glucose, direction and freshness visible outside the app.',
         buttonPositive: 'Allow',
         buttonNegative: 'Not now',
       },
@@ -126,7 +149,7 @@ export function GlucoseDisplayCard({
         if (!allowed) {
           setPermissionDenied(true);
           setMessage(
-            'Android notification access is off. Allow it to show glucose outside Daymark.',
+            'Android notification access is off. Allow it to show glucose outside T1 Arc.',
           );
           await refreshStatus();
           return;
@@ -137,7 +160,7 @@ export function GlucoseDisplayCard({
         await updateGlucoseDisplayFromHistory();
         await refreshStatus();
         setMessage(
-          'Glucose at a glance is active. Daymark will refresh the value in the background.',
+          'Glucose at a glance is active. T1 Arc will refresh the value in the background.',
         );
       } else {
         setStatus(await DaymarkGlucoseDisplay.disableAsync());
@@ -188,7 +211,7 @@ export function GlucoseDisplayCard({
     }
     Alert.alert(
       'Two Android steps are required',
-      'Because this private APK was installed outside Google Play, Android first asks you to trust its restricted settings. Open Daymark app info, tap the three-dot menu, choose “Allow restricted settings”, then return here and open Accessibility. Daymark cannot approve this for you.',
+      'Because this private APK was installed outside Google Play, Android first asks you to trust its restricted settings. Open T1 Arc app info, tap the three-dot menu, choose “Allow restricted settings”, then return here and open Accessibility. T1 Arc cannot approve this for you.',
       [
         { text: 'Not now', style: 'cancel' },
         {
@@ -213,6 +236,71 @@ export function GlucoseDisplayCard({
         },
       ],
     );
+  }
+
+  async function setAodPosition(position: AodPosition) {
+    if (busy || position === status?.aodPosition) return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      setStatus(await DaymarkGlucoseDisplay.setAodPositionAsync(position));
+      const label =
+        AOD_POSITIONS.find((option) => option.value === position)?.label ??
+        'Selected position';
+      setMessage(`${label} saved. The always-on value will remain fixed there.`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The always-on position could not be changed.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setAodSize(size: AodSize) {
+    if (busy || size === status?.aodSize) return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      setStatus(await DaymarkGlucoseDisplay.setAodSizeAsync(size));
+      const label =
+        AOD_SIZES.find((option) => option.value === size)?.label ?? 'Selected';
+      setMessage(`${label} always-on display size saved.`);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The always-on display size could not be changed.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setAndroidAutoEnabled(enabled: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      setStatus(
+        await DaymarkGlucoseDisplay.setAndroidAutoEnabledAsync(enabled),
+      );
+      setMessage(
+        enabled
+          ? 'Android Auto glucose is on. It will appear automatically when your car connects.'
+          : 'Android Auto glucose is off.',
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The Android Auto setting could not be changed.',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   const tone = statusTone(status, colors);
@@ -262,8 +350,9 @@ export function GlucoseDisplayCard({
           </View>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
             A prominent ongoing notification shows personal glucose, direction
-            and age without sound or vibration. While enabled, Daymark checks
-            LibreLinkUp every minute, including when the app is closed.
+            and age without sound or vibration. While enabled, T1 Arc checks
+            LibreLinkUp more frequently when a new reading is expected,
+            including when the app is closed.
           </Text>
         </View>
       </View>
@@ -286,6 +375,18 @@ export function GlucoseDisplayCard({
         value={enabled}
       />
 
+      <SettingRow
+        detail={
+          status?.androidAutoEnabled
+            ? 'Quiet car notification; open T1 Arc in the car only for the full view'
+            : 'No glucose notification or full-screen car view'
+        }
+        disabled={busy || !status?.supported}
+        label="Show glucose in Android Auto"
+        onValueChange={(value) => void setAndroidAutoEnabled(value)}
+        value={Boolean(status?.androidAutoEnabled)}
+      />
+
       {enabled ? (
         <>
           <SettingRow
@@ -300,7 +401,7 @@ export function GlucoseDisplayCard({
               aodReady
                 ? 'Ready to appear after your Pixel enters always-on mode'
                 : status?.aodDesired
-                  ? 'Enable the Daymark service, not its shortcut button'
+                  ? 'Enable the T1 Arc service, not its shortcut button'
                   : 'Optional value and direction on the locked dark screen'
             }
             disabled={busy}
@@ -308,6 +409,15 @@ export function GlucoseDisplayCard({
             onValueChange={requestAod}
             value={Boolean(status?.aodDesired)}
           />
+          {status?.aodDesired ? (
+            <AodPositionPicker
+              disabled={busy}
+              onChange={(position) => void setAodPosition(position)}
+              onSizeChange={(size) => void setAodSize(size)}
+              size={status.aodSize ?? 'standard'}
+              value={status.aodPosition ?? 'bottomCenter'}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -342,7 +452,7 @@ export function GlucoseDisplayCard({
           <Text
             style={[styles.appearanceDetail, { color: colors.textSecondary }]}
           >
-            Used in Daymark, the notification and always-on display
+            Used in T1 Arc, the notification and always-on display
           </Text>
         </View>
         <Ionicons
@@ -410,7 +520,7 @@ export function GlucoseDisplayCard({
               { color: colors.textSecondary },
             ]}
           >
-            1. In Daymark app info, tap the three-dot menu and choose “Allow
+            1. In T1 Arc app info, tap the three-dot menu and choose “Allow
             restricted settings”.
           </Text>
           <Pressable
@@ -435,7 +545,7 @@ export function GlucoseDisplayCard({
               size={19}
             />
             <Text style={[styles.recoveryText, { color: colors.warning }]}>
-              1 · Open Daymark app info
+              1 · Open T1 Arc app info
             </Text>
           </Pressable>
           <Text
@@ -444,9 +554,9 @@ export function GlucoseDisplayCard({
               { color: colors.textSecondary },
             ]}
           >
-            2. Return here, open Accessibility, select “Daymark glucose on
+            2. Return here, open Accessibility, select “T1 Arc glucose on
             always-on display”, and turn on the main service switch. Leave its
-            Accessibility shortcut off—the floating Daymark button is not the
+            Accessibility shortcut off—the floating T1 Arc button is not the
             always-on display.
           </Text>
           <Pressable
@@ -541,6 +651,148 @@ export function GlucoseDisplayCard({
         visible={appearanceVisible}
       />
     </SectionCard>
+  );
+}
+
+function AodPositionPicker({
+  disabled,
+  onChange,
+  onSizeChange,
+  size,
+  value,
+}: {
+  disabled: boolean;
+  onChange(position: AodPosition): void;
+  onSizeChange(size: AodSize): void;
+  size: AodSize;
+  value: AodPosition;
+}) {
+  const { colors, radius } = useAppTheme();
+  const selectedLabel =
+    AOD_POSITIONS.find((position) => position.value === value)?.label ??
+    'Bottom centre';
+
+  return (
+    <View style={[styles.positionSection, { borderTopColor: colors.divider }]}>
+      <View style={styles.positionHeading}>
+        <View style={styles.positionCopy}>
+          <Text style={[styles.settingLabel, { color: colors.text }]}>
+            Always-on position
+          </Text>
+          <Text style={[styles.settingDetail, { color: colors.textSecondary }]}>
+            Fixed at {selectedLabel.toLowerCase()}—no automatic movement
+          </Text>
+        </View>
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.accent}
+          name="locate-outline"
+          size={21}
+        />
+      </View>
+      <View
+        style={[
+          styles.positionGrid,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            borderRadius: radius.md,
+          },
+        ]}
+      >
+        {AOD_POSITIONS.map((position) => {
+          const selected = position.value === value;
+          return (
+            <Pressable
+              accessibilityLabel={`${position.label}${
+                selected ? ', selected' : ''
+              }`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled, selected }}
+              disabled={disabled}
+              key={position.value}
+              onPress={() => onChange(position.value)}
+              style={({ pressed }) => [
+                styles.positionOption,
+                {
+                  backgroundColor: selected
+                    ? `${colors.accent}18`
+                    : colors.surfaceElevated,
+                  borderColor: selected ? colors.accent : colors.border,
+                  borderRadius: radius.sm,
+                },
+                pressed && !disabled && { opacity: 0.68 },
+                disabled && { opacity: 0.48 },
+              ]}
+            >
+              <View
+                accessibilityElementsHidden
+                style={[
+                  styles.positionMarker,
+                  {
+                    backgroundColor: selected
+                      ? colors.accent
+                      : colors.textTertiary,
+                  },
+                ]}
+              />
+              <Text
+                numberOfLines={2}
+                style={[
+                  styles.positionLabel,
+                  {
+                    color: selected ? colors.accent : colors.textSecondary,
+                  },
+                ]}
+              >
+                {position.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={[styles.sizeHeading, { color: colors.text }]}>
+        Display size
+      </Text>
+      <View style={styles.sizeRow}>
+        {AOD_SIZES.map((option) => {
+          const selected = option.value === size;
+          return (
+            <Pressable
+              accessibilityLabel={`${option.label} always-on display size${
+                selected ? ', selected' : ''
+              }`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled, selected }}
+              disabled={disabled}
+              key={option.value}
+              onPress={() => onSizeChange(option.value)}
+              style={({ pressed }) => [
+                styles.sizeOption,
+                {
+                  backgroundColor: selected
+                    ? `${colors.accent}18`
+                    : colors.surfaceElevated,
+                  borderColor: selected ? colors.accent : colors.border,
+                  borderRadius: radius.sm,
+                },
+                pressed && !disabled && { opacity: 0.68 },
+                disabled && { opacity: 0.48 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sizeLabel,
+                  { color: selected ? colors.accent : colors.textSecondary },
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -649,6 +901,74 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 17,
     marginTop: 2,
+  },
+  positionSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+  },
+  positionHeading: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  positionCopy: {
+    flex: 1,
+  },
+  positionGrid: {
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: 8,
+    marginTop: 8,
+  },
+  positionOption: {
+    minHeight: 58,
+    flexBasis: '30%',
+    flexGrow: 1,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  positionMarker: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  positionLabel: {
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  sizeHeading: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+    marginTop: 14,
+  },
+  sizeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 7,
+  },
+  sizeOption: {
+    minHeight: 48,
+    flex: 1,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  sizeLabel: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   appearanceButton: {
     minHeight: 72,

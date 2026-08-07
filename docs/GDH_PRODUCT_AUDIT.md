@@ -1,10 +1,10 @@
-# GlucoDataHandler patterns relevant to Daymark
+# GlucoDataHandler patterns relevant to T1 Arc
 
 Reviewed against upstream GlucoDataHandler `2.4.2` at commit
-`114460bc29973c78580095e2e9b0f212eed9df20`. GDH is MIT licensed; Daymark
+`114460bc29973c78580095e2e9b0f212eed9df20`. GDH is MIT licensed; T1 Arc
 retains attribution in `THIRD_PARTY_NOTICES.md`.
 
-This is a product and engineering audit, not a plan to clone GDH. Daymark is a
+This is a product and engineering audit, not a plan to clone GDH. T1 Arc is a
 private, evidence-first health record with a much broader long-term role. GDH
 is strongest as a reliable glucose distribution and device-display utility.
 
@@ -29,7 +29,7 @@ The user-enabled accessibility service is different from Android's optional
 accessibility shortcut. The floating accessibility button only opens or
 controls the service; it is not the always-on glucose display.
 
-Daymark should keep the explicit privacy disclosure and use the service only
+T1 Arc should keep the explicit privacy disclosure and use the service only
 for this display. A future public Play Store release must reassess the policy
 fit of this approach because Android documents accessibility services as tools
 for assisting users with disabilities.
@@ -47,7 +47,7 @@ Those boundaries produce five glucose states: very low, low, in range, high,
 and very high. GDH uses one alarm colour for both extremes, one out-of-range
 colour for low/high, one in-range colour, and a separate obsolete colour.
 
-Daymark adopts the ordered boundary model but permits an independent colour
+T1 Arc adopts the ordered boundary model but permits an independent colour
 for each of the five ranges plus stale/missing. The UI always includes a text
 label and freshness, so meaning never depends on colour alone. Colour choices
 are semantic palette tokens with separate accessible light, dark, and AOD
@@ -55,7 +55,7 @@ values rather than arbitrary raw colours that can become unreadable.
 
 ## Adopt now
 
-| GDH pattern | Daymark decision |
+| GDH pattern | T1 Arc decision |
 | --- | --- |
 | Persistent current-glucose notification | Adopt with direction, provenance, age, and no sound/vibration |
 | AOD accessibility overlay | Adopt for the private Pixel build with an explicit setup and diagnostics |
@@ -64,33 +64,27 @@ values rather than arbitrary raw colours that can become unreadable.
 | Boot and process recovery | Adopt; retain the latest display snapshot encrypted with Android Keystore |
 | Data-source separation | Adopt; LibreLinkUp glucose and delayed Glooko insulin remain independently labelled |
 | Exportable diagnostics | Adopt timings/stages/errors without credentials or health values |
+| Home-screen widget | Adopted as a curated resizable value, direction, age, freshness, and source surface |
+| Wear OS tile, complication, and watch face | Adopted with the phone as source of truth |
+| Fallback trend calculation | Adopted only for source-missing arrows, with strict continuity checks, a calculated label, and exact supporting readings |
+| User-configured safety alerts | Adopted off by default with explicit thresholds, hysteresis, repeat controls, Android channel controls, and no dose guidance |
+| Lock-screen presentation | Adopted as a separate privacy choice from the true always-on display |
 
 ## High-value next surfaces
 
-1. **Home-screen widget.** Current glucose, direction, age, and a short chart
-   provide glanceability without opening Daymark.
-2. **Wear OS complications and tile.** Start with value, arrow, and age; tapping
-   opens a compact evidence timeline. The phone remains the source of truth.
-3. **User-configured safety alerts.** Very low, low, high, very high, and stale
-   alerts can be useful if they are clearly user-authored and never calculate
-   doses or pump changes.
-4. **Lock-screen presentation.** Keep this separate from true AOD so users can
-   independently choose privacy while the screen is awake and locked.
-5. **Android Auto glance surface.** A minimal, non-interactive display can be
+1. **Android Auto glance surface.** A minimal, non-interactive display can be
    considered after the core records and alert semantics are mature.
 
 ## Adapt later rather than copy
 
-- **Fallback trend calculation:** only if the source has no direction, with the
-  calculated status and supporting readings exposed to the user.
 - **Local xDrip-compatible server/broadcasts:** useful for interoperability,
   but disabled by default, authenticated where possible, and clearly scoped to
   the local device/network.
-- **Multiple widget layouts:** useful, but Daymark should offer a few curated
+- **Multiple widget layouts:** useful, but T1 Arc should offer a few curated
   layouts rather than GDH's large matrix of preferences.
-- **Settings export/import:** fold display settings into Daymark's encrypted
+- **Settings export/import:** fold display settings into T1 Arc's encrypted
   portable backup instead of creating a separate settings file.
-- **Health Connect:** Daymark reads chosen activity and health categories
+- **Health Connect:** T1 Arc reads chosen activity and health categories
   through its existing on-device Health Connect integration. Writing glucose
   back to Health Connect should be an explicit later choice.
 
@@ -99,14 +93,14 @@ values rather than arbitrary raw colours that can become unreadable.
 - Omnipod notification parsing does not solve the UK setup because the pump is
   controlled by a separate PDM, not an Omnipod phone app.
 - A dummy media player for showing glucose in a car creates confusing system
-  state and is not appropriate for Daymark.
+  state and is not appropriate for T1 Arc.
 - An unauthenticated open local web server should not be enabled by default.
 - Three parallel persistent notifications add cognitive load without improving
-  the core Daymark experience.
+  the core T1 Arc experience.
 - Device-specific source hacks should not leak into the UI or normalized health
   record model.
 
-## Daymark-specific additions GDH does not provide
+## T1 Arc-specific additions GDH does not provide
 
 - complete encrypted glucose and context history;
 - delayed Glooko export retention and deterministic normalization;

@@ -6,6 +6,7 @@ import {
   saveLibreLinkUpSession,
   sha256,
 } from './secureStore';
+import { directLibreRefreshInterval } from './refreshPolicy';
 import { GlucoseSource } from '@/data/contracts';
 import {
   GlucoseHistoryStore,
@@ -13,8 +14,6 @@ import {
 } from '@/data/persistence/GlucoseHistoryStore';
 import { glucoseFreshness } from '@/domain/freshness';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
-
-const REFRESH_INTERVAL_MS = 60_000;
 
 export class DirectLibreLinkUpSource implements GlucoseSource {
   readonly sourceId = DIRECT_LIBRE_LINKUP_SOURCE_ID;
@@ -56,13 +55,27 @@ export class DirectLibreLinkUpSource implements GlucoseSource {
   private async sync(force = false) {
     await this.initialize();
     if (this.refreshInFlight) return this.refreshInFlight;
-    if (!force && Date.now() - this.lastAttemptAt < REFRESH_INTERVAL_MS) {
+    const now = Date.now();
+    const [currentState, latest] = await Promise.all([
+      this.store.getSyncState(this.sourceId),
+      this.store.getLatestReading(this.sourceId),
+    ]);
+    this.lastAttemptAt = Math.max(
+      this.lastAttemptAt,
+      currentState?.lastAttemptAt ?? 0,
+    );
+    const refreshInterval = directLibreRefreshInterval(
+      latest?.timestamp,
+      currentState?.lastErrorCode,
+      now,
+    );
+    if (!force && now - this.lastAttemptAt < refreshInterval) {
       const bounds = await this.store.getBounds(this.sourceId);
       if (this.lastError && bounds.count === 0) throw this.lastError;
       return;
     }
 
-    const attemptAt = Date.now();
+    const attemptAt = now;
     this.lastAttemptAt = attemptAt;
     this.refreshInFlight = (async () => {
       const previousState = await this.store.getSyncState(this.sourceId);
@@ -115,7 +128,10 @@ export class DirectLibreLinkUpSource implements GlucoseSource {
     return this.refreshInFlight;
   }
 
-  /** Refreshes at most once a minute, including foreground and manual triggers. */
+  /**
+   * Polls more closely around the next expected Libre reading, while retaining
+   * a one-minute baseline and an explicit rate-limit backoff.
+   */
   async refresh() {
     await this.sync();
   }
@@ -127,7 +143,7 @@ export class DirectLibreLinkUpSource implements GlucoseSource {
       const bounds = await this.store.getBounds(this.sourceId);
       if (bounds.count === 0) throw error;
     }
-    return this.store.getReadings(range);
+    return this.store.getReadings(range, this.sourceId);
   }
 
   async getLatestReading() {
@@ -158,7 +174,7 @@ export class DirectLibreLinkUpSource implements GlucoseSource {
       label: 'Glucose',
       detail: hasError
         ? `Saved LibreLinkUp history · ${state?.lastErrorMessage}`
-        : 'Daymark direct LibreLinkUp · encrypted local history',
+        : 'T1 Arc direct LibreLinkUp · encrypted local history',
       freshness:
         hasError && freshness === 'current' ? 'delayed' : freshness,
       origin: 'live',

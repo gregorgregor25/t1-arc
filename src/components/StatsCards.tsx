@@ -1,8 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { GlucoseStats, InsulinStats } from '@/domain/models';
+import { InsulinReconciliation } from '@/domain/dataCompleteness';
 import { useAppTheme } from '@/theme/theme';
 
+import { EmptyState } from './EmptyState';
 import { SectionCard } from './SectionCard';
 
 function Metric({
@@ -36,6 +38,19 @@ export function GlucoseStatsCard({
   label?: string;
 }) {
   const { colors } = useAppTheme();
+  if (
+    stats.observedMinutes <= 0 ||
+    stats.averageMmolL === null
+  ) {
+    return (
+      <SectionCard accessibilityLabel="Glucose statistics unavailable because this range contains no observed glucose time.">
+        <EmptyState
+          title="No glucose statistics"
+          detail="There is no observed glucose time in this range. Time in range is unavailable—not 0%."
+        />
+      </SectionCard>
+    );
+  }
   const total =
     stats.timeBelowPercent + stats.timeInRangePercent + stats.timeAbovePercent || 1;
   return (
@@ -131,16 +146,18 @@ export function GlucoseStatsCard({
 
 export function InsulinStatsCard({
   stats,
+  reconciliation,
   label = 'Today so far',
 }: {
   stats: InsulinStats;
+  reconciliation?: InsulinReconciliation;
   label?: string;
 }) {
   const { colors } = useAppTheme();
   const basalShare = stats.totalUnits > 0 ? stats.basalUnits / stats.totalUnits : 0;
   return (
     <SectionCard
-      accessibilityLabel={`Insulin total ${stats.totalUnits.toFixed(1)} units. Basal ${stats.basalUnits.toFixed(1)} units. Bolus ${stats.bolusUnits.toFixed(1)} units. Delayed cloud data.`}
+      accessibilityLabel={`Insulin total ${stats.totalUnits.toFixed(1)} units. Basal ${stats.basalUnits.toFixed(1)} units. Bolus ${stats.bolusUnits.toFixed(1)} units.`}
     >
       <View style={styles.cardHeader}>
         <View>
@@ -200,9 +217,43 @@ export function InsulinStatsCard({
           </View>
         </View>
       </View>
-      <Text style={[styles.delayedNote, { color: colors.textSecondary }]}>
-        From the latest delayed export—not live pump status.
-      </Text>
+      {reconciliation ? (
+        <View
+          style={[
+            styles.sourceTotal,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.divider,
+            },
+          ]}
+        >
+          <View style={styles.sourceTotalTop}>
+            <Text
+              style={[styles.sourceTotalLabel, { color: colors.textSecondary }]}
+            >
+              Glooko source total
+            </Text>
+            <Text style={[styles.sourceTotalValue, { color: colors.text }]}>
+              {reconciliation.reportedTotalUnits.toFixed(1)} U
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.sourceTotalDetail,
+              {
+                color:
+                  Math.abs(reconciliation.differenceUnits) < 0.11
+                    ? colors.textTertiary
+                    : colors.warning,
+              },
+            ]}
+          >
+            Source minus detailed rows{' '}
+            {reconciliation.differenceUnits > 0 ? '+' : ''}
+            {reconciliation.differenceUnits.toFixed(1)} U
+          </Text>
+        </View>
+      ) : null}
     </SectionCard>
   );
 }
@@ -322,6 +373,34 @@ const styles = StyleSheet.create({
     gap: 28,
     marginTop: 18,
   },
+  sourceTotal: {
+    marginTop: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: 11,
+  },
+  sourceTotalTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 10,
+  },
+  sourceTotalLabel: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  sourceTotalValue: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  sourceTotalDetail: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 2,
+  },
   breakdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -341,10 +420,5 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
-  },
-  delayedNote: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 16,
   },
 });
