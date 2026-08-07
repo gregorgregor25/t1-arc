@@ -23,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Generate the native Android project for identity checks
+        run: npx expo prebuild --platform android --clean --no-install
       - run: npm run typecheck
       - run: npm test -- --run
 
