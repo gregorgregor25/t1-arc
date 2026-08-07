@@ -34,12 +34,15 @@ $androidSdk = if ($env:ANDROID_HOME) {
 } else {
   Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 }
-$analyzer = Join-Path $androidSdk 'cmdline-tools\latest\bin\apkanalyzer.bat'
+$toolSuffix = if (
+  [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+) { '.bat' } else { '' }
+$analyzer = Join-Path $androidSdk "cmdline-tools\latest\bin\apkanalyzer$toolSuffix"
 $latestBuildTools = Get-ChildItem -LiteralPath (Join-Path $androidSdk 'build-tools') -Directory |
   Sort-Object Name -Descending |
   Select-Object -First 1
 $apkSigner = if ($latestBuildTools) {
-  Join-Path $latestBuildTools.FullName 'apksigner.bat'
+  Join-Path $latestBuildTools.FullName "apksigner$toolSuffix"
 }
 if (-not (Test-Path -LiteralPath $analyzer)) {
   throw "apkanalyzer was not found at $analyzer"
