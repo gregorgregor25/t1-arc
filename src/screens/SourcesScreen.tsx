@@ -582,10 +582,13 @@ export function SourcesScreen() {
       {activeSource === 'dexcom' ? (
       <View>
         <SectionHeading
-          title="Dexcom history"
-          detail="Bring a user-controlled Clarity CSV into the same encrypted glucose timeline."
+          title="Dexcom history and live options"
+          detail="Clarity CSV adds history. Nightscout or xDrip can supply current readings when your Dexcom data already reaches them."
         />
-        <DexcomClarityImportCard />
+        <DexcomClarityImportCard
+          onOpenNightscout={() => showSource('nightscout')}
+          onOpenXdrip={() => showSource('xdrip')}
+        />
       </View>
       ) : null}
 
@@ -682,7 +685,7 @@ const SOURCE_JUMPS: Array<{
   {
     source: 'dexcom',
     label: 'Dexcom',
-    detail: 'Clarity history',
+    detail: 'History + live routes',
     icon: 'analytics-outline',
   },
   {

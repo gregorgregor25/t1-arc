@@ -11,6 +11,7 @@ import {
   TimelineData,
 } from '@/domain/models';
 import { contextNoteCategoryLabel } from '@/domain/contextNotes';
+import { selectLatestInsulinDailyTotals } from '@/domain/timelineInsulinSummary';
 import { formatTime } from '@/domain/time';
 import { presentTrend } from '@/domain/trend';
 import { useAppTheme } from '@/theme/theme';
@@ -67,11 +68,13 @@ function toDisplayRecords(
   const dailyTotals: DisplayRecord[] =
     filter === 'glucose' || filter === 'context'
       ? []
-      : (data.dailyInsulinTotals ?? []).map((value) => ({
-          kind: 'insulin-total' as const,
-          timestamp: value.timestamp,
-          value,
-        }));
+      : selectLatestInsulinDailyTotals(data.dailyInsulinTotals ?? []).map(
+          (value) => ({
+            kind: 'insulin-total' as const,
+            timestamp: value.timestamp,
+            value,
+          }),
+        );
   return [...glucose, ...basal, ...bolus, ...dailyTotals, ...context]
     .filter((record) => !allowed || allowed.has(record.value.id))
     .sort((a, b) => b.timestamp - a.timestamp);

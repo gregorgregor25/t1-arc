@@ -19,7 +19,13 @@ import {
 import {
   loadGlookoSyncState,
   saveGlookoSyncState,
+  updateGlookoSyncState,
 } from './glookoSyncState';
+import {
+  isBusyGlookoExportResult,
+  stateAfterBusyGlookoAttempt,
+} from './glookoSyncOutcome';
+import { GlookoSingleFlight } from './glookoSingleFlight';
 import {
   PreparedGlookoImport,
   prepareGlookoImport,
@@ -45,8 +51,10 @@ export interface GlookoSyncSuccess {
 export interface GlookoSyncSkipped {
   status: 'skipped';
   origin: GlookoSyncOrigin;
-  plan: GlookoAutomaticPlan;
+  plan?: GlookoAutomaticPlan;
+  reason?: 'busy';
   syncState: GlookoSyncState;
+  diagnostic?: string;
 }
 
 export interface GlookoSyncUnavailable {
@@ -54,6 +62,7 @@ export interface GlookoSyncUnavailable {
   origin: GlookoSyncOrigin;
   days: number;
   message: string;
+  reason?: string;
   syncState: GlookoSyncState;
   diagnostic?: string;
 }
@@ -63,30 +72,7 @@ export type GlookoSyncOutcome =
   | GlookoSyncSkipped
   | GlookoSyncUnavailable;
 
-let syncInFlight: Promise<GlookoSyncOutcome> | undefined;
-let syncInFlightInteractive = false;
-
-function trackSync(
-  promise: Promise<GlookoSyncOutcome>,
-  interactive: boolean,
-) {
-  const tracked = promise.finally(() => {
-    if (syncInFlight === tracked) {
-      syncInFlight = undefined;
-      syncInFlightInteractive = false;
-    }
-  });
-  syncInFlight = tracked;
-  syncInFlightInteractive = interactive;
-  return tracked;
-}
-
-async function waitForSilentSyncToFinish() {
-  while (syncInFlight && !syncInFlightInteractive) {
-    const current = syncInFlight;
-    await current.catch(() => undefined);
-  }
-}
+const syncSingleFlight = new GlookoSingleFlight<GlookoSyncOutcome>();
 
 function insertedRecords(result: ImportWriteResult) {
   return (
@@ -199,6 +185,18 @@ async function executeSync(
         ? await DaymarkGlookoExport.startExportAsync(days)
         : await DaymarkGlookoExport.startSilentExportAsync(days);
     if (exported.status !== 'downloaded') {
+      if (isBusyGlookoExportResult(exported)) {
+        const next = await updateGlookoSyncState((current) =>
+          stateAfterBusyGlookoAttempt(previous, current, startedAt),
+        );
+        return {
+          status: 'skipped',
+          origin,
+          reason: 'busy',
+          syncState: next,
+          diagnostic: exported.diagnostic,
+        };
+      }
       const sessionRequired =
         exported.status === 'session-required';
       const message =
@@ -223,6 +221,7 @@ async function executeSync(
         origin,
         days,
         message,
+        reason: exported.reason,
         syncState: next,
         diagnostic: exported.diagnostic,
       };
@@ -361,6 +360,7 @@ async function executeSync(
       origin,
       days,
       message,
+      reason: 'unexpected',
       syncState: next,
     };
   } finally {
@@ -369,9 +369,9 @@ async function executeSync(
 }
 
 export async function syncGlookoManually(days = 90) {
-  await waitForSilentSyncToFinish();
-  if (syncInFlight) return syncInFlight;
-  return trackSync(executeSync('manual', days, true), true);
+  return syncSingleFlight.runInteractive(() =>
+    executeSync('manual', days, true),
+  );
 }
 
 /**
@@ -382,8 +382,9 @@ export async function syncGlookoSilentlyNow(days = 1) {
   if (!Number.isInteger(days) || days < 1 || days > GLOOKO_MAX_EXPORT_DAYS) {
     throw new Error('A quiet Glooko refresh must contain 1 to 90 days.');
   }
-  if (syncInFlight) return syncInFlight;
-  return trackSync(executeSync('app-open', days, false), false);
+  return syncSingleFlight.run(() =>
+    executeSync('app-open', days, false),
+  );
 }
 
 export async function syncGlookoHistoryRange(
@@ -397,40 +398,35 @@ export async function syncGlookoHistoryRange(
   if (days < 1 || days > GLOOKO_MAX_EXPORT_DAYS) {
     throw new Error('A Glooko history range must contain 1 to 90 days.');
   }
-  await waitForSilentSyncToFinish();
-  if (syncInFlight) return syncInFlight;
-  return trackSync(
+  return syncSingleFlight.runInteractive(() =>
     executeSync('manual', days, true, {
       startDate,
       endDate,
     }),
-    true,
   );
 }
 
 export async function syncGlookoIfDue(
   origin: Exclude<GlookoSyncOrigin, 'manual'>,
 ) {
-  if (syncInFlight) return syncInFlight;
-  const state = await loadGlookoSyncState();
-  const plan = planAutomaticGlookoSync(state);
-  if (!plan.due) {
-    return {
-      status: 'skipped',
-      origin,
-      plan,
-      syncState: state,
-    } satisfies GlookoSyncSkipped;
-  }
-  return trackSync(
-    executeSync(
+  return syncSingleFlight.run(async () => {
+    const state = await loadGlookoSyncState();
+    const plan = planAutomaticGlookoSync(state);
+    if (!plan.due) {
+      return {
+        status: 'skipped',
+        origin,
+        plan,
+        syncState: state,
+      } satisfies GlookoSyncSkipped;
+    }
+    return executeSync(
       origin,
       plan.days,
       false,
       plan.reason === 'history-backfill'
         ? plan.historicalRange
         : undefined,
-    ),
-    false,
-  );
+    );
+  });
 }

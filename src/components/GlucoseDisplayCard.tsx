@@ -88,6 +88,7 @@ export function GlucoseDisplayCard({
         aodServiceEnabled: false,
         aodOverlayVisible: false,
         androidAutoEnabled: false,
+        androidAutoProjected: false,
         freshness: 'missing',
       });
     }
@@ -289,7 +290,7 @@ export function GlucoseDisplayCard({
       );
       setMessage(
         enabled
-          ? 'Android Auto glucose is on. It will appear automatically when your car connects.'
+          ? 'Android Auto glucose is ready. Because this private APK is sideloaded, enable Android Auto developer mode and its “Unknown sources” option once.'
           : 'Android Auto glucose is off.',
       );
     } catch (error) {
@@ -378,7 +379,9 @@ export function GlucoseDisplayCard({
       <SettingRow
         detail={
           status?.androidAutoEnabled
-            ? 'Quiet car notification; open T1 Arc in the car only for the full view'
+            ? status.androidAutoProjected
+              ? 'Connected now · open T1 Arc in the car for the full view'
+              : 'Ready · this private APK also needs Android Auto’s “Unknown sources” developer option'
             : 'No glucose notification or full-screen car view'
         }
         disabled={busy || !status?.supported}

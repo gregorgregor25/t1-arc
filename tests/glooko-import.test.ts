@@ -15,6 +15,7 @@ import {
   ImportBatch,
   MemoryHealthRecordStore,
 } from '@/data/persistence/HealthRecordStore';
+import { calculateInsulinStats } from '@/domain/stats';
 
 const IMPORTED_AT = Date.parse('2026-07-26T08:00:00+01:00');
 
@@ -263,6 +264,37 @@ Timestamp,Insulin Type,Blood Glucose Input (mmol/L),Carbohydrate Intake (g),Deli
     expect(JSON.parse(preview.rawRecords[0]!.payloadJson)).toHaveProperty(
       'headers',
     );
+  });
+
+  it('keeps exact automated basal units when Glooko leaves rate blank', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'basal_data_automated.csv',
+          text: `Timestamp,Insulin type,Duration (minutes),Rate,Insulin delivered (U),Serial number
+2026-07-01 00:00:00,Automated,5,,0.075,PDM-ANONYMISED
+2026-07-01 00:05:00,Automated pause,5,,0,PDM-ANONYMISED`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.basal).toHaveLength(2);
+    expect(preview.basal[0]).toMatchObject({
+      deliveryType: 'Automated',
+      units: 0.075,
+      unitsEstimated: false,
+      sourceRow: 2,
+    });
+    expect(preview.basal[0]?.rateUnitsPerHour).toBeCloseTo(0.9);
+    expect(preview.basal[1]).toMatchObject({
+      deliveryType: 'Automated pause',
+      units: 0,
+      rateUnitsPerHour: 0,
+      unitsEstimated: false,
+      sourceRow: 3,
+    });
+    expect(preview.recognisedFiles[0]?.skippedRows).toBe(0);
   });
 
   it('normalises Glooko pump alarms while retaining every exact field', async () => {
@@ -761,6 +793,120 @@ describe('encrypted health-record store contract', () => {
     expect(
       (await store.getLatestImportSourcePayload('glooko-export'))?.payload.bytes,
     ).toEqual(sourceBytes);
+  });
+
+  it('replaces an estimated basal with the corrected row from the same retained archive', async () => {
+    const store = new MemoryHealthRecordStore();
+    const start = Date.parse('2026-08-06T00:00:00+01:00');
+    const end = start + 60 * 60 * 1000;
+    const batch: ImportBatch = {
+      id: 'glooko-export:corrected-basal',
+      sourceId: 'glooko-export',
+      fileName: 'export.zip',
+      fileSha256: 'corrected-basal',
+      importedAt: IMPORTED_AT,
+      skippedCount: 0,
+      warnings: [],
+    };
+    const provenance = {
+      sourceId: 'glooko-export',
+      sourceFile: 'basal_data_1.csv',
+      sourceRow: 2,
+      sourceDeviceId: 'PDM-ANONYMISED',
+      start,
+      end,
+      rateUnitsPerHour: 1,
+    };
+    await store.writeImport(
+      batch,
+      [
+        {
+          ...provenance,
+          id: 'estimated-old-id',
+          units: 1,
+          unitsEstimated: true,
+        },
+        {
+          ...provenance,
+          id: 'unrelated-row',
+          sourceRow: 3,
+          units: 0.2,
+          unitsEstimated: true,
+        },
+      ],
+      [],
+      [],
+      {
+        format: 'zip',
+        bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+        entries: [{ name: 'basal_data_1.csv', handling: 'loaded' }],
+      },
+    );
+
+    const reprocessed = await store.writeImport(
+      batch,
+      [
+        {
+          ...provenance,
+          id: 'exact-corrected-id',
+          units: 0.8,
+          unitsEstimated: false,
+        },
+      ],
+      [],
+      [],
+    );
+    const basal = await store.getBasalDeliveries({ start, end });
+
+    expect(basal.map((delivery) => delivery.id).sort()).toEqual([
+      'exact-corrected-id',
+      'unrelated-row',
+    ]);
+    expect(reprocessed.batch.basalCount).toBe(2);
+    expect(calculateInsulinStats(basal, [], { start, end })).toMatchObject({
+      basalUnits: 1,
+      totalUnits: 1,
+    });
+  });
+
+  it('loads a source daily total by its date during a partial-day query', async () => {
+    const store = new MemoryHealthRecordStore();
+    const timestamp = Date.parse('2026-08-06T23:59:00+01:00');
+    await store.writeImport(
+      {
+        id: 'glooko-export:daily-total-date-query',
+        sourceId: 'glooko-export',
+        fileName: 'export.zip',
+        fileSha256: 'daily-total-date-query',
+        importedAt: Date.parse('2026-08-07T08:00:00+01:00'),
+        skippedCount: 0,
+        warnings: [],
+      },
+      [],
+      [],
+      [],
+      undefined,
+      [
+        {
+          id: 'daily-total:2026-08-06',
+          sourceId: 'glooko-export',
+          timestamp,
+          dateKey: '2026-08-06',
+          basalUnits: 16.8,
+          bolusUnits: 23.2,
+          totalUnits: 40,
+        },
+      ],
+    );
+
+    const totals = await store.getDailyInsulinTotals({
+      start: Date.parse('2026-08-06T00:00:00+01:00'),
+      end: Date.parse('2026-08-06T12:00:00+01:00'),
+    });
+
+    expect(totals.map((total) => total.id)).toEqual([
+      'daily-total:2026-08-06',
+    ]);
   });
 
   it('only permits deleting user-created context', async () => {

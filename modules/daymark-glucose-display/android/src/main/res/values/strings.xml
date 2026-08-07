@@ -10,4 +10,7 @@
   <string name="daymark_widget_description">Current glucose, direction and freshness from T1 Arc</string>
   <string name="daymark_aod_service_name">T1 Arc glucose on always-on display</string>
   <string name="daymark_aod_service_description">Draws the latest T1 Arc glucose value while the phone display is dozing. It does not read screen content or key presses.</string>
+  <string name="daymark_android_auto_name">T1 Arc</string>
+  <string name="daymark_android_auto_section_name">Glucose</string>
+  <string name="daymark_android_auto_section_description">Current reading and recent trend</string>
 </resources>

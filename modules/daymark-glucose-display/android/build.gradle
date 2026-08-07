@@ -23,4 +23,5 @@ dependencies {
   implementation "androidx.media:media:1.8.0"
   implementation "com.google.android.gms:play-services-wearable:20.0.1"
   implementation "com.facebook.react:react-android"
+  testImplementation "junit:junit:4.13.2"
 }

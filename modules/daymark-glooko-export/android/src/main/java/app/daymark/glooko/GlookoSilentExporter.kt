@@ -30,6 +30,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.max
@@ -49,6 +50,80 @@ private enum class GlookoDownloadKind {
   PDF_REPORT,
 }
 
+private val PDF_GENERATED_DOWNLOAD_LABELS =
+  setOf("download", "download pdf", "download report", "view pdf", "view report")
+private val CSV_GENERATED_DOWNLOAD_LABELS =
+  setOf("download csv", "download export", "download data", "download file", "download your data")
+
+internal fun isSilentGlookoGeneratedDownloadControl(
+  label: String,
+  originalSubmitLabel: String?,
+  alreadyDownloaded: Boolean,
+  hasFileLink: Boolean,
+  insideExportDialog: Boolean,
+  expectedPdf: Boolean,
+): Boolean {
+  if (alreadyDownloaded) return false
+  val normalisedLabel = label.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+  val normalisedSubmitLabel =
+    originalSubmitLabel
+      ?.replace(Regex("\\s+"), " ")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      ?.takeIf(String::isNotEmpty)
+  if (normalisedSubmitLabel == normalisedLabel) return false
+  val transitionedSubmit =
+    normalisedSubmitLabel != null && normalisedSubmitLabel != normalisedLabel
+  return if (expectedPdf) {
+    normalisedLabel in PDF_GENERATED_DOWNLOAD_LABELS
+  } else {
+    hasFileLink ||
+      normalisedLabel in CSV_GENERATED_DOWNLOAD_LABELS ||
+      (normalisedLabel == "download" && (!insideExportDialog || transitionedSubmit))
+  }
+}
+
+internal fun hasSilentGlookoPostSubmitTimedOut(
+  nowElapsedRealtime: Long,
+  submittedAtElapsedRealtime: Long?,
+  downloadRequestedAtElapsedRealtime: Long?,
+  downloadInProgress: Boolean,
+  generationTimeoutMs: Long,
+  downloadCaptureTimeoutMs: Long,
+): Boolean {
+  if (submittedAtElapsedRealtime == null || downloadInProgress) return false
+  val waitStartedAt =
+    downloadRequestedAtElapsedRealtime ?: submittedAtElapsedRealtime
+  val timeout =
+    if (downloadRequestedAtElapsedRealtime == null) {
+      generationTimeoutMs
+    } else {
+      downloadCaptureTimeoutMs
+    }
+  return nowElapsedRealtime >= waitStartedAt &&
+    nowElapsedRealtime - waitStartedAt >= timeout
+}
+
+internal fun silentGlookoWatchdogDeadline(
+  exportStartedAtElapsedRealtime: Long,
+  submittedAtElapsedRealtime: Long?,
+  downloadRequestedAtElapsedRealtime: Long?,
+  downloadStartedAtElapsedRealtime: Long?,
+  preSubmitTimeoutMs: Long,
+  generationTimeoutMs: Long,
+  downloadCaptureTimeoutMs: Long,
+  downloadTransferTimeoutMs: Long,
+): Long =
+  when {
+    downloadStartedAtElapsedRealtime != null ->
+      downloadStartedAtElapsedRealtime + downloadTransferTimeoutMs
+    downloadRequestedAtElapsedRealtime != null ->
+      downloadRequestedAtElapsedRealtime + downloadCaptureTimeoutMs
+    submittedAtElapsedRealtime != null ->
+      submittedAtElapsedRealtime + generationTimeoutMs
+    else -> exportStartedAtElapsedRealtime + preSubmitTimeoutMs
+  }
+
 /**
  * Uses the same private WebView cookie jar as the visible connector. The
  * WebView is attached to a private virtual display, never the physical screen,
@@ -64,7 +139,11 @@ internal class GlookoSilentExporter(context: Context) {
     private const val LOG_TAG = "T1ArcGlooko"
     private const val MAX_DOWNLOAD_BYTES = 50L * 1024L * 1024L
     private const val MAX_AUTOMATION_ATTEMPTS = 24
-    private const val TIMEOUT_MS = 3L * 60L * 1000L
+    private const val POST_SUBMIT_GENERATION_TIMEOUT_MS = 2L * 60L * 1000L
+    private const val DOWNLOAD_CAPTURE_TIMEOUT_MS = 30L * 1000L
+    private const val DOWNLOAD_TRANSFER_TIMEOUT_MS = 150L * 1000L
+    private const val POST_SUBMIT_POLL_MS = 3_000L
+    private const val PRE_SUBMIT_WATCHDOG_TIMEOUT_MS = 5L * 60L * 1000L
     private val running = AtomicBoolean(false)
   }
 
@@ -73,12 +152,18 @@ internal class GlookoSilentExporter(context: Context) {
   private val downloadExecutor = Executors.newSingleThreadExecutor()
   private val completed = AtomicBoolean(false)
   private val downloadInProgress = AtomicBoolean(false)
+  private val downloadStartedAtElapsedRealtime = AtomicLong(0L)
   private val traceStartedAt = SystemClock.elapsedRealtime()
   private val traceEvents = mutableListOf<String>()
   private val popupWebViews = mutableListOf<WebView>()
   private lateinit var webView: WebView
   private lateinit var offscreenHost: GlookoOffscreenWebViewHost
   private var automationAttempts = 0
+  private var automationGeneration = 0
+  private var watchdogGeneration = 0
+  private var exportSubmittedAtElapsedRealtime: Long? = null
+  private var downloadRequestedAtElapsedRealtime: Long? = null
+  private var postSubmitTraceBucket = 0
   private var requestedDays = 1
   private var requestedStartDate: String? = null
   private var requestedEndDate: String? = null
@@ -247,7 +332,9 @@ internal class GlookoSilentExporter(context: Context) {
                 ),
                 null,
               )
-              automationAttempts = 0
+              if (exportSubmittedAtElapsedRealtime == null) {
+                automationAttempts = 0
+              }
               scheduleAutomationAttempt(800L)
             }
 
@@ -272,14 +359,7 @@ internal class GlookoSilentExporter(context: Context) {
       View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
     )
     webView.layout(0, 0, width, height)
-    mainHandler.postDelayed(
-      {
-        if (!completed.get()) {
-          fail("Automatic Glooko refresh timed out and will retry later.", "timeout")
-        }
-      },
-      TIMEOUT_MS,
-    )
+    scheduleOverallWatchdog()
     // Start at the authenticated application rather than the sign-in route.
     // A missing/expired session is redirected to sign-in, while a valid
     // session goes directly to the dashboard.
@@ -481,40 +561,76 @@ internal class GlookoSilentExporter(context: Context) {
   }
 
   private fun scheduleAutomationAttempt(delayMs: Long) {
+    val generation = ++automationGeneration
     mainHandler.postDelayed(
       {
-        if (completed.get() || !::webView.isInitialized) return@postDelayed
-        if (downloadInProgress.get()) {
-          scheduleAutomationAttempt(3_000L)
+        if (
+          completed.get() ||
+          !::webView.isInitialized ||
+          generation != automationGeneration
+        ) {
           return@postDelayed
         }
-        if (automationAttempts >= MAX_AUTOMATION_ATTEMPTS) {
+        if (downloadInProgress.get()) {
+          scheduleAutomationAttempt(POST_SUBMIT_POLL_MS)
+          return@postDelayed
+        }
+        val now = SystemClock.elapsedRealtime()
+        val waitingForDownload = exportSubmittedAtElapsedRealtime != null
+        if (
+          hasSilentGlookoPostSubmitTimedOut(
+            now,
+            exportSubmittedAtElapsedRealtime,
+            downloadRequestedAtElapsedRealtime,
+            downloadInProgress.get(),
+            POST_SUBMIT_GENERATION_TIMEOUT_MS,
+            DOWNLOAD_CAPTURE_TIMEOUT_MS,
+          )
+        ) {
+          fail(postSubmitTimeoutMessage(), "timeout")
+          return@postDelayed
+        }
+        if (!waitingForDownload && automationAttempts >= MAX_AUTOMATION_ATTEMPTS) {
           fail(
             "Glooko's automatic export control was not available. Manual sync still works.",
             "unknown",
           )
           return@postDelayed
         }
-        automationAttempts += 1
+        if (!waitingForDownload) automationAttempts += 1
         webView.evaluateJavascript(
           if (requestedDownloadKind == GlookoDownloadKind.PDF_REPORT) {
-            reportAutomationScript(requestedDays)
+            reportAutomationScript(requestedDays, waitingForDownload)
           } else {
             automationScript(
               requestedDays,
               requestedStartDate,
               requestedEndDate,
+              waitingForDownload,
             )
           },
-        ) { raw ->
+        ) resultCallback@ { raw ->
+          if (completed.get() || generation != automationGeneration) {
+            return@resultCallback
+          }
           val result = raw?.trim('"').orEmpty()
           when {
             result == "submitted" -> {
-              trace("Automatic export submitted")
-              scheduleAutomationAttempt(2_000L)
+              markExportSubmitted()
+              scheduleAutomationAttempt(POST_SUBMIT_POLL_MS)
+            }
+            result == "waiting-download" -> {
+              markExportSubmitted()
+              tracePostSubmitWait()
+              scheduleAutomationAttempt(POST_SUBMIT_POLL_MS)
             }
             result == "download" -> {
-              trace("Generated report download requested")
+              markExportSubmitted()
+              if (downloadRequestedAtElapsedRealtime == null) {
+                downloadRequestedAtElapsedRealtime = SystemClock.elapsedRealtime()
+                trace("Generated export download requested")
+                scheduleOverallWatchdog()
+              }
               scheduleAutomationAttempt(2_500L)
             }
             result == "opened" -> {
@@ -530,13 +646,107 @@ internal class GlookoSilentExporter(context: Context) {
               ) {
                 trace("Report page ${result.removePrefix("state:").take(100)}")
               }
-              scheduleAutomationAttempt(1_500L)
+              if (waitingForDownload) tracePostSubmitWait()
+              scheduleAutomationAttempt(
+                if (waitingForDownload) POST_SUBMIT_POLL_MS else 1_500L,
+              )
             }
           }
         }
       },
       delayMs,
     )
+  }
+
+  private fun markExportSubmitted(): Boolean {
+    if (completed.get() || exportSubmittedAtElapsedRealtime != null) return false
+    exportSubmittedAtElapsedRealtime = SystemClock.elapsedRealtime()
+    trace("Automatic export submitted; waiting for generated download")
+    scheduleOverallWatchdog()
+    return true
+  }
+
+  private fun tracePostSubmitWait() {
+    val submittedAt = exportSubmittedAtElapsedRealtime ?: return
+    val bucket =
+      ((SystemClock.elapsedRealtime() - submittedAt) / 30_000L).toInt()
+    if (bucket <= postSubmitTraceBucket) return
+    postSubmitTraceBucket = bucket
+    trace("Still waiting for Glooko's generated download")
+  }
+
+  private fun postSubmitTimeoutMessage(): String =
+    if (downloadRequestedAtElapsedRealtime != null) {
+      "Glooko offered the generated export, but its download did not start within 30 seconds. T1 Arc will retry later."
+    } else {
+      "Glooko accepted the export request, but the generated download did not arrive within two minutes. T1 Arc will retry later."
+    }
+
+  private fun overallTimeoutMessage(): String =
+    when {
+      downloadInProgress.get() ->
+        "The generated Glooko export started downloading, but it did not finish in time. T1 Arc will retry later."
+      exportSubmittedAtElapsedRealtime != null -> postSubmitTimeoutMessage()
+      else -> "Automatic Glooko refresh timed out and will retry later."
+    }
+
+  private fun currentWatchdogDeadline(): Long =
+    silentGlookoWatchdogDeadline(
+      exportStartedAtElapsedRealtime = traceStartedAt,
+      submittedAtElapsedRealtime = exportSubmittedAtElapsedRealtime,
+      downloadRequestedAtElapsedRealtime = downloadRequestedAtElapsedRealtime,
+      downloadStartedAtElapsedRealtime =
+        downloadStartedAtElapsedRealtime.get().takeIf { it > 0L },
+      preSubmitTimeoutMs = PRE_SUBMIT_WATCHDOG_TIMEOUT_MS,
+      generationTimeoutMs = POST_SUBMIT_GENERATION_TIMEOUT_MS,
+      downloadCaptureTimeoutMs = DOWNLOAD_CAPTURE_TIMEOUT_MS,
+      downloadTransferTimeoutMs = DOWNLOAD_TRANSFER_TIMEOUT_MS,
+    )
+
+  private fun scheduleOverallWatchdog() {
+    if (completed.get()) return
+    val generation = ++watchdogGeneration
+    val delayMs =
+      max(1L, currentWatchdogDeadline() - SystemClock.elapsedRealtime())
+    mainHandler.postDelayed(
+      {
+        if (completed.get() || generation != watchdogGeneration) {
+          return@postDelayed
+        }
+        val remainingMs =
+          currentWatchdogDeadline() - SystemClock.elapsedRealtime()
+        if (remainingMs > 0L) {
+          scheduleOverallWatchdog()
+          return@postDelayed
+        }
+        fail(overallTimeoutMessage(), "timeout")
+      },
+      delayMs,
+    )
+  }
+
+  private fun markDownloadStarted() {
+    if (
+      downloadStartedAtElapsedRealtime.compareAndSet(
+        0L,
+        SystemClock.elapsedRealtime(),
+      )
+    ) {
+      mainHandler.post {
+        if (!completed.get()) scheduleOverallWatchdog()
+      }
+    }
+  }
+
+  private fun resumeDownloadCaptureAfterIntermediateResponse() {
+    downloadInProgress.set(false)
+    downloadStartedAtElapsedRealtime.set(0L)
+    mainHandler.post {
+      if (completed.get()) return@post
+      downloadRequestedAtElapsedRealtime = SystemClock.elapsedRealtime()
+      scheduleOverallWatchdog()
+      scheduleAutomationAttempt(1_000L)
+    }
   }
 
   private fun handleDownload(
@@ -549,6 +759,7 @@ internal class GlookoSilentExporter(context: Context) {
   ) {
     if (completed.get() || url.isNullOrBlank()) return
     if (!downloadInProgress.compareAndSet(false, true)) return
+    markDownloadStarted()
     trace("Browser download detected")
     if (contentLength > MAX_DOWNLOAD_BYTES) {
       downloadInProgress.set(false)
@@ -712,6 +923,7 @@ internal class GlookoSilentExporter(context: Context) {
             temporaryFile.delete()
             temporaryFile = null
             trace("Intermediate export response ignored")
+            resumeDownloadCaptureAfterIntermediateResponse()
             return@execute
           }
           val displayName =
@@ -738,6 +950,15 @@ internal class GlookoSilentExporter(context: Context) {
 
   private inner class ExportBridge(private val sourceWebView: WebView) {
     @JavascriptInterface
+    fun onExportSubmitted() {
+      mainHandler.post {
+        if (markExportSubmitted()) {
+          scheduleAutomationAttempt(POST_SUBMIT_POLL_MS)
+        }
+      }
+    }
+
+    @JavascriptInterface
     fun onTrace(code: String?) {
       val event =
         when (code) {
@@ -752,8 +973,8 @@ internal class GlookoSilentExporter(context: Context) {
 
     @JavascriptInterface
     fun onFailure(code: String?) {
-      downloadInProgress.set(false)
       trace("Browser export capture reported ${code?.take(30) ?: "an error"}")
+      resumeDownloadCaptureAfterIntermediateResponse()
     }
 
     @JavascriptInterface
@@ -792,6 +1013,8 @@ internal class GlookoSilentExporter(context: Context) {
     @JavascriptInterface
     fun onExportBytes(base64: String?, fileName: String?) {
       if (completed.get() || base64.isNullOrBlank()) return
+      markDownloadStarted()
+      downloadInProgress.set(true)
       downloadExecutor.execute {
         var file: File? = null
         try {
@@ -974,10 +1197,16 @@ internal class GlookoSilentExporter(context: Context) {
   private fun javascriptString(value: String) =
     value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "")
 
+  private fun javascriptStringArray(values: Set<String>) =
+    values.joinToString(prefix = "[", postfix = "]") {
+      "'${javascriptString(it)}'"
+    }
+
   private fun automationScript(
     days: Int,
     requestedStartDate: String?,
     requestedEndDate: String?,
+    alreadySubmitted: Boolean,
   ): String {
     val isoDate = Regex("""\d{4}-\d{2}-\d{2}""")
     val safeStart = requestedStartDate?.takeIf(isoDate::matches)
@@ -985,6 +1214,7 @@ internal class GlookoSilentExporter(context: Context) {
     val customRange = safeStart != null && safeEnd != null
     val startValue = if (customRange) "'$safeStart'" else "iso(start)"
     val endValue = if (customRange) "'$safeEnd'" else "iso(now)"
+    val generatedLabels = javascriptStringArray(CSV_GENERATED_DOWNLOAD_LABELS)
     return """
       (function () {
         try {
@@ -999,8 +1229,49 @@ internal class GlookoSilentExporter(context: Context) {
           if (document.querySelector('input[type="password"]') ||
               /users\/sign_in|\/login/i.test(location.pathname)) return 'login';
           const all = Array.from(document.querySelectorAll(
-            'button,a,input[type="button"],input[type="submit"]'
+            'button,a,input[type="button"],input[type="submit"],[role="button"]'
           ));
+          let storedExportSubmitted = false;
+          try {
+            storedExportSubmitted =
+              sessionStorage.getItem('t1arcCsvSubmitted') === '1';
+          } catch (_) {}
+          const exportSubmitted = $alreadySubmitted || storedExportSubmitted;
+          const generatedLabels = new Set($generatedLabels);
+          const generatedControl = all.find((el) => {
+            if (
+              !exportSubmitted ||
+              !visible(el) ||
+              el.disabled ||
+              el.dataset.daymarkDownloaded
+            ) return false;
+            const label = text(el);
+            const originalSubmitLabel =
+              String(el.dataset.daymarkSubmitLabel || '');
+            if (originalSubmitLabel && originalSubmitLabel === label) {
+              return false;
+            }
+            const transitionedSubmit =
+              originalSubmitLabel && originalSubmitLabel !== label;
+            const href = String(el.getAttribute('href') || '');
+            const downloadName = String(el.getAttribute('download') || '');
+            const fileLink = /\.(csv|zip)(?:$|[?#])/i.test(href) ||
+              /\.(csv|zip)$/i.test(downloadName);
+            const explicitLabel = generatedLabels.has(label);
+            const outsideExportDialog = !el.closest(
+              '[role="dialog"],[aria-modal="true"],.modal,' +
+              '[class*="modal" i],[class*="dialog" i]'
+            );
+            return fileLink || explicitLabel ||
+              (label === 'download' &&
+                (outsideExportDialog || transitionedSubmit));
+          });
+          if (generatedControl) {
+            generatedControl.dataset.daymarkDownloaded = '1';
+            generatedControl.click();
+            return 'download';
+          }
+          if (exportSubmitted) return 'waiting-download';
           const opener = all.find((el) =>
             visible(el) && text(el).includes('export to csv'));
           const standardOverlay = document.querySelector(
@@ -1127,6 +1398,14 @@ internal class GlookoSilentExporter(context: Context) {
             (text(el) === 'export' || text(el) === 'download'));
           if (submit && !submit.dataset.daymarkSubmitted) {
             submit.dataset.daymarkSubmitted = '1';
+            submit.dataset.daymarkSubmitLabel = text(submit);
+            try {
+              sessionStorage.setItem('t1arcCsvSubmitted', '1');
+            } catch (_) {}
+            if (
+              window.$BRIDGE_NAME &&
+              window.$BRIDGE_NAME.onExportSubmitted
+            ) window.$BRIDGE_NAME.onExportSubmitted();
             submit.click();
             return 'submitted';
           }
@@ -1143,8 +1422,12 @@ internal class GlookoSilentExporter(context: Context) {
    * retained PDF is the user's complete source document; normalisation can
    * improve later without requiring another Glooko download.
    */
-  private fun reportAutomationScript(days: Int): String =
-    """
+  private fun reportAutomationScript(
+    days: Int,
+    alreadySubmitted: Boolean,
+  ): String {
+    val generatedLabels = javascriptStringArray(PDF_GENERATED_DOWNLOAD_LABELS)
+    return """
       (function () {
         try {
           const visible = (el) => {
@@ -1160,25 +1443,34 @@ internal class GlookoSilentExporter(context: Context) {
           const controls = Array.from(document.querySelectorAll(
             'button,a,input[type="button"],input[type="submit"],[role="button"]'
           ));
-          const reportSubmitted =
-            sessionStorage.getItem('t1arcReportSubmitted') === '1';
+          let storedReportSubmitted = false;
+          try {
+            storedReportSubmitted =
+              sessionStorage.getItem('t1arcReportSubmitted') === '1';
+          } catch (_) {}
+          const reportSubmitted = $alreadySubmitted || storedReportSubmitted;
+          const generatedLabels = new Set($generatedLabels);
           const generatedControl = controls.find((el) => {
-            if (!reportSubmitted || !visible(el) || el.disabled) return false;
+            if (
+              !reportSubmitted ||
+              !visible(el) ||
+              el.disabled ||
+              el.dataset.t1arcReportDownloaded
+            ) return false;
             const label = text(el);
-            return label === 'download' ||
-              label === 'download pdf' ||
-              label === 'download report' ||
-              label === 'view pdf' ||
-              label === 'view report';
+            const originalSubmitLabel =
+              String(el.dataset.t1arcReportSubmitLabel || '');
+            if (originalSubmitLabel && originalSubmitLabel === label) {
+              return false;
+            }
+            return generatedLabels.has(label);
           });
-          if (
-            generatedControl &&
-            !generatedControl.dataset.t1arcReportDownloaded
-          ) {
+          if (generatedControl) {
             generatedControl.dataset.t1arcReportDownloaded = '1';
             generatedControl.click();
             return 'download';
           }
+          if (reportSubmitted) return 'waiting-download';
           const opener = controls.find((el) => {
             const label = text(el);
             return visible(el) &&
@@ -1339,7 +1631,14 @@ internal class GlookoSilentExporter(context: Context) {
             !submit.dataset.t1arcReportSubmitted
           ) {
             submit.dataset.t1arcReportSubmitted = '1';
-            sessionStorage.setItem('t1arcReportSubmitted', '1');
+            submit.dataset.t1arcReportSubmitLabel = text(submit);
+            try {
+              sessionStorage.setItem('t1arcReportSubmitted', '1');
+            } catch (_) {}
+            if (
+              window.$BRIDGE_NAME &&
+              window.$BRIDGE_NAME.onExportSubmitted
+            ) window.$BRIDGE_NAME.onExportSubmitted();
             submit.click();
             return 'submitted';
           }
@@ -1356,6 +1655,7 @@ internal class GlookoSilentExporter(context: Context) {
         }
       })();
     """.trimIndent()
+  }
 
   private fun downloadCaptureScript(expectedPdf: Boolean): String {
     val looksLikeFileExpression =
@@ -1441,7 +1741,10 @@ internal class GlookoSilentExporter(context: Context) {
           if (
             label &&
             (label.includes('export') || label.includes('create pdf') ||
-              label.includes('download report'))
+              label === 'download' || label.includes('download report') ||
+              label.includes('download pdf') ||
+              label.includes('download csv') ||
+              label.includes('download data'))
           ) markExport();
           const href = control && control.href;
           const downloadName = control && control.download;

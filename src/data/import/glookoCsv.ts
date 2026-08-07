@@ -987,6 +987,7 @@ function parseBasalRows(
   const durationColumn = findColumn(headers, DURATION_ALIASES);
   const rateColumn = findColumn(headers, BASAL_RATE_ALIASES);
   const unitsColumn = findColumn(headers, [
+    'insulin delivered u',
     'delivered insulin units',
     'insulin delivered units',
     'delivered insulin',
@@ -1023,11 +1024,16 @@ function parseBasalRows(
         duration = (next - start) / 60_000;
       }
     }
-    const rate = parseNumber(valueAt(row, rateColumn));
+    const reportedRate = parseNumber(valueAt(row, rateColumn));
     const delivered = parseNumber(valueAt(row, unitsColumn));
     const deliveryType = valueAt(row, typeColumn);
     const percentage = parseNumber(valueAt(row, percentageColumn));
     const sourceDeviceId = valueAt(row, deviceColumn);
+    const rate =
+      reportedRate ??
+      (delivered !== undefined && duration !== undefined && duration > 0
+        ? (delivered * 60) / duration
+        : undefined);
     if (
       start === undefined ||
       rate === undefined ||

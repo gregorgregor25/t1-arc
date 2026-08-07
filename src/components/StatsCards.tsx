@@ -2,6 +2,8 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GlucoseStats, InsulinStats } from '@/domain/models';
 import { InsulinReconciliation } from '@/domain/dataCompleteness';
+import { presentInsulinRangeSummary } from '@/domain/insulinSummaryPresentation';
+import { InsulinRangeSummary } from '@/domain/timelineInsulinSummary';
 import { useAppTheme } from '@/theme/theme';
 
 import { EmptyState } from './EmptyState';
@@ -146,25 +148,35 @@ export function GlucoseStatsCard({
 
 export function InsulinStatsCard({
   stats,
+  summary,
   reconciliation,
   label = 'Today so far',
 }: {
   stats: InsulinStats;
+  summary?: InsulinRangeSummary;
   reconciliation?: InsulinReconciliation;
   label?: string;
 }) {
   const { colors } = useAppTheme();
-  const basalShare = stats.totalUnits > 0 ? stats.basalUnits / stats.totalUnits : 0;
+  const presentation = presentInsulinRangeSummary(summary, label);
+  const unsplitUnits = Math.max(0, presentation.sourceMinusBreakdownUnits);
+  const componentTotal = stats.basalUnits + stats.bolusUnits;
+  const breakdownScale = Math.max(stats.totalUnits, componentTotal);
+  const basalShare = breakdownScale > 0 ? stats.basalUnits / breakdownScale : 0;
+  const bolusShare = breakdownScale > 0 ? stats.bolusUnits / breakdownScale : 0;
+  const unsplitShare = breakdownScale > 0 ? unsplitUnits / breakdownScale : 0;
   return (
     <SectionCard
-      accessibilityLabel={`Insulin total ${stats.totalUnits.toFixed(1)} units. Basal ${stats.basalUnits.toFixed(1)} units. Bolus ${stats.bolusUnits.toFixed(1)} units.`}
+      accessibilityLabel={`Insulin total ${stats.totalUnits.toFixed(1)} units. ${presentation.separateBreakdown ? 'Available component records, shown separately from that total:' : ''} Basal ${stats.basalUnits.toFixed(1)} units. Bolus ${stats.bolusUnits.toFixed(1)} units.${unsplitUnits >= 0.05 ? ` ${unsplitUnits.toFixed(1)} units are not split into basal or bolus.` : ''}${presentation.sourceDetail ? ` ${presentation.sourceDetail}.` : ''}`}
     >
       <View style={styles.cardHeader}>
         <View>
           <Text style={[styles.cardEyebrow, { color: colors.insulin }]}>INSULIN</Text>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Delivered total</Text>
         </View>
-        <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>{label}</Text>
+        <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>
+          {presentation.rangeLabel}
+        </Text>
       </View>
       <View style={styles.insulinTotalRow}>
         <Text style={[styles.insulinTotal, { color: colors.text }]}>
@@ -172,33 +184,49 @@ export function InsulinStatsCard({
         </Text>
         <Text style={[styles.insulinUnit, { color: colors.textSecondary }]}>units</Text>
       </View>
-      <View
-        accessibilityElementsHidden
-        style={[styles.rangeBar, { backgroundColor: colors.surfaceMuted }]}
-      >
-        {stats.totalUnits > 0 ? (
-          <>
+      {presentation.sourceDetail ? (
+        <Text style={[styles.sourceBasis, { color: colors.textTertiary }]}>
+          {presentation.sourceDetail}
+        </Text>
+      ) : null}
+      {breakdownScale > 0 && !presentation.separateBreakdown ? (
+        <View
+          accessibilityElementsHidden
+          style={[styles.rangeBar, { backgroundColor: colors.surfaceMuted }]}
+        >
+          <View
+            style={{
+              backgroundColor: colors.insulin,
+              flex: basalShare,
+            }}
+          />
+          <View
+            style={{
+              backgroundColor: colors.primary,
+              flex: bolusShare,
+            }}
+          />
+          {unsplitShare > 0 ? (
             <View
               style={{
-                backgroundColor: colors.insulin,
-                flex: basalShare,
+                backgroundColor: colors.textTertiary,
+                flex: unsplitShare,
               }}
             />
-            <View
-              style={{
-                backgroundColor: colors.primary,
-                flex: 1 - basalShare,
-              }}
-            />
-          </>
-        ) : null}
-      </View>
+          ) : null}
+        </View>
+      ) : null}
+      {presentation.separateBreakdown ? (
+        <Text style={[styles.breakdownNotice, { color: colors.warning }]}>
+          Available component records · not a split of the source total
+        </Text>
+      ) : null}
       <View style={styles.insulinBreakdown}>
         <View style={styles.breakdownItem}>
           <View style={[styles.legendDot, { backgroundColor: colors.insulin }]} />
           <View>
             <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>
-              Basal
+              {presentation.separateBreakdown ? 'Basal records' : 'Basal'}
             </Text>
             <Text style={[styles.breakdownValue, { color: colors.text }]}>
               {stats.basalUnits.toFixed(1)} U
@@ -209,13 +237,36 @@ export function InsulinStatsCard({
           <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
           <View>
             <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>
-              Bolus
+              {presentation.separateBreakdown ? 'Bolus records' : 'Bolus'}
             </Text>
             <Text style={[styles.breakdownValue, { color: colors.text }]}>
               {stats.bolusUnits.toFixed(1)} U
             </Text>
           </View>
         </View>
+        {unsplitUnits >= 0.05 ? (
+          <View style={styles.breakdownItem}>
+            <View
+              style={[
+                styles.legendDot,
+                { backgroundColor: colors.textTertiary },
+              ]}
+            />
+            <View>
+              <Text
+                style={[
+                  styles.breakdownLabel,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Not split
+              </Text>
+              <Text style={[styles.breakdownValue, { color: colors.text }]}>
+                {unsplitUnits.toFixed(1)} U
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </View>
       {reconciliation ? (
         <View
@@ -281,6 +332,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'right',
+  },
+  sourceBasis: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  breakdownNotice: {
+    marginTop: 16,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   tirRow: {
     marginTop: 22,
@@ -370,7 +432,8 @@ const styles = StyleSheet.create({
   },
   insulinBreakdown: {
     flexDirection: 'row',
-    gap: 28,
+    flexWrap: 'wrap',
+    gap: 20,
     marginTop: 18,
   },
   sourceTotal: {

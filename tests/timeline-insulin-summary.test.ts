@@ -9,7 +9,11 @@ import {
   multiDayRange,
   zonedDateTimeToTimestamp,
 } from '../src/domain/time';
-import { summarizeInsulinByDay } from '../src/domain/timelineInsulinSummary';
+import {
+  selectLatestInsulinDailyTotalSelections,
+  summarizeInsulinByDay,
+  summarizeInsulinRange,
+} from '../src/domain/timelineInsulinSummary';
 
 const AFTER_TEST_DATES = Date.UTC(2026, 11, 31);
 
@@ -117,5 +121,207 @@ describe('summarizeInsulinByDay', () => {
       bolusUnits: 18.2,
       totalUnits: 29.6,
     });
+  });
+
+  it('selects the newest snapshot within provenance and exposes other sources', () => {
+    const timestamp = zonedDateTimeToTimestamp('2026-07-26', 23, 59);
+    const selections = selectLatestInsulinDailyTotalSelections([
+      {
+        id: 'glooko-old',
+        timestamp,
+        dateKey: '2026-07-26',
+        basalUnits: 10,
+        bolusUnits: 20,
+        totalUnits: 30,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+        importedAt: timestamp + 1_000,
+      },
+      {
+        id: 'glooko-new',
+        timestamp,
+        dateKey: '2026-07-26',
+        basalUnits: 12,
+        bolusUnits: 21,
+        totalUnits: 33,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+        importedAt: timestamp + 2_000,
+      },
+      {
+        id: 'other-device',
+        timestamp,
+        dateKey: '2026-07-26',
+        basalUnits: 8,
+        bolusUnits: 9,
+        totalUnits: 17,
+        sourceId: 'other-source',
+        sourceDeviceId: 'pump-b',
+        importedAt: timestamp + 3_000,
+      },
+    ]);
+
+    expect(selections).toHaveLength(1);
+    expect(selections[0]?.total.id).toBe('other-device');
+    expect(selections[0]?.alternatives.map((total) => total.id)).toEqual([
+      'glooko-new',
+    ]);
+  });
+
+  it('uses the newest exact source total and breakdown in a history summary', () => {
+    const range = dayRange('2026-07-26', AFTER_TEST_DATES);
+    const summary = summarizeInsulinRange([], [], range, [
+      {
+        id: 'old',
+        timestamp: range.end - 1,
+        dateKey: '2026-07-26',
+        basalUnits: 0,
+        bolusUnits: 23.2,
+        totalUnits: 23.2,
+        sourceId: 'glooko-export',
+        importedAt: range.end + 1_000,
+      },
+      {
+        id: 'new',
+        timestamp: range.end - 1,
+        dateKey: '2026-07-26',
+        basalUnits: 16.8,
+        bolusUnits: 23.2,
+        totalUnits: 40,
+        sourceId: 'glooko-export',
+        importedAt: range.end + 2_000,
+      },
+    ]);
+
+    expect(summary.stats).toEqual({
+      basalUnits: 16.8,
+      bolusUnits: 23.2,
+      totalUnits: 40,
+    });
+    expect(summary.sourceTotals.map((total) => total.id)).toEqual(['new']);
+  });
+
+  it('does not invent a missing source breakdown from the aggregate total', () => {
+    const range = dayRange('2026-07-26', AFTER_TEST_DATES);
+    const summary = summarizeInsulinRange(
+      [],
+      [
+        {
+          id: 'same-device-bolus',
+          timestamp: range.start + 60_000,
+          units: 5,
+          sourceId: 'glooko-export',
+          sourceDeviceId: 'pdm-a',
+        },
+        {
+          id: 'replacement-device-bolus',
+          timestamp: range.start + 60_000,
+          units: 23.2,
+          sourceId: 'glooko-export',
+          sourceDeviceId: 'pdm-b',
+        },
+      ],
+      range,
+      [
+        {
+          id: 'total-only',
+          timestamp: range.end - 1,
+          dateKey: '2026-07-26',
+          totalUnits: 40,
+          sourceId: 'glooko-export',
+          sourceDeviceId: 'pdm-a',
+        },
+      ],
+    );
+
+    expect(summary.stats).toEqual({
+      basalUnits: 0,
+      bolusUnits: 5,
+      totalUnits: 40,
+    });
+    expect(summary.sourceProvidesBasalEveryDay).toBe(false);
+  });
+
+  it('preserves a smaller source total while exposing larger fallback components', () => {
+    const range = dayRange('2026-07-26', AFTER_TEST_DATES);
+    const basal = [
+      {
+        id: 'automated-basal',
+        start: range.start,
+        end: range.end,
+        units: 16.8,
+        rateUnitsPerHour: 0.7,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+      },
+    ];
+    const sourceTotals = [
+      {
+        id: 'source-total-without-basal',
+        timestamp: range.end - 1,
+        dateKey: '2026-07-26',
+        bolusUnits: 23.2,
+        totalUnits: 23.2,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+      },
+    ];
+    const summary = summarizeInsulinRange(
+      basal,
+      [],
+      range,
+      sourceTotals,
+    );
+    const [day] = summarizeInsulinByDay(basal, [], range, sourceTotals);
+
+    expect(summary.stats).toEqual({
+      basalUnits: 16.8,
+      bolusUnits: 23.2,
+      totalUnits: 23.2,
+    });
+    expect(day?.sourceMinusBreakdownUnits).toBe(-16.8);
+  });
+
+  it('marks a same-day source snapshot partial and retains its as-of time', () => {
+    const range = dayRange('2026-08-07', AFTER_TEST_DATES);
+    const importedAt = zonedDateTimeToTimestamp('2026-08-07', 14, 35);
+    const summary = summarizeInsulinRange([], [], range, [
+      {
+        id: 'today-snapshot',
+        timestamp: importedAt,
+        dateKey: '2026-08-07',
+        basalUnits: 8,
+        bolusUnits: 12,
+        totalUnits: 20,
+        sourceId: 'glooko-export',
+        importedAt,
+      },
+    ]);
+
+    expect(summary.partial).toBe(true);
+    expect(summary.sourceAsOf).toBe(importedAt);
+  });
+
+  it('uses the source timestamp rather than a later import as the as-of time', () => {
+    const rangeEnd = zonedDateTimeToTimestamp('2026-08-07', 14, 35);
+    const range = dayRange('2026-08-07', rangeEnd);
+    const sourceTimestamp = zonedDateTimeToTimestamp('2026-08-07', 10, 5);
+    const importedAt = zonedDateTimeToTimestamp('2026-08-07', 14, 30);
+    const summary = summarizeInsulinRange([], [], range, [
+      {
+        id: 'delayed-today-snapshot',
+        timestamp: sourceTimestamp,
+        dateKey: '2026-08-07',
+        basalUnits: 5,
+        bolusUnits: 10,
+        totalUnits: 15,
+        sourceId: 'glooko-export',
+        importedAt,
+      },
+    ]);
+
+    expect(summary.partial).toBe(true);
+    expect(summary.sourceAsOf).toBe(sourceTimestamp);
+    expect(summary.sourceAsOf).not.toBe(importedAt);
   });
 });

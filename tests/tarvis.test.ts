@@ -9,6 +9,7 @@ import {
   checkTarvisRateLimit,
   parseTarvisAnswer,
 } from '@/data/tarvis/guardrails';
+import { TARVIS_SYSTEM_PROMPT } from '@/data/tarvis/prompt';
 import {
   classifyTarvisQuestion,
   requestedTarvisPeriodDays,
@@ -133,6 +134,30 @@ describe('TARV1S evidence and spending guardrails', () => {
     expect(answer.evidenceIds).toEqual(ids.slice(0, 5));
   });
 
+  it('keeps a warm companion voice inside the evidence and dosing boundaries', () => {
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'calm, warm and evidence-first diabetes data companion',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'Sound like a thoughtful companion',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'Never invent readings, events, causes, source details, or evidence IDs',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'Do not prescribe an exact insulin dose',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'follow their trusted diabetes emergency plan',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'describe exact metrics only as observed values',
+    );
+    expect(TARVIS_SYSTEM_PROMPT).toContain(
+      'Never turn missing readings into zero events',
+    );
+  });
+
   it('blocks general chat locally while allowing diabetes questions', () => {
     expect(
       classifyTarvisQuestion("What's the capital of Jamaica?"),
@@ -176,9 +201,18 @@ describe('TARV1S evidence and spending guardrails', () => {
   it('allows a compact follow-up only when a health conversation exists', () => {
     expect(classifyTarvisQuestion('Why?')).toBe('off_topic');
     expect(
+      classifyTarvisQuestion('What about the previous period?'),
+    ).toBe('off_topic');
+    expect(
       classifyTarvisQuestion('Why?', [
         { role: 'user', text: 'Why was my glucose higher overnight?' },
         { role: 'assistant', text: 'The pattern was concentrated after 2am.' },
+      ]),
+    ).toBe('in_scope');
+    expect(
+      classifyTarvisQuestion('What about the previous period?', [
+        { role: 'user', text: 'How many lows have I had?' },
+        { role: 'assistant', text: 'Four lows were observed.' },
       ]),
     ).toBe('in_scope');
   });

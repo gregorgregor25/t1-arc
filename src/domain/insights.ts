@@ -1898,25 +1898,45 @@ export function buildInsightReport(
       caveat:
         'This is a deterministic grouping of sensor readings, not a clinical diagnosis. Nearby records are shown for inspection and never treated as proof of cause.',
       evidence: [
-        ...(allCurrentRuns.length
+        ...(currentHighRuns.length
           ? [
               episodeEvidence(
-                'current-glucose-runs',
-                'Recent sustained runs',
-                allCurrentRuns,
+                'current-high-glucose-runs',
+                'Recent sustained high runs',
+                currentHighRuns,
                 currentData.range,
-              ),
-              ...notableCurrentRuns.map((episode) =>
-                buildGlucoseEpisodeEvidence(episode, currentData),
               ),
             ]
           : []),
-        ...(allPreviousRuns.length
+        ...(currentLowRuns.length
           ? [
               episodeEvidence(
-                'previous-glucose-runs',
-                'Previous sustained runs',
-                allPreviousRuns,
+                'current-low-glucose-runs',
+                'Recent sustained low runs',
+                currentLowRuns,
+                currentData.range,
+              ),
+            ]
+          : []),
+        ...notableCurrentRuns.map((episode) =>
+          buildGlucoseEpisodeEvidence(episode, currentData),
+        ),
+        ...(previousHighRuns.length
+          ? [
+              episodeEvidence(
+                'previous-high-glucose-runs',
+                'Previous sustained high runs',
+                previousHighRuns,
+                previousData.range,
+              ),
+            ]
+          : []),
+        ...(previousLowRuns.length
+          ? [
+              episodeEvidence(
+                'previous-low-glucose-runs',
+                'Previous sustained low runs',
+                previousLowRuns,
                 previousData.range,
               ),
             ]

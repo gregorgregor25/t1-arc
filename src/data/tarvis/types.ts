@@ -18,6 +18,21 @@ export interface TarvisEvidenceItem {
   }>;
 }
 
+export type TarvisInsightWindowSummary = Omit<
+  InsightReport['current'],
+  | 'timeBelowPercent'
+  | 'timeInRangePercent'
+  | 'timeAbovePercent'
+  | 'highGlucoseRuns'
+  | 'lowGlucoseRuns'
+> & {
+  timeBelowPercent: number | null;
+  timeInRangePercent: number | null;
+  timeAbovePercent: number | null;
+  highGlucoseRuns: number | null;
+  lowGlucoseRuns: number | null;
+};
+
 export interface TarvisEvidencePacket {
   schemaVersion: 1;
   timezone: 'Europe/London';
@@ -28,8 +43,8 @@ export interface TarvisEvidencePacket {
     previousRange: { start: number; end: number };
     headline: string;
     summary: string;
-    current: InsightReport['current'];
-    previous: InsightReport['previous'];
+    current: TarvisInsightWindowSummary;
+    previous: TarvisInsightWindowSummary;
   };
   findings: Array<{
     id: string;

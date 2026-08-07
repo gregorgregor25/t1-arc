@@ -11,12 +11,17 @@
     <meta-data
       android:name="com.google.android.gms.car.application"
       android:resource="@xml/daymark_automotive_app_desc" />
+    <meta-data
+      android:name="androidx.car.app.TintableAttributionIcon"
+      android:resource="@drawable/daymark_notification_pulse" />
 
     <service
       android:name=".DaymarkCarMediaBrowserService"
       android:enabled="true"
       android:exported="true"
-      android:foregroundServiceType="mediaPlayback">
+      android:foregroundServiceType="mediaPlayback"
+      android:label="@string/daymark_android_auto_name"
+      tools:ignore="ExportedService">
       <intent-filter>
         <action android:name="android.intent.action.MEDIA_BUTTON" />
         <action android:name="android.media.browse.MediaBrowserService" />

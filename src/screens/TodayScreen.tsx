@@ -21,7 +21,8 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 import { GlucoseStatsCard, InsulinStatsCard } from '@/components/StatsCards';
 import { EvidenceReference } from '@/domain/insights';
 import { HealthContextEvent } from '@/domain/models';
-import { calculateGlucoseStats, calculateInsulinStats } from '@/domain/stats';
+import { calculateGlucoseStats } from '@/domain/stats';
+import { summarizeInsulinRange } from '@/domain/timelineInsulinSummary';
 import { dayRange, formatDate } from '@/domain/time';
 import { assessGlucoseTrend } from '@/domain/trend';
 import { useLatestData, useTimeline } from '@/hooks/useTimeline';
@@ -92,11 +93,12 @@ export function TodayScreen() {
   const glucoseStats = selectedTimeline.data
     ? calculateGlucoseStats(selectedTimeline.data.glucose, range)
     : undefined;
-  const insulinStats = todayTimeline.data
-    ? calculateInsulinStats(
+  const insulinSummary = todayTimeline.data
+    ? summarizeInsulinRange(
         todayTimeline.data.basal,
         todayTimeline.data.boluses,
         dayRange(today, now),
+        todayTimeline.data.dailyInsulinTotals,
       )
     : undefined;
 
@@ -204,7 +206,7 @@ export function TodayScreen() {
         ) : (
           <LoadingCard label="Calculating glucose statistics…" />
         )}
-        {insulinStats ? (
+        {insulinSummary ? (
           insulinSource?.freshness === 'missing' ? (
             <SectionCard>
               <EmptyState
@@ -213,7 +215,10 @@ export function TodayScreen() {
               />
             </SectionCard>
           ) : (
-            <InsulinStatsCard stats={insulinStats} />
+            <InsulinStatsCard
+              stats={insulinSummary.stats}
+              summary={insulinSummary}
+            />
           )
         ) : (
           <LoadingCard label="Calculating insulin totals…" />

@@ -118,7 +118,7 @@ describe('Open Food Facts barcode adapter', () => {
     expect(options?.headers).toMatchObject({
       Accept: 'application/json',
       'User-Agent':
-        'T1Arc/1.6.5 (https://github.com/gregorgregor25/daymark)',
+        'T1Arc/1.6.6 (https://github.com/gregorgregor25/daymark)',
     });
     expect(options?.signal).toBeInstanceOf(AbortSignal);
   });
@@ -243,7 +243,7 @@ describe('Open Food Facts barcode adapter', () => {
     expect(options?.method).toBe('POST');
     expect(options?.headers).toMatchObject({
       'User-Agent':
-        'T1Arc/1.6.5 (https://github.com/gregorgregor25/daymark)',
+        'T1Arc/1.6.6 (https://github.com/gregorgregor25/daymark)',
     });
     expect(JSON.parse(String(options?.body))).toMatchObject({
       q: 'baked beans countries_tags:"en:united-kingdom"',

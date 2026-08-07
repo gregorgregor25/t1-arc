@@ -4,6 +4,10 @@ import {
 } from '@/data/persistence/daymarkDatabase';
 import { EvidenceReference } from '@/domain/insights';
 
+import {
+  isTarvisEvidencePresentation,
+  TarvisEvidencePresentation,
+} from './evidencePresentation';
 import { TarvisAnswer, TarvisRequestMetrics } from './types';
 
 const STORAGE_KEY = 'tarvis-conversation-v1';
@@ -14,6 +18,7 @@ export interface StoredTarvisExchange {
   question: string;
   answer: TarvisAnswer;
   evidence: EvidenceReference[];
+  presentation?: TarvisEvidencePresentation;
   requestMetrics?: TarvisRequestMetrics;
 }
 
@@ -46,7 +51,15 @@ export async function loadTarvisConversation() {
     if (stored.schemaVersion !== 1 || !Array.isArray(stored.exchanges)) {
       return [];
     }
-    return stored.exchanges.filter(validExchange).slice(-MAX_STORED_EXCHANGES);
+    return stored.exchanges
+      .filter(validExchange)
+      .map((exchange) => ({
+        ...exchange,
+        presentation: isTarvisEvidencePresentation(exchange.presentation)
+          ? exchange.presentation
+          : undefined,
+      }))
+      .slice(-MAX_STORED_EXCHANGES);
   } catch {
     return [];
   }

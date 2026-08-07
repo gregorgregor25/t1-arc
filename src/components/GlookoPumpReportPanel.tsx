@@ -255,7 +255,11 @@ export function GlookoPumpReportPanel({
       return;
     }
     if (outcome.status === 'skipped') {
-      setMessage('The daily Glooko report is already current.');
+      setMessage(
+        outcome.reason === 'busy'
+          ? 'A Glooko export is already being handled.'
+          : 'The daily Glooko report is already current.',
+      );
       return;
     }
     setMessage(outcome.message);

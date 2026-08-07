@@ -117,6 +117,14 @@ describe('local data completeness audit', () => {
             units: 0.6,
             rateUnitsPerHour: 0.6,
           },
+          {
+            id: 'basal:other-source',
+            sourceId: 'other-source',
+            start: START,
+            end: START + 60 * MINUTE,
+            units: 10,
+            rateUnitsPerHour: 10,
+          },
         ],
         boluses: [
           {
@@ -124,6 +132,12 @@ describe('local data completeness audit', () => {
             sourceId: 'glooko-export',
             timestamp: START + 30 * MINUTE,
             units: 2,
+          },
+          {
+            id: 'bolus:other-source',
+            sourceId: 'other-source',
+            timestamp: START + 30 * MINUTE,
+            units: 10,
           },
         ],
         dailyInsulinTotals: [
@@ -151,7 +165,7 @@ describe('local data completeness audit', () => {
       }),
     );
 
-    expect(report.bolusCount).toBe(1);
+    expect(report.bolusCount).toBe(2);
     expect(report.insulinReconciliation).toEqual({
       reportedDays: 1,
       dateKeys: ['2026-07-25'],

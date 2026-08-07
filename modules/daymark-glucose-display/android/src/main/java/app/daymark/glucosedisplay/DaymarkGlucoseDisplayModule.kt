@@ -2471,6 +2471,7 @@ class DaymarkGlucoseDisplayModule : Module() {
       "aodServiceEnabled" to isAccessibilityServiceEnabled(context),
       "aodOverlayVisible" to DaymarkAodDiagnostics.overlayVisible,
       "androidAutoEnabled" to DaymarkGlucoseDisplayState.androidAutoEnabled(context),
+      "androidAutoProjected" to DaymarkAndroidAuto.isProjected(),
       "aodLastEvent" to DaymarkAodDiagnostics.lastEvent(context),
       "aodLastError" to DaymarkAodDiagnostics.lastError(context),
       "latestMmolL" to snapshot?.mmolL,

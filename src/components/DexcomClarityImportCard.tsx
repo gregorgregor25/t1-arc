@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,7 @@ import {
   PreparedDexcomClarityImport,
   prepareDexcomClarityImport,
 } from '@/data/import/dexcomClarityImport';
+import { DexcomImportLifecycle } from '@/data/import/dexcomImportLifecycle';
 import {
   ImportWriteResult,
   StoredImportSourceSummary,
@@ -40,6 +41,11 @@ type ImportState =
       result: ImportWriteResult;
     }
   | { kind: 'error'; message: string };
+
+interface DexcomClarityImportCardProps {
+  onOpenNightscout?: () => void;
+  onOpenXdrip?: () => void;
+}
 
 function dateRange(
   preview: PreparedDexcomClarityImport['preview'],
@@ -67,7 +73,10 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DexcomClarityImportCard() {
+export function DexcomClarityImportCard({
+  onOpenNightscout,
+  onOpenXdrip,
+}: DexcomClarityImportCardProps) {
   const { colors, radius } = useAppTheme();
   const {
     clearImportedDexcomData,
@@ -77,6 +86,16 @@ export function DexcomClarityImportCard() {
   } = useDataContext();
   const [state, setState] = useState<ImportState>({ kind: 'idle' });
   const [summary, setSummary] = useState<StoredImportSourceSummary>();
+  const lifecycleRef = useRef<DexcomImportLifecycle | null>(null);
+  if (!lifecycleRef.current) {
+    lifecycleRef.current = new DexcomImportLifecycle();
+  }
+  const lifecycle = lifecycleRef.current;
+
+  useEffect(() => {
+    lifecycle.activate();
+    return () => lifecycle.dispose();
+  }, [lifecycle]);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +114,8 @@ export function DexcomClarityImportCard() {
       : undefined;
 
   async function chooseExport() {
+    const generation = lifecycle.beginSelection();
+    if (!lifecycle.isCurrent(generation)) return;
     setState({ kind: 'preparing' });
     let selectedBytes: Uint8Array | undefined;
     try {
@@ -109,20 +130,40 @@ export function DexcomClarityImportCard() {
         multiple: false,
       });
       if (selected.canceled) {
-        setState({ kind: 'idle' });
+        if (lifecycle.isCurrent(generation)) setState({ kind: 'idle' });
         return;
       }
       const asset = selected.assets[0];
-      if (!asset) throw new Error('No Dexcom export was selected.');
+      if (!asset) {
+        if (!lifecycle.isCurrent(generation)) return;
+        throw new Error('No Dexcom export was selected.');
+      }
       const cached = new File(asset.uri);
       try {
+        if (!lifecycle.isCurrent(generation)) return;
         const bytes = await cached.bytes();
         selectedBytes = bytes;
-        setState({
-          kind: 'preview',
-          prepared: await prepareDexcomClarityImport(asset.name, bytes),
-        });
+        if (!lifecycle.trackPreparation(bytes)) {
+          selectedBytes = undefined;
+          return;
+        }
+        if (!lifecycle.isCurrent(generation)) {
+          lifecycle.release(bytes);
+          selectedBytes = undefined;
+          return;
+        }
+        const nextPrepared = await prepareDexcomClarityImport(asset.name, bytes);
+        if (!lifecycle.isCurrent(generation)) {
+          lifecycle.release(bytes);
+          selectedBytes = undefined;
+          return;
+        }
+        if (!lifecycle.retainPreview(bytes)) {
+          selectedBytes = undefined;
+          return;
+        }
         selectedBytes = undefined;
+        setState({ kind: 'preview', prepared: nextPrepared });
       } finally {
         try {
           if (cached.exists) cached.delete();
@@ -131,40 +172,51 @@ export function DexcomClarityImportCard() {
         }
       }
     } catch (error) {
-      selectedBytes?.fill(0);
-      setState({
-        kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The Dexcom export could not be read.',
-      });
+      if (selectedBytes) lifecycle.release(selectedBytes);
+      if (lifecycle.isCurrent(generation)) {
+        setState({
+          kind: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'The Dexcom export could not be read.',
+        });
+      }
     }
   }
 
   async function commitImport() {
-    if (!prepared) return;
+    if (!prepared || !lifecycle.beginImport(prepared.sourcePayload.bytes)) {
+      return;
+    }
     setState({ kind: 'importing', prepared });
+    let released = false;
     try {
       const result = await importDexcomData(prepared);
-      prepared.sourcePayload.bytes.fill(0);
+      lifecycle.release(prepared.sourcePayload.bytes);
+      released = true;
+      if (!lifecycle.isMounted()) return;
       setState({ kind: 'success', preview: prepared.preview, result });
-      setSummary(await getDexcomArchiveSummary());
+      const nextSummary = await getDexcomArchiveSummary();
+      if (lifecycle.isMounted()) setSummary(nextSummary);
     } catch (error) {
-      prepared.sourcePayload.bytes.fill(0);
-      setState({
-        kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The encrypted Dexcom import did not complete.',
-      });
+      if (lifecycle.isMounted()) {
+        setState({
+          kind: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'The encrypted Dexcom import did not complete.',
+        });
+      }
+    } finally {
+      if (!released) lifecycle.release(prepared.sourcePayload.bytes);
     }
   }
 
   function discardPreview() {
-    prepared?.sourcePayload.bytes.fill(0);
-    setState({ kind: 'idle' });
+    if (prepared) lifecycle.release(prepared.sourcePayload.bytes);
+    if (lifecycle.isMounted()) setState({ kind: 'idle' });
   }
 
   function confirmClear() {
@@ -178,12 +230,15 @@ export function DexcomClarityImportCard() {
           style: 'destructive',
           onPress: () => {
             void (async () => {
+              if (!lifecycle.isMounted()) return;
               setState({ kind: 'preparing' });
               try {
                 await clearImportedDexcomData();
+                if (!lifecycle.isMounted()) return;
                 setSummary(undefined);
                 setState({ kind: 'idle' });
               } catch (error) {
+                if (!lifecycle.isMounted()) return;
                 setState({
                   kind: 'error',
                   message:
@@ -227,6 +282,92 @@ export function DexcomClarityImportCard() {
             and keeps the original file encrypted on this phone.
           </Text>
         </View>
+      </View>
+
+      <View
+        style={[
+          styles.livePanel,
+          {
+            backgroundColor: `${colors.glucose}0D`,
+            borderColor: `${colors.glucose}35`,
+            borderRadius: radius.md,
+          },
+        ]}
+      >
+        <View style={styles.liveHeading}>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.glucose}
+            name="radio-outline"
+            size={21}
+          />
+          <View style={styles.liveCopy}>
+            <Text style={[styles.statusTitle, { color: colors.text }]}>
+              Looking for live Dexcom readings?
+            </Text>
+            <Text style={[styles.statusBody, { color: colors.textSecondary }]}>
+              Direct Dexcom account connection is not available in this build.
+              If your Dexcom data already reaches Nightscout or xDrip, T1 Arc
+              can use that feed for current readings.
+            </Text>
+          </View>
+        </View>
+        {!prepared && !busy && (onOpenNightscout || onOpenXdrip) ? (
+          <View style={styles.liveActions}>
+            {onOpenNightscout ? (
+              <Pressable
+                accessibilityHint="Opens the Nightscout live glucose connection."
+                accessibilityRole="button"
+                onPress={onOpenNightscout}
+                style={({ pressed }) => [
+                  styles.liveButton,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  name="cloud-outline"
+                  size={17}
+                />
+                <Text style={[styles.liveButtonText, { color: colors.primary }]}>
+                  Set up Nightscout
+                </Text>
+              </Pressable>
+            ) : null}
+            {onOpenXdrip ? (
+              <Pressable
+                accessibilityHint="Opens the same-phone xDrip live glucose connection."
+                accessibilityRole="button"
+                onPress={onOpenXdrip}
+                style={({ pressed }) => [
+                  styles.liveButton,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  name="git-network-outline"
+                  size={17}
+                />
+                <Text style={[styles.liveButtonText, { color: colors.primary }]}>
+                  Set up xDrip
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       {summary?.archiveCount ? (
@@ -441,9 +582,9 @@ export function DexcomClarityImportCard() {
       ) : null}
 
       <Text style={[styles.footnote, { color: colors.textTertiary }]}>
-        This adds historical glucose, not a live Dexcom connection. A future
-        official account connection requires Dexcom partner approval and a
-        secure token service.
+        Clarity CSV adds historical glucose only. A future direct Dexcom
+        connection needs Dexcom production approval and secure server-based
+        sign-in.
       </Text>
 
       {summary?.archiveCount ? (
@@ -493,6 +634,22 @@ const styles = StyleSheet.create({
   statusCopy: { flex: 1, gap: 3 },
   statusTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800' },
   statusBody: { fontSize: 13, lineHeight: 18 },
+  livePanel: { marginTop: 16, borderWidth: 1, padding: 13, gap: 12 },
+  liveHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  liveCopy: { flex: 1, gap: 4 },
+  liveActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  liveButton: {
+    minHeight: 44,
+    minWidth: 150,
+    flexGrow: 1,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  liveButtonText: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
   meta: { fontSize: 12, lineHeight: 17 },
   preview: { marginTop: 16, borderWidth: 1, padding: 14, gap: 11 },
   previewHeading: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },

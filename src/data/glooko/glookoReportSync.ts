@@ -12,7 +12,13 @@ import {
 import {
   loadGlookoReportSyncState,
   saveGlookoReportSyncState,
+  updateGlookoReportSyncState,
 } from './glookoReportSyncState';
+import {
+  isBusyGlookoExportResult,
+  stateAfterBusyGlookoAttempt,
+} from './glookoSyncOutcome';
+import { GlookoSingleFlight } from './glookoSingleFlight';
 import { saveGlookoReport, StoredGlookoReport } from './glookoReportRepository';
 import { glookoFailureBackoffMs } from './glookoSyncPolicy';
 import {
@@ -37,27 +43,23 @@ export type GlookoReportSyncOutcome =
   | {
       status: 'skipped';
       origin: GlookoReportSyncOrigin;
-      plan: GlookoReportAutomaticPlan;
+      plan?: GlookoReportAutomaticPlan;
+      reason?: 'busy';
       syncState: GlookoReportSyncState;
+      diagnostic?: string;
     }
   | {
       status: 'session-required' | 'cancelled' | 'failed';
       origin: GlookoReportSyncOrigin;
       days: 7;
       message: string;
+      reason?: string;
       syncState: GlookoReportSyncState;
       diagnostic?: string;
     };
 
-let reportSyncInFlight: Promise<GlookoReportSyncOutcome> | undefined;
-
-function track(promise: Promise<GlookoReportSyncOutcome>) {
-  const tracked = promise.finally(() => {
-    if (reportSyncInFlight === tracked) reportSyncInFlight = undefined;
-  });
-  reportSyncInFlight = tracked;
-  return tracked;
-}
+const reportSingleFlight =
+  new GlookoSingleFlight<GlookoReportSyncOutcome>();
 
 async function readAndStoreReport(
   exported: Extract<GlookoExportResult, { status: 'downloaded' }>,
@@ -116,6 +118,18 @@ async function execute(
     const exported =
       await DaymarkGlookoExport.startSilentReportExportAsync(7);
     if (exported.status !== 'downloaded') {
+      if (isBusyGlookoExportResult(exported)) {
+        const next = await updateGlookoReportSyncState((current) =>
+          stateAfterBusyGlookoAttempt(previous, current, startedAt),
+        );
+        return {
+          status: 'skipped',
+          origin,
+          reason: 'busy',
+          syncState: next,
+          diagnostic: exported.diagnostic,
+        };
+      }
       const sessionRequired = exported.status === 'session-required';
       const message =
         exported.message ??
@@ -149,6 +163,7 @@ async function execute(
         origin,
         days: 7,
         message,
+        reason: exported.reason,
         syncState: next,
         diagnostic: exported.diagnostic,
       };
@@ -200,6 +215,7 @@ async function execute(
       origin,
       days: 7,
       message,
+      reason: 'unexpected',
       syncState: next,
     };
   }
@@ -208,29 +224,29 @@ async function execute(
 export async function syncGlookoReportNow(
   origin: GlookoReportSyncOrigin = 'manual',
 ) {
-  if (reportSyncInFlight) return reportSyncInFlight;
-  return track(execute(origin));
+  return reportSingleFlight.run(() => execute(origin));
 }
 
 export async function syncGlookoReportIfDue(
   origin: Exclude<GlookoReportSyncOrigin, 'manual'>,
 ) {
-  if (reportSyncInFlight) return reportSyncInFlight;
-  const [reportState, glookoState] = await Promise.all([
-    loadGlookoReportSyncState(),
-    loadGlookoSyncState(),
-  ]);
-  const plan = planAutomaticGlookoReportSync(
-    reportState,
-    glookoState,
-  );
-  if (!plan.due) {
-    return {
-      status: 'skipped',
-      origin,
-      plan,
-      syncState: reportState,
-    } satisfies GlookoReportSyncOutcome;
-  }
-  return track(execute(origin));
+  return reportSingleFlight.run(async () => {
+    const [reportState, glookoState] = await Promise.all([
+      loadGlookoReportSyncState(),
+      loadGlookoSyncState(),
+    ]);
+    const plan = planAutomaticGlookoReportSync(
+      reportState,
+      glookoState,
+    );
+    if (!plan.due) {
+      return {
+        status: 'skipped',
+        origin,
+        plan,
+        syncState: reportState,
+      } satisfies GlookoReportSyncOutcome;
+    }
+    return execute(origin);
+  });
 }

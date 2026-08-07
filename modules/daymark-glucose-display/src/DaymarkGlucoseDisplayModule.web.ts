@@ -13,6 +13,7 @@ const unavailable: GlucoseDisplayStatus = {
   aodServiceEnabled: false,
   aodOverlayVisible: false,
   androidAutoEnabled: false,
+  androidAutoProjected: false,
   freshness: 'missing',
 };
 

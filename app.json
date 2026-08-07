@@ -2,7 +2,7 @@
   "expo": {
     "name": "T1 Arc",
     "slug": "daymark",
-    "version": "1.6.5",
+    "version": "1.6.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "daymark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "app.daymark.personal",
-      "versionCode": 22,
+      "versionCode": 23,
       "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "blockedPermissions": [

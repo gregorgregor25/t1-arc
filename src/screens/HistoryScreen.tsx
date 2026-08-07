@@ -21,7 +21,8 @@ import { GlucoseStatsCard, InsulinStatsCard } from '@/components/StatsCards';
 import { EvidenceReference } from '@/domain/insights';
 import { HealthContextEvent } from '@/domain/models';
 import { buildInsulinReconciliation } from '@/domain/dataCompleteness';
-import { calculateGlucoseStats, calculateInsulinStats } from '@/domain/stats';
+import { calculateGlucoseStats } from '@/domain/stats';
+import { summarizeInsulinRange } from '@/domain/timelineInsulinSummary';
 import {
   addDays,
   DateKey,
@@ -66,8 +67,13 @@ export function HistoryScreen() {
   const glucoseStats = timeline.data
     ? calculateGlucoseStats(timeline.data.glucose, range)
     : undefined;
-  const insulinStats = timeline.data
-    ? calculateInsulinStats(timeline.data.basal, timeline.data.boluses, range)
+  const insulinSummary = timeline.data
+    ? summarizeInsulinRange(
+        timeline.data.basal,
+        timeline.data.boluses,
+        range,
+        timeline.data.dailyInsulinTotals,
+      )
     : undefined;
   const insulinReconciliation = timeline.data
     ? buildInsulinReconciliation(timeline.data)
@@ -80,6 +86,8 @@ export function HistoryScreen() {
       timeline.data.glucose.length === 0 &&
       timeline.data.basal.length === 0 &&
       timeline.data.boluses.length === 0 &&
+      (timeline.data.dailyInsulinTotals?.length ?? 0) === 0 &&
+      (timeline.data.pumpStates?.length ?? 0) === 0 &&
       timeline.data.context.length === 0,
   );
 
@@ -177,9 +185,16 @@ export function HistoryScreen() {
           ) : (
             <>
               <InsulinStatsCard
-                stats={insulinStats!}
+                stats={insulinSummary!.stats}
+                summary={insulinSummary}
                 reconciliation={insulinReconciliation}
-                label={days === 1 ? 'Selected day' : `${days}-day total`}
+                label={
+                  selectedDate === today && days === 1
+                    ? 'Today so far'
+                    : days === 1
+                      ? 'Selected day'
+                      : `${days}-day total`
+                }
               />
               <InsulinEventList
                 boluses={timeline.data.boluses}

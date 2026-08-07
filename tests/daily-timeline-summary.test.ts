@@ -101,7 +101,7 @@ describe('daily timeline summaries', () => {
       '2026-07-25',
     ]);
     expect(summaries[0]?.glucoseReadings).toBe(2);
-    expect(summaries[0]?.insulin.totalUnits).toBe(5);
+    expect(summaries[0]?.insulin.totalUnits).toBe(7);
     expect(summaries[0]?.sourceReportedInsulinUnits).toBe(7);
     expect(summaries[0]?.carbohydrateGrams).toBe(57);
     expect(summaries[1]?.insulin.totalUnits).toBe(1);
@@ -125,5 +125,50 @@ describe('daily timeline summaries', () => {
     expect((range.end - range.start) / 3_600_000).toBe(25);
     expect(summary?.date).toBe('2026-10-25');
     expect(summary?.glucose.coveragePercent).toBe(0);
+  });
+
+  it('shows the latest source snapshot as a partial as-of daily summary', () => {
+    const importedAt = zonedDateTimeToTimestamp('2026-08-07', 14, 35);
+    const range = dayRange('2026-08-07', zonedDateTimeToTimestamp('2026-08-08'));
+    const data: TimelineData = {
+      range,
+      glucose: [],
+      basal: [],
+      boluses: [],
+      dailyInsulinTotals: [
+        {
+          id: 'stale',
+          sourceId: 'glooko-export',
+          timestamp: importedAt,
+          dateKey: '2026-08-07',
+          basalUnits: 5,
+          bolusUnits: 10,
+          totalUnits: 15,
+          importedAt: importedAt - 60_000,
+        },
+        {
+          id: 'latest',
+          sourceId: 'glooko-export',
+          timestamp: importedAt,
+          dateKey: '2026-08-07',
+          basalUnits: 8,
+          bolusUnits: 12,
+          totalUnits: 20,
+          importedAt,
+        },
+      ],
+      context: [],
+      sources: [],
+    };
+
+    const [summary] = buildDailyTimelineSummaries(data);
+
+    expect(summary?.insulin).toEqual({
+      basalUnits: 8,
+      bolusUnits: 12,
+      totalUnits: 20,
+    });
+    expect(summary?.insulinPartial).toBe(true);
+    expect(summary?.insulinSourceAsOf).toBe(importedAt);
   });
 });

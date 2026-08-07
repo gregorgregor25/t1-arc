@@ -13,6 +13,10 @@ import { GLOOKO_BACKGROUND_TASK } from './backgroundTaskNames';
 import { syncGlookoReportIfDue } from '@/data/glooko/glookoReportSync';
 import { syncGlookoIfDue } from '@/data/glooko/glookoSync';
 import {
+  glookoStepCountsAsFailure,
+  glookoStepCountsAsSkipped,
+} from '@/data/glooko/glookoSyncOutcome';
+import {
   loadGlookoSyncState,
   updateGlookoSyncState,
 } from '@/data/glooko/glookoSyncState';
@@ -27,7 +31,9 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
       const reportOutcome = await syncGlookoReportIfDue('background');
       const csvDetail =
         outcome.status === 'skipped'
-          ? `CSV ${outcome.plan.reason}`
+          ? outcome.reason === 'busy'
+            ? 'CSV already updating'
+            : `CSV ${outcome.plan?.reason ?? 'fresh'}`
           : outcome.status === 'success'
             ? outcome.syncState.lastCheckOutcome === 'empty-range'
               ? `${outcome.days}-day CSV checked; valid empty range`
@@ -41,7 +47,9 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
                 : 'CSV refresh failed';
       const reportDetail =
         reportOutcome.status === 'skipped'
-          ? `report ${reportOutcome.plan.reason}`
+          ? reportOutcome.reason === 'busy'
+            ? 'report already updating'
+            : `report ${reportOutcome.plan?.reason ?? 'fresh'}`
           : reportOutcome.status === 'success'
             ? `7-day PDF completed (${reportOutcome.syncState.lastDailyModeCount ?? 0} daily mode summaries)`
             : reportOutcome.status === 'session-required'
@@ -62,13 +70,14 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
               : 0)
           : 0;
       const failed =
-        outcome.status === 'failed' || reportOutcome.status === 'failed';
+        glookoStepCountsAsFailure(outcome) ||
+        glookoStepCountsAsFailure(reportOutcome);
       const needsAttention =
         outcome.status === 'session-required' ||
         reportOutcome.status === 'session-required';
       const bothSkipped =
-        outcome.status === 'skipped' &&
-        reportOutcome.status === 'skipped';
+        glookoStepCountsAsSkipped(outcome) &&
+        glookoStepCountsAsSkipped(reportOutcome);
       if (runId) {
         await finishAutomationRun(runId, {
           outcome:

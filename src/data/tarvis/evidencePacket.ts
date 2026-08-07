@@ -7,16 +7,66 @@ import {
 import {
   TarvisEvidenceLookup,
   TarvisEvidencePacket,
+  TarvisInsightWindowSummary,
 } from './types';
 
 const MAX_FINDINGS = 18;
 const MAX_EXAMPLES_PER_EVIDENCE = 5;
+const MIN_GLUCOSE_COVERAGE_PERCENT = 70;
+
+export function toTarvisInsightWindowSummary(
+  summary: InsightReport['current'],
+): TarvisInsightWindowSummary {
+  if (summary.glucoseReadings > 0) return { ...summary };
+  return {
+    ...summary,
+    glucoseAverage: null,
+    glucoseStandardDeviation: null,
+    glucoseCvPercent: null,
+    timeBelowPercent: null,
+    timeInRangePercent: null,
+    timeAbovePercent: null,
+    highGlucoseRuns: null,
+    lowGlucoseRuns: null,
+  };
+}
+
+function glucoseCoverageContext(report: InsightReport) {
+  const windows = [
+    { label: 'Recent period', summary: report.current },
+    { label: 'Previous period', summary: report.previous },
+  ];
+  const details = windows.flatMap(({ label, summary }) => {
+    if (summary.glucoseReadings === 0) {
+      return [`${label} has no glucose readings, so its glucose metrics are unavailable`];
+    }
+    if (summary.coveragePercent < MIN_GLUCOSE_COVERAGE_PERCENT) {
+      return [
+        `${label} has ${summary.coveragePercent}% sensor coverage, so its glucose values describe observed sensor time only and are not complete-period estimates`,
+      ];
+    }
+    return [];
+  });
+  return details.length ? `${details.join('. ')}.` : undefined;
+}
 
 export function buildTarvisEvidencePacket(
   report: InsightReport,
 ): TarvisEvidenceLookup {
   const references = new Map<string, EvidenceReference>();
-  const findings = report.findings.slice(0, MAX_FINDINGS).map((finding) => {
+  const coverageContext = glucoseCoverageContext(report);
+  const hasEmptyGlucoseWindow =
+    report.current.glucoseReadings === 0 ||
+    report.previous.glucoseReadings === 0;
+  const sourceFindings = report.findings
+    .filter(
+      (finding) =>
+        !hasEmptyGlucoseWindow ||
+        finding.category !== 'glucose' ||
+        finding.id === 'glucose-overview',
+    )
+    .slice(0, MAX_FINDINGS);
+  const findings = sourceFindings.map((finding) => {
     const evidenceIds: string[] = [];
     finding.evidence.forEach((reference) => {
       references.set(reference.id, reference);
@@ -26,8 +76,16 @@ export function buildTarvisEvidencePacket(
       id: finding.id,
       kind: finding.kind,
       category: finding.category,
-      title: finding.title,
-      summary: finding.summary,
+      title:
+        hasEmptyGlucoseWindow && finding.category === 'glucose'
+          ? 'Glucose comparison has missing data'
+          : finding.title,
+      summary:
+        finding.category === 'glucose' && coverageContext
+          ? hasEmptyGlucoseWindow
+            ? coverageContext
+            : `${coverageContext} ${finding.summary}`
+          : finding.summary,
       caveat: finding.caveat,
       evidenceIds,
     };
@@ -46,9 +104,14 @@ export function buildTarvisEvidencePacket(
       currentRange: report.currentRange,
       previousRange: report.previousRange,
       headline: report.headline,
-      summary: report.summary,
-      current: report.current,
-      previous: report.previous,
+      summary:
+        coverageContext && hasEmptyGlucoseWindow
+          ? coverageContext
+          : coverageContext
+            ? `${coverageContext} ${report.summary}`
+            : report.summary,
+      current: toTarvisInsightWindowSummary(report.current),
+      previous: toTarvisInsightWindowSummary(report.previous),
     },
     findings,
     evidence: [...references.values()].map((reference) => ({

@@ -15,6 +15,11 @@ import {
   AutomationTiming,
   buildAutomationTiming,
 } from './automationTiming';
+import {
+  AutomationConnectorIssue,
+  buildGlookoAutomationIssue,
+} from './automationIssue';
+import { loadGlookoReportSyncState } from '@/data/glooko/glookoReportSyncState';
 import { loadGlookoSyncState } from '@/data/glooko/glookoSyncState';
 import {
   getHealthConnectOverview,
@@ -26,6 +31,7 @@ export interface AutomationStatus {
   registered: Record<AutomationConnector, boolean>;
   evidence: Record<AutomationConnector, AutomationDataEvidence>;
   timing: Record<AutomationConnector, AutomationTiming>;
+  issues: Partial<Record<AutomationConnector, AutomationConnectorIssue>>;
   runs: AutomationRun[];
   checkedAt: number;
 }
@@ -38,6 +44,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     runs,
     evidence,
     glooko,
+    glookoReport,
     healthConnect,
     healthConnectStatus,
   ] = await Promise.all([
@@ -46,6 +53,7 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
     listAutomationRuns(24),
     loadAutomationDataEvidence(),
     loadGlookoSyncState(),
+    loadGlookoReportSyncState(),
     getHealthConnectOverview(),
     getHealthConnectStatus(),
   ]);
@@ -60,11 +68,13 @@ export async function getAutomationStatus(): Promise<AutomationStatus> {
       AUTOMATION_TASK_BY_CONNECTOR['insight-review'],
     ),
   };
+  const glookoIssue = buildGlookoAutomationIssue(glooko, glookoReport);
   return {
     schedulerAvailable:
       schedulerStatus === BackgroundTask.BackgroundTaskStatus.Available,
     registered,
     evidence,
+    issues: glookoIssue ? { glooko: glookoIssue } : {},
     timing: buildAutomationTiming({
       glooko,
       healthConnect,

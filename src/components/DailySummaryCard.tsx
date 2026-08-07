@@ -7,7 +7,7 @@ import {
   DailyTimelineSummary,
 } from '@/domain/dailyTimelineSummary';
 import { TimelineData } from '@/domain/models';
-import { DateKey, formatShortDate } from '@/domain/time';
+import { DateKey, formatShortDate, formatTime } from '@/domain/time';
 import { useAppTheme } from '@/theme/theme';
 
 import { SectionCard } from './SectionCard';
@@ -27,7 +27,7 @@ function DayRow({
   const incomplete = summary.glucose.coveragePercent < 70;
   return (
     <Pressable
-      accessibilityLabel={`${formatShortDate(summary.date)}. Time in range ${summary.glucose.timeInRangePercent} percent. Average ${summary.glucose.averageMmolL ?? 'unavailable'} millimoles per litre. Coverage ${summary.glucose.coveragePercent} percent. Open day.`}
+      accessibilityLabel={`${formatShortDate(summary.date)}. Time in range ${summary.glucose.timeInRangePercent} percent. Average ${summary.glucose.averageMmolL ?? 'unavailable'} millimoles per litre. Coverage ${summary.glucose.coveragePercent} percent. Insulin ${summary.insulin.totalUnits.toFixed(1)} units${summary.sourceReportedInsulinUnits === undefined ? '' : ` from the latest source total${summary.insulinSourceAsOf === undefined ? '' : ` as of ${formatTime(summary.insulinSourceAsOf)}`}`}. Open day.`}
       accessibilityRole="button"
       onPress={() => onSelect(summary.date)}
       style={({ pressed }) => [
@@ -123,7 +123,15 @@ function DayRow({
           <Text style={[styles.metricLabel, { color: colors.textTertiary }]}>
             {summary.sourceReportedInsulinUnits === undefined
               ? 'INSULIN'
-              : 'INSULIN · SOURCE'}
+              : summary.insulinPartial
+                ? `INSULIN · AS OF ${
+                    summary.insulinSourceAsOf === undefined
+                      ? 'PARTIAL'
+                      : formatTime(summary.insulinSourceAsOf)
+                  }`
+                : summary.insulinSourceConflictCount
+                  ? 'INSULIN · LATEST SOURCE'
+                  : 'INSULIN · SOURCE'}
           </Text>
         </View>
         <View style={styles.metric}>

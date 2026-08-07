@@ -13,6 +13,7 @@ import {
   TimeRange,
   WeightEvent,
 } from '@/domain/models';
+import { toDateKey } from '@/domain/time';
 
 import {
   HealthRecordStore,
@@ -405,13 +406,16 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
   }
 
   async getDailyInsulinTotals(range: TimeRange) {
+    if (range.end <= range.start) return [];
     const database = await this.getDatabase();
+    const startDate = toDateKey(range.start);
+    const endDate = toDateKey(range.end - 1);
     const rows = await database.getAllAsync<DailyInsulinTotalRow>(
       `SELECT * FROM insulin_daily_totals
-       WHERE timestamp_ms >= ? AND timestamp_ms < ?
-       ORDER BY timestamp_ms ASC`,
-      range.start,
-      range.end,
+       WHERE date_key >= ? AND date_key <= ?
+       ORDER BY date_key ASC, timestamp_ms ASC`,
+      startDate,
+      endDate,
     );
     return rows.map(dailyInsulinTotalFromRow);
   }
@@ -911,12 +915,47 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         batch.sourceId,
         batch.fileSha256,
       );
+      const retainedSource = existing
+        ? await transaction.getFirstAsync<{ import_batch_id: string }>(
+            `SELECT import_batch_id FROM import_source_payloads
+             WHERE import_batch_id = ?`,
+            existing.id,
+          )
+        : undefined;
       let insertedBasal = 0;
+      let replacedBasal = 0;
       let insertedBoluses = 0;
       let insertedContext = 0;
       let insertedDailyTotals = 0;
 
       for (const delivery of basal) {
+        if (
+          retainedSource &&
+          delivery.sourceId === batch.sourceId &&
+          delivery.unitsEstimated !== true &&
+          delivery.sourceFile !== undefined &&
+          delivery.sourceRow !== undefined
+        ) {
+          const replaced = await transaction.runAsync(
+            `DELETE FROM insulin_basal
+              WHERE source_id = ?
+                AND source_file = ?
+                AND source_row = ?
+                AND COALESCE(source_device_id, '') = ?
+                AND start_ms = ?
+                AND end_ms = ?
+                AND units_estimated = 1
+                AND id <> ?`,
+            delivery.sourceId,
+            delivery.sourceFile,
+            delivery.sourceRow,
+            delivery.sourceDeviceId ?? '',
+            delivery.start,
+            delivery.end,
+            delivery.id,
+          );
+          replacedBasal += replaced.changes;
+        }
         const write = await transaction.runAsync(
           `INSERT OR IGNORE INTO insulin_basal (
              id, source_id, start_ms, end_ms, rate_units_per_hour, units,
@@ -1102,7 +1141,9 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
               : previous.dataThrough === undefined
                 ? batch.dataThrough
                 : Math.max(previous.dataThrough, batch.dataThrough),
-          basalCount: previous.basalCount + insertedBasal,
+          basalCount:
+            previous.basalCount +
+            Math.max(0, insertedBasal - replacedBasal),
           bolusCount: previous.bolusCount + insertedBoluses,
           contextCount: previous.contextCount + insertedContext,
           dailyTotalCount:

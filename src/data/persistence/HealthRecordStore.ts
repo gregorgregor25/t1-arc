@@ -6,6 +6,7 @@ import {
   PumpStateInterval,
   TimeRange,
 } from '@/domain/models';
+import { toDateKey } from '@/domain/time';
 
 export interface StoredRecordBounds {
   earliest?: number;
@@ -198,6 +199,25 @@ function eventEnd(event: HealthContextEvent) {
   return event.end ?? event.start;
 }
 
+function isCorrectedRetainedBasal(
+  stored: BasalDelivery,
+  incoming: BasalDelivery,
+) {
+  return (
+    stored.id !== incoming.id &&
+    stored.unitsEstimated === true &&
+    incoming.unitsEstimated !== true &&
+    incoming.sourceFile !== undefined &&
+    incoming.sourceRow !== undefined &&
+    stored.sourceId === incoming.sourceId &&
+    stored.sourceFile === incoming.sourceFile &&
+    stored.sourceRow === incoming.sourceRow &&
+    (stored.sourceDeviceId ?? '') === (incoming.sourceDeviceId ?? '') &&
+    stored.start === incoming.start &&
+    stored.end === incoming.end
+  );
+}
+
 export class MemoryHealthRecordStore implements HealthRecordStore {
   private readonly basal = new Map<string, BasalDelivery>();
   private readonly boluses = new Map<string, BolusDelivery>();
@@ -242,10 +262,13 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
   }
 
   async getDailyInsulinTotals(range: TimeRange) {
+    if (range.end <= range.start) return [];
+    const startDate = toDateKey(range.start);
+    const endDate = toDateKey(range.end - 1);
     return [...this.dailyTotals.values()]
       .filter(
         (total) =>
-          total.timestamp >= range.start && total.timestamp < range.end,
+          total.dateKey >= startDate && total.dateKey <= endDate,
       )
       .sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -467,10 +490,25 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     const existing = this.batches.get(key);
 
     let insertedBasal = 0;
+    let replacedBasal = 0;
     let insertedBoluses = 0;
     let insertedContext = 0;
     let insertedDailyTotals = 0;
+    const canReplaceRetainedBasal = Boolean(
+      existing && this.sourcePayloads.has(key),
+    );
     basal.forEach((delivery) => {
+      if (
+        canReplaceRetainedBasal &&
+        delivery.sourceId === batch.sourceId &&
+        delivery.unitsEstimated !== true
+      ) {
+        for (const [id, stored] of this.basal) {
+          if (!isCorrectedRetainedBasal(stored, delivery)) continue;
+          this.basal.delete(id);
+          replacedBasal += 1;
+        }
+      }
       if (!this.basal.has(delivery.id)) {
         this.basal.set(delivery.id, { ...delivery });
         insertedBasal += 1;
@@ -530,7 +568,9 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
               : existing.dataThrough === undefined
                 ? batch.dataThrough
                 : Math.max(existing.dataThrough, batch.dataThrough),
-          basalCount: existing.basalCount + insertedBasal,
+          basalCount:
+            existing.basalCount +
+            Math.max(0, insertedBasal - replacedBasal),
           bolusCount: existing.bolusCount + insertedBoluses,
           contextCount: existing.contextCount + insertedContext,
           dailyTotalCount:

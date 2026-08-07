@@ -18,11 +18,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Svg, { Circle, Line, Polyline } from 'react-native-svg';
-
 import { AppScreen } from '@/components/AppScreen';
 import { SectionCard } from '@/components/SectionCard';
 import { buildTarvisEvidencePacket } from '@/data/tarvis/evidencePacket';
+import {
+  buildTarvisEvidencePresentation,
+  TarvisEvidencePresentation,
+} from '@/data/tarvis/evidencePresentation';
 import { askTarvis } from '@/data/tarvis/openAiClient';
 import {
   clearTarvisConversation,
@@ -46,6 +48,7 @@ import {
 } from '@/data/tarvis/types';
 import { EvidenceReference, InsightReport } from '@/domain/insights';
 import { InsightPeriodDays } from '@/domain/insightRanges';
+import { formatDate, toDateKey } from '@/domain/time';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useAppTheme } from '@/theme/theme';
 
@@ -60,6 +63,7 @@ interface ChatExchange {
   question: string;
   answer: TarvisAnswer;
   evidence: TarvisEvidenceLookup;
+  presentation?: TarvisEvidencePresentation;
   requestMetrics?: TarvisRequestMetrics;
 }
 
@@ -76,48 +80,59 @@ function requestCountToday(usage?: TarvisUsage) {
     .length ?? 0;
 }
 
-function glucoseValue(value: string) {
-  const match = value.match(/-?\d+(?:[.,]\d+)?/);
-  if (!match) return undefined;
-  const parsed = Number(match[0].replace(',', '.'));
-  return Number.isFinite(parsed) && parsed > 0 && parsed < 50
-    ? parsed
-    : undefined;
+function confidenceLabel(confidence: TarvisAnswer['confidence']) {
+  switch (confidence) {
+    case 'high':
+      return 'Answer confidence: High';
+    case 'moderate':
+      return 'Answer confidence: Moderate';
+    default:
+      return 'Answer confidence: Limited';
+  }
 }
 
-function TarvisGlucoseEvidenceChart({ exchange }: { exchange: ChatExchange }) {
-  const { colors, radius } = useAppTheme();
-  const seen = new Set<string>();
-  const samples = exchange.answer.evidenceIds
-    .flatMap((id) => exchange.evidence.references.get(id)?.examples ?? [])
-    .filter((example) => {
-      if (!example.kind.toLocaleLowerCase('en-GB').includes('glucose')) return false;
-      if (seen.has(example.id)) return false;
-      seen.add(example.id);
-      return glucoseValue(example.primary) !== undefined;
-    })
-    .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-12)
-    .map((example) => ({
-      timestamp: example.timestamp,
-      value: glucoseValue(example.primary)!,
-    }));
-  if (samples.length < 2) return null;
+function evidenceRangeLabel(range: { start: number; end: number }) {
+  return `${formatDate(toDateKey(range.start), {
+    day: 'numeric',
+    month: 'short',
+  })} – ${formatDate(toDateKey(range.end - 1), {
+    day: 'numeric',
+    month: 'short',
+  })}`;
+}
 
-  const minimum = Math.min(...samples.map((sample) => sample.value));
-  const maximum = Math.max(...samples.map((sample) => sample.value));
-  const spread = Math.max(1, maximum - minimum);
-  const pointFor = (sample: (typeof samples)[number], index: number) => ({
-    x: 10 + (index / Math.max(1, samples.length - 1)) * 280,
-    y: 72 - ((sample.value - minimum) / spread) * 58,
-  });
-  const points = samples.map(pointFor);
+function TarvisEvidenceSummary({
+  presentation,
+}: {
+  presentation?: TarvisEvidencePresentation;
+}) {
+  const { colors, radius } = useAppTheme();
+  if (!presentation) return null;
 
   return (
     <View
-      accessibilityLabel={`Chart of ${samples.length} cited glucose samples from ${minimum.toFixed(1)} to ${maximum.toFixed(1)} millimoles per litre.`}
+      accessibilityLabel={`${presentation.title}. ${presentation.windows
+        .map(
+          (window) =>
+            `${window.label}, ${evidenceRangeLabel(window.range)}, ${window.recordCount} glucose readings, ${window.coveragePercent}% coverage. ${
+              window.coverageStatus === 'unavailable'
+                ? 'Glucose metrics are unavailable.'
+                : window.coverageStatus === 'limited'
+                  ? 'Values describe observed sensor time only, not the complete period.'
+                  : ''
+            } ${window.metrics
+              .map((metric) => {
+                const value =
+                  metric.value === null
+                    ? 'not available'
+                    : metric.value.toFixed(metric.decimals);
+                return `${metric.label} ${value}${metric.unit ? ` ${metric.unit}` : ''}`;
+              })
+              .join(', ')}`,
+        )
+        .join('. ')}`}
       style={[
-        styles.evidenceChart,
+        styles.evidenceSummary,
         {
           backgroundColor: colors.surfaceMuted,
           borderColor: colors.border,
@@ -125,44 +140,167 @@ function TarvisGlucoseEvidenceChart({ exchange }: { exchange: ChatExchange }) {
         },
       ]}
     >
-      <View style={styles.evidenceChartHeading}>
-        <Text style={[styles.evidenceChartTitle, { color: colors.text }]}>
-          Cited glucose samples
-        </Text>
-        <Text style={[styles.evidenceChartRange, { color: colors.textTertiary }]}>
-          {minimum.toFixed(1)}–{maximum.toFixed(1)} mmol/L
+      <View style={styles.evidenceSummaryHeading}>
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.accent}
+          name="analytics-outline"
+          size={18}
+        />
+        <Text style={[styles.evidenceSummaryTitle, { color: colors.text }]}>
+          {presentation.title}
         </Text>
       </View>
-      <Svg height={84} viewBox="0 0 300 84" width="100%">
-        <Line
-          x1={10}
-          x2={290}
-          y1={72}
-          y2={72}
-          stroke={colors.divider}
-          strokeWidth={1}
-        />
-        <Polyline
-          fill="none"
-          points={points.map((point) => `${point.x},${point.y}`).join(' ')}
-          stroke={colors.primary}
-          strokeWidth={2.5}
-        />
-        {points.map((point, index) => (
-          <Circle
-            cx={point.x}
-            cy={point.y}
-            fill={colors.surface}
-            key={`${samples[index]!.timestamp}:${index}`}
-            r={3.5}
-            stroke={colors.primary}
-            strokeWidth={2}
-          />
-        ))}
-      </Svg>
-      <Text style={[styles.evidenceChartNote, { color: colors.textTertiary }]}>
-        Samples cited by this answer; open the evidence below for exact records.
+      {presentation.windows.map((window, windowIndex) => (
+        <View
+          key={`${window.label}:${window.range.start}`}
+          style={[
+            styles.evidenceWindow,
+            windowIndex > 0 && {
+              borderTopColor: colors.divider,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              marginTop: 12,
+              paddingTop: 12,
+            },
+          ]}
+        >
+          <View style={styles.evidenceWindowHeading}>
+            <Text
+              style={[
+                styles.evidenceWindowLabel,
+                { color: colors.textSecondary },
+              ]}
+            >
+              {window.label}
+            </Text>
+            <Text
+              style={[
+                styles.evidenceWindowRange,
+                { color: colors.textTertiary },
+              ]}
+            >
+              {evidenceRangeLabel(window.range)}
+            </Text>
+          </View>
+          <View style={styles.evidenceMetrics}>
+            {window.metrics.map((metric) => (
+              <View key={metric.id} style={styles.evidenceMetric}>
+                <Text
+                  style={[
+                    metric.value === null
+                      ? styles.evidenceMetricUnavailable
+                      : styles.evidenceMetricValue,
+                    { color: colors.text },
+                  ]}
+                >
+                  {metric.value === null
+                    ? 'Unavailable'
+                    : metric.value.toFixed(metric.decimals)}
+                  {metric.value !== null && metric.unit ? (
+                    <Text
+                      style={[
+                        styles.evidenceMetricUnit,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {' '}
+                      {metric.unit}
+                    </Text>
+                  ) : null}
+                </Text>
+                <Text
+                  style={[
+                    styles.evidenceMetricLabel,
+                    { color: colors.textTertiary },
+                  ]}
+                >
+                  {metric.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <Text
+            style={[styles.evidenceCoverage, { color: colors.textTertiary }]}
+          >
+            {window.recordCount.toLocaleString()} glucose readings ·{' '}
+            {window.coveragePercent}% coverage
+          </Text>
+          {window.coverageStatus !== 'sufficient' ? (
+            <View
+              style={[
+                styles.evidenceCoverageNotice,
+                {
+                  backgroundColor: `${colors.warning}10`,
+                  borderRadius: radius.sm,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.warning}
+                name="information-circle-outline"
+                size={15}
+              />
+              <Text
+                style={[
+                  styles.evidenceCoverageNoticeText,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                {window.coverageStatus === 'unavailable'
+                  ? 'No glucose readings — these metrics are unavailable.'
+                  : 'Limited coverage — values describe observed sensor time only, not the complete period.'}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ))}
+      <Text
+        style={[styles.evidenceSummaryNote, { color: colors.textSecondary }]}
+      >
+        {presentation.detail}
       </Text>
+    </View>
+  );
+}
+
+function TarvisRequestDetails({ metrics }: { metrics?: TarvisRequestMetrics }) {
+  const { colors } = useAppTheme();
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={[styles.requestDetails, { borderTopColor: colors.divider }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: visible }}
+        onPress={() => setVisible((current) => !current)}
+        style={({ pressed }) => [
+          styles.requestDetailsButton,
+          { opacity: pressed ? 0.65 : 1 },
+        ]}
+      >
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.textTertiary}
+          name="information-circle-outline"
+          size={15}
+        />
+        <Text style={[styles.requestDetailsLabel, { color: colors.textTertiary }]}>
+          Response details
+        </Text>
+        <Ionicons
+          accessibilityElementsHidden
+          color={colors.textTertiary}
+          name={visible ? 'chevron-up' : 'chevron-down'}
+          size={14}
+        />
+      </Pressable>
+      {visible ? (
+        <Text style={[styles.requestMetrics, { color: colors.textTertiary }]}>
+          {metrics
+            ? `Luna · ${metrics.inputTokens.toLocaleString()} input + ${metrics.outputTokens.toLocaleString()} output tokens · approx. $${metrics.estimatedCostUsd.toFixed(metrics.estimatedCostUsd < 0.01 ? 4 : 3)}`
+            : 'On-device response · no API request'}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -218,6 +356,7 @@ export function TarvisScreen({
             id: exchange.id,
             question: exchange.question,
             answer: exchange.answer,
+            presentation: exchange.presentation,
             requestMetrics: exchange.requestMetrics,
             evidence: {
               packet: evidence.packet,
@@ -241,6 +380,7 @@ export function TarvisScreen({
       id: exchange.id,
       question: exchange.question,
       answer: exchange.answer,
+      presentation: exchange.presentation,
       requestMetrics: exchange.requestMetrics,
       evidence: exchange.answer.evidenceIds.flatMap((id) => {
         const reference = exchange.evidence.references.get(id);
@@ -374,6 +514,12 @@ export function TarvisScreen({
             question: prompt,
             answer: response.answer,
             evidence: evidenceForQuestion,
+            presentation: buildTarvisEvidencePresentation(
+              prompt,
+              evidenceForQuestion.packet,
+              response.answer,
+              history,
+            ),
             requestMetrics: response.requestMetrics,
           },
         ];
@@ -525,7 +671,7 @@ export function TarvisScreen({
   return (
     <KeyboardAvoidingView behavior="padding" style={styles.flex}>
       <AppScreen
-        eyebrow="Evidence-grounded assistant"
+        eyebrow="Your diabetes data companion"
         footer={composerFooter}
         scrollViewRef={scrollViewRef}
         title="Ask Tarv1s"
@@ -749,18 +895,15 @@ export function TarvisScreen({
                   <Text
                     style={[styles.introDetail, { color: colors.textSecondary }]}
                   >
-                    Ask naturally about any recent period. Tarv1s loads the
-                    relevant evidence it can support, and every data claim must
-                    point back to records you can inspect.
+                    Talk things through with Tarv1s in your own words. It uses
+                    your records to give a clear answer, and you can always open
+                    the evidence behind it.
                   </Text>
                 </View>
               </View>
               <View style={styles.usageRow}>
                 <Text style={[styles.usageText, { color: colors.textTertiary }]}>
                   {requestCountToday(usage)}/30 questions used today
-                </Text>
-                <Text style={[styles.usageText, { color: colors.textTertiary }]}>
-                  {(usage?.totalTokens ?? 0).toLocaleString()} tokens total
                 </Text>
               </View>
               {exchanges.length ? (
@@ -896,7 +1039,7 @@ export function TarvisScreen({
                           { color: colors.textTertiary },
                         ]}
                       >
-                        {exchange.answer.confidence.toUpperCase()} CONFIDENCE
+                        {confidenceLabel(exchange.answer.confidence)}
                       </Text>
                     </View>
                   </View>
@@ -905,7 +1048,7 @@ export function TarvisScreen({
                   >
                     {exchange.answer.answer}
                   </Text>
-                  <TarvisGlucoseEvidenceChart exchange={exchange} />
+                  <TarvisEvidenceSummary presentation={exchange.presentation} />
                   {exchange.answer.evidenceIds.length ? (
                     <View style={styles.evidenceList}>
                       <Text
@@ -914,7 +1057,7 @@ export function TarvisScreen({
                           { color: colors.text },
                         ]}
                       >
-                        Inspect the evidence
+                        Evidence behind this answer
                       </Text>
                       {exchange.answer.evidenceIds.map((id) => {
                         const reference = exchange.evidence.references.get(id);
@@ -975,6 +1118,14 @@ export function TarvisScreen({
                         { borderColor: colors.divider },
                       ]}
                     >
+                      <Text
+                        style={[
+                          styles.limitationsTitle,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Worth keeping in mind
+                      </Text>
                       {exchange.answer.limitations.map((limitation) => (
                         <Text
                           key={limitation}
@@ -988,16 +1139,7 @@ export function TarvisScreen({
                       ))}
                     </View>
                   ) : null}
-                  <Text
-                    style={[
-                      styles.requestMetrics,
-                      { color: colors.textTertiary },
-                    ]}
-                  >
-                    {exchange.requestMetrics
-                      ? `Luna · ${exchange.requestMetrics.inputTokens.toLocaleString()} input + ${exchange.requestMetrics.outputTokens.toLocaleString()} output tokens · approx. $${exchange.requestMetrics.estimatedCostUsd.toFixed(exchange.requestMetrics.estimatedCostUsd < 0.01 ? 4 : 3)}`
-                      : 'On-device response · no API request'}
-                  </Text>
+                  <TarvisRequestDetails metrics={exchange.requestMetrics} />
                 </SectionCard>
               </View>
             ))}
@@ -1119,7 +1261,6 @@ const styles = StyleSheet.create({
   introDetail: { fontSize: 13, lineHeight: 19, marginTop: 3 },
   usageRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: 12,
     marginTop: 15,
   },
@@ -1172,39 +1313,99 @@ const styles = StyleSheet.create({
   answerHeadingCopy: { flex: 1 },
   answerTitle: { fontSize: 17, lineHeight: 23, fontWeight: '800' },
   confidence: {
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+    marginTop: 3,
   },
   answerText: { fontSize: 14, lineHeight: 22, marginTop: 13 },
-  evidenceChart: {
+  evidenceSummary: {
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    paddingBottom: 7,
+    padding: 13,
     marginTop: 14,
   },
-  evidenceChartHeading: {
+  evidenceSummaryHeading: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 7,
+  },
+  evidenceSummaryTitle: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  evidenceWindow: { marginTop: 11 },
+  evidenceWindowHeading: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: 10,
   },
-  evidenceChartTitle: {
+  evidenceWindowLabel: {
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '800',
   },
-  evidenceChartRange: {
+  evidenceWindowRange: {
     fontSize: 10,
     lineHeight: 15,
     fontWeight: '700',
   },
-  evidenceChartNote: {
-    fontSize: 9,
+  evidenceMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 9,
+  },
+  evidenceMetric: {
+    flexGrow: 1,
+    flexBasis: 82,
+  },
+  evidenceMetricValue: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  evidenceMetricUnavailable: {
+    fontSize: 12,
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  evidenceMetricUnit: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  evidenceMetricLabel: {
+    fontSize: 10,
     lineHeight: 14,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  evidenceCoverage: {
+    fontSize: 10,
+    lineHeight: 15,
+    marginTop: 8,
+  },
+  evidenceCoverageNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  evidenceCoverageNoticeText: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+  evidenceSummaryNote: {
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 11,
   },
   evidenceList: { gap: 8, marginTop: 16 },
   evidenceHeading: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
@@ -1225,11 +1426,34 @@ const styles = StyleSheet.create({
     marginTop: 15,
     paddingTop: 12,
   },
+  limitationsTitle: {
+    fontSize: 11,
+    lineHeight: 17,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
   limitationText: { fontSize: 11, lineHeight: 17 },
+  requestDetails: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 14,
+    paddingTop: 8,
+  },
+  requestDetailsButton: {
+    alignSelf: 'flex-end',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  requestDetailsLabel: {
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
   requestMetrics: {
     fontSize: 9,
     lineHeight: 14,
-    marginTop: 12,
+    marginTop: 3,
     textAlign: 'right',
   },
   errorCard: {

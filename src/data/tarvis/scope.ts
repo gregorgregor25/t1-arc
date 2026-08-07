@@ -76,7 +76,7 @@ const CREDENTIAL_EXTRACTION =
   /\b(show|tell|reveal|display|retrieve|give)\b[\s\S]{0,80}\b(password|passcode|api[ -]?key|secret|credential|token)\b/i;
 
 const FOLLOW_UP =
-  /^(why|how|explain|go deeper|tell me more|which one|show me|compare them|what about that|and this|is that good|is that bad)[?.! ]*$/i;
+  /^(why|how|explain|go deeper|tell me more|which one|show me|compare them|what about that|and this|is that good|is that bad|(?:what|how) about (?:the )?(?:previous|prior|earlier|recent|current) period)[?.! ]*$/i;
 
 const PERSONAL_DATA_QUESTION =
   /\b(my|mine|me|i)\b[\s\S]{0,120}\b(data|records?|history|summary|result|results|reading|readings|today|yesterday|week|fortnight|month|days?|date|average|total|highest|lowest|change|changed|compare|comparison|pattern|patterns)\b|\b(data|records?|history|summary|result|results|reading|readings|today|yesterday|week|fortnight|month|days?|date|average|total|highest|lowest|change|changed|compare|comparison|pattern|patterns)\b[\s\S]{0,120}\b(my|mine|me|i)\b/i;

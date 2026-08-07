@@ -24,6 +24,7 @@ import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.lifecycle.Observer
 import androidx.media.MediaBrowserServiceCompat
+import androidx.media.MediaSessionManager
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -36,13 +37,24 @@ import kotlin.math.min
 
 private const val CAR_LOG_TAG = "T1ArcAndroidAuto"
 private const val CAR_MEDIA_ROOT_ID = "t1arc_root"
+private const val CAR_GLUCOSE_SECTION_ID = "t1arc_glucose"
 private const val CAR_GLUCOSE_MEDIA_ID = "t1arc_current_glucose"
 private const val CAR_NOTIFICATION_CHANNEL_ID = "t1arc_android_auto_glucose_v1"
 private const val CAR_NOTIFICATION_ID = 6450
+private const val CAR_NOTIFICATION_REPLY_ACTION =
+  "app.daymark.glucosedisplay.action.REFRESH_CAR_GLUCOSE"
 private const val CAR_NOTIFICATION_DISMISS_ACTION =
   "app.daymark.glucosedisplay.action.DISMISS_CAR_GLUCOSE"
 private const val CAR_NOTIFICATION_REPLY_KEY = "t1arc_car_reply"
 private const val THREE_HOURS_MS = 3 * 60 * 60 * 1000L
+
+/**
+ * Glucose is private media metadata. Keeping this decision pure makes it hard
+ * for a future lifecycle change to expose the last reading outside a live,
+ * user-enabled Android Auto projection.
+ */
+internal fun shouldExposeAndroidAutoGlucose(enabled: Boolean, projected: Boolean): Boolean =
+  enabled && projected
 
 /**
  * The Android Auto surface deliberately lives inside the phone app. It reads
@@ -124,13 +136,14 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
             override fun onStop() = closeFullScreen()
           }
         )
-        // Android Auto can browse an inactive media session. Keep it inactive
-        // until the driver explicitly opens T1 Arc so normal music apps retain
-        // the active media slot and their steering-wheel/playback controls.
-        isActive = false
+        // MediaSessionCompat does not publish the session or reliably receive
+        // transport commands until it is active. A stopped active session is
+        // discoverable without taking audio focus or displacing the driver's
+        // real media playback.
+        isActive = true
       }
     sessionToken = session.sessionToken
-    publish(PlaybackStateCompat.STATE_PAUSED)
+    publish(PlaybackStateCompat.STATE_STOPPED)
   }
 
   override fun onDestroy() {
@@ -144,20 +157,14 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
     clientUid: Int,
     rootHints: Bundle?,
   ): BrowserRoot? {
-    if (!DaymarkGlucoseDisplayState.androidAutoEnabled(this)) return null
-    val trusted =
-      clientUid == Process.SYSTEM_UID ||
-        clientPackageName in
-          setOf(
-            packageName,
-            "com.google.android.projection.gearhead",
-            "com.google.android.gms",
-            "com.google.android.googlequicksearchbox",
-          )
-    if (!trusted) {
-      Log.w(CAR_LOG_TAG, "Rejected untrusted media browser client")
+    if (!isTrustedMediaClient(clientPackageName, clientUid)) {
+      Log.w(CAR_LOG_TAG, "Rejected untrusted media browser client $clientPackageName")
       return null
     }
+    // Always return a root for a trusted host. Android Auto caches failed root
+    // connections, so using the user's display preference here could leave the
+    // app undiscoverable after they turn the feature on. Disabled state is
+    // handled quickly and without exposing health data in onLoadChildren.
     return BrowserRoot(CAR_MEDIA_ROOT_ID, null)
   }
 
@@ -169,32 +176,73 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
       result.sendResult(mutableListOf())
       return
     }
-    if (parentId != CAR_MEDIA_ROOT_ID) {
-      result.sendResult(mutableListOf())
-      return
-    }
-    val presentation = DaymarkCarPresentation.create(this)
-    val description =
-      MediaDescriptionCompat.Builder()
-        .setMediaId(CAR_GLUCOSE_MEDIA_ID)
-        .setTitle(presentation.title)
-        .setSubtitle(presentation.subtitle)
-        .setDescription(presentation.description)
-        .setIconBitmap(presentation.art)
-        .build()
-    result.sendResult(
-      mutableListOf(
-        MediaBrowserCompat.MediaItem(
-          description,
-          MediaBrowserCompat.MediaItem.FLAG_PLAYABLE,
+    when (parentId) {
+      CAR_MEDIA_ROOT_ID -> {
+        // Current Android Auto/AAOS hosts can advertise that root children must
+        // be browsable (and older hosts commonly make the same assumption).
+        // Nesting the live reading prevents our only item being silently
+        // dropped from the car launcher.
+        val description =
+          MediaDescriptionCompat.Builder()
+            .setMediaId(CAR_GLUCOSE_SECTION_ID)
+            .setTitle(getString(R.string.daymark_android_auto_section_name))
+            .setSubtitle(getString(R.string.daymark_android_auto_section_description))
+            .setIconBitmap(DaymarkCarPresentation.sectionArt())
+            .build()
+        result.sendResult(
+          mutableListOf(
+            MediaBrowserCompat.MediaItem(
+              description,
+              MediaBrowserCompat.MediaItem.FLAG_BROWSABLE,
+            )
+          )
         )
-      )
-    )
+      }
+      CAR_GLUCOSE_SECTION_ID -> {
+        val presentation = presentationForCurrentCarState()
+        val description =
+          MediaDescriptionCompat.Builder()
+            .setMediaId(CAR_GLUCOSE_MEDIA_ID)
+            .setTitle(presentation.title)
+            .setSubtitle(presentation.subtitle)
+            .setDescription(presentation.description)
+            .setIconBitmap(presentation.art)
+            .build()
+        result.sendResult(
+          mutableListOf(
+            MediaBrowserCompat.MediaItem(
+              description,
+              MediaBrowserCompat.MediaItem.FLAG_PLAYABLE,
+            )
+          )
+        )
+      }
+      else -> result.sendResult(mutableListOf())
+    }
+  }
+
+  private fun isTrustedMediaClient(clientPackageName: String, clientUid: Int): Boolean {
+    if (
+      (clientPackageName == packageName && clientUid == Process.myUid()) ||
+        clientUid == Process.SYSTEM_UID
+    ) {
+      return true
+    }
+    return runCatching {
+      MediaSessionManager.getSessionManager(this)
+        .isTrustedForMediaControl(
+          MediaSessionManager.RemoteUserInfo(
+            clientPackageName,
+            MediaSessionManager.RemoteUserInfo.UNKNOWN_PID,
+            clientUid,
+          )
+        )
+    }.getOrDefault(false)
   }
 
   private fun publish(state: Int = currentState) {
     currentState = state
-    val presentation = DaymarkCarPresentation.create(this)
+    val presentation = presentationForCurrentCarState()
     session.setMetadata(
       MediaMetadataCompat.Builder()
         .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, CAR_GLUCOSE_MEDIA_ID)
@@ -202,6 +250,7 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
         .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, presentation.subtitle)
         .putText(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, presentation.title)
         .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, presentation.subtitle)
+        .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, presentation.art)
         .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, presentation.art)
         .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, presentation.art)
         .build()
@@ -218,14 +267,14 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
         .build()
     )
     notifyChildrenChanged(CAR_MEDIA_ROOT_ID)
+    notifyChildrenChanged(CAR_GLUCOSE_SECTION_ID)
   }
 
   private fun openFullScreen() {
-    if (!DaymarkGlucoseDisplayState.androidAutoEnabled(this)) {
+    if (!canExposeGlucose()) {
       closeFullScreen()
       return
     }
-    session.isActive = true
     // T1 Arc never requests audio focus or starts playback. Paused state keeps
     // the glucose artwork visible without pretending to be an audio source.
     publish(PlaybackStateCompat.STATE_PAUSED)
@@ -233,8 +282,20 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
 
   private fun closeFullScreen() {
     publish(PlaybackStateCompat.STATE_STOPPED)
-    session.isActive = false
   }
+
+  private fun canExposeGlucose(): Boolean =
+    shouldExposeAndroidAutoGlucose(
+      enabled = DaymarkGlucoseDisplayState.androidAutoEnabled(this),
+      projected = DaymarkAndroidAuto.isProjected(),
+    )
+
+  private fun presentationForCurrentCarState(): CarPresentation =
+    if (canExposeGlucose()) {
+      DaymarkCarPresentation.create(this)
+    } else {
+      DaymarkCarPresentation.privatePlaceholder()
+    }
 
   companion object {
     @Volatile private var instance: DaymarkCarMediaBrowserService? = null
@@ -246,7 +307,7 @@ class DaymarkCarMediaBrowserService : MediaBrowserServiceCompat() {
 
     internal fun connectionChanged(connected: Boolean) {
       if (connected) {
-        instance?.publish(PlaybackStateCompat.STATE_PAUSED)
+        instance?.publish(PlaybackStateCompat.STATE_STOPPED)
       } else {
         instance?.closeFullScreen()
       }
@@ -259,9 +320,45 @@ private data class CarPresentation(
   val subtitle: String,
   val description: String,
   val art: Bitmap,
+  val timestampMs: Long?,
 )
 
 private object DaymarkCarPresentation {
+  fun privatePlaceholder() =
+    CarPresentation(
+      title = "T1 Arc",
+      subtitle = "Connect Android Auto to view glucose",
+      description = "Private glucose is hidden outside Android Auto",
+      art = sectionArt(),
+      timestampMs = null,
+    )
+
+  fun sectionArt(): Bitmap {
+    val size = 192
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val path =
+      Path().apply {
+        moveTo(14f, 100f)
+        lineTo(48f, 100f)
+        lineTo(67f, 55f)
+        lineTo(100f, 145f)
+        lineTo(121f, 100f)
+        lineTo(178f, 100f)
+      }
+    canvas.drawPath(
+      path,
+      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 14f
+      },
+    )
+    return bitmap
+  }
+
   fun create(context: Context): CarPresentation {
     val snapshot = DaymarkGlucoseDisplayState.snapshot(context)
     if (snapshot == null) {
@@ -270,6 +367,7 @@ private object DaymarkCarPresentation {
         subtitle = "Open T1 Arc on your phone",
         description = "T1 Arc glucose unavailable",
         art = renderArt(context, null),
+        timestampMs = null,
       )
     }
     val arrow = trendArrow(snapshot.trend)
@@ -290,6 +388,7 @@ private object DaymarkCarPresentation {
           "T1 Arc current glucose"
         },
       art = renderArt(context, snapshot),
+      timestampMs = snapshot.timestampMs,
     )
   }
 
@@ -485,8 +584,17 @@ private object DaymarkCarNotification {
   }
 
   fun show(context: Context) {
-    if (!connected || !DaymarkGlucoseDisplayState.androidAutoEnabled(context)) return
+    if (
+      !connected ||
+        !shouldExposeAndroidAutoGlucose(
+          enabled = DaymarkGlucoseDisplayState.androidAutoEnabled(context),
+          projected = DaymarkAndroidAuto.isProjected(),
+        )
+    ) {
+      return
+    }
     val presentation = DaymarkCarPresentation.create(context)
+    val readingTime = presentation.timestampMs ?: System.currentTimeMillis()
     ensureChannel(context)
     val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
     val contentIntent =
@@ -506,17 +614,40 @@ private object DaymarkCarNotification {
           .setAction(CAR_NOTIFICATION_DISMISS_ACTION),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )
+    val replyIntent =
+      PendingIntent.getBroadcast(
+        context,
+        CAR_NOTIFICATION_ID + 2,
+        Intent(context, DaymarkCarNotificationReceiver::class.java)
+          .setAction(CAR_NOTIFICATION_REPLY_ACTION),
+        // Android Auto must add the voice RemoteInput result before sending.
+        // The intent remains explicit and scoped to T1 Arc's private receiver.
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+      )
     val person = Person.Builder().setName(presentation.title).setImportant(true).build()
     val remoteInput =
       RemoteInput.Builder(CAR_NOTIFICATION_REPLY_KEY)
-        .setLabel("Open T1 Arc")
+        .setLabel("Refresh glucose")
         .build()
-    val invisibleAction =
+    val refreshAction =
       NotificationCompat.Action.Builder(
-        0,
-        "Open",
+        R.drawable.daymark_notification_pulse,
+        "Refresh",
+        replyIntent,
+      )
+        .addRemoteInput(remoteInput)
+        .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+        .setShowsUserInterface(false)
+        .build()
+    val dismissAction =
+      NotificationCompat.Action.Builder(
+        R.drawable.daymark_notification_pulse,
+        "Dismiss",
         dismissIntent,
-      ).addRemoteInput(remoteInput).build()
+      )
+        .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+        .setShowsUserInterface(false)
+        .build()
     val notification =
       NotificationCompat.Builder(context, CAR_NOTIFICATION_CHANNEL_ID)
         .setSmallIcon(R.drawable.daymark_notification_pulse)
@@ -524,8 +655,10 @@ private object DaymarkCarNotification {
         .setContentText(presentation.subtitle)
         .setStyle(
           NotificationCompat.MessagingStyle(person)
-            .addMessage(presentation.subtitle, System.currentTimeMillis(), person)
+            .addMessage(presentation.subtitle, readingTime, person)
         )
+        .setWhen(readingTime)
+        .setShowWhen(true)
         .setCategory(NotificationCompat.CATEGORY_MESSAGE)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -535,7 +668,8 @@ private object DaymarkCarNotification {
         .setContentIntent(contentIntent)
         .setDeleteIntent(dismissIntent)
         .extend(CarAppExtender.Builder().setImportance(NotificationManager.IMPORTANCE_HIGH).build())
-        .addInvisibleAction(invisibleAction)
+        .addInvisibleAction(refreshAction)
+        .addInvisibleAction(dismissAction)
     CarNotificationManager.from(context).notify(CAR_NOTIFICATION_ID, notification)
   }
 
@@ -561,8 +695,9 @@ private object DaymarkCarNotification {
 
 class DaymarkCarNotificationReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent?) {
-    if (intent?.action == CAR_NOTIFICATION_DISMISS_ACTION) {
-      DaymarkCarNotification.cancel(context)
+    when (intent?.action) {
+      CAR_NOTIFICATION_REPLY_ACTION -> DaymarkCarNotification.show(context.applicationContext)
+      CAR_NOTIFICATION_DISMISS_ACTION -> DaymarkCarNotification.cancel(context.applicationContext)
     }
   }
 }

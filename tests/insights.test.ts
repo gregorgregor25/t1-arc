@@ -225,7 +225,7 @@ describe('evidence-backed insights', () => {
         dailyInsulinTotals: [
           {
             id: sourceTotalId,
-            sourceId: 'glooko-export',
+            sourceId: 'demo-glooko',
             timestamp: firstDay.end - 1,
             dateKey: currentStartDate,
             totalUnits: detailed.totalUnits + 10,
@@ -504,6 +504,80 @@ describe('evidence-backed insights', () => {
     expect(rankGlucoseEpisodes([...lows, ...highs], 1)[0]?.id).toBe(
       highs[0]?.id,
     );
+  });
+
+  it('keeps sustained high and low run evidence in separate references', () => {
+    const end = Date.parse('2026-07-26T00:00:00+01:00');
+    const week = 7 * 24 * 60 * 60_000;
+    const makeWindow = (start: number, withExcursions: boolean): TimelineData => {
+      const glucose: GlucoseReading[] = [];
+      for (
+        let timestamp = start, index = 0;
+        timestamp < start + week;
+        timestamp += 5 * 60_000, index += 1
+      ) {
+        let mmolL = 6.5;
+        if (withExcursions && (index === 12 || index === 13)) mmolL = 11.2;
+        if (withExcursions && (index === 30 || index === 31)) mmolL = 3.5;
+        glucose.push({
+          id: `glucose:${timestamp}`,
+          timestamp,
+          receivedAt: timestamp,
+          mmolL,
+          trend: 'flat',
+          quality: 'measured',
+          sourceId: 'test-glucose',
+        });
+      }
+      return {
+        range: { start, end: start + week },
+        glucose,
+        basal: [],
+        boluses: [],
+        context: [],
+        sources: [
+          {
+            id: 'insulin-not-connected',
+            label: 'Insulin',
+            detail: 'Not connected',
+            freshness: 'missing',
+            origin: 'delayed',
+            isLive: false,
+          },
+        ],
+      };
+    };
+    const report = buildInsightReport(
+      makeWindow(end - week, true),
+      makeWindow(end - 2 * week, false),
+      end,
+    );
+    const evidence = report.findings.find(
+      (finding) => finding.id === 'glucose-runs',
+    )?.evidence;
+
+    expect(
+      evidence?.find(
+        (reference) => reference.id === 'current-high-glucose-runs',
+      )?.label,
+    ).toBe('Recent sustained high runs');
+    expect(
+      evidence?.find(
+        (reference) => reference.id === 'current-low-glucose-runs',
+      )?.label,
+    ).toBe('Recent sustained low runs');
+    expect(
+      evidence
+        ?.find(
+          (reference) => reference.id === 'current-high-glucose-runs',
+        )
+        ?.examples.every((example) => Number.parseFloat(example.primary) > 10),
+    ).toBe(true);
+    expect(
+      evidence
+        ?.find((reference) => reference.id === 'current-low-glucose-runs')
+        ?.examples.every((example) => Number.parseFloat(example.primary) < 3.9),
+    ).toBe(true);
   });
 
   it('builds an auditable response for a meal with continuous glucose', () => {

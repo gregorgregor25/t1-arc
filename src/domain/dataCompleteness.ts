@@ -6,6 +6,7 @@ import {
 } from './models';
 import { calculateInsulinStats } from './stats';
 import { addDays, DateKey, zonedDateTimeToTimestamp } from './time';
+import { selectLatestInsulinDailyTotals } from './timelineInsulinSummary';
 
 const GLUCOSE_OBSERVED_WINDOW_MS = 12 * 60 * 1000;
 
@@ -172,28 +173,9 @@ function basalCoverage(deliveries: BasalDelivery[], range: TimeRange) {
 export function buildInsulinReconciliation(
   data: TimelineData,
 ): InsulinReconciliation | undefined {
-  const latestTotalByDate = new Map<
-    string,
-    NonNullable<TimelineData['dailyInsulinTotals']>[number]
-  >();
-  (data.dailyInsulinTotals ?? [])
-    .filter(
-      (total) =>
-        total.timestamp >= data.range.start &&
-        total.timestamp < data.range.end,
-    )
-    .forEach((total) => {
-      const previous = latestTotalByDate.get(total.dateKey);
-      if (
-        !previous ||
-        (total.importedAt ?? 0) > (previous.importedAt ?? 0) ||
-        ((total.importedAt ?? 0) === (previous.importedAt ?? 0) &&
-          total.timestamp > previous.timestamp)
-      ) {
-        latestTotalByDate.set(total.dateKey, total);
-      }
-    });
-  const reportedTotals = [...latestTotalByDate.values()]
+  const reportedTotals = selectLatestInsulinDailyTotals(
+    data.dailyInsulinTotals ?? [],
+  )
     .filter((total) => {
       const dateKey = total.dateKey as DateKey;
       const start = zonedDateTimeToTimestamp(dateKey);
@@ -209,36 +191,55 @@ export function buildInsulinReconciliation(
     );
   if (!reportedTotals.length) return undefined;
 
-  const reportedRanges = reportedTotals.map((total) => {
+  const reportedDays = reportedTotals.map((total) => {
     const dateKey = total.dateKey as DateKey;
     return {
+      total,
       start: zonedDateTimeToTimestamp(dateKey),
       end: zonedDateTimeToTimestamp(addDays(dateKey, 1)),
     };
   });
   const selectedBasal = data.basal.filter((delivery) =>
-    reportedRanges.some(
-      (range) => delivery.start < range.end && delivery.end > range.start,
+    reportedDays.some(
+      (day) =>
+        delivery.sourceId === day.total.sourceId &&
+        (day.total.sourceDeviceId === undefined ||
+          delivery.sourceDeviceId === day.total.sourceDeviceId) &&
+        delivery.start < day.end &&
+        delivery.end > day.start,
     ),
   );
   const selectedBoluses = data.boluses.filter((delivery) =>
-    reportedRanges.some(
-      (range) =>
-        delivery.timestamp >= range.start &&
-        delivery.timestamp < range.end,
+    reportedDays.some(
+      (day) =>
+        delivery.sourceId === day.total.sourceId &&
+        (day.total.sourceDeviceId === undefined ||
+          delivery.sourceDeviceId === day.total.sourceDeviceId) &&
+        delivery.timestamp >= day.start &&
+        delivery.timestamp < day.end,
     ),
   );
-  const organised = reportedRanges.reduce(
-    (total, range) => {
-      const day = calculateInsulinStats(
-        selectedBasal,
-        selectedBoluses,
-        range,
+  const organised = reportedDays.reduce(
+    (sum, reportedDay) => {
+      const calculated = calculateInsulinStats(
+        selectedBasal.filter(
+          (delivery) =>
+            delivery.sourceId === reportedDay.total.sourceId &&
+            (reportedDay.total.sourceDeviceId === undefined ||
+              delivery.sourceDeviceId === reportedDay.total.sourceDeviceId),
+        ),
+        selectedBoluses.filter(
+          (delivery) =>
+            delivery.sourceId === reportedDay.total.sourceId &&
+            (reportedDay.total.sourceDeviceId === undefined ||
+              delivery.sourceDeviceId === reportedDay.total.sourceDeviceId),
+        ),
+        { start: reportedDay.start, end: reportedDay.end },
       );
       return {
-        basalUnits: total.basalUnits + day.basalUnits,
-        bolusUnits: total.bolusUnits + day.bolusUnits,
-        totalUnits: total.totalUnits + day.totalUnits,
+        basalUnits: sum.basalUnits + calculated.basalUnits,
+        bolusUnits: sum.bolusUnits + calculated.bolusUnits,
+        totalUnits: sum.totalUnits + calculated.totalUnits,
       };
     },
     { basalUnits: 0, bolusUnits: 0, totalUnits: 0 },

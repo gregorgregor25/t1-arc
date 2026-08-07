@@ -864,7 +864,15 @@ export function GlookoImportCard() {
 
         <View style={[styles.syncFacts, { borderTopColor: colors.divider }]}>
           <SyncFact
-            label="Last checked"
+            label="Last attempt"
+            value={
+              glookoSyncState.lastAttemptAt === undefined
+                ? 'Not yet'
+                : relativeAge(glookoSyncState.lastAttemptAt, now)
+            }
+          />
+          <SyncFact
+            label="Last success"
             value={
               (glookoSyncState.lastCheckedAt ??
                 glookoSyncState.lastSuccessAt) === undefined

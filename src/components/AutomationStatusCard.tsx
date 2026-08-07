@@ -19,6 +19,13 @@ import {
 } from '@/data/background/automationRunLog';
 import type { AutomationDataEvidence } from '@/data/background/automationEvidence';
 import {
+  AutomationConnectorIssue,
+  automationIssueDetail,
+  automationIssueForOutcome,
+  automationIssueMeta,
+  automationOutcomeWithIssue,
+} from '@/data/background/automationIssue';
+import {
   AutomationStatus,
   getAutomationStatus,
 } from '@/data/background/automationStatus';
@@ -153,6 +160,7 @@ function ConnectorRow({
   item,
   registered,
   run,
+  issue,
   evidence,
   timing,
   now,
@@ -161,6 +169,7 @@ function ConnectorRow({
   item: ConnectorPresentation;
   registered: boolean;
   run?: AutomationRun;
+  issue?: AutomationConnectorIssue;
   evidence: AutomationDataEvidence;
   timing: AutomationTiming;
   now: number;
@@ -169,12 +178,17 @@ function ConnectorRow({
   const { colors, radius } = useAppTheme();
   const staleRunning =
     run?.outcome === 'running' && now - run.startedAt > 15 * 60 * 1000;
-  const presentation = run
+  const visibleIssue = automationIssueForOutcome(run?.outcome, issue);
+  const effectiveOutcome = automationOutcomeWithIssue(
+    run?.outcome,
+    visibleIssue,
+  );
+  const presentation = effectiveOutcome
     ? outcomePresentation(
-        run.outcome,
+        effectiveOutcome,
         colors,
         staleRunning,
-        isInterruptedAutomationRun(run),
+        visibleIssue ? false : Boolean(run && isInterruptedAutomationRun(run)),
       )
     : registered
       ? {
@@ -193,6 +207,7 @@ function ConnectorRow({
             tone: colors.textTertiary,
           };
   const detail =
+    (visibleIssue ? automationIssueDetail(visibleIssue) : undefined) ??
     (run ? friendlyRunDetail(run, item.label) : undefined) ??
     (registered
       ? evidence.recordCount
@@ -201,11 +216,13 @@ function ConnectorRow({
       : evidence.recordCount
         ? 'Stored data is available; automatic updates are not enabled.'
         : item.disabledDetail);
-  const meta = automationEvidenceMeta(
-    evidence,
-    now,
-    run?.completedAt ?? run?.startedAt,
-  );
+  const meta = visibleIssue
+    ? automationIssueMeta(visibleIssue, evidence, now)
+    : automationEvidenceMeta(
+        evidence,
+        now,
+        run?.completedAt ?? run?.startedAt,
+      );
 
   return (
     <View
@@ -349,13 +366,19 @@ export function AutomationStatusCard() {
   const registeredCount = status
     ? Object.values(status.registered).filter(Boolean).length
     : 0;
-  const hasAttention = [...latestByConnector.values()].some(
-    (run) =>
-      run.outcome === 'failed' ||
-      run.outcome === 'needs-attention' ||
-      run.outcome === 'partial' ||
-      isInterruptedAutomationRun(run),
-  );
+  const hasAttention = CONNECTORS.some(({ connector }) => {
+    const run = latestByConnector.get(connector);
+    const outcome = automationOutcomeWithIssue(
+      run?.outcome,
+      status?.issues[connector],
+    );
+    return (
+      outcome === 'failed' ||
+      outcome === 'needs-attention' ||
+      outcome === 'partial' ||
+      Boolean(run && isInterruptedAutomationRun(run))
+    );
+  });
   const overall = !status?.schedulerAvailable
     ? { label: 'Unavailable', tone: colors.danger }
     : hasAttention
@@ -478,6 +501,7 @@ export function AutomationStatusCard() {
               now={status.checkedAt}
               registered={status.registered[item.connector]}
               run={latestByConnector.get(item.connector)}
+              issue={status.issues[item.connector]}
               evidence={status.evidence[item.connector]}
               timing={status.timing[item.connector]}
             />

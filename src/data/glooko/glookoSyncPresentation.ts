@@ -32,6 +32,26 @@ function requestedRangeCopy(state: GlookoSyncState) {
   return start === end ? start : `${start}–${end}`;
 }
 
+function latestAttemptCopy(
+  state: GlookoSyncState,
+  now: number,
+  outcome: 'failed' | 'needs sign-in',
+) {
+  return state.lastAttemptAt === undefined
+    ? `Latest attempt ${outcome}`
+    : `Latest attempt ${outcome} ${relativeAge(
+        state.lastAttemptAt,
+        now,
+      ).toLowerCase()}`;
+}
+
+function lastSuccessfulCheckCopy(state: GlookoSyncState, now: number) {
+  const successfulAt = state.lastCheckedAt ?? state.lastSuccessAt;
+  return successfulAt === undefined
+    ? 'No successful automatic check has completed yet'
+    : `Last successful check ${relativeAge(successfulAt, now).toLowerCase()}`;
+}
+
 export function presentGlookoSyncState(
   state: GlookoSyncState,
   now = Date.now(),
@@ -45,13 +65,13 @@ export function presentGlookoSyncState(
   if (state.sessionStatus === 'needs-sign-in') {
     return {
       tone: 'attention',
-      message: 'Glooko sign-in needs updating before automatic checks can continue.',
+      message: `${latestAttemptCopy(state, now, 'needs sign-in')}. ${lastSuccessfulCheckCopy(state, now)}. Glooko sign-in needs updating before automatic checks can continue.`,
     };
   }
   if (state.lastErrorMessage) {
     return {
       tone: 'attention',
-      message: `The last Glooko check failed. T1 Arc will retry automatically. ${state.lastErrorMessage}`,
+      message: `${latestAttemptCopy(state, now, 'failed')}. ${lastSuccessfulCheckCopy(state, now)}. T1 Arc will retry automatically. ${state.lastErrorMessage}`,
     };
   }
   const checkedAt = state.lastCheckedAt ?? state.lastSuccessAt;
@@ -62,19 +82,25 @@ export function presentGlookoSyncState(
     };
   }
   const checkedCopy = `Checked ${relativeAge(checkedAt, now).toLowerCase()}`;
+  const sourceIsStale =
+    state.dataThrough !== undefined &&
+    now - state.dataThrough > UPSTREAM_STALE_AFTER_MS;
+  if (sourceIsStale) {
+    const staleContext =
+      state.lastCheckOutcome === 'empty-range'
+        ? `${checkedCopy}. Glooko returned no supported records for ${requestedRangeCopy(state)}; the empty check was recorded, but`
+        : state.lastCheckOutcome === 'new-data'
+          ? `${checkedCopy}. Imported ${(state.lastInsertedRecords ?? 0).toLocaleString('en-GB')} new record${state.lastInsertedRecords === 1 ? '' : 's'}, but`
+          : `${checkedCopy}, but`;
+    return {
+      tone: 'attention',
+      message: `${staleContext} Glooko's latest record is still ${dataThroughCopy(state.dataThrough!)}. Check that the current pump or replacement controller is linked to this Glooko account.`,
+    };
+  }
   if (state.lastCheckOutcome === 'empty-range') {
     return {
       tone: 'healthy',
       message: `${checkedCopy}. Glooko returned no supported records for ${requestedRangeCopy(state)}; the empty check was recorded.`,
-    };
-  }
-  const sourceIsStale =
-    state.dataThrough !== undefined &&
-    now - state.dataThrough > UPSTREAM_STALE_AFTER_MS;
-  if (state.lastCheckOutcome === 'no-new-data' && sourceIsStale) {
-    return {
-      tone: 'attention',
-      message: `${checkedCopy}, but Glooko's latest record is still ${dataThroughCopy(state.dataThrough!)}. Check that the current pump or replacement controller is linked to this Glooko account.`,
     };
   }
   if (state.lastCheckOutcome === 'no-new-data') {

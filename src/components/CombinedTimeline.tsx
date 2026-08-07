@@ -47,6 +47,7 @@ import {
 } from '@/domain/timelineSampling';
 import {
   describeInsulinTimelineFidelity,
+  selectLatestInsulinDailyTotals,
   summarizeInsulinByDay,
 } from '@/domain/timelineInsulinSummary';
 import { presentTrend } from '@/domain/trend';
@@ -322,10 +323,14 @@ export function CombinedTimeline({
     [data],
   );
   const duration = data.range.end - data.range.start;
+  const latestDailyTotals = useMemo(
+    () => selectLatestInsulinDailyTotals(data.dailyInsulinTotals ?? []),
+    [data.dailyInsulinTotals],
+  );
   const showDailyInsulinSummary =
     duration >= DAILY_INSULIN_SUMMARY_THRESHOLD_MS;
   const hasDetailedBasal = data.basal.length > 0;
-  const hasReportedBasal = (data.dailyInsulinTotals ?? []).some(
+  const hasReportedBasal = latestDailyTotals.some(
     (total) => total.basalUnits !== undefined,
   );
   const plotRight = Math.max(PLOT_LEFT + 1, width - AXIS_WIDTH);
@@ -371,13 +376,13 @@ export function CombinedTimeline({
             data.basal,
             data.boluses,
             data.range,
-            data.dailyInsulinTotals,
+            latestDailyTotals,
           )
         : [],
     [
       data.basal,
       data.boluses,
-      data.dailyInsulinTotals,
+      latestDailyTotals,
       data.range,
       showDailyInsulinSummary,
     ],
@@ -386,9 +391,18 @@ export function CombinedTimeline({
     1,
     ...dailyInsulin.map((summary) => summary.totalUnits),
   );
+  const hasDailyUnsplitInsulin = dailyInsulin.some(
+    (summary) => summary.sourceMinusBreakdownUnits >= 0.05,
+  );
+  const hasDailyBreakdownConflict = dailyInsulin.some(
+    (summary) => summary.sourceMinusBreakdownUnits <= -0.05,
+  );
+  const insulinFidelityDetail = hasDailyBreakdownConflict
+    ? `${insulinFidelity.detail} A conflicting source total is shown without treating the larger component records as its breakdown.`
+    : insulinFidelity.detail;
   const shortRangeBasalTotals = showDailyInsulinSummary
     ? []
-    : (data.dailyInsulinTotals ?? []).filter(
+    : latestDailyTotals.filter(
         (total) => total.basalUnits !== undefined,
       );
   const maxShortRangeBasal = Math.max(
@@ -463,7 +477,7 @@ export function CombinedTimeline({
   const selectedDailyTotal =
     selectedTimestamp === undefined
       ? undefined
-      : data.dailyInsulinTotals?.find(
+      : latestDailyTotals.find(
           (total) => total.dateKey === toDateKey(selectedTimestamp),
         );
   const selectedPumpStates =
@@ -578,6 +592,20 @@ export function CombinedTimeline({
               shape={showDailyInsulinSummary ? 'bar' : 'stem'}
             />
         ) : null}
+        {hasDailyUnsplitInsulin ? (
+          <LegendKey
+            color={colors.textTertiary}
+            label="Daily total not split"
+            shape="bar"
+          />
+        ) : null}
+        {hasDailyBreakdownConflict ? (
+          <LegendKey
+            color={colors.warning}
+            label="Source total · component conflict"
+            shape="bar"
+          />
+        ) : null}
         {(data.pumpStates ?? []).some(
           (state) => state.kind === 'activity-mode',
         ) ? (
@@ -599,7 +627,7 @@ export function CombinedTimeline({
       </View>
 
       <View
-        accessibilityLabel={`Insulin data detail: ${insulinFidelity.label}. ${insulinFidelity.detail}`}
+        accessibilityLabel={`Insulin data detail: ${insulinFidelity.label}. ${insulinFidelityDetail}`}
         style={[
           styles.fidelityNotice,
           {
@@ -612,7 +640,7 @@ export function CombinedTimeline({
           {insulinFidelity.label}
         </Text>
         <Text style={[styles.fidelityDetail, { color: colors.textSecondary }]}>
-          {insulinFidelity.detail}
+          {insulinFidelityDetail}
         </Text>
       </View>
 
@@ -784,7 +812,30 @@ export function CombinedTimeline({
                         const bolusHeight =
                           (summary.bolusUnits / maxDailyInsulin) *
                           (insulinBottom - insulinTop);
+                        const unsplitHeight =
+                          (Math.max(0, summary.sourceMinusBreakdownUnits) /
+                            maxDailyInsulin) *
+                          (insulinBottom - insulinTop);
+                        const sourceTotalHeight =
+                          (summary.totalUnits / maxDailyInsulin) *
+                          (insulinBottom - insulinTop);
                         const barX = startX + 0.75;
+                        if (summary.sourceMinusBreakdownUnits <= -0.05) {
+                          return [
+                            <Rect
+                              key={`${summary.dateKey}:source-total-conflict`}
+                              x={barX}
+                              y={insulinBottom - sourceTotalHeight}
+                              width={barWidth}
+                              height={sourceTotalHeight}
+                              fill={colors.warning}
+                              fillOpacity={0.28}
+                              stroke={colors.warning}
+                              strokeOpacity={0.72}
+                              strokeWidth={1}
+                            />,
+                          ];
+                        }
                         return [
                           <Rect
                             key={`${summary.dateKey}:basal`}
@@ -808,6 +859,22 @@ export function CombinedTimeline({
                             fill={colors.primary}
                             fillOpacity={0.82}
                           />,
+                          unsplitHeight > 0 ? (
+                            <Rect
+                              key={`${summary.dateKey}:unsplit`}
+                              x={barX}
+                              y={
+                                insulinBottom -
+                                basalHeight -
+                                bolusHeight -
+                                unsplitHeight
+                              }
+                              width={barWidth}
+                              height={unsplitHeight}
+                              fill={colors.textTertiary}
+                              fillOpacity={0.55}
+                            />
+                          ) : null,
                         ];
                       })
                     : (

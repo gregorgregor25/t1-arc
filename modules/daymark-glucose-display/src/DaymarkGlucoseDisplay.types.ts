@@ -38,6 +38,7 @@ export interface GlucoseDisplayStatus {
   aodServiceEnabled: boolean;
   aodOverlayVisible: boolean;
   androidAutoEnabled: boolean;
+  androidAutoProjected: boolean;
   aodLastEvent?: string;
   aodLastError?: string;
   latestMmolL?: number;
