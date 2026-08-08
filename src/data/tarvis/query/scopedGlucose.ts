@@ -24,6 +24,8 @@ import {
 const DEFAULT_BIN_MINUTES = 15;
 const DEFAULT_MAXIMUM_OBSERVED_GAP_MINUTES = 12;
 const DEFAULT_MINIMUM_AGGREGATE_CONTRIBUTORS = 2;
+const PHYSIOLOGICAL_SAMPLE_NORMALIZATION_VERSION =
+  'same-timestamp-records-averaged-v1' as const;
 
 function round(value: number, decimals: number) {
   const factor = 10 ** decimals;
@@ -133,6 +135,14 @@ function mean(values: readonly number[]) {
   );
 }
 
+function physiologicalSampleMean(
+  readings: readonly ScopedGlucoseReadingInput[],
+) {
+  return mean(
+    groupReadingsAtTimestamp(readings).map(({ mmolL }) => mmolL),
+  );
+}
+
 function coverage(
   range: ResolvedRecurringWindow['range'],
   intervals: readonly ScopedObservationInterval[],
@@ -145,15 +155,17 @@ function coverage(
   if (observedMilliseconds > expectedMilliseconds) {
     throw new Error('Observed glucose coverage exceeded the resolved scope.');
   }
+  const roundedPercent =
+    expectedMilliseconds > 0
+      ? round((observedMilliseconds / expectedMilliseconds) * 100, 1)
+      : 0;
   return {
     expectedMilliseconds,
     observedMilliseconds,
     expectedMinutes: round(expectedMilliseconds / 60_000, 2),
     observedMinutes: round(observedMilliseconds / 60_000, 2),
     percent:
-      expectedMilliseconds > 0
-        ? round((observedMilliseconds / expectedMilliseconds) * 100, 1)
-        : 0,
+      observedMilliseconds > 0 && roundedPercent === 0 ? 0.1 : roundedPercent,
   };
 }
 
@@ -217,21 +229,22 @@ function pointForBin(
   windowStart: number,
 ): ScopedGlucoseChartPoint {
   const recordIds = readings.map((reading) => reading.id);
+  const samples = groupReadingsAtTimestamp(readings);
   return {
     clockBinKey: `${binStartMinute}:occurrence:${clockOccurrence}`,
     minute: binStartMinute + binMinutes / 2,
     binStartMinute,
     binEndMinute: binStartMinute + binMinutes,
-    mmolL: mean(readings.map((reading) => reading.mmolL))!,
+    mmolL: mean(samples.map(({ mmolL }) => mmolL))!,
     readingCount: readings.length,
     recordIds,
     clockOccurrence,
     utcOffsetMinutes: utcOffsetMinutesAt(readings[0]!.timestamp),
     elapsedMinute: round(
-      readings.reduce(
-        (total, reading) => total + (reading.timestamp - windowStart) / 60_000,
+      samples.reduce(
+        (total, sample) => total + (sample.timestamp - windowStart) / 60_000,
         0,
-      ) / readings.length,
+      ) / samples.length,
       2,
     ),
   };
@@ -405,7 +418,7 @@ function resultForWindow(
     ...window,
     status,
     readingCount: readings.length,
-    observedMeanMmolL: mean(readings.map((reading) => reading.mmolL)),
+    observedMeanMmolL: physiologicalSampleMean(readings),
     recordIds: readings.map((reading) => reading.id),
     coverage: windowCoverage,
     observationIntervals: intervals,
@@ -484,15 +497,17 @@ function combineCoverage(windows: readonly ScopedGlucoseWindowResult[]) {
     (total, window) => total + window.coverage.observedMilliseconds,
     0,
   );
+  const roundedPercent =
+    expectedMilliseconds > 0
+      ? round((observedMilliseconds / expectedMilliseconds) * 100, 1)
+      : 0;
   return {
     expectedMilliseconds,
     observedMilliseconds,
     expectedMinutes: round(expectedMilliseconds / 60_000, 2),
     observedMinutes: round(observedMilliseconds / 60_000, 2),
     percent:
-      expectedMilliseconds > 0
-        ? round((observedMilliseconds / expectedMilliseconds) * 100, 1)
-        : 0,
+      observedMilliseconds > 0 && roundedPercent === 0 ? 0.1 : roundedPercent,
   } satisfies ScopedCoverage;
 }
 
@@ -511,6 +526,7 @@ function deterministicQueryId(
     binMinutes: options.binMinutes,
     maximumObservedGapMinutes: options.maximumObservedGapMinutes,
     minimumAggregateContributors: options.minimumAggregateContributors,
+    sampleNormalization: PHYSIOLOGICAL_SAMPLE_NORMALIZATION_VERSION,
   })}`;
 }
 
@@ -604,12 +620,13 @@ export function executeScopedGlucoseQuery(
     calculation: {
       metric: 'observed-arithmetic-mean-glucose',
       precisionDecimals: 2,
+      sampleNormalization: PHYSIOLOGICAL_SAMPLE_NORMALIZATION_VERSION,
       coverageModel: 'forward-observation-capped-at-gap',
       maximumObservedGapMinutes: options.maximumObservedGapMinutes,
       halfOpenIntervals: true,
     },
     result: {
-      observedMeanMmolL: mean(scopedRecords.map((record) => record.mmolL)),
+      observedMeanMmolL: physiologicalSampleMean(scopedRecords),
       readingCount: scopedRecords.length,
       requestedWindowCount: query.windowCount,
       windowsWithData: windows.filter((window) => window.readingCount > 0)

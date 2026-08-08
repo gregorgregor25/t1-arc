@@ -20,11 +20,15 @@ import Svg, {
 import {
   buildEvidenceClockWindowAccessibilitySummary,
   buildEvidenceClockWindowScale,
+  buildEvidenceClockWindowScaleForDomain,
   buildEvidenceClockWindowTicks,
   EvidenceClockWindowAggregatePoint,
   EvidenceClockWindowDomain,
   EvidenceClockWindowOccurrence,
   EvidenceClockWindowTargetRange,
+  EvidenceClockWindowTraceSemantics,
+  EvidenceClockWindowValueDomain,
+  evidenceClockWindowTracePattern,
   evidenceClockWindowPath,
   formatEvidenceClockMinute,
   formatEvidenceClockWindow,
@@ -61,10 +65,7 @@ const LIGHT_TRACE_COLORS = [
   '#356AC3',
   '#6B6400',
 ];
-const TRACE_DASHES = [undefined, '8 4', '2 4', '10 3 2 3'] as const;
-const MARKERS = ['circle', 'square', 'diamond', 'triangle'] as const;
-
-type Marker = (typeof MARKERS)[number];
+type Marker = 'circle' | 'square' | 'diamond' | 'triangle';
 
 export interface EvidenceClockWindowOverlayProps {
   aggregatePoints: EvidenceClockWindowAggregatePoint[];
@@ -79,17 +80,22 @@ export interface EvidenceClockWindowOverlayProps {
   onExpand?(): void;
   subtitle: string;
   targetRange?: EvidenceClockWindowTargetRange;
+  targetRangePolicy?: 'persisted-only';
   title: string;
+  traceSemantics?: EvidenceClockWindowTraceSemantics;
   units: string;
+  valueDomain?: EvidenceClockWindowValueDomain;
   windows: EvidenceClockWindowOccurrence[];
+  overallMeanMmolL?: number | null;
 }
 
 function traceStyle(index: number, dark: boolean) {
   const palette = dark ? DARK_TRACE_COLORS : LIGHT_TRACE_COLORS;
+  const pattern = evidenceClockWindowTracePattern(index);
   return {
     color: palette[index % palette.length]!,
-    dash: TRACE_DASHES[Math.floor(index / palette.length) % TRACE_DASHES.length],
-    marker: MARKERS[index % MARKERS.length]!,
+    dash: pattern.dash ?? undefined,
+    marker: pattern.marker,
   };
 }
 
@@ -220,9 +226,13 @@ export function EvidenceClockWindowOverlay({
   onExpand,
   subtitle,
   targetRange,
+  targetRangePolicy,
   title,
+  traceSemantics,
   units,
+  valueDomain,
   windows,
+  overallMeanMmolL,
 }: EvidenceClockWindowOverlayProps) {
   const { colors, dark, radius } = useAppTheme();
   const { settings: appearance } = useGlucoseAppearance();
@@ -283,20 +293,33 @@ export function EvidenceClockWindowOverlay({
       ...aggregateSegments.flatMap((segment) =>
         segment.map((point) => point.mmolL),
       ),
+      ...(overallMeanMmolL === undefined || overallMeanMmolL === null
+        ? []
+        : [overallMeanMmolL]),
     ],
-    [aggregateSegments, preparedWindows],
+    [aggregateSegments, overallMeanMmolL, preparedWindows],
   );
   const effectiveTargetRange = useMemo(() => {
     if (targetRange) return targetRange;
+    if (targetRangePolicy === 'persisted-only') return undefined;
     const unitMultiplier = /mg\s*\/\s*dL/i.test(units) ? 18 : 1;
     return {
       maximum: appearance.targetMax * unitMultiplier,
       minimum: appearance.targetMin * unitMultiplier,
     };
-  }, [appearance.targetMax, appearance.targetMin, targetRange, units]);
+  }, [
+    appearance.targetMax,
+    appearance.targetMin,
+    targetRange,
+    targetRangePolicy,
+    units,
+  ]);
   const scale = useMemo(
-    () => buildEvidenceClockWindowScale(values, effectiveTargetRange),
-    [effectiveTargetRange, values],
+    () =>
+      valueDomain
+        ? buildEvidenceClockWindowScaleForDomain(valueDomain)
+        : buildEvidenceClockWindowScale(values, effectiveTargetRange),
+    [effectiveTargetRange, valueDomain, values],
   );
   const summary = useMemo(
     () =>
@@ -309,9 +332,12 @@ export function EvidenceClockWindowOverlay({
         minimumAggregateContributors,
         missingOccurrenceLabels,
         targetRange: effectiveTargetRange,
+        targetRangePolicy,
         title,
+        traceSemantics,
         units,
         windows,
+        overallMeanMmolL,
       }),
     [
       accessibilitySummary,
@@ -322,9 +348,12 @@ export function EvidenceClockWindowOverlay({
       minimumAggregateContributors,
       missingOccurrenceLabels,
       effectiveTargetRange,
+      targetRangePolicy,
       title,
+      traceSemantics,
       units,
       windows,
+      overallMeanMmolL,
     ],
   );
   const missing = useMemo(
@@ -511,6 +540,30 @@ export function EvidenceClockWindowOverlay({
               </G>
             ))}
 
+            {overallMeanMmolL !== undefined && overallMeanMmolL !== null ? (
+              <G>
+                <Line
+                  stroke={colors.primary}
+                  strokeDasharray="6 3"
+                  strokeWidth={2}
+                  x1={LEFT}
+                  x2={LEFT + plotWidth}
+                  y1={y(overallMeanMmolL)}
+                  y2={y(overallMeanMmolL)}
+                />
+                <SvgText
+                  fill={colors.primary}
+                  fontSize={8}
+                  fontWeight="800"
+                  textAnchor="end"
+                  x={LEFT + plotWidth - 3}
+                  y={Math.max(TOP + 9, y(overallMeanMmolL) - 4)}
+                >
+                  OVERALL {formatEvidenceClockWindowValue(overallMeanMmolL, units)}
+                </SvgText>
+              </G>
+            ) : null}
+
             {preparedWindows.map(({ index, segments, window }) => {
               const visual = traceStyle(index, dark);
               const finalSegment = segments[segments.length - 1]!;
@@ -655,7 +708,15 @@ export function EvidenceClockWindowOverlay({
                 marker="circle"
               />
               <Text style={[styles.legendText, { color: colors.textSecondary }]}>
-                15-minute average
+                {traceSemantics?.binMinutes ?? 15}-minute profile average
+              </Text>
+            </View>
+          ) : null}
+          {overallMeanMmolL !== undefined && overallMeanMmolL !== null ? (
+            <View style={styles.legendItem}>
+              <LegendSample color={colors.primary} dash="6 3" marker="diamond" />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>
+                Exact overall answer mean {overallMeanMmolL.toFixed(1)} {units}
               </Text>
             </View>
           ) : null}
@@ -685,7 +746,11 @@ export function EvidenceClockWindowOverlay({
         </View>
       ) : null}
 
-      {contributorSummary || hasGaps || hasClockChanges || missing.length ? (
+      {contributorSummary ||
+      traceSemantics ||
+      hasGaps ||
+      hasClockChanges ||
+      missing.length ? (
         <View
           style={[
             styles.notes,
@@ -702,6 +767,22 @@ export function EvidenceClockWindowOverlay({
               />
               <Text style={[styles.noteText, { color: colors.textSecondary }]}>
                 {contributorSummary}.
+              </Text>
+            </View>
+          ) : null}
+          {traceSemantics ? (
+            <View style={styles.noteRow}>
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.textTertiary}
+                name="analytics-outline"
+                size={14}
+              />
+              <Text style={[styles.noteText, { color: colors.textSecondary }]}>
+                Thin traces are {traceSemantics.binMinutes}-minute clock-bin
+                averages for each occurrence. The thick line is an equal-occurrence
+                profile average; the dashed horizontal line is the exact overall
+                answer mean.
               </Text>
             </View>
           ) : null}

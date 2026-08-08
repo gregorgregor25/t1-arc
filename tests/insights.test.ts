@@ -531,7 +531,7 @@ describe('evidence-backed insights', () => {
 
     it('publishes the complete start, recovery, and gap convention', () => {
       expect(GLUCOSE_EPISODE_DEFINITION_VERSION).toBe(
-        'consensus-15m-start-recovery-daymark-gap12-v2',
+        'consensus-15m-start-recovery-daymark-gap12-canonical-v3',
       );
     });
 
@@ -597,6 +597,7 @@ describe('evidence-backed insights', () => {
       expect(episodes[0]).toMatchObject({
         start,
         end: start + 45 * 60_000,
+        endStatus: 'confirmed-recovery',
       });
       expect(glucoseEpisodeDurationMinutes(episodes[0]!)).toBe(45);
     });
@@ -646,6 +647,7 @@ describe('evidence-backed insights', () => {
 
       expect(episodes).toHaveLength(1);
       expect(episodes[0]?.end).toBe(start + 20 * 60_000);
+      expect(episodes[0]?.endStatus).toBe('confirmed-recovery');
     });
 
     it('breaks continuity when any consecutive sensor gap exceeds 12 minutes', () => {
@@ -688,6 +690,7 @@ describe('evidence-backed insights', () => {
 
       expect(episodes).toHaveLength(1);
       expect(episodes[0]?.end).toBe(start + 15 * 60_000);
+      expect(episodes[0]?.endStatus).toBe('sensor-gap');
     });
 
     it('applies the same recovery state machine to low episodes and treats the threshold as recovered', () => {

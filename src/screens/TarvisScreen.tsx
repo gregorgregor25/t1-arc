@@ -21,6 +21,7 @@ import {
 import { AppScreen } from '@/components/AppScreen';
 import { SectionCard } from '@/components/SectionCard';
 import { buildTarvisEvidencePacket } from '@/data/tarvis/evidencePacket';
+import { compactTarvisEvidence } from '@/data/tarvis/evidenceCompaction';
 import {
   buildTarvisEvidencePresentation,
   TarvisEvidencePresentation,
@@ -28,6 +29,7 @@ import {
 import { askTarvis } from '@/data/tarvis/openAiClient';
 import {
   buildLocalGlucoseAnswer,
+  localGlucoseClockBoundaryCapability,
   rangeForLocalGlucoseIntent,
 } from '@/data/tarvis/localGlucoseAnswer';
 import {
@@ -39,12 +41,16 @@ import { classifyTarvisSafety } from '@/data/tarvis/safety';
 import {
   clearTarvisConversation,
   loadTarvisConversation,
+  MAX_STORED_TARVIS_EXCHANGES,
   saveTarvisConversation,
   StoredTarvisExchange,
+  TarvisConversationStorageLimitError,
 } from '@/data/tarvis/conversationStore';
 import { formatTarvisConversation } from '@/data/tarvis/conversationExport';
 import { requestedTarvisPeriodDays } from '@/data/tarvis/scope';
+import type { GlucoseAnswerBundleV2 } from '@/data/tarvis/glucoseAnswerBundleV2';
 import {
+  describeTarvisIntent,
   isReadyTarvisIntent,
   PendingTarvisClarification,
   resolveTarvisClarificationReply,
@@ -86,6 +92,7 @@ interface ChatExchange {
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
   requestMetrics?: TarvisRequestMetrics;
+  answerBundle?: GlucoseAnswerBundleV2;
 }
 
 interface Props {
@@ -396,6 +403,7 @@ export function TarvisScreen({
             intent: exchange.intent,
             presentation: exchange.presentation,
             requestMetrics: exchange.requestMetrics,
+            answerBundle: exchange.answerBundle,
             evidence: {
               packet: evidence.packet,
               references: new Map(
@@ -439,6 +447,7 @@ export function TarvisScreen({
       intent: exchange.intent,
       presentation: exchange.presentation,
       requestMetrics: exchange.requestMetrics,
+      answerBundle: exchange.answerBundle,
       evidence: exchange.answer.evidenceIds.flatMap((id) => {
         const reference = exchange.evidence.references.get(id);
         return reference ? [reference] : [];
@@ -454,6 +463,7 @@ export function TarvisScreen({
     presentation,
     prompt,
     requestMetrics,
+    answerBundle,
   }: {
     answer: TarvisAnswer;
     clarificationQuestion?: string;
@@ -462,6 +472,7 @@ export function TarvisScreen({
     presentation?: TarvisEvidencePresentation;
     prompt: string;
     requestMetrics?: TarvisRequestMetrics;
+    answerBundle?: GlucoseAnswerBundleV2;
   }) {
     const exchangeId = `${Date.now()}:${exchanges.length}`;
     pendingScrollExchangeId.current = exchangeId;
@@ -477,11 +488,16 @@ export function TarvisScreen({
           intent,
           presentation,
           requestMetrics,
+          answerBundle,
         },
-      ];
+      ].slice(-MAX_STORED_TARVIS_EXCHANGES);
       if (conversationLoaded) {
-        void saveTarvisConversation(storedExchanges(next)).catch(() => {
-          setError('The answer was shown, but this conversation could not be saved.');
+        void saveTarvisConversation(storedExchanges(next)).catch((reason) => {
+          setError(
+            reason instanceof TarvisConversationStorageLimitError
+              ? `The answer was shown, but it was not saved. ${reason.message}`
+              : 'The answer was shown, but this conversation could not be saved.',
+          );
         });
       }
       return next;
@@ -681,9 +697,9 @@ export function TarvisScreen({
               intent: intentResolution.intent,
               readings,
             });
-        const localEvidence = Array.isArray(local.evidence)
-          ? local.evidence
-          : [local.evidence];
+        const localEvidence = compactTarvisEvidence(
+          Array.isArray(local.evidence) ? local.evidence : [local.evidence],
+        );
         appendExchange({
           answer: local.answer,
           evidenceLookup: {
@@ -694,6 +710,7 @@ export function TarvisScreen({
           },
           intent: intentResolution.intent,
           presentation: local.presentation,
+          answerBundle: local.answerBundle,
           prompt,
         });
         return;
@@ -765,6 +782,17 @@ export function TarvisScreen({
         requestMetrics: response.requestMetrics,
       });
     } catch (reason) {
+      const clockBoundaryCapability =
+        localGlucoseClockBoundaryCapability(reason);
+      if (clockBoundaryCapability) {
+        setPendingClarification(undefined);
+        appendExchange({
+          answer: clockBoundaryCapability,
+          evidenceLookup: { packet: evidence.packet, references: new Map() },
+          prompt,
+        });
+        return;
+      }
       setQuestion(prompt);
       setError(
         reason instanceof Error
@@ -1288,6 +1316,38 @@ export function TarvisScreen({
                       </Text>
                     </View>
                   </View>
+                  {exchange.intent ? (
+                    <View
+                      accessible
+                      accessibilityLabel={`Calculated as ${describeTarvisIntent(exchange.intent)}`}
+                      style={[
+                        styles.interpretation,
+                        {
+                          backgroundColor: colors.surfaceMuted,
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        accessibilityElementsHidden
+                        color={colors.primary}
+                        name="calculator-outline"
+                        size={15}
+                      />
+                      <Text
+                        style={[
+                          styles.interpretationText,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        <Text style={styles.interpretationLabel}>
+                          Calculated as{' '}
+                        </Text>
+                        {describeTarvisIntent(exchange.intent)}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text
                     style={[styles.answerText, { color: colors.textSecondary }]}
                   >
@@ -1563,6 +1623,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 3,
   },
+  interpretation: {
+    alignItems: 'flex-start',
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  interpretationText: { flex: 1, fontSize: 11, lineHeight: 17 },
+  interpretationLabel: { fontWeight: '800' },
   answerText: { fontSize: 14, lineHeight: 22, marginTop: 13 },
   evidenceSummary: {
     borderWidth: StyleSheet.hairlineWidth,

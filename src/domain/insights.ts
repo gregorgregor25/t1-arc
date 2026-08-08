@@ -34,6 +34,7 @@ import type {
   EvidenceClockWindowTargetRange,
   EvidenceClockWindowVisualization,
 } from './evidenceClockWindowChart';
+import type { EvidenceQueryVisualizationReference } from './evidenceQueryChart';
 
 export type InsightCategory =
   | 'glucose'
@@ -75,11 +76,19 @@ export interface EvidenceCalculationReference {
   metrics: Array<{
     id:
       | 'glucose.mean'
+      | 'glucose.median'
+      | 'glucose.minimum'
+      | 'glucose.maximum'
+      | 'glucose.standard_deviation'
+      | 'glucose.coefficient_of_variation'
+      | 'glucose.gmi'
       | 'glucose.time_in_range'
       | 'glucose.low_episodes'
-      | 'glucose.high_episodes';
+      | 'glucose.high_episodes'
+      | 'glucose.low_readings'
+      | 'glucose.high_readings';
     value: number | null;
-    unit: 'mmol/L' | '%' | 'events';
+    unit: 'mmol/L' | '%' | 'events' | 'readings';
   }>;
   thresholds: Array<{
     operator: 'lt' | 'lte' | 'gt' | 'gte';
@@ -102,6 +111,9 @@ export interface EvidenceClockWindowVisualizationReference
   coverageSummary: string;
   missingOccurrenceLabels: string[];
   targetRange?: EvidenceClockWindowTargetRange;
+  /** New exact evidence never falls back to current appearance settings. */
+  targetRangePolicy?: 'persisted-only';
+  targetRangeProvenance?: 'query-thresholds';
   windows: Array<
     Omit<EvidenceClockWindowOccurrence, 'segments'> & {
       clockTransitions: Array<{
@@ -133,7 +145,17 @@ export interface EvidenceReference {
   recordIds: string[];
   examples: EvidenceRecordPreview[];
   calculation?: EvidenceCalculationReference;
-  visualization?: EvidenceClockWindowVisualizationReference;
+  visualization?:
+    | EvidenceClockWindowVisualizationReference
+    | EvidenceQueryVisualizationReference;
+  visualizationOmission?: {
+    reason: 'display-point-budget';
+    originalKind:
+      | 'recurring-clock-overlay-v1'
+      | EvidenceQueryVisualizationReference['kind'];
+    sourcePointCount: number;
+    maximumDisplayPoints: number;
+  };
 }
 
 export interface InsightFinding {
@@ -409,8 +431,14 @@ export interface GlucoseEpisode {
   thresholdMmolL: number;
   start: number;
   end: number;
-  readings: GlucoseReading[];
+  /**
+   * One deterministic physiological sample per timestamp. `recordIds` keeps
+   * every source row that contributed to a same-instant average.
+   */
+  readings: Array<GlucoseReading & { recordIds: string[] }>;
   extremeMmolL: number;
+  /** Whether `end` is a confirmed recovery or only the last observed sample. */
+  endStatus: 'confirmed-recovery' | 'sensor-gap' | 'observation-ended';
 }
 
 export interface ObservedMealWindow {
@@ -484,21 +512,62 @@ const EPISODE_RECOVERY_CONFIRMATION_MS = 15 * 60_000;
 
 /** Versioned so persisted/replayed answers can state which event convention ran. */
 export const GLUCOSE_EPISODE_DEFINITION_VERSION =
-  'consensus-15m-start-recovery-daymark-gap12-v2';
+  'consensus-15m-start-recovery-daymark-gap12-canonical-v3';
+
+type GlucoseEpisodeReading = GlucoseReading & { recordIds: string[] };
+
+/**
+ * Episode thresholds describe the person at an instant, not the number or
+ * ordering of import sources. Average duplicate source rows once and retain
+ * every contributing ID so detection is deterministic and fully auditable.
+ */
+function canonicalEpisodeReadings(
+  readings: readonly GlucoseReading[],
+): GlucoseEpisodeReading[] {
+  const sorted = [...readings].sort(
+    (left, right) =>
+      left.timestamp - right.timestamp || left.id.localeCompare(right.id),
+  );
+  const groups: Array<{ timestamp: number; readings: GlucoseReading[] }> = [];
+  sorted.forEach((reading) => {
+    const previous = groups.at(-1);
+    if (previous?.timestamp === reading.timestamp) {
+      previous.readings.push(reading);
+      return;
+    }
+    groups.push({ timestamp: reading.timestamp, readings: [reading] });
+  });
+  return groups.map(({ readings: group }) => {
+    const representative = group[0]!;
+    const recordIds = group.map(({ id }) => id);
+    return {
+      ...representative,
+      id: recordIds[0]!,
+      receivedAt: Math.max(...group.map(({ receivedAt }) => receivedAt)),
+      mmolL:
+        group.reduce((total, reading) => total + reading.mmolL, 0) /
+        group.length,
+      quality: group.every(({ quality }) => quality === 'measured')
+        ? 'measured'
+        : 'estimated',
+      recordIds,
+    };
+  });
+}
 
 type GlucoseEpisodeDetectionState =
   | { kind: 'idle' }
   | {
       kind: 'confirming-start';
-      qualifyingReadings: GlucoseReading[];
+      qualifyingReadings: GlucoseEpisodeReading[];
     }
   | {
       kind: 'active';
-      qualifyingReadings: GlucoseReading[];
+      qualifyingReadings: GlucoseEpisodeReading[];
     }
   | {
       kind: 'confirming-recovery';
-      qualifyingReadings: GlucoseReading[];
+      qualifyingReadings: GlucoseEpisodeReading[];
       recoveryStartedAt: number;
     };
 
@@ -510,18 +579,19 @@ export function detectGlucoseEpisodes(
   if (!Number.isFinite(thresholdMmolL) || thresholdMmolL <= 0) {
     throw new RangeError('A glucose episode threshold must be a positive number.');
   }
-  const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
-  const qualifies = (reading: GlucoseReading) =>
+  const sorted = canonicalEpisodeReadings(readings);
+  const qualifies = (reading: GlucoseEpisodeReading) =>
     kind === 'high'
       ? reading.mmolL > thresholdMmolL
       : reading.mmolL < thresholdMmolL;
   const episodes: GlucoseEpisode[] = [];
   let state: GlucoseEpisodeDetectionState = { kind: 'idle' };
-  let previousObservedReading: GlucoseReading | undefined;
+  let previousObservedReading: GlucoseEpisodeReading | undefined;
 
   function emitEpisode(
-    qualifyingReadings: GlucoseReading[],
+    qualifyingReadings: GlucoseEpisodeReading[],
     end: number,
+    endStatus: GlucoseEpisode['endStatus'],
   ) {
     const first = qualifyingReadings[0];
     if (!first) return;
@@ -531,6 +601,7 @@ export function detectGlucoseEpisodes(
       thresholdMmolL,
       start: first.timestamp,
       end,
+      endStatus,
       readings: qualifyingReadings,
       extremeMmolL:
         kind === 'high'
@@ -540,7 +611,7 @@ export function detectGlucoseEpisodes(
   }
 
   function lastQualifyingTimestamp(
-    qualifyingReadings: GlucoseReading[],
+    qualifyingReadings: GlucoseEpisodeReading[],
   ) {
     return qualifyingReadings[qualifyingReadings.length - 1]!.timestamp;
   }
@@ -550,6 +621,7 @@ export function detectGlucoseEpisodes(
       emitEpisode(
         state.qualifyingReadings,
         lastQualifyingTimestamp(state.qualifyingReadings),
+        'sensor-gap',
       );
     }
     state = { kind: 'idle' };
@@ -584,9 +656,10 @@ export function detectGlucoseEpisodes(
         state = { kind: 'idle' };
         continue;
       }
-      const qualifyingReadings: GlucoseReading[] = state.qualifyingReadings;
+      const qualifyingReadings: GlucoseEpisodeReading[] =
+        state.qualifyingReadings;
       qualifyingReadings.push(reading);
-      const first: GlucoseReading = qualifyingReadings[0]!;
+      const first: GlucoseEpisodeReading = qualifyingReadings[0]!;
       state =
         reading.timestamp - first.timestamp >=
         EPISODE_START_CONFIRMATION_MS
@@ -624,7 +697,11 @@ export function detectGlucoseEpisodes(
     ) {
       // The first recovery reading is the event boundary. Later readings
       // confirm that this boundary persisted for the required 15 minutes.
-      emitEpisode(state.qualifyingReadings, state.recoveryStartedAt);
+      emitEpisode(
+        state.qualifyingReadings,
+        state.recoveryStartedAt,
+        'confirmed-recovery',
+      );
       state = { kind: 'idle' };
     }
   }
@@ -636,6 +713,7 @@ export function detectGlucoseEpisodes(
     emitEpisode(
       state.qualifyingReadings,
       lastQualifyingTimestamp(state.qualifyingReadings),
+      'observation-ended',
     );
   }
   return episodes;
@@ -1332,9 +1410,9 @@ function episodeEvidence(
   return {
     id,
     label,
-    description: `${episodes.length} sustained run${episodes.length === 1 ? '' : 's'} across ${readings.length} readings`,
+    description: `${episodes.length} sustained run${episodes.length === 1 ? '' : 's'} across ${readings.length} timestamp-normalised physiological samples`,
     range,
-    recordIds: readings.map((reading) => reading.id),
+    recordIds: readings.flatMap((reading) => reading.recordIds),
     examples: representativeGlucose(readings),
   };
 }
@@ -1383,10 +1461,10 @@ export function buildGlucoseEpisodeEvidence(
   return {
     id: `episode-detail:${episode.id}`,
     label: `${episode.kind === 'high' ? 'High' : 'Low'} run to ${episode.extremeMmolL.toFixed(1)} mmol/L`,
-    description: `${episode.readings.length} qualifying readings across an observed ${durationMinutes}-minute span, plus ${nearbyRecordCount} nearby recorded context or insulin records. Nearby does not mean causal`,
+    description: `${episode.readings.length} qualifying timestamp-normalised samples across an observed ${durationMinutes}-minute span, plus ${nearbyRecordCount} nearby recorded context or insulin records. Nearby does not mean causal`,
     range: { start: contextStart, end: Math.max(contextStart + 1, contextEnd) },
     recordIds: [
-      ...episode.readings.map((reading) => reading.id),
+      ...episode.readings.flatMap((reading) => reading.recordIds),
       ...nearbyContext.map((event) => event.id),
       ...nearbyBoluses.map((delivery) => delivery.id),
       ...overlappingBasal.map((delivery) => delivery.id),

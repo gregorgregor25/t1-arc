@@ -164,6 +164,7 @@ export interface ScopedGlucoseEvidenceBundle {
   calculation: {
     metric: 'observed-arithmetic-mean-glucose';
     precisionDecimals: 2;
+    sampleNormalization: 'same-timestamp-records-averaged-v1';
     coverageModel: 'forward-observation-capped-at-gap';
     maximumObservedGapMinutes: number;
     halfOpenIntervals: true;

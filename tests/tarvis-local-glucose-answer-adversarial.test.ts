@@ -11,6 +11,7 @@ import {
   type TarvisIntentV1,
 } from '@/data/tarvis/intent';
 import type { GlucoseReading } from '@/domain/models';
+import type { EvidenceClockWindowVisualizationReference } from '@/domain/insights';
 import { zonedDateTimeToTimestamp } from '@/domain/time';
 
 const NOW = Date.parse('2026-08-07T20:00:00+01:00');
@@ -63,9 +64,11 @@ function calculationOf(
 
 function visualizationOf(
   result: ReturnType<typeof buildLocalGlucoseAnswer>,
-) {
+): EvidenceClockWindowVisualizationReference {
   const visualization = result.evidence.visualization;
-  if (!visualization) throw new Error('Expected deterministic visualization evidence.');
+  if (visualization?.kind !== 'recurring-clock-overlay-v1') {
+    throw new Error('Expected recurring clock-window visualization evidence.');
+  }
   return visualization;
 }
 
@@ -221,10 +224,8 @@ describe('local glucose answer thresholds and duration weighting', () => {
       expect.objectContaining({ id: 'time-in-range', value: 37 }),
       expect.objectContaining({ id: 'time-above-range', value: 44.4 }),
     ]);
-    expect(visualizationOf(result).targetRange).toEqual({
-      minimum: 4,
-      maximum: 10,
-    });
+    expect(result.evidence.visualization).toBeUndefined();
+    expect(result.answerBundle.charts).toEqual([]);
     expect(result.answer.answer).toContain('37.0% of observed sensor time');
   });
 
@@ -258,10 +259,8 @@ describe('local glucose answer thresholds and duration weighting', () => {
         value: 180 / 18.016,
       },
     ]);
-    expect(visualizationOf(result).targetRange).toEqual({
-      minimum: expect.closeTo(70 / 18.016, 10),
-      maximum: expect.closeTo(180 / 18.016, 10),
-    });
+    expect(result.evidence.visualization).toBeUndefined();
+    expect(result.answerBundle.charts).toEqual([]);
     expect(intent.thresholds.map((item) => item.value.unit)).toEqual([
       'mg/dL',
       'mg/dL',
@@ -337,6 +336,8 @@ describe('local glucose event semantics', () => {
     ]);
     expect(result.presentation.kind).toBe('glucose-events');
     expect(result.answer.headline).toBe('Observed glucose events');
+    expect(result.evidence.visualization).toBeUndefined();
+    expect(result.answerBundle.charts).toEqual([]);
   });
 });
 

@@ -9,6 +9,17 @@ export interface EvidenceClockWindowDomain {
   endMinuteUnwrapped: number;
 }
 
+export interface EvidenceClockWindowValueDomain {
+  maximum: number;
+  minimum: number;
+}
+
+export interface EvidenceClockWindowTraceSemantics {
+  aggregate: 'equal-occurrence-profile-average';
+  binMinutes: number;
+  occurrence: 'clock-bin-average';
+}
+
 export interface ResolvedEvidenceClockWindowDomain {
   durationMinutes: number;
   endMinute: number;
@@ -69,6 +80,11 @@ export interface EvidenceClockWindowVisualization {
   minimumAggregateContributors: number;
   units: string;
   windows: EvidenceClockWindowOccurrence[];
+  /** Persisted on exact evidence so replay cannot silently rescale to settings. */
+  valueDomain?: EvidenceClockWindowValueDomain;
+  /** Persisted calculation result; distinct from the clock-bin profile line. */
+  overallMeanMmolL?: number | null;
+  traceSemantics?: EvidenceClockWindowTraceSemantics;
 }
 
 export interface EvidenceClockWindowScale {
@@ -78,6 +94,19 @@ export interface EvidenceClockWindowScale {
 }
 
 const MINUTES_PER_DAY = 24 * 60;
+const TRACE_PATTERNS = [
+  { dash: null, marker: 'circle' },
+  { dash: '8 4', marker: 'square' },
+  { dash: '2 4', marker: 'diamond' },
+  { dash: '10 3 2 3', marker: 'triangle' },
+] as const;
+
+export function evidenceClockWindowTracePattern(index: number) {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new RangeError('A trace index must be a non-negative integer.');
+  }
+  return TRACE_PATTERNS[index % TRACE_PATTERNS.length]!;
+}
 
 function modulo(value: number, divisor: number) {
   return ((value % divisor) + divisor) % divisor;
@@ -326,6 +355,34 @@ export function buildEvidenceClockWindowScale(
   return { maximum, minimum, ticks };
 }
 
+/** Builds deterministic ticks without changing a persisted exact value domain. */
+export function buildEvidenceClockWindowScaleForDomain(
+  domain: EvidenceClockWindowValueDomain,
+): EvidenceClockWindowScale {
+  if (
+    !Number.isFinite(domain.minimum) ||
+    !Number.isFinite(domain.maximum) ||
+    domain.minimum < 0 ||
+    domain.maximum <= domain.minimum
+  ) {
+    throw new RangeError('A persisted chart value domain must be finite and increasing.');
+  }
+  const span = domain.maximum - domain.minimum;
+  const step = niceStep(span, 4);
+  const ticks: number[] = [];
+  let value = Math.ceil(domain.minimum / step) * step;
+  while (value <= domain.maximum + step / 1000) {
+    ticks.push(Number(value.toFixed(2)));
+    value += step;
+  }
+  if (!ticks.length) ticks.push(domain.minimum, domain.maximum);
+  return {
+    maximum: domain.maximum,
+    minimum: domain.minimum,
+    ticks: [...new Set(ticks)],
+  };
+}
+
 export function formatEvidenceClockWindowValue(value: number, units: string) {
   return /mg\s*\/\s*dL/i.test(units)
     ? String(Math.round(value))
@@ -352,6 +409,7 @@ export interface EvidenceClockWindowAccessibilityInput
   missingOccurrenceLabels?: string[];
   targetRange?: EvidenceClockWindowTargetRange;
   title: string;
+  targetRangePolicy?: 'persisted-only';
 }
 
 export function buildEvidenceClockWindowAccessibilitySummary({
@@ -362,9 +420,12 @@ export function buildEvidenceClockWindowAccessibilitySummary({
   minimumAggregateContributors,
   missingOccurrenceLabels = [],
   targetRange,
+  targetRangePolicy,
   title,
   units,
   windows,
+  overallMeanMmolL,
+  traceSemantics,
 }: EvidenceClockWindowAccessibilityInput) {
   let resolved: ResolvedEvidenceClockWindowDomain;
   try {
@@ -470,13 +531,26 @@ export function buildEvidenceClockWindowAccessibilitySummary({
     const maximum = Math.max(...contributors);
     parts.push(
       minimum === maximum
-        ? `The 15-minute average uses ${minimum} contributing occurrences per point.`
-        : `The 15-minute average uses between ${minimum} and ${maximum} contributing occurrences per point.`,
+        ? `The ${traceSemantics?.binMinutes ?? 15}-minute clock-bin profile average uses ${minimum} contributing occurrences per point.`
+        : `The ${traceSemantics?.binMinutes ?? 15}-minute clock-bin profile average uses between ${minimum} and ${maximum} contributing occurrences per point.`,
     );
   } else if (aggregatePoints.length) {
     parts.push(
       `No average line is shown because fewer than ${Math.max(1, minimumAggregateContributors)} occurrences contribute at each interval.`,
     );
+  }
+  if (traceSemantics) {
+    parts.push(
+      `Each thin occurrence trace is made from ${traceSemantics.binMinutes}-minute clock-bin averages; the thick profile line averages those bins equally across contributing occurrences.`,
+    );
+  }
+  if (overallMeanMmolL !== undefined && overallMeanMmolL !== null) {
+    parts.push(
+      `A separate horizontal line marks the exact overall answer mean of ${formatEvidenceClockWindowValue(overallMeanMmolL, units)} ${units}; it need not equal the visual profile average when coverage is uneven.`,
+    );
+  }
+  if (targetRangePolicy === 'persisted-only' && !targetRange) {
+    parts.push('No reference band is shown because none was part of this saved calculation.');
   }
   if (clockTransitions.length) {
     const kinds = unique(clockTransitions.map((transition) => transition.kind));
@@ -485,5 +559,6 @@ export function buildEvidenceClockWindowAccessibilitySummary({
     );
   }
   if (hasSensorGaps) parts.push('Lines stop where readings are missing.');
+  parts.push('All Records is the complete text alternative for every exact source record.');
   return parts.filter(Boolean).join(' ');
 }

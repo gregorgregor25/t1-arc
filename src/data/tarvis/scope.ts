@@ -95,13 +95,6 @@ export function requestedTarvisPeriodDays(
   question: string,
 ): InsightPeriodDays | undefined {
   const normalized = question.trim().toLowerCase();
-  if (
-    /\b(today|yesterday|last night|overnight|this morning|yesterday morning|yesterday evening)\b/.test(
-      normalized,
-    )
-  ) {
-    return 3;
-  }
   const dayMatch = normalized.match(
     /\b(?:last|past|previous|over|for|during|in)\s+(?:the\s+)?(\d{1,2}|three|seven|fourteen|thirty|ninety)\s*(?:day|days|d)\b/,
   );

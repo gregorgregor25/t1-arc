@@ -28,6 +28,8 @@ import { HealthMetricRecordList } from './HealthMetricRecordList';
 import { FoodDiaryCard } from './FoodDiaryCard';
 import { EvidenceGlucoseOverlay } from './EvidenceGlucoseOverlay';
 import { EvidenceClockWindowOverlay } from './EvidenceClockWindowOverlay';
+import { EvidenceQueryChart } from './EvidenceQueryChart';
+import { resolveEvidenceInspectorVisualization } from './evidenceInspectorVisualization';
 import { FullscreenChartModal } from './FullscreenChart';
 import { useFoodLogs } from '@/hooks/useFoodLogs';
 
@@ -88,7 +90,38 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
     start: evidence?.range.start ?? 0,
     end: evidence?.range.end ?? 1,
   });
-  const clockVisualization = evidence?.visualization;
+  const {
+    exactQueryWithoutVisualization,
+    visualization,
+    visualizationOmission,
+  } = useMemo(
+    () => resolveEvidenceInspectorVisualization(evidence),
+    [evidence],
+  );
+  const clockVisualization =
+    visualization?.kind === 'recurring-clock-overlay-v1'
+      ? visualization
+      : undefined;
+  const queryVisualization =
+    visualization && visualization.kind !== 'recurring-clock-overlay-v1'
+      ? visualization
+      : undefined;
+  const savedVisualization = Boolean(
+    clockVisualization || queryVisualization,
+  );
+  const displayRange = useMemo(() => {
+    if (!queryVisualization?.windows.length) return evidence?.range;
+    return queryVisualization.windows.reduce(
+      (range, window) => ({
+        end: Math.max(range.end, window.range.end),
+        start: Math.min(range.start, window.range.start),
+      }),
+      {
+        end: queryVisualization.windows[0]!.range.end,
+        start: queryVisualization.windows[0]!.range.start,
+      },
+    );
+  }, [evidence?.range, queryVisualization]);
 
   useEffect(() => {
     setVisibleCount(100);
@@ -98,7 +131,8 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
   }, [evidence]);
 
   const hasGlucoseEvidence = Boolean(
-    clockVisualization ||
+    savedVisualization ||
+      exactQueryWithoutVisualization ||
       evidence?.examples.some((example) => example.kind === 'glucose') ||
       data?.glucose.length,
   );
@@ -109,7 +143,8 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
       !evidence ||
       view !== 'visual' ||
       !hasGlucoseEvidence ||
-      clockVisualization
+      savedVisualization ||
+      exactQueryWithoutVisualization
     ) {
       return () => {
         active = false;
@@ -135,7 +170,13 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
     return () => {
       active = false;
     };
-  }, [clockVisualization, evidence, hasGlucoseEvidence, view]);
+  }, [
+    evidence,
+    exactQueryWithoutVisualization,
+    hasGlucoseEvidence,
+    savedVisualization,
+    view,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -358,12 +399,12 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                 </View>
                 <View style={styles.summaryDates}>
                   <Text style={[styles.summaryDate, { color: colors.textSecondary }]}>
-                    {formatDate(toDateKey(evidence.range.start), {
+                    {formatDate(toDateKey(displayRange?.start ?? evidence.range.start), {
                       day: 'numeric',
                       month: 'short',
                     })}
                     {' – '}
-                    {formatDate(toDateKey(evidence.range.end - 1), {
+                    {formatDate(toDateKey((displayRange?.end ?? evidence.range.end) - 1), {
                       day: 'numeric',
                       month: 'short',
                     })}
@@ -376,7 +417,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
             </View>
           ) : null}
 
-          {error && !clockVisualization ? (
+          {error && !savedVisualization ? (
             <View
               style={[
                 styles.stateCard,
@@ -397,7 +438,8 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                 {error}
               </Text>
             </View>
-          ) : (!data && !clockVisualization) || !evidence ? (
+          ) : (!data && !savedVisualization && !exactQueryWithoutVisualization) ||
+            !evidence ? (
             <View style={styles.loading}>
               <ActivityIndicator color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -423,6 +465,11 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                       key={option}
                       accessibilityLabel={
                         option === 'visual' ? 'Visualise data' : 'All records'
+                      }
+                      accessibilityHint={
+                        option === 'records'
+                          ? 'Opens the complete text alternative containing every exact supporting record.'
+                          : 'Opens the saved query-specific chart.'
                       }
                       accessibilityRole="tab"
                       accessibilityState={{ selected: view === option }}
@@ -500,7 +547,13 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                 </View>
               ) : null}
               {view === 'visual' && hasGlucoseEvidence ? (
-                clockVisualization ? (
+                queryVisualization ? (
+                  <EvidenceQueryChart
+                    onExpand={() => setVisualExpanded(true)}
+                    onShowRecords={() => setView('records')}
+                    visualization={queryVisualization}
+                  />
+                ) : clockVisualization ? (
                   <EvidenceClockWindowOverlay
                     aggregatePoints={clockVisualization.aggregatePoints}
                     coverageSummary={clockVisualization.coverageSummary}
@@ -514,10 +567,39 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                     onExpand={() => setVisualExpanded(true)}
                     subtitle={clockVisualization.subtitle}
                     targetRange={clockVisualization.targetRange}
+                    targetRangePolicy={clockVisualization.targetRangePolicy}
                     title={clockVisualization.title}
+                    traceSemantics={clockVisualization.traceSemantics}
                     units={clockVisualization.units}
+                    valueDomain={clockVisualization.valueDomain}
                     windows={clockVisualization.windows}
+                    overallMeanMmolL={clockVisualization.overallMeanMmolL}
                   />
+                ) : exactQueryWithoutVisualization ? (
+                  <View
+                    style={[
+                      styles.stateCard,
+                      {
+                        backgroundColor: `${colors.warning}10`,
+                        borderColor: `${colors.warning}55`,
+                        borderRadius: radius.lg,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={colors.warning}
+                      name="warning-outline"
+                      size={22}
+                    />
+                    <Text
+                      style={[styles.stateText, { color: colors.textSecondary }]}
+                    >
+                      {visualizationOmission
+                        ? `This evidence chart needed ${visualizationOmission.sourcePointCount} display vertices, above the safe on-phone limit of ${visualizationOmission.maximumDisplayPoints}, so it was omitted to keep the app responsive. Every exact calculation record remains available in All records.`
+                        : 'This exact calculation does not contain a query-specific chart. No generic day overlay is shown, because it could imply the wrong hours. Use All records for the exact evidence.'}
+                    </Text>
+                  </View>
                 ) : visualLoading || !visualGlucose ? (
                   <View style={styles.loading}>
                     <ActivityIndicator color={colors.primary} />
@@ -558,7 +640,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                   />
                 </>
               ) : null}
-              {clockVisualization && error ? (
+              {savedVisualization && error ? (
                 <View
                   accessibilityLiveRegion="polite"
                   style={[
@@ -584,7 +666,10 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                   </Text>
                 </View>
               ) : null}
-              {clockVisualization && !data && !error && view === 'records' ? (
+              {(savedVisualization || exactQueryWithoutVisualization) &&
+              !data &&
+              !error &&
+              view === 'records' ? (
                 <View style={styles.loading}>
                   <ActivityIndicator color={colors.primary} />
                   <Text
@@ -604,16 +689,27 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
         </ScrollView>
         <FullscreenChartModal
           detail={
+            queryVisualization?.subtitle ??
             clockVisualization?.subtitle ??
             'Up to seven days overlaid in Europe/London time'
           }
           onClose={() => setVisualExpanded(false)}
-          title={clockVisualization?.title ?? 'Day-to-day glucose'}
+          title={
+            queryVisualization?.title ??
+            clockVisualization?.title ??
+            'Day-to-day glucose'
+          }
           visible={
-            visualExpanded && Boolean(clockVisualization || visualGlucose)
+            visualExpanded &&
+            Boolean(queryVisualization || clockVisualization || visualGlucose)
           }
         >
-          {clockVisualization ? (
+          {queryVisualization ? (
+            <EvidenceQueryChart
+              expanded
+              visualization={queryVisualization}
+            />
+          ) : clockVisualization ? (
             <EvidenceClockWindowOverlay
               aggregatePoints={clockVisualization.aggregatePoints}
               coverageSummary={clockVisualization.coverageSummary}
@@ -627,9 +723,13 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
               }
               subtitle={clockVisualization.subtitle}
               targetRange={clockVisualization.targetRange}
+              targetRangePolicy={clockVisualization.targetRangePolicy}
               title={clockVisualization.title}
+              traceSemantics={clockVisualization.traceSemantics}
               units={clockVisualization.units}
+              valueDomain={clockVisualization.valueDomain}
               windows={clockVisualization.windows}
+              overallMeanMmolL={clockVisualization.overallMeanMmolL}
             />
           ) : visualGlucose ? (
             <EvidenceGlucoseOverlay expanded readings={visualGlucose} />
@@ -785,8 +885,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   close: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -938,7 +1038,7 @@ const styles = StyleSheet.create({
   },
   viewOption: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'transparent',
     flexDirection: 'row',

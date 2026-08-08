@@ -245,6 +245,7 @@ export type TarvisCapabilityCode =
   | 'empty_question'
   | 'missing_metric'
   | 'ambiguous_metric'
+  | 'invalid_threshold'
   | 'missing_time_scope'
   | 'ambiguous_time_scope'
   | 'ambiguous_clock_time'
@@ -267,6 +268,7 @@ export type TarvisCapabilityOutcome =
         | 'empty_question'
         | 'missing_metric'
         | 'ambiguous_metric'
+        | 'invalid_threshold'
         | 'missing_time_scope'
         | 'ambiguous_time_scope'
         | 'ambiguous_clock_time'
@@ -320,9 +322,17 @@ export interface TarvisGlucoseTargetProfile {
   highAbove: number;
 }
 
+/** Local-clock definition used when a question names "overnight". */
+export interface TarvisOvernightProfile {
+  id: string;
+  start: TarvisClockTime;
+  end: TarvisClockTime;
+}
+
 export interface ResolveTarvisIntentOptions {
   now?: number;
   timezone?: string;
   history?: readonly TarvisIntentHistoryEntry[];
   targetProfile?: TarvisGlucoseTargetProfile;
+  overnightProfile?: TarvisOvernightProfile;
 }

@@ -192,8 +192,8 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   closeButton: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -203,8 +203,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   expandButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',

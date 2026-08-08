@@ -208,7 +208,18 @@ describe('TARV1S evidence and spending guardrails', () => {
     expect(requestedTarvisPeriodDays('How were my past three months?')).toBe(
       90,
     );
-    expect(requestedTarvisPeriodDays('Why did I spike last night?')).toBe(3);
+    expect(
+      requestedTarvisPeriodDays('Why did I spike last night?'),
+    ).toBeUndefined();
+    expect(
+      requestedTarvisPeriodDays(
+        'What were my average overnight readings for the last two nights?',
+      ),
+    ).toBeUndefined();
+    expect(requestedTarvisPeriodDays('How was my glucose today?')).toBeUndefined();
+    expect(
+      requestedTarvisPeriodDays('How was my glucose yesterday?'),
+    ).toBeUndefined();
     expect(
       requestedTarvisPeriodDays('What were my readings over the last three days?'),
     ).toBe(3);

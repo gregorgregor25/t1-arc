@@ -72,4 +72,39 @@ describe('stored Tarv1s conversation validation', () => {
     };
     expect(validStoredTarvisExchange(exchange)).toBe(false);
   });
+
+  it('accepts a complete finite exact-range chart payload', () => {
+    const exchange = validExchange() as ReturnType<typeof validExchange> & {
+      evidence: Array<ReturnType<typeof validExchange>['evidence'][number] & {
+        visualization?: unknown;
+      }>;
+    };
+    exchange.evidence[0]!.visualization = {
+      gapThresholdMilliseconds: 12 * 60_000,
+      kind: 'range-trace-v1',
+      metric: 'glucose.mean',
+      schemaVersion: 1,
+      subtitle: 'All exact readings',
+      targetRange: { maximum: 10, minimum: 3.9 },
+      timezone: 'Europe/London',
+      title: 'Exact glucose trace',
+      units: 'mmol/L',
+      valueDomain: { maximum: 20, minimum: 0 },
+      windows: [
+        {
+          coveragePercent: 100,
+          coverageStatus: 'sufficient',
+          distribution: null,
+          events: [],
+          id: 'requested',
+          label: 'Requested period',
+          meanMmolL: 7,
+          points: [{ mmolL: 7, recordId: 'reading-1', timestamp: 1 }],
+          range: { start: 1, end: 2 },
+          recordCount: 1,
+        },
+      ],
+    };
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+  });
 });

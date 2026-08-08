@@ -7,6 +7,14 @@ import {
 
 export type TarvisEvidenceMetricId =
   | 'average-glucose'
+  | 'median-glucose'
+  | 'minimum-glucose'
+  | 'maximum-glucose'
+  | 'glucose-standard-deviation'
+  | 'glucose-coefficient-of-variation'
+  | 'glucose-management-indicator'
+  | 'low-readings'
+  | 'high-readings'
   | 'low-events'
   | 'high-events'
   | 'time-below-range'
@@ -33,6 +41,8 @@ export interface TarvisEvidenceWindowPresentation {
 export interface TarvisEvidencePresentation {
   kind:
     | 'average-glucose'
+    | 'glucose-statistic'
+    | 'glucose-reading-count'
     | 'low-events'
     | 'high-events'
     | 'glucose-events'

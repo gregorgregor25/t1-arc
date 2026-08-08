@@ -58,6 +58,21 @@ describe('local Tarv1s exact range glucose answers', () => {
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]!.recordIds).toEqual(['start', 'midday']);
     expect(result.answer.answer).toContain('exact periods');
+    expect(result.evidence[0]!.visualization).toMatchObject({
+      kind: 'range-trace-v1',
+      metric: 'glucose.mean',
+      subtitle: expect.stringContaining('display compaction is disclosed'),
+      windows: [{
+        recordCount: 2,
+        points: [
+          { recordIds: ['start'] },
+          { recordIds: ['midday'] },
+        ],
+      }],
+    });
+    expect(result.evidence[0]!.visualization?.subtitle).not.toContain(
+      'All readings',
+    );
   });
 
   it('calculates comparison periods separately and exposes both evidence sets', () => {
@@ -84,7 +99,15 @@ describe('local Tarv1s exact range glucose answers', () => {
     expect(result.evidence.map(({ recordIds }) => recordIds)).toEqual([
       ['current'],
       ['previous'],
+      ['previous', 'current'],
     ]);
+    expect(result.evidence.slice(0, 2).every(({ visualization }) =>
+      visualization === undefined,
+    )).toBe(true);
+    expect(result.evidence[2]).toMatchObject({
+      label: 'Combined exact comparison chart inputs',
+      visualization: { kind: 'period-comparison-v1' },
+    });
     expect(result.presentation.windows).toHaveLength(2);
   });
 
@@ -106,6 +129,17 @@ describe('local Tarv1s exact range glucose answers', () => {
       value: 25,
     });
     expect(result.answer.answer).toContain('25.0%');
+    expect(result.evidence[0]!.visualization).toMatchObject({
+      kind: 'range-distribution-v1',
+      metric: 'glucose.time_in_range',
+      windows: [{
+        distribution: {
+          belowPercent: 0,
+          inRangePercent: 25,
+          abovePercent: 75,
+        },
+      }],
+    });
   });
 
   it('returns unavailable rather than zero when a period has no readings', () => {
@@ -117,6 +151,16 @@ describe('local Tarv1s exact range glucose answers', () => {
     expect(result.answer.headline).toBe('Glucose result unavailable');
     expect(result.evidence[0]!.calculation?.metrics[0]?.value).toBeNull();
     expect(result.answer.answer).toContain('result is unavailable');
+    expect(result.evidence[0]!.visualization).toMatchObject({
+      kind: 'event-timeline-v1',
+      windows: [{
+        coveragePercent: 0,
+        coverageStatus: 'unavailable',
+        recordCount: 0,
+        points: [],
+        events: [],
+      }],
+    });
   });
 
   it('uses boundary context to attribute an event to its true start period', () => {
@@ -135,8 +179,32 @@ describe('local Tarv1s exact range glucose answers', () => {
       ],
     });
     expect(result.evidence[0]!.calculation?.metrics[0]?.value).toBe(1);
-    expect(result.evidence[0]!.recordIds).toContain('confirm-after');
+    expect(result.evidence[0]!.recordIds).toEqual([
+      'start-inside',
+      'still-inside',
+    ]);
+    expect(result.evidence[0]!.recordIds).not.toContain('confirm-after');
     expect(result.evidence[0]!.description).toContain('boundary context');
+    expect(result.evidence[0]!.description).toContain('All Records');
+    expect(result.answerBundle.scope.windows[0]?.contextRecordIds).toEqual([
+      'confirm-after',
+    ]);
+    expect(result.evidence[0]!.visualization).toMatchObject({
+      kind: 'event-timeline-v1',
+      eventKind: 'high',
+      windows: [{
+        points: [
+          { recordIds: ['start-inside'] },
+          { recordIds: ['still-inside'] },
+        ],
+        events: [{
+          end: Date.parse('2026-08-06T23:55:00+01:00'),
+          endStatus: 'observed-through',
+          continuesBeyondWindow: true,
+          recordIds: ['start-inside', 'still-inside'],
+        }],
+      }],
+    });
   });
 
   it('does not recount an event that was already active at period start', () => {
@@ -155,8 +223,9 @@ describe('local Tarv1s exact range glucose answers', () => {
   it('is deterministic across equivalent input permutations and keeps exact thresholds', () => {
     const intent = ready('How many high-glucose events have I had today?');
     const values = [
-      reading('b', '2026-08-07T01:00:00+01:00', 11),
-      reading('a', '2026-08-07T01:00:00+01:00', 11),
+      reading('b', '2026-08-07T01:00:00+01:00', 13),
+      reading('a', '2026-08-07T01:00:00+01:00', 9),
+      reading('d', '2026-08-07T01:05:00+01:00', 11),
       reading('c', '2026-08-07T01:15:00+01:00', 11),
     ];
     const forward = buildLocalGlucoseRangeAnswer({
@@ -174,5 +243,14 @@ describe('local Tarv1s exact range glucose answers', () => {
     expect(forward.evidence[0]!.calculation?.thresholds).toEqual([
       expect.objectContaining({ operator: 'gt', value: 10 }),
     ]);
+    expect(forward.evidence[0]!.visualization).toMatchObject({
+      kind: 'event-timeline-v1',
+      windows: [{
+        events: [{
+          recordIds: ['a', 'b', 'd', 'c'],
+          endStatus: 'observed-through',
+        }],
+      }],
+    });
   });
 });

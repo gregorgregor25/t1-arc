@@ -241,6 +241,24 @@ const READY_CASES: ReadyCase[] = [
     clockWindow: window(0, 0, 7, 0),
   },
   {
+    name: 'named overnight screenshot query',
+    question:
+      'What were my average overnight readings for the last two nights?',
+    metrics: ['glucose.mean'],
+    operation: 'aggregate',
+    scope: localDays(2, 'most_recent_completed_windows'),
+    clockWindow: window(0, 0, 7, 0),
+  },
+  {
+    name: 'named overnight across local days',
+    question:
+      'What was my average glucose overnight over the last seven days?',
+    metrics: ['glucose.mean'],
+    operation: 'aggregate',
+    scope: localDays(7, 'most_recent_completed_windows'),
+    clockWindow: window(0, 0, 7, 0),
+  },
+  {
     name: 'explicit glucose readings must not hide a clock window',
     question:
       'What are my average glucose readings over the last three days between midnight and 7 a.m.?',
@@ -623,15 +641,7 @@ const FAIL_CLOSED_CASES: FailClosedCase[] = [
   },
   ...(
     [
-      ['median', 'What was my median glucose over the last 30 days?', 'glucose.median'],
-      ['minimum', 'What was my lowest glucose over the last 30 days?', 'glucose.minimum'],
-      ['maximum', 'What was my highest glucose over the last 30 days?', 'glucose.maximum'],
-      ['standard deviation', 'What was my glucose standard deviation over the last 30 days?', 'glucose.standard_deviation'],
-      ['coefficient of variation', 'What was my glucose CV over the last 30 days?', 'glucose.coefficient_of_variation'],
-      ['GMI', 'What was my GMI over the last 30 days?', 'glucose.gmi'],
       ['current', 'What is my current glucose right now?', 'glucose.current'],
-      ['low samples', 'How many readings were low over the last 30 days?', 'glucose.low_readings'],
-      ['high samples', 'How many CGM readings were high over the last 30 days?', 'glucose.high_readings'],
     ] as const
   ).map(
     ([name, question, metric]): FailClosedCase => ({
@@ -726,13 +736,6 @@ const FAIL_CLOSED_CASES: FailClosedCase[] = [
       'What was my average glucose over the last 7 days from 00:00 to 07:00 and from 12:00 to 18:00?',
     status: 'needs_clarification',
     code: 'ambiguous_clock_time',
-    recognisedMetrics: ['glucose.mean'],
-  },
-  {
-    name: 'night is not silently interpreted as an all-day query',
-    question: 'What was my average glucose overnight over the last seven days?',
-    status: 'needs_clarification',
-    code: 'ambiguous_time_scope',
     recognisedMetrics: ['glucose.mean'],
   },
   {

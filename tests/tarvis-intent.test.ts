@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describeTarvisIntent,
   extractTarvisLiterals,
   isReadyTarvisIntent,
   isTarvisIntentV1,
@@ -121,6 +122,157 @@ describe('Tarv1s high-priority intent resolution', () => {
     );
   });
 
+  it('resolves average overnight readings as exactly two completed profile windows', () => {
+    const resolution = expectReady(
+      'What were my average overnight readings for the last two nights?',
+    );
+
+    expect(resolution.intent.metrics.map(({ value }) => value)).toEqual([
+      'glucose.mean',
+    ]);
+    expect(resolution.intent.temporalScope).toMatchObject({
+      value: {
+        kind: 'recent_local_days',
+        count: 2,
+        include: 'most_recent_completed_windows',
+      },
+      provenance: {
+        kind: 'explicit',
+        sourceText: 'last two nights',
+      },
+    });
+    expect(resolution.intent.clockWindow).toMatchObject({
+      value: {
+        start: { hour: 0, minute: 0 },
+        end: { hour: 7, minute: 0 },
+        crossesMidnight: false,
+        occurrenceAnchor: 'start_date',
+      },
+      provenance: {
+        kind: 'default',
+        sourceText: 'overnight',
+      },
+    });
+    expect(resolution.intent.clockWindow?.provenance.note).toContain(
+      't1-arc-default-overnight',
+    );
+    expect(resolution.intent.clockWindow?.provenance.note).toContain(
+      '00:00–07:00 in Europe/London',
+    );
+    expect(
+      describeTarvisIntent(resolution.intent, {
+        timezone: 'Europe/London',
+      }),
+    ).toBe(
+      'Average glucose · 2 completed overnight windows · 00:00–07:00 · Europe/London',
+    );
+  });
+
+  it.each([
+    'What was the average of my overnight readings for the last two nights?',
+    'What were my overnight readings on average for the last two nights?',
+    'For the past 2 nights, what were my readings overnight on average?',
+    'What were my overnight readings averaged over the last two nights?',
+    "What's my average for overnight readings over the last two nights?",
+    'What was the mean for my overnight readings in the last two nights?',
+    'On average, what were my glucose readings overnight during the last two nights?',
+  ])('recognises a compositional overnight mean: %s', (question) => {
+    const resolution = expectReady(question);
+    expect(resolution.intent.metrics[0]?.value).toBe('glucose.mean');
+    expect(resolution.intent.temporalScope.value).toMatchObject({
+      count: 2,
+      include: 'most_recent_completed_windows',
+    });
+  });
+
+  it('fails closed when more than one completed-night count is stated', () => {
+    const resolution = resolve(
+      'What were my average overnight readings for the last two nights and past three nights?',
+    );
+    expect(resolution.outcome).toMatchObject({
+      status: 'needs_clarification',
+      code: 'ambiguous_time_scope',
+    });
+  });
+
+  it('uses a supplied overnight profile and records its exact provenance', () => {
+    const resolution = resolveTarvisIntent(
+      'What were my average overnight readings for the last two nights?',
+      {
+        now: NOW,
+        timezone: 'Europe/London',
+        overnightProfile: {
+          id: 'personal-overnight',
+          start: { hour: 23, minute: 0 },
+          end: { hour: 6, minute: 30 },
+        },
+      },
+    );
+
+    expect(isReadyTarvisIntent(resolution)).toBe(true);
+    if (!isReadyTarvisIntent(resolution)) throw new Error('Expected ready');
+    expect(resolution.intent.clockWindow).toMatchObject({
+      value: {
+        start: { hour: 23, minute: 0 },
+        end: { hour: 6, minute: 30 },
+        crossesMidnight: true,
+      },
+      provenance: { kind: 'profile' },
+    });
+    expect(resolution.intent.clockWindow?.provenance.note).toContain(
+      'personal-overnight',
+    );
+    expect(resolution.intent.clockWindow?.provenance.note).toContain(
+      '23:00–06:30 in Europe/London',
+    );
+  });
+
+  it('fails closed for an invalid overnight profile', () => {
+    const resolution = resolveTarvisIntent(
+      'What were my average overnight readings for the last two nights?',
+      {
+        now: NOW,
+        timezone: 'Europe/London',
+        overnightProfile: {
+          id: 'invalid-profile',
+          start: { hour: 7, minute: 0 },
+          end: { hour: 7, minute: 0 },
+        },
+      },
+    );
+
+    expect(resolution.outcome).toMatchObject({
+      status: 'needs_clarification',
+      code: 'invalid_clock_window',
+    });
+  });
+
+  it('lets explicit clock bounds safely override an invalid overnight profile', () => {
+    const resolution = resolveTarvisIntent(
+      'What was my average glucose overnight from 22:00 to 06:00 for the last two nights?',
+      {
+        now: NOW,
+        timezone: 'Europe/London',
+        overnightProfile: {
+          id: 'invalid-profile',
+          start: { hour: 7, minute: 0 },
+          end: { hour: 7, minute: 0 },
+        },
+      },
+    );
+
+    expect(isReadyTarvisIntent(resolution)).toBe(true);
+    if (!isReadyTarvisIntent(resolution)) throw new Error('Expected ready');
+    expect(resolution.intent.clockWindow).toMatchObject({
+      value: {
+        start: { hour: 22, minute: 0 },
+        end: { hour: 6, minute: 0 },
+        crossesMidnight: true,
+      },
+      provenance: { kind: 'explicit' },
+    });
+  });
+
   it('does not inherit a prior high-event metric into an explicit average question', () => {
     const previous = expectReady(
       'How many high-glucose events have I had in the last 30 days?',
@@ -186,6 +338,42 @@ describe('Tarv1s high-priority intent resolution', () => {
     expect(result.intent.temporalScope).toMatchObject({
       value: { kind: 'calendar_period', period: 'last_week' },
       provenance: { kind: 'explicit' },
+    });
+  });
+
+  it('preserves the exact completed-night count and clock profile in a follow-up', () => {
+    const previous = expectReady(
+      'What were my average overnight readings for the last two nights?',
+    );
+    const result = resolveTarvisIntent('What about high events?', {
+      now: NOW,
+      timezone: 'Europe/London',
+      history: [
+        {
+          turnId: 'turn-overnight',
+          question: previous.intent.question,
+          intent: previous.intent,
+        },
+      ],
+    });
+
+    expect(isReadyTarvisIntent(result)).toBe(true);
+    if (!isReadyTarvisIntent(result)) throw new Error('Expected ready');
+    expect(result.intent.metrics[0]?.value).toBe('glucose.high_episodes');
+    expect(result.intent.temporalScope).toMatchObject({
+      value: {
+        kind: 'recent_local_days',
+        count: 2,
+        include: 'most_recent_completed_windows',
+      },
+      provenance: { kind: 'conversation', turnId: 'turn-overnight' },
+    });
+    expect(result.intent.clockWindow).toMatchObject({
+      value: {
+        start: { hour: 0, minute: 0 },
+        end: { hour: 7, minute: 0 },
+      },
+      provenance: { kind: 'conversation', turnId: 'turn-overnight' },
     });
   });
 
@@ -260,6 +448,19 @@ describe('Tarv1s high-priority intent resolution', () => {
       { operator: 'gte', value: 4, unit: 'mmol/L', role: 'range_lower' },
       { operator: 'lte', value: 10, unit: 'mmol/L', role: 'range_upper' },
     ]);
+  });
+
+  it.each([
+    'What was my time in range above 4 mmol/L over the last 14 days?',
+    'How many low-glucose events at most 4 mmol/L over the last 14 days?',
+    'How many high-glucose events at least 10 mmol/L over the last 14 days?',
+    'What was my time in range between 10 and 4 mmol/L over the last 14 days?',
+    'What was my average glucose above 10 mmol/L over the last 14 days?',
+  ])('rejects a metric-incompatible threshold before producing a ready intent: %s', (question) => {
+    expect(resolve(question).outcome).toMatchObject({
+      status: 'needs_clarification',
+      code: 'invalid_threshold',
+    });
   });
 });
 
@@ -338,6 +539,93 @@ describe('Tarv1s temporal semantics', () => {
     });
   });
 
+  it.each(['morning', 'afternoon', 'evening', 'at night'])(
+    'does not silently broaden the named daypart %s',
+    (daypart) => {
+      const result = resolve(
+        `What were my average ${daypart} readings over the last two days?`,
+      );
+      expect(result.outcome).toMatchObject({
+        status: 'needs_clarification',
+        code: 'ambiguous_time_scope',
+      });
+    },
+  );
+
+  it('fails closed for a named weekday instead of dropping the filter', () => {
+    const result = resolve('What were my average readings on Tuesdays?');
+    expect(result.outcome).toMatchObject({
+      status: 'unsupported',
+      code: 'unsupported_time_scope',
+    });
+  });
+
+  it.each([
+    [
+      'What was my average glucose around 6 over the last three days?',
+      'ambiguous_clock_time',
+    ],
+    [
+      'What was my average glucose roughly between 6 and 7 over the last three days?',
+      'ambiguous_clock_time',
+    ],
+    [
+      'What was my average glucose at 06:00 over the last three days?',
+      'ambiguous_clock_time',
+    ],
+    [
+      'What was my average glucose 06:00 over the last three days?',
+      'ambiguous_clock_time',
+    ],
+    [
+      'What was my average glucose over the last 7 days excluding readings below 4 mmol/L?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose over the last 7 days without calibration readings?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose over the last 7 days using only Dexcom readings?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose after waking over the last week?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose while exercising over the last week?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose during workouts over the last week?',
+      'ambiguous_time_scope',
+    ],
+    [
+      'What was my average glucose post-meal over the last week?',
+      'ambiguous_time_scope',
+    ],
+  ])('fails closed instead of dropping an unrepresented filter: %s', (question, code) => {
+    expect(resolve(question).outcome).toMatchObject({
+      status: 'needs_clarification',
+      code,
+    });
+  });
+
+  it('keeps an explicit safe window containing an until connector', () => {
+    const result = expectReady(
+      'What was my average glucose over the last three days from midnight until 7 a.m.?',
+    );
+    expect(result.intent.clockWindow?.value).toMatchObject({
+      start: { hour: 0, minute: 0 },
+      end: { hour: 7, minute: 0 },
+    });
+    expect(result.intent.temporalScope.value).toMatchObject({
+      count: 3,
+      include: 'most_recent_completed_windows',
+    });
+  });
+
   it('treats leading-zero clock text as explicit 24-hour time', () => {
     const result = expectReady(
       'What was my average glucose over the last three days from 00:00 to 07:00?',
@@ -380,6 +668,27 @@ describe('Tarv1s temporal semantics', () => {
     });
   });
 
+  it.each([
+    'What was my average glucose today over the last seven days?',
+    'What was my average glucose yesterday over the past 24 hours?',
+    'What was my average glucose on 6 August 2026 over the last seven days?',
+    'What were my average overnight readings for the last two nights over the last seven days?',
+  ])('fails closed when non-equivalent time scopes are combined: %s', (question) => {
+    expect(resolve(question).outcome).toMatchObject({
+      status: 'needs_clarification',
+      code: 'ambiguous_time_scope',
+    });
+  });
+
+  it.each([
+    'What was my average glucose today over the last one day?',
+    'What was my average glucose today on 7 August 2026?',
+    'What was my average glucose over the last seven days and for the last one week?',
+    'What were my average overnight readings for the last two nights over the last two days?',
+  ])('allows a genuinely equivalent redundant time cue: %s', (question) => {
+    expect(expectReady(question).intent.temporalScope.value).toBeTruthy();
+  });
+
   it('fails closed when an explicit date range runs backwards', () => {
     const result = resolve(
       'What was my average glucose from 6 August 2026 to 3 August 2026?',
@@ -417,20 +726,17 @@ describe('Tarv1s fail-closed capability outcomes', () => {
     });
   });
 
-  it('recognises unsupported metrics exactly instead of answering a nearby one', () => {
-    const median = resolve('What was my median glucose over the last 30 days?');
-    expect(median.outcome).toMatchObject({
-      status: 'unsupported',
-      code: 'unsupported_metric',
-    });
+  it('recognises newly executable metrics exactly instead of answering a nearby one', () => {
+    const median = expectReady('What was my median glucose over the last 30 days?');
     expect(median.intent.metrics[0]?.value).toBe('glucose.median');
 
-    const samples = resolve('How many readings were low over the last 30 days?');
-    expect(samples.outcome).toMatchObject({
-      status: 'unsupported',
-      code: 'unsupported_metric',
-    });
+    const samples = expectReady('How many readings were low over the last 30 days?');
     expect(samples.intent.metrics[0]?.value).toBe('glucose.low_readings');
+    expect(samples.intent.thresholds[0]?.value).toMatchObject({
+      role: 'low',
+      operator: 'lt',
+      value: 3.9,
+    });
   });
 
   it('reports unsupported domains rather than treating insulin as glucose', () => {

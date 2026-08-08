@@ -58,6 +58,37 @@ describe('Tarv1s clarification replies', () => {
     });
   });
 
+  it('preserves two named overnight windows while clarifying the metric', () => {
+    const question = 'Show my overnight readings for the last two nights.';
+    const pending = {
+      question,
+      resolution: resolveTarvisIntent(question, options),
+    };
+    expect(pending.resolution.outcome).toMatchObject({
+      status: 'needs_clarification',
+      code: 'missing_metric',
+    });
+
+    const result = resolveTarvisClarificationReply(
+      'Average readings',
+      options,
+      pending,
+    );
+
+    expect(isReadyTarvisIntent(result)).toBe(true);
+    if (!isReadyTarvisIntent(result)) throw new Error('Expected ready intent');
+    expect(result.intent.metrics[0]?.value).toBe('glucose.mean');
+    expect(result.intent.temporalScope.value).toEqual({
+      kind: 'recent_local_days',
+      count: 2,
+      include: 'most_recent_completed_windows',
+    });
+    expect(result.intent.clockWindow?.value).toMatchObject({
+      start: { hour: 0, minute: 0 },
+      end: { hour: 7, minute: 0 },
+    });
+  });
+
   it('does not use a pending draft when the new question is already complete', () => {
     const question = 'What was my average glucose?';
     const pending = { question, resolution: resolveTarvisIntent(question, options) };

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildEvidenceClockWindowAccessibilitySummary,
   buildEvidenceClockWindowTicks,
+  evidenceClockWindowTracePattern,
   evidenceClockWindowPath,
   normaliseEvidenceClockMinute,
   prepareEvidenceClockWindowSegments,
@@ -12,6 +13,15 @@ import {
 } from '../src/domain/evidenceClockWindowChart';
 
 describe('clock-window evidence chart geometry', () => {
+  it('distinguishes the first occurrence traces without relying on colour', () => {
+    expect([0, 1, 2, 3].map(evidenceClockWindowTracePattern)).toEqual([
+      { dash: null, marker: 'circle' },
+      { dash: '8 4', marker: 'square' },
+      { dash: '2 4', marker: 'diamond' },
+      { dash: '10 3 2 3', marker: 'triangle' },
+    ]);
+  });
+
   it('uses the exact explicit domain and unwraps cross-midnight minutes', () => {
     const domain = resolveEvidenceClockWindowDomain({
       startMinute: 22 * 60,
@@ -109,8 +119,15 @@ describe('clock-window accessible summary', () => {
       minimumAggregateContributors: 2,
       missingOccurrenceLabels: [],
       targetRange: { maximum: 10, minimum: 3.9 },
+      targetRangePolicy: 'persisted-only',
       title: 'Overnight glucose',
+      traceSemantics: {
+        aggregate: 'equal-occurrence-profile-average',
+        binMinutes: 15,
+        occurrence: 'clock-bin-average',
+      },
       units: 'mmol/L',
+      overallMeanMmolL: 6.8,
       windows: [
         {
           id: 'wed',
@@ -150,6 +167,9 @@ describe('clock-window accessible summary', () => {
       'The shaded target range is 3.9 to 10.0 mmol/L.',
     );
     expect(summary).toContain('between 2 and 3 contributing occurrences');
+    expect(summary).toContain('Each thin occurrence trace is made from 15-minute');
+    expect(summary).toContain('exact overall answer mean of 6.8 mmol/L');
+    expect(summary).toContain('All Records is the complete text alternative');
     expect(summary).toContain('Lines stop where readings are missing.');
   });
 
