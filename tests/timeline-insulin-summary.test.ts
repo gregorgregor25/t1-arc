@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  BasalDelivery,
-  BolusDelivery,
-} from '../src/domain/models';
+import { BasalDelivery, BolusDelivery } from '../src/domain/models';
 import {
   dayRange,
   multiDayRange,
@@ -79,9 +76,9 @@ describe('summarizeInsulinByDay', () => {
       },
     ];
 
-    expect(
-      summarizeInsulinByDay(basal, [], range)[0]?.basalUnits,
-    ).toBeCloseTo(9.6);
+    expect(summarizeInsulinByDay(basal, [], range)[0]?.basalUnits).toBeCloseTo(
+      9.6,
+    );
   });
 
   it('respects the 23-hour London daylight-saving day', () => {
@@ -97,9 +94,9 @@ describe('summarizeInsulinByDay', () => {
       },
     ];
 
-    expect(
-      summarizeInsulinByDay(basal, [], range)[0]?.basalUnits,
-    ).toBeCloseTo(23);
+    expect(summarizeInsulinByDay(basal, [], range)[0]?.basalUnits).toBeCloseTo(
+      23,
+    );
   });
 
   it('uses source-reported daily totals when detailed basal rows are sparse', () => {
@@ -201,6 +198,78 @@ describe('summarizeInsulinByDay', () => {
     expect(summary.sourceTotals.map((total) => total.id)).toEqual(['new']);
   });
 
+  it('uses the greatest source timestamp despite a later import of an older cumulative snapshot', () => {
+    const dateKey = '2026-05-26';
+    const at = (hour: number, minute: number) =>
+      zonedDateTimeToTimestamp(dateKey, hour, minute);
+    const selections = selectLatestInsulinDailyTotalSelections([
+      {
+        id: 'earliest-incomplete-imported-last',
+        timestamp: at(15, 3),
+        dateKey,
+        basalUnits: 8.85,
+        bolusUnits: 12.15,
+        totalUnits: 21,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+        importedAt: at(23, 59) + 20_000,
+      },
+      {
+        id: 'middle',
+        timestamp: at(21, 13),
+        dateKey,
+        basalUnits: 10.5,
+        bolusUnits: 15.65,
+        totalUnits: 26.15,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+        importedAt: at(23, 59) + 10_000,
+      },
+      {
+        id: 'latest-complete-source-snapshot',
+        timestamp: at(23, 58),
+        dateKey,
+        basalUnits: 10.65,
+        bolusUnits: 15.65,
+        totalUnits: 26.3,
+        sourceId: 'glooko-export',
+        sourceDeviceId: 'pdm-a',
+        importedAt: at(23, 59),
+      },
+    ]);
+
+    expect(selections[0]?.total).toMatchObject({
+      id: 'latest-complete-source-snapshot',
+      totalUnits: 26.3,
+    });
+  });
+
+  it('uses completeness and import time only when source timestamps tie', () => {
+    const timestamp = zonedDateTimeToTimestamp('2026-05-26', 23, 58);
+    const selections = selectLatestInsulinDailyTotalSelections([
+      {
+        id: 'complete-earlier-import',
+        timestamp,
+        dateKey: '2026-05-26',
+        basalUnits: 10.65,
+        bolusUnits: 15.65,
+        totalUnits: 26.3,
+        sourceId: 'glooko-export',
+        importedAt: timestamp + 1_000,
+      },
+      {
+        id: 'incomplete-later-import',
+        timestamp,
+        dateKey: '2026-05-26',
+        totalUnits: 26.3,
+        sourceId: 'glooko-export',
+        importedAt: timestamp + 2_000,
+      },
+    ]);
+
+    expect(selections[0]?.total.id).toBe('complete-earlier-import');
+  });
+
   it('does not invent a missing source breakdown from the aggregate total', () => {
     const range = dayRange('2026-07-26', AFTER_TEST_DATES);
     const summary = summarizeInsulinRange(
@@ -242,6 +311,29 @@ describe('summarizeInsulinByDay', () => {
     expect(summary.sourceProvidesBasalEveryDay).toBe(false);
   });
 
+  it('requires a source breakdown on every requested London day', () => {
+    const range = multiDayRange('2026-07-26', 2, AFTER_TEST_DATES);
+    const firstDateKey = '2026-07-25';
+    const firstDayEnd = zonedDateTimeToTimestamp('2026-07-26');
+    const summary = summarizeInsulinRange([], [], range, [
+      {
+        id: 'first-day-only',
+        timestamp: firstDayEnd - 1,
+        dateKey: firstDateKey,
+        basalUnits: 12,
+        bolusUnits: 8,
+        totalUnits: 20,
+        sourceId: 'glooko-export',
+        importedAt: firstDayEnd + 1_000,
+      },
+    ]);
+
+    expect(summary.sourceTotals).toHaveLength(1);
+    expect(summary.sourceCoversEveryDay).toBe(false);
+    expect(summary.sourceProvidesBasalEveryDay).toBe(false);
+    expect(summary.sourceProvidesBolusEveryDay).toBe(false);
+  });
+
   it('preserves a smaller source total while exposing larger fallback components', () => {
     const range = dayRange('2026-07-26', AFTER_TEST_DATES);
     const basal = [
@@ -266,12 +358,7 @@ describe('summarizeInsulinByDay', () => {
         sourceDeviceId: 'pdm-a',
       },
     ];
-    const summary = summarizeInsulinRange(
-      basal,
-      [],
-      range,
-      sourceTotals,
-    );
+    const summary = summarizeInsulinRange(basal, [], range, sourceTotals);
     const [day] = summarizeInsulinByDay(basal, [], range, sourceTotals);
 
     expect(summary.stats).toEqual({

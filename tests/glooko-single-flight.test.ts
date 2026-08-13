@@ -100,4 +100,33 @@ describe('Glooko JavaScript single-flight reservation', () => {
     expect(afterCompletion).not.toBe(interactive);
     await expect(afterCompletion).resolves.toBe('new');
   });
+
+  it('invalidates old work and queues a distinct fresh generation', async () => {
+    const flight = new GlookoSingleFlight<string>();
+    const oldGate = deferred<void>();
+    let oldIsCurrent = true;
+    let freshGeneration = 0;
+
+    const old = flight.run(async (lease) => {
+      await oldGate.promise;
+      oldIsCurrent = lease.isCurrent();
+      return 'old';
+    });
+    await Promise.resolve();
+
+    const fresh = flight.runFresh(async (lease) => {
+      freshGeneration = lease.generation;
+      return 'fresh';
+    });
+    const joinedFresh = flight.run(async () => 'wrong');
+
+    expect(fresh).not.toBe(old);
+    expect(joinedFresh).toBe(fresh);
+    oldGate.resolve();
+
+    await expect(old).resolves.toBe('old');
+    await expect(fresh).resolves.toBe('fresh');
+    expect(oldIsCurrent).toBe(false);
+    expect(freshGeneration).toBe(1);
+  });
 });

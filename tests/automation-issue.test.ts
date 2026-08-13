@@ -29,7 +29,7 @@ describe('automation issues', () => {
 
     expect(issue).toMatchObject({
       kind: 'failed',
-      scope: 'CSV export',
+      scope: 'Glooko update',
       attemptedAt: NOW - 5 * 60 * 1000,
       lastSuccessfulAt: NOW - 3 * HOUR,
     });
@@ -47,10 +47,10 @@ describe('automation issues', () => {
         { dataThrough: NOW - HOUR, recordCount: 123 },
         NOW,
       ),
-    ).toContain('CSV export last succeeded 3 hr ago');
+    ).toContain('Glooko update last succeeded 3 hr ago');
   });
 
-  it('uses the newest failing Glooko track', () => {
+  it('ignores retired PDF automation failures', () => {
     const issue = buildGlookoAutomationIssue(
       {
         ...DEFAULT_GLOOKO_SYNC_STATE,
@@ -68,8 +68,8 @@ describe('automation issues', () => {
 
     expect(issue).toMatchObject({
       kind: 'failed',
-      scope: 'PDF report',
-      lastSuccessfulAt: NOW - 2 * HOUR,
+      scope: 'Glooko update',
+      attemptedAt: NOW - HOUR,
     });
   });
 
@@ -84,5 +84,23 @@ describe('automation issues', () => {
 
     expect(automationOutcomeWithIssue('running', issue)).toBe('running');
     expect(automationIssueForOutcome('running', issue)).toBeUndefined();
+  });
+
+  it('marks a paused direct connector failure as needing attention', () => {
+    const issue = buildGlookoAutomationIssue(
+      {
+        ...DEFAULT_GLOOKO_SYNC_STATE,
+        automaticEnabled: false,
+        sessionStatus: 'ready',
+        lastErrorCode: 'export-not-authorized',
+        lastErrorMessage: 'CSV export was not authorized.',
+      },
+      DEFAULT_GLOOKO_REPORT_SYNC_STATE,
+    );
+
+    expect(issue).toMatchObject({
+      kind: 'needs-attention',
+      scope: 'Glooko update',
+    });
   });
 });

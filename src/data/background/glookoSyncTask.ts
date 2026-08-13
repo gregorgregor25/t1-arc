@@ -16,6 +16,7 @@ import {
   glookoStepCountsAsFailure,
   glookoStepCountsAsSkipped,
 } from '@/data/glooko/glookoSyncOutcome';
+import { glookoBackgroundSchedulingEnabled } from '@/data/glooko/glookoSyncPolicy';
 import {
   loadGlookoSyncState,
   updateGlookoSyncState,
@@ -69,12 +70,12 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
               ? reportOutcome.syncState.lastDailyModeCount ?? 0
               : 0)
           : 0;
-      const failed =
-        glookoStepCountsAsFailure(outcome) ||
+      const csvFailed = glookoStepCountsAsFailure(outcome);
+      const reportFailed =
+        reportOutcome.status === 'session-required' ||
         glookoStepCountsAsFailure(reportOutcome);
-      const needsAttention =
-        outcome.status === 'session-required' ||
-        reportOutcome.status === 'session-required';
+      const failed = csvFailed;
+      const needsAttention = outcome.status === 'session-required';
       const bothSkipped =
         glookoStepCountsAsSkipped(outcome) &&
         glookoStepCountsAsSkipped(reportOutcome);
@@ -85,11 +86,13 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
               ? 'failed'
               : needsAttention
                 ? 'needs-attention'
-                : bothSkipped
-                  ? 'skipped'
-                  : outcome.status === 'success' ||
-                      reportOutcome.status === 'success'
-              ? 'success'
+                : reportFailed
+                  ? 'partial'
+                  : bothSkipped
+                    ? 'skipped'
+                    : outcome.status === 'success' ||
+                        reportOutcome.status === 'success'
+                      ? 'success'
                     : 'partial',
           recordsProcessed,
           detail,
@@ -101,6 +104,13 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
         lastBackgroundOutcome: outcome.status,
         lastBackgroundDetail: detail,
       }));
+      if (
+        !outcome.syncState.automaticEnabled ||
+        (outcome.status === 'skipped' &&
+          outcome.plan?.reason === 'action-required')
+      ) {
+        await updateGlookoBackgroundSyncRegistration().catch(() => false);
+      }
       return failed
         ? BackgroundTask.BackgroundTaskResult.Failed
         : BackgroundTask.BackgroundTaskResult.Success;
@@ -128,7 +138,8 @@ if (!TaskManager.isTaskDefined(GLOOKO_BACKGROUND_TASK)) {
 export async function updateGlookoBackgroundSyncRegistration() {
   const state = await loadGlookoSyncState();
   const available = await backgroundTaskSchedulerAvailable();
-  const shouldRegister = state.automaticEnabled && available;
+  const shouldRegister =
+    available && glookoBackgroundSchedulingEnabled(state);
   return reconcileBackgroundTaskRegistration(
     GLOOKO_BACKGROUND_TASK,
     shouldRegister,

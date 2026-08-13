@@ -1,9 +1,6 @@
-import { inflateSync, strFromU8 } from 'fflate';
+import { Inflate, strFromU8 } from 'fflate';
 
-import {
-  GlookoTextFile,
-  isGlookoCgmFileName,
-} from './glookoCsv';
+import { GlookoTextFile, isGlookoCgmFileName } from './glookoCsv';
 
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 25 * 1024 * 1024;
@@ -17,11 +14,11 @@ const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
 const UINT16_MAX = 0xffff;
 const UINT32_MAX = 0xffffffff;
+const INFLATE_INPUT_CHUNK_BYTES = 16 * 1024;
+const OUTPUT_LIMIT_REACHED = Symbol('glooko-output-limit');
 
 export function glookoEntryLimitForName(name: string) {
-  return isGlookoCgmFileName(name)
-    ? MAX_CGM_ENTRY_BYTES
-    : MAX_ENTRY_BYTES;
+  return isGlookoCgmFileName(name) ? MAX_CGM_ENTRY_BYTES : MAX_ENTRY_BYTES;
 }
 
 export interface GlookoArchiveEntrySummary {
@@ -30,11 +27,7 @@ export interface GlookoArchiveEntrySummary {
   reportedOriginalBytes?: number;
   compressedBytes?: number;
   handling: 'loaded' | 'retained';
-  reason?:
-    | 'not-normalised'
-    | 'entry-limit'
-    | 'archive-limit'
-    | 'file-limit';
+  reason?: 'not-normalised' | 'entry-limit' | 'archive-limit' | 'file-limit';
 }
 
 export interface UnpackedGlookoExport {
@@ -111,15 +104,9 @@ function zipDirectory(bytes: Uint8Array) {
   const end = findEndOfCentralDirectory(bytes);
   let entryCount = readU16(bytes, end + 10);
   let centralOffset = readU32(bytes, end + 16);
-  if (
-    entryCount === UINT16_MAX ||
-    centralOffset === UINT32_MAX
-  ) {
+  if (entryCount === UINT16_MAX || centralOffset === UINT32_MAX) {
     const locator = end - 20;
-    if (
-      locator < 0 ||
-      readU32(bytes, locator) !== ZIP64_LOCATOR_SIGNATURE
-    ) {
+    if (locator < 0 || readU32(bytes, locator) !== ZIP64_LOCATOR_SIGNATURE) {
       throw new Error('The Glooko ZIP64 directory is incomplete.');
     }
     const zip64End = readU64(bytes, locator + 8);
@@ -215,7 +202,9 @@ function parseCentralEntries(bytes: Uint8Array) {
 
 function localDataOffset(bytes: Uint8Array, entry: CentralEntry) {
   if (readU32(bytes, entry.localOffset) !== LOCAL_SIGNATURE) {
-    throw new Error(`The ZIP entry ${safeGlookoFileName(entry.name)} is invalid.`);
+    throw new Error(
+      `The ZIP entry ${safeGlookoFileName(entry.name)} is invalid.`,
+    );
   }
   return (
     entry.localOffset +
@@ -229,6 +218,7 @@ function extractEntry(
   bytes: Uint8Array,
   entry: CentralEntry,
   nextBoundary: number,
+  maximumOutputBytes: number,
 ) {
   if (entry.flags & 1) {
     throw new Error(
@@ -251,9 +241,73 @@ function extractEntry(
         `The stored ZIP entry ${safeGlookoFileName(entry.name)} has no usable size.`,
       );
     }
-    return compressed.slice();
+    if (compressed.length > maximumOutputBytes) {
+      return {
+        limitExceeded: true as const,
+        measuredBytes: compressed.length,
+      };
+    }
+    return {
+      limitExceeded: false as const,
+      content: compressed.slice(),
+      measuredBytes: compressed.length,
+    };
   }
-  if (entry.compression === 8) return inflateSync(compressed);
+  if (entry.compression === 8) {
+    let content = new Uint8Array(Math.min(maximumOutputBytes, 64 * 1024));
+    let measuredBytes = 0;
+    try {
+      const inflator = new Inflate((chunk) => {
+        const requiredBytes = measuredBytes + chunk.length;
+        if (requiredBytes > maximumOutputBytes) {
+          throw OUTPUT_LIMIT_REACHED;
+        }
+        if (requiredBytes > content.length) {
+          const grown = new Uint8Array(
+            Math.min(
+              maximumOutputBytes,
+              Math.max(requiredBytes, Math.max(1, content.length) * 2),
+            ),
+          );
+          grown.set(content.subarray(0, measuredBytes));
+          content.fill(0);
+          content = grown;
+        }
+        content.set(chunk, measuredBytes);
+        measuredBytes = requiredBytes;
+      });
+      if (!compressed.length) {
+        inflator.push(compressed, true);
+      } else {
+        for (
+          let offset = 0;
+          offset < compressed.length;
+          offset += INFLATE_INPUT_CHUNK_BYTES
+        ) {
+          const next = Math.min(
+            compressed.length,
+            offset + INFLATE_INPUT_CHUNK_BYTES,
+          );
+          inflator.push(
+            compressed.subarray(offset, next),
+            next === compressed.length,
+          );
+        }
+      }
+    } catch (error) {
+      content.fill(0);
+      if (error !== OUTPUT_LIMIT_REACHED) throw error;
+      return {
+        limitExceeded: true as const,
+        measuredBytes: maximumOutputBytes + 1,
+      };
+    }
+    return {
+      limitExceeded: false as const,
+      content: content.subarray(0, measuredBytes),
+      measuredBytes,
+    };
+  }
   throw new Error(
     `The ZIP entry ${safeGlookoFileName(entry.name)} uses unsupported compression.`,
   );
@@ -265,7 +319,9 @@ export async function unpackGlookoExport(
 ): Promise<UnpackedGlookoExport> {
   if (!bytes.length) throw new Error('The selected export is empty.');
   if (bytes.length > MAX_ARCHIVE_BYTES) {
-    throw new Error('The selected export is larger than the 50 MB safety limit.');
+    throw new Error(
+      'The selected export is larger than the 50 MB safety limit.',
+    );
   }
   if (!isZip(name, bytes)) {
     if (!name.toLowerCase().endsWith('.csv')) {
@@ -294,7 +350,6 @@ export async function unpackGlookoExport(
   }
 
   let extractedBytes = 0;
-  let selectedFiles = 0;
   let csvFiles = 0;
   const files: GlookoTextFile[] = [];
   const summaries: GlookoArchiveEntrySummary[] = [];
@@ -304,97 +359,119 @@ export async function unpackGlookoExport(
     .filter((offset) => offset >= 0 && offset < parsed.centralOffset)
     .sort((a, b) => a - b);
 
-  for (const entry of parsed.entries) {
-    const fileName = safeGlookoFileName(entry.name);
-    const sizes = {
-      reportedOriginalBytes: entry.reportedOriginalBytes,
-      compressedBytes: entry.compressedBytes,
-    };
-    if (!fileName.toLowerCase().endsWith('.csv')) {
-      summaries.push({
-        name: fileName,
-        ...sizes,
-        handling: 'retained',
-        reason: 'not-normalised',
-      });
-      continue;
-    }
+  try {
+    for (const entry of parsed.entries) {
+      const fileName = safeGlookoFileName(entry.name);
+      const sizes = {
+        reportedOriginalBytes: entry.reportedOriginalBytes,
+        compressedBytes: entry.compressedBytes,
+      };
+      if (!fileName.toLowerCase().endsWith('.csv')) {
+        summaries.push({
+          name: fileName,
+          ...sizes,
+          handling: 'retained',
+          reason: 'not-normalised',
+        });
+        continue;
+      }
 
-    csvFiles += 1;
-    if (selectedFiles >= MAX_CSV_FILES) {
-      summaries.push({
-        name: fileName,
-        ...sizes,
-        handling: 'retained',
-        reason: 'file-limit',
-      });
-      files.push({
-        name: fileName,
-        text: '',
-        retainedOnly: true,
-        originalBytes: entry.reportedOriginalBytes,
-      });
-      continue;
-    }
+      csvFiles += 1;
+      if (csvFiles > MAX_CSV_FILES) {
+        summaries.push({
+          name: fileName,
+          ...sizes,
+          handling: 'retained',
+          reason: 'file-limit',
+        });
+        files.push({
+          name: fileName,
+          text: '',
+          retainedOnly: true,
+          originalBytes: entry.reportedOriginalBytes,
+        });
+        continue;
+      }
 
-    const boundaryIndex = boundaries.findIndex(
-      (offset) => offset > entry.localOffset,
-    );
-    const nextBoundary =
-      boundaryIndex >= 0 ? boundaries[boundaryIndex]! : parsed.centralOffset;
-    // Inflate without preallocating from the advertised uncompressed size.
-    // This is the key compatibility behaviour for Glooko's unusual ZIP
-    // metadata; the bytes actually produced decide every safety limit.
-    const content = extractEntry(bytes, entry, nextBoundary);
-    const measuredBytes = content.byteLength;
-    let reason: GlookoArchiveEntrySummary['reason'];
-    if (measuredBytes > glookoEntryLimitForName(fileName)) {
-      reason = 'entry-limit';
-    }
-    else if (extractedBytes + measuredBytes > MAX_EXTRACTED_BYTES) {
-      reason = 'archive-limit';
-    }
+      const boundaryIndex = boundaries.findIndex(
+        (offset) => offset > entry.localOffset,
+      );
+      const nextBoundary =
+        boundaryIndex >= 0 ? boundaries[boundaryIndex]! : parsed.centralOffset;
+      // Stream into bounded chunks rather than allocating the complete claimed
+      // output first. Glooko sometimes advertises unusual sizes, so measured
+      // output still decides the limit without allowing a ZIP bomb to allocate
+      // beyond the per-entry or whole-archive budget.
+      const entryLimit = glookoEntryLimitForName(fileName);
+      const archiveBytesRemaining = Math.max(
+        0,
+        MAX_EXTRACTED_BYTES - extractedBytes,
+      );
+      const outputLimit = Math.min(entryLimit, archiveBytesRemaining);
+      const extracted = extractEntry(bytes, entry, nextBoundary, outputLimit);
+      const measuredBytes = extracted.measuredBytes;
+      let reason: GlookoArchiveEntrySummary['reason'];
+      if (extracted.limitExceeded) {
+        reason =
+          entryLimit <= archiveBytesRemaining ? 'entry-limit' : 'archive-limit';
+      } else if (measuredBytes > entryLimit) {
+        reason = 'entry-limit';
+      } else if (extractedBytes + measuredBytes > MAX_EXTRACTED_BYTES) {
+        reason = 'archive-limit';
+      }
 
-    if (reason) {
+      if (reason) {
+        summaries.push({
+          name: fileName,
+          ...sizes,
+          measuredBytes,
+          handling: 'retained',
+          reason,
+        });
+        files.push({
+          name: fileName,
+          text: '',
+          retainedOnly: true,
+          originalBytes: measuredBytes,
+        });
+        continue;
+      }
+
+      if (extracted.limitExceeded) {
+        throw new Error('The Glooko ZIP entry exceeded its extraction limit.');
+      }
+      const content = extracted.content;
+      extractedBytes += measuredBytes;
       summaries.push({
         name: fileName,
         ...sizes,
         measuredBytes,
-        handling: 'retained',
-        reason,
+        handling: 'loaded',
       });
-      files.push({
-        name: fileName,
-        text: '',
-        retainedOnly: true,
-        originalBytes: measuredBytes,
-      });
-      continue;
+      if (isGlookoCgmFileName(fileName)) {
+        files.push({
+          name: fileName,
+          bytes: content,
+          originalBytes: measuredBytes,
+        });
+      } else {
+        const text = strFromU8(content);
+        content.fill(0);
+        files.push({ name: fileName, text, originalBytes: measuredBytes });
+      }
     }
-
-    extractedBytes += measuredBytes;
-    selectedFiles += 1;
-    summaries.push({
-      name: fileName,
-      ...sizes,
-      measuredBytes,
-      handling: 'loaded',
-    });
-    files.push({
-      name: fileName,
-      text: isGlookoCgmFileName(fileName) ? undefined : strFromU8(content),
-      bytes: isGlookoCgmFileName(fileName) ? content : undefined,
-      originalBytes: measuredBytes,
-    });
+    if (!csvFiles) {
+      throw new Error('The selected ZIP does not contain any CSV files.');
+    }
+    return {
+      format: 'zip',
+      files,
+      entries: summaries,
+    };
+  } catch (error) {
+    files.forEach((file) => file.bytes?.fill(0));
+    throw error;
   }
-  if (!csvFiles) {
-    throw new Error('The selected ZIP does not contain any CSV files.');
-  }
-  return {
-    format: 'zip',
-    files,
-    entries: summaries,
-  };
 }
 
 export async function unpackGlookoFiles(name: string, bytes: Uint8Array) {

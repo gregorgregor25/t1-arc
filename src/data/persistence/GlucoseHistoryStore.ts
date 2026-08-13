@@ -1,4 +1,5 @@
 import { GlucoseReading, TimeRange } from '@/domain/models';
+import { glucoseReadingIdentityKey } from './glucoseReadingIdentitySchema';
 
 export interface SourceSyncState {
   sourceId: string;
@@ -37,7 +38,11 @@ export class MemoryGlucoseHistoryStore implements GlucoseHistoryStore {
 
   async upsertReadings(readings: GlucoseReading[]) {
     readings.forEach((reading) => {
-      const key = `${reading.sourceId}:${reading.timestamp}`;
+      const key = glucoseReadingIdentityKey(
+        reading.sourceId,
+        reading.timestamp,
+        reading.sourceDeviceId,
+      );
       const existing = this.readings.get(key);
       this.readings.set(key, {
         ...reading,

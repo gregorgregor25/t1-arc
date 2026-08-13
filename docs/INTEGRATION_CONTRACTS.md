@@ -13,12 +13,12 @@ T1 Arc keeps each input independent:
    readings to an encrypted local database through the same source contract.
    The direct LibreLinkUp route has no GDH runtime dependency.
 2. **Insulin:** the UK Omnipod 5 PDM reaches Glooko through its own delayed
-   cloud route. Version 1.3.6 can request an export through a local Glooko
-   WebView session or read a manually selected ZIP/CSV fallback. This source is
-   always labelled delayed and never presented as live pump state. Automated
-   capture accepts only a genuine ZIP signature; intermediate export responses
-   remain in the secure window while T1 Arc waits for the archive. A
-   privacy-safe stage/timing trace is stored on-device for the last attempt.
+   cloud route. T1 Arc can request a synchronous v3 ZIP through its native
+   UK consumer connector on Glooko's EU service or read a manually selected
+   UK-format ZIP/CSV fallback.
+   This source is always labelled delayed and never presented as live pump
+   state. A privacy-safe outcome category is stored on-device for the last
+   attempt.
    The exact captured export is retained in SQLCipher. Bounded extraction keeps
    oversized or not-yet-supported files compressed while supported records are
    normalised, so one large file cannot reject the whole export.
@@ -174,25 +174,47 @@ insulin, or write endpoint is called.
 
 ## Glooko history: on-device sync, fallback import, and exact input needed
 
-T1 Arc opens Glooko's own HTTPS sign-in page inside a screenshot-protected,
-domain-restricted Android WebView. The native connector does not receive or
-store the password. Glooko's WebView cookies and site storage stay local to the
-app so subsequent syncs can reuse the session; **Forget saved Glooko sign-in**
-clears them without removing normalized insulin.
+T1 Arc's Android connector uses the same regional Glooko consumer login and
+synchronous v3 CSV-export exchange proven by the local Hermes collector. The
+connector is currently exposed only for single-patient UK consumer
+accounts whose exports use UK local time (`Europe/London`) and day/month/year
+dates. The EU endpoint and current ZIP metadata do not identify that locale
+reliably, so setup requires an explicit user confirmation. The confirmation is
+stored separately from the encrypted secret; legacy credentials fail closed
+until it is supplied and can be confirmed without re-entering the password.
+The raw email and password are opt-in and encrypted with a
+non-exportable Android Keystore key; they are never returned to React Native,
+logged, backed up or sent to a T1 Arc server. The bridge exposes only a masked
+email, non-secret region label, and an installation-keyed HMAC of the
+dynamically discovered account identity. The HMAC key is non-exportable; the
+opaque fingerprint cannot be correlated across installations and the raw
+`glooko_code` still never crosses the bridge. It binds imported data to the
+account, so a password update or forget/reconnect can resume when the identity
+matches while a different account is rejected before any database write.
+**Forget saved Glooko sign-in** removes the credentials without removing
+already normalised insulin or glucose history.
 
-After sign-in, T1 Arc attempts Glooko's normal Export to CSV flow for an
-overlapping 30-day window. The retained WebView session also supports a
-windowless on-device connector: one-day updates become due every two hours and
-a 30-day reconciliation becomes due every 24 hours. App foregrounding checks
-whether work is due, while Android background scheduling is best effort and
-not exact. It handles normal attachments, octet-stream
-responses, generated browser blobs, links and secondary download windows. The
-compressed download is capped at 50 MB and must use HTTPS. Glooko cookies are
-sent only to Glooko domains; a separate signed file host never receives them.
-The transient cache file is deleted after processing. Manual and scheduled
-30-day source archives are committed to encrypted SQLCipher storage; frequent
-one-day snapshots are normalised without retaining redundant raw copies.
-Supported records are normalised separately.
+For every sync, the native connector starts with an empty in-memory cookie jar,
+fetches a fresh Rails CSRF token, signs in over HTTPS, and discovers that
+account's own `glooko_code` from an authenticated page. The identifier is never
+hardcoded, persisted or returned across the native bridge. It is used once to
+request an inclusive date range from the matching regional v3 CSV endpoint,
+which returns the ZIP synchronously; T1 Arc no longer clicks or scrapes Glooko's
+CSV export interface. A successful password save is only
+`pending-verification`: automatic refresh is enabled only after a real ZIP is
+validated, parsed and committed. A successful explicit recovery also re-enables
+automation and re-registers Android background work; credential generations
+only invalidate exports that were already in flight.
+
+Transient network, timeout, rate-limit and server failures are retried up to
+three times with bounded backoff. Authentication challenges, rejected
+credentials, region mismatch, protocol drift, missing account identifiers and
+invalid ZIPs remain separate privacy-safe outcomes. The compressed download is
+capped at 50 MB, expanded ZIP data and entry count are bounded, and temporary
+bytes use app-private cache before being erased. Hourly recent checks,
+reconciliation windows and Android background execution remain best effort.
+Retained source archives are committed to encrypted SQLCipher storage;
+frequent snapshots are normalised without retaining redundant raw copies.
 Overlapping exports are expected and stable record IDs prevent duplication;
 identical whole exports are content-addressed by SHA-256.
 
@@ -212,15 +234,23 @@ retention path. The schedule prioritises a due 30-day reconciliation and any
 recent window older than four hours. Authentication failure marks the retained
 session as needing sign-in and pauses both recent and historical automation.
 
-This is a personal WebView automation bridge, not a claimed official API.
-Glooko can change the page at any time, and Android can defer background work.
-The silent connector never presents a login form: an expired session pauses
-automatic work until the user deliberately opens the protected foreground
-connector. When automation cannot locate the export control, manual ZIP/CSV
-selection remains available as a fallback. If the user returns without a
-captured file, the Sources card shows a selectable,
-privacy-safe event trace containing stages only—never URLs, filenames,
-credentials, cookies, account identifiers, or response bodies.
+The consumer v3 exchange is a private Glooko interface, not a claimed official
+partner API. Glooko can change it, introduce MFA/CAPTCHA, or restrict an account
+type. Multiple-patient accounts and accounts without the explicit UK export-
+format confirmation also fail closed. This is user attestation, not automatic
+locale detection; non-UK timestamps cannot be made safe from the current ZIP
+metadata alone. Detectable month/day/year timestamps set an archive-level
+safety failure: automatic sync writes none of the archive, even when another
+recognised file contains otherwise valid UK-format rows.
+Those cases pause automatic CSV work with an explicit reason; manual
+Glooko ZIP/CSV selection remains a fallback only when the selected export
+already follows the UK time/date contract, such as an authentication or
+protocol failure. It is not a locale converter: non-UK timezone-free timestamps
+remain unsafe until explicit timezone and date-locale selection is implemented.
+A sanctioned Glooko partnership is still being pursued. Daily Overview PDF automation is paused; a PDF
+can still be selected and processed locally. Diagnostics never include URLs, query
+strings, filenames, credentials, cookies, CSRF tokens, account identifiers,
+response bodies or health values.
 
 The parser recognises Glooko-shaped CGM, basal, bolus, reported daily insulin
 total, exercise, food, medication and note headers,
@@ -402,7 +432,7 @@ readable, and the picker continues to accept legacy `.daymark` files.
 Backups explicitly exclude:
 
 - LibreLinkUp email, password, tickets and tokens
-- Glooko WebView cookies and site storage
+- Glooko email, password, native session material, WebView cookies and site storage
 - SQLCipher database keys
 - device-specific background execution diagnostics
 - Health Connect change tokens, which must be reissued for the destination

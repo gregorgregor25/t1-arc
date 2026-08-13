@@ -132,7 +132,7 @@ describe('Tarv1s response-card evidence presentation', () => {
       ],
     });
     expect(presentation?.detail).toContain(
-      'weighted across observed sensor time',
+      'accounts for the time covered by each reading',
     );
   });
 

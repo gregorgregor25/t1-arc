@@ -1,13 +1,16 @@
 import {
   DEFAULT_GLOOKO_SYNC_STATE,
-  GLOOKO_INCREMENTAL_INTERVAL_MS,
   GlookoBackgroundOutcome,
   GlookoCheckOutcome,
   GlookoSessionStatus,
   GlookoSyncState,
+  isGlookoAccountFingerprint,
 } from './glookoSyncPolicy';
 import { isDateKey } from './glookoBackfill';
-import { openDaymarkDatabase } from '@/data/persistence/daymarkDatabase';
+import {
+  openDaymarkDatabase,
+  withDaymarkTransaction,
+} from '@/data/persistence/daymarkDatabase';
 
 const METADATA_KEY = 'glooko-sync-state-v1';
 const GLOOKO_SOURCE_ID = 'glooko-export';
@@ -28,6 +31,14 @@ function finiteNonNegativeInteger(value: unknown) {
     Number.isFinite(value) &&
     value >= 0
     ? Math.floor(value)
+    : undefined;
+}
+
+function finitePositiveSafeInteger(value: unknown) {
+  return typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value > 0
+    ? value
     : undefined;
 }
 
@@ -56,12 +67,25 @@ function parseState(value: string): GlookoSyncState | undefined {
     const parsed = JSON.parse(value) as Partial<GlookoSyncState>;
     const sessionStatus: GlookoSessionStatus =
       parsed.sessionStatus === 'ready' ||
+      parsed.sessionStatus === 'pending-verification' ||
       parsed.sessionStatus === 'needs-sign-in'
         ? parsed.sessionStatus
         : 'unknown';
     return {
       automaticEnabled: parsed.automaticEnabled === true,
       sessionStatus,
+      verifiedCredentialGeneration: finitePositiveSafeInteger(
+        parsed.verifiedCredentialGeneration,
+      ),
+      verifiedAccountFingerprint: isGlookoAccountFingerprint(
+        parsed.verifiedAccountFingerprint,
+      )
+        ? parsed.verifiedAccountFingerprint
+        : undefined,
+      pendingLegacyCredentialContinuity:
+        parsed.pendingLegacyCredentialContinuity === true
+          ? true
+          : undefined,
       lastAttemptAt: finiteTimestamp(parsed.lastAttemptAt),
       lastCheckedAt: finiteTimestamp(parsed.lastCheckedAt),
       lastDownloadedAt: finiteTimestamp(parsed.lastDownloadedAt),
@@ -134,9 +158,9 @@ export async function loadGlookoSyncState(): Promise<GlookoSyncState> {
     return parseState(stored.value) ?? { ...DEFAULT_GLOOKO_SYNC_STATE };
   }
 
-  // Existing installations may already have a successful 30-day import from
-  // the manual connector. Bootstrap automation without making the user repeat
-  // that work; the silent connector will still verify the retained session.
+  // Existing installations can contain Glooko rows written before account
+  // epochs existed. Never silently bind those rows to whatever credentials
+  // happen to be configured now.
   const latest = await database.getFirstAsync<LatestImportRow>(
     `SELECT imported_at_ms, data_through_ms
      FROM import_batches
@@ -148,7 +172,7 @@ export async function loadGlookoSyncState(): Promise<GlookoSyncState> {
   if (!latest) return { ...DEFAULT_GLOOKO_SYNC_STATE };
 
   const bootstrapped: GlookoSyncState = {
-    automaticEnabled: true,
+    automaticEnabled: false,
     sessionStatus: 'unknown',
     lastAttemptAt: latest.imported_at_ms,
     lastCheckedAt: latest.imported_at_ms,
@@ -159,14 +183,33 @@ export async function loadGlookoSyncState(): Promise<GlookoSyncState> {
     lastSuccessAt: latest.imported_at_ms,
     lastFullSuccessAt: latest.imported_at_ms,
     dataThrough: latest.data_through_ms ?? undefined,
-    nextEligibleAt: latest.imported_at_ms + GLOOKO_INCREMENTAL_INTERVAL_MS,
     consecutiveFailures: 0,
+    lastErrorCode: 'unbound-existing-data',
+    lastErrorMessage:
+      'Existing Glooko data is not bound to a verified account. Remove imported Glooko data before connecting another account.',
     lastRangeDays: 30,
     lastCheckOutcome:
       latest.data_through_ms === null ? 'empty-range' : 'new-data',
   };
   await saveGlookoSyncState(bootstrapped);
   return bootstrapped;
+}
+
+/** Includes retained/non-retained imports and the separately indexed CGM rows. */
+export async function hasImportedGlookoData() {
+  const database = await openDaymarkDatabase();
+  const row = await database.getFirstAsync<{ present: number }>(
+    `SELECT CASE WHEN
+       EXISTS (
+         SELECT 1 FROM import_batches
+         WHERE source_id = 'glooko-export'
+       ) OR EXISTS (
+         SELECT 1 FROM glucose_readings
+         WHERE source_id = 'glooko-cgm'
+       )
+     THEN 1 ELSE 0 END AS present`,
+  );
+  return row?.present === 1;
 }
 
 export async function saveGlookoSyncState(state: GlookoSyncState) {
@@ -184,14 +227,31 @@ export async function updateGlookoSyncState(
     | Partial<GlookoSyncState>
     | ((current: GlookoSyncState) => GlookoSyncState),
 ) {
-  const current = await loadGlookoSyncState();
-  const next =
-    typeof update === 'function'
-      ? update(current)
-      : {
-          ...current,
-          ...update,
-        };
-  await saveGlookoSyncState(next);
-  return next;
+  // Ensure legacy bootstrap exists, then serialise read-modify-write so a
+  // background runtime cannot resurrect identity flags cleared by a reset.
+  await loadGlookoSyncState();
+  return withDaymarkTransaction(async (transaction) => {
+    const stored = await transaction.getFirstAsync<{ value: string }>(
+      'SELECT value FROM app_metadata WHERE key = ?',
+      METADATA_KEY,
+    );
+    const current =
+      stored === null
+        ? { ...DEFAULT_GLOOKO_SYNC_STATE }
+        : parseState(stored.value) ?? { ...DEFAULT_GLOOKO_SYNC_STATE };
+    const next =
+      typeof update === 'function'
+        ? update(current)
+        : {
+            ...current,
+            ...update,
+          };
+    await transaction.runAsync(
+      `INSERT INTO app_metadata (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      METADATA_KEY,
+      JSON.stringify(next),
+    );
+    return next;
+  });
 }

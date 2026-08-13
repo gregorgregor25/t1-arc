@@ -10,6 +10,7 @@ const DIABETES_AND_HEALTH_TERMS = [
   'active energy',
   'activity',
   'average',
+  'bg',
   'basal',
   'blood glucose',
   'blood sugar',
@@ -17,6 +18,7 @@ const DIABETES_AND_HEALTH_TERMS = [
   'breakfast',
   'carb',
   'cgm',
+  'coefficient of variation',
   'comparison',
   'coverage',
   'dexcom',
@@ -26,6 +28,7 @@ const DIABETES_AND_HEALTH_TERMS = [
   'exercise',
   'food',
   'glucose',
+  'gmi',
   'health',
   'heart rate',
   'high',
@@ -36,6 +39,9 @@ const DIABETES_AND_HEALTH_TERMS = [
   'dka',
   'libre',
   'low',
+  'gap',
+  'gaps',
+  'median',
   'lunch',
   'meal',
   'medication',
@@ -45,30 +51,37 @@ const DIABETES_AND_HEALTH_TERMS = [
   'overnight',
   'last night',
   'morning',
+  'dawn phenomenon',
   'pattern',
   'pump',
   'reading',
+  'sensor',
   'sleep',
   'steps',
   'stale',
   'spike',
+  'stress',
   'sugar',
+  'sugars',
   'time in range',
+  'target range',
   'timing range',
   'tir',
   'trend',
   'variability',
+  'changed',
   'weight',
   'workout',
   'xdrip',
   'yesterday',
+  'yday',
 ];
 
 const CLEARLY_OFF_TOPIC =
   /\b(capital of|country|geography|weather|football|sports? score|celebrity|stock price|share price|cryptocurrency|write (?:me )?(?:a )?(?:poem|essay|story|code)|translate|homework|tell (?:me )?(?:a )?joke|trivia)\b/i;
 
 const CREDENTIAL_EXTRACTION =
-  /\b(show|tell|reveal|display|retrieve|give)\b[\s\S]{0,80}\b(password|passcode|api[ -]?key|secret|credential|token)\b/i;
+  /\b(show|tell|reveal|display|retrieve|give|what(?:'s| is))\b[\s\S]{0,80}\b(password|passcode|api[ -]?key|secret|credential|token)\b/i;
 
 const FOLLOW_UP =
   /^(why|how|explain|go deeper|tell me more|which one|show me|compare them|what about that|and this|is that good|is that bad|(?:what|how) about (?:the )?(?:previous|prior|earlier|recent|current) period)[?.! ]*$/i;

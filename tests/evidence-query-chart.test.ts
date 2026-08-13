@@ -428,10 +428,10 @@ describe('deterministic display compaction', () => {
     });
     expect(isEvidenceQueryVisualizationReference(compacted)).toBe(true);
     expect(buildEvidenceQueryAccessibilitySummary(compacted!)).toContain(
-      `of ${pointCount} timestamp-normalised samples`,
+      `of ${pointCount} readings to stay clear`,
     );
     expect(buildEvidenceQueryAccessibilitySummary(compacted!)).toContain(
-      `all ${pointCount} exact source records`,
+      `all ${pointCount} saved records`,
     );
     const excessiveMaximum = structuredClone(compacted!);
     excessiveMaximum.windows[0]!.sampling!.maximumDisplayedPoints =

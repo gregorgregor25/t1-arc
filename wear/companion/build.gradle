@@ -55,7 +55,9 @@ android {
             // Production builds switch the whole suite to one protected key.
             signingConfig t1ArcProductionSigningConfigured
                 ? signingConfigs.production
-                : signingConfigs.debug
+                : t1ArcPrivateTestBuildRequested
+                    ? signingConfigs.debug
+                    : null
         }
     }
 }

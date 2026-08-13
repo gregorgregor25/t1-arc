@@ -58,7 +58,7 @@ function readingFromRow(row: GlucoseRow): GlucoseReading {
     importedAt: row.imported_at_ms ?? undefined,
     sourceFile: row.source_file ?? undefined,
     sourceRow: row.source_row ?? undefined,
-    sourceDeviceId: row.source_device_id ?? undefined,
+    sourceDeviceId: row.source_device_id || undefined,
   };
 }
 
@@ -78,51 +78,56 @@ export class SqliteGlucoseHistoryStore implements GlucoseHistoryStore {
     if (readings.length === 0) return;
     await this.getDatabase();
     await withDaymarkTransaction(async (transaction) => {
-      const statement = await transaction.prepareAsync(
-        `INSERT INTO glucose_readings (
-           id, source_id, timestamp_ms, received_at_ms, mmol_l, trend, quality,
-           source_factory_timestamp, source_local_timestamp,
-           timestamp_discrepancy_minutes, imported_at_ms, source_file,
-           source_row, source_device_id
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(source_id, timestamp_ms) DO UPDATE SET
-           id = excluded.id,
-           received_at_ms = MIN(
-             glucose_readings.received_at_ms, excluded.received_at_ms
-           ),
-           mmol_l = excluded.mmol_l,
-           trend = excluded.trend,
-           quality = excluded.quality,
-           source_factory_timestamp = excluded.source_factory_timestamp,
-           source_local_timestamp = excluded.source_local_timestamp,
-           timestamp_discrepancy_minutes =
-             excluded.timestamp_discrepancy_minutes,
-           imported_at_ms = excluded.imported_at_ms,
-           source_file = excluded.source_file,
-           source_row = excluded.source_row,
-           source_device_id = excluded.source_device_id`,
-      );
-      try {
-        for (const reading of readings) {
-          await statement.executeAsync([
-            reading.id,
-            reading.sourceId,
-            reading.timestamp,
-            reading.receivedAt,
-            reading.mmolL,
-            reading.trend,
-            reading.quality,
-            reading.sourceFactoryTimestamp ?? null,
-            reading.sourceLocalTimestamp ?? null,
-            reading.timestampDiscrepancyMinutes ?? null,
-            reading.importedAt ?? null,
-            reading.sourceFile ?? null,
-            reading.sourceRow ?? null,
-            reading.sourceDeviceId ?? null,
-          ]);
-        }
-      } finally {
-        await statement.finalizeAsync();
+      const readingBatchSize = 40;
+      for (
+        let offset = 0;
+        offset < readings.length;
+        offset += readingBatchSize
+      ) {
+        const batch = readings.slice(offset, offset + readingBatchSize);
+        const values = batch.map(
+          () => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        );
+        const parameters = batch.flatMap((reading) => [
+          reading.id,
+          reading.sourceId,
+          reading.timestamp,
+          reading.receivedAt,
+          reading.mmolL,
+          reading.trend,
+          reading.quality,
+          reading.sourceFactoryTimestamp ?? null,
+          reading.sourceLocalTimestamp ?? null,
+          reading.timestampDiscrepancyMinutes ?? null,
+          reading.importedAt ?? null,
+          reading.sourceFile ?? null,
+          reading.sourceRow ?? null,
+          reading.sourceDeviceId ?? '',
+        ]);
+        await transaction.runAsync(
+          `INSERT INTO glucose_readings (
+             id, source_id, timestamp_ms, received_at_ms, mmol_l, trend, quality,
+             source_factory_timestamp, source_local_timestamp,
+             timestamp_discrepancy_minutes, imported_at_ms, source_file,
+             source_row, source_device_id
+           ) VALUES ${values.join(', ')}
+           ON CONFLICT(source_id, timestamp_ms, source_device_id) DO UPDATE SET
+             received_at_ms = MIN(
+               glucose_readings.received_at_ms, excluded.received_at_ms
+             ),
+             mmol_l = excluded.mmol_l,
+             trend = excluded.trend,
+             quality = excluded.quality,
+             source_factory_timestamp = excluded.source_factory_timestamp,
+             source_local_timestamp = excluded.source_local_timestamp,
+             timestamp_discrepancy_minutes =
+               excluded.timestamp_discrepancy_minutes,
+             imported_at_ms = excluded.imported_at_ms,
+             source_file = excluded.source_file,
+             source_row = excluded.source_row,
+             source_device_id = excluded.source_device_id`,
+          ...parameters,
+        );
       }
     });
   }
@@ -133,7 +138,7 @@ export class SqliteGlucoseHistoryStore implements GlucoseHistoryStore {
       ? await database.getAllAsync<GlucoseRow>(
           `SELECT * FROM glucose_readings
            WHERE timestamp_ms >= ? AND timestamp_ms < ? AND source_id = ?
-           ORDER BY timestamp_ms ASC`,
+           ORDER BY timestamp_ms ASC, source_device_id ASC, id ASC`,
           range.start,
           range.end,
           sourceId,
@@ -141,7 +146,7 @@ export class SqliteGlucoseHistoryStore implements GlucoseHistoryStore {
       : await database.getAllAsync<GlucoseRow>(
           `SELECT * FROM glucose_readings
            WHERE timestamp_ms >= ? AND timestamp_ms < ?
-           ORDER BY timestamp_ms ASC`,
+           ORDER BY timestamp_ms ASC, source_device_id ASC, id ASC`,
           range.start,
           range.end,
         );
@@ -173,11 +178,14 @@ export class SqliteGlucoseHistoryStore implements GlucoseHistoryStore {
       ? await database.getFirstAsync<GlucoseRow>(
           `SELECT * FROM glucose_readings
            WHERE source_id = ?
-           ORDER BY timestamp_ms DESC LIMIT 1`,
+           ORDER BY timestamp_ms DESC, received_at_ms DESC,
+             source_device_id ASC, id ASC LIMIT 1`,
           sourceId,
         )
       : await database.getFirstAsync<GlucoseRow>(
-          'SELECT * FROM glucose_readings ORDER BY timestamp_ms DESC LIMIT 1',
+          `SELECT * FROM glucose_readings
+           ORDER BY timestamp_ms DESC, received_at_ms DESC,
+             source_device_id ASC, id ASC LIMIT 1`,
         );
     return row ? readingFromRow(row) : undefined;
   }

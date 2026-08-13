@@ -739,13 +739,12 @@ describe('Tarv1s fail-closed capability outcomes', () => {
     });
   });
 
-  it('reports unsupported domains rather than treating insulin as glucose', () => {
+  it('resolves an exact insulin total without treating it as glucose', () => {
     const result = resolve('What was my total insulin over the last seven days?');
-    expect(result.outcome).toMatchObject({
-      status: 'unsupported',
-      code: 'unsupported_domain',
-    });
-    expect(result.intent.domain?.value).toBe('insulin');
+    expect(result.outcome).toEqual({ status: 'ready', code: 'ready' });
+    if (!isReadyTarvisIntent(result)) throw new Error('Expected ready intent');
+    expect(result.intent.domain.value).toBe('insulin');
+    expect(result.intent.metrics[0]?.value).toBe('insulin.delivered_total');
   });
 
   it('clarifies a genuinely negated metric', () => {

@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +18,24 @@ import DaymarkGlookoExport, {
   GlookoCredentialStatus,
 } from '../../modules/daymark-glooko-export';
 import { planNextGlookoBackfill } from '@/data/glooko/glookoBackfill';
-import { presentGlookoSyncState } from '@/data/glooko/glookoSyncPresentation';
+import {
+  needsGlookoLegacyContinuityConfirmation,
+  runSavedGlookoConnectionCheck,
+} from '@/data/glooko/glookoCredentialVerification';
+import { hasImportedGlookoData } from '@/data/glooko/glookoSyncState';
+import { glookoFailureDisposition } from '@/data/glooko/glookoSyncPolicy';
+import {
+  presentGlookoFailure,
+  presentGlookoSyncState,
+} from '@/data/glooko/glookoSyncPresentation';
 import {
   PreparedGlookoImport,
   prepareGlookoImport,
 } from '@/data/import/glookoImport';
+import {
+  GlookoImportSourceCommitGuard,
+  releasePreparedGlookoImportSource,
+} from '@/data/import/glookoImportLifecycle';
 import {
   ImportWriteResult,
   StoredImportSourceSummary,
@@ -80,16 +93,6 @@ function canImport(prepared: PreparedGlookoImport) {
   );
 }
 
-function releaseSourcePayload(
-  prepared: PreparedGlookoImport,
-): PreparedGlookoImport {
-  prepared.sourcePayload?.bytes.fill(0);
-  return {
-    preview: prepared.preview,
-    batch: prepared.batch,
-  };
-}
-
 function dateRange(prepared: PreparedGlookoImport) {
   const { dataStart, dataThrough } = prepared.preview;
   if (dataStart === undefined || dataThrough === undefined)
@@ -111,20 +114,6 @@ function showSyncNotice(message: string) {
   }
 }
 
-function formatStoredBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB'] as const;
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toLocaleString('en-GB', {
-    maximumFractionDigits: value >= 10 ? 1 : 2,
-  })} ${units[unitIndex]}`;
-}
-
 export function GlookoImportCard() {
   const { colors, radius } = useAppTheme();
   const {
@@ -136,6 +125,7 @@ export function GlookoImportCard() {
     getGlookoArchiveSummary,
     hasSavedGlookoExport,
     importGlookoData,
+    beginGlookoCredentialSetup,
     markGlookoCredentialsReady,
     markGlookoSessionForgotten,
     now,
@@ -151,15 +141,17 @@ export function GlookoImportCard() {
   const [forgettingSession, setForgettingSession] = useState(false);
   const [credentialBusy, setCredentialBusy] = useState(false);
   const [credentialStatus, setCredentialStatus] =
-    useState<GlookoCredentialStatus>({ configured: false });
+    useState<GlookoCredentialStatus>({
+      configured: false,
+      credentialGeneration: 0,
+    });
   const [clearMessage, setClearMessage] = useState<string>();
-  const [lastTrace, setLastTrace] = useState<string>();
-  const [showTrace, setShowTrace] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedExportAvailable, setSavedExportAvailable] = useState(false);
   const [archiveSummary, setArchiveSummary] =
     useState<StoredImportSourceSummary>();
   const [reprocessMessage, setReprocessMessage] = useState<string>();
+  const sourceCommitGuard = useRef(new GlookoImportSourceCommitGuard()).current;
   const prepared =
     state.kind === 'preview' ||
     state.kind === 'importing' ||
@@ -175,8 +167,21 @@ export function GlookoImportCard() {
     () => presentGlookoSyncState(glookoSyncState, now),
     [glookoSyncState, now],
   );
-  const automaticNeedsAttention =
-    syncPresentation.tone === 'attention';
+  const automaticNeedsAttention = syncPresentation.tone === 'attention';
+  const automaticActionRequired =
+    glookoFailureDisposition(glookoSyncState.lastErrorCode) ===
+    'action-required';
+  const savedConnectionActionLabel =
+    glookoSyncState.verifiedAccountFingerprint === undefined &&
+    !automaticActionRequired
+      ? 'Verify saved connection'
+      : glookoSyncState.sessionStatus === 'pending-verification'
+        ? automaticActionRequired
+          ? 'Retry saved connection'
+          : 'Verify saved connection'
+        : automaticActionRequired
+          ? 'Retry saved connection'
+          : 'Check saved connection';
   const earliestKnownGlookoDate =
     archiveSummary?.dataStart !== undefined
       ? toDateKey(archiveSummary.dataStart)
@@ -206,18 +211,12 @@ export function GlookoImportCard() {
   );
 
   useEffect(() => {
-    let active = true;
-    void DaymarkGlookoExport.getLastTraceAsync()
-      .then((trace) => {
-        if (active && trace) setLastTrace(trace);
-      })
-      .catch(() => {
-        // Diagnostics must never block the import experience.
-      });
     return () => {
-      active = false;
+      // Replacement, failure, cancellation/navigation and unmount all release
+      // an uncommitted manual source archive deterministically.
+      if (prepared) sourceCommitGuard.disposePreview(prepared);
     };
-  }, [revision]);
+  }, [prepared, sourceCommitGuard]);
 
   useEffect(() => {
     let active = true;
@@ -264,23 +263,50 @@ export function GlookoImportCard() {
   async function setUpAutomaticSignIn() {
     setCredentialBusy(true);
     setClearMessage(undefined);
+    let releaseCredentialBarrier: (() => void) | undefined;
     try {
-      const result = await DaymarkGlookoExport.openCredentialSetupAsync();
+      releaseCredentialBarrier = await beginGlookoCredentialSetup();
+      const legacyContinuityRequired =
+        needsGlookoLegacyContinuityConfirmation(
+          glookoSyncState,
+          await hasImportedGlookoData(),
+        );
+      const result = await DaymarkGlookoExport.openCredentialSetupAsync(
+        legacyContinuityRequired,
+      );
       const status = await DaymarkGlookoExport.getCredentialStatusAsync();
       setCredentialStatus(status);
       if (result.status === 'saved') {
-        await markGlookoCredentialsReady();
-        showSyncNotice(
-          'Encrypted Glooko sign-in saved. Automatic refresh is enabled.',
+        const verificationPromise = markGlookoCredentialsReady(
+          result.credentialGeneration,
+          result.legacyCredentialContinuity,
         );
+        // The saved generation's fresh run is now reserved behind the setup
+        // barrier, so releasing cannot let an older account re-enter first.
+        releaseCredentialBarrier();
+        releaseCredentialBarrier = undefined;
+        const verification = await verificationPromise;
+        if (verification.status === 'success') {
+          showSyncNotice(
+            'Glooko is connected. Automatic updates are on.',
+          );
+        } else {
+          const message =
+            verification.status === 'skipped'
+              ? 'The sign-in was saved, but another Glooko check is already running.'
+              : presentGlookoFailure(verification.reason);
+          setClearMessage(message);
+          showSyncNotice(
+            'Your sign-in was saved, but T1 Arc could not confirm the connection. Open Glooko in Sources to try again.',
+          );
+        }
       }
     } catch (error) {
       setClearMessage(
-        error instanceof Error
-          ? error.message
-          : 'Automatic Glooko sign-in could not be configured.',
+        'T1 Arc could not save the Glooko connection. Check the details and try again.',
       );
     } finally {
+      releaseCredentialBarrier?.();
       setCredentialBusy(false);
     }
   }
@@ -294,16 +320,20 @@ export function GlookoImportCard() {
         // The connector result remains usable without its diagnostic trace.
       }
     }
-    if (trace) setLastTrace(trace);
     return trace;
   }
 
   async function readPreparedExport(fileName: string, uri: string) {
     const cachedFile = new File(uri);
+    let bytes: Uint8Array | undefined;
+    let transferred = false;
     try {
-      const bytes = await cachedFile.bytes();
-      return await prepareGlookoImport(fileName, bytes);
+      bytes = await cachedFile.bytes();
+      const next = await prepareGlookoImport(fileName, bytes);
+      transferred = true;
+      return next;
     } finally {
+      if (!transferred) bytes?.fill(0);
       // Both the native connector and DocumentPicker create a private cache
       // copy. The exact bytes are carried into encrypted SQLCipher storage by
       // the prepared import, so this transient filesystem copy can be removed.
@@ -329,11 +359,11 @@ export function GlookoImportCard() {
           message:
             outcome.status === 'skipped'
               ? 'Glooko refresh is already being handled.'
-              : outcome.message,
+              : presentGlookoFailure(outcome.reason),
           diagnostic: connectorDiagnostic,
         });
         showSyncNotice(
-          'Glooko export was not imported. Open connector details in Sources.',
+          'Glooko did not update. Open Glooko in Sources to try again.',
         );
         return;
       }
@@ -346,25 +376,22 @@ export function GlookoImportCard() {
       const inserted = insertedRecords(outcome.result);
       showSyncNotice(
         inserted
-          ? `Glooko sync complete: ${inserted} records added.`
+          ? `Glooko updated: ${inserted} new items added.`
           : outcome.result.alreadyImported
-            ? 'This Glooko export was already imported.'
+            ? 'This Glooko file was already added.'
             : outcome.result.sourcePayloadStored
-              ? 'Glooko export saved, but no supported records were recognised yet.'
-              : 'Glooko sync completed without new records.',
+              ? 'The Glooko file was saved, but T1 Arc did not find any data it understands.'
+              : 'Glooko is up to date.',
       );
     } catch (error) {
       connectorDiagnostic = await refreshLastTrace(connectorDiagnostic);
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Glooko could not be synced on this device.',
+        message: 'Glooko did not finish updating. Try again in a moment.',
         diagnostic: connectorDiagnostic,
       });
       showSyncNotice(
-        'Glooko export was not imported. Open connector details in Sources.',
+        'Glooko did not update. Open Glooko in Sources to try again.',
       );
     }
   }
@@ -373,7 +400,12 @@ export function GlookoImportCard() {
     setState({ kind: 'preparing' });
     let connectorDiagnostic: string | undefined;
     try {
-      const outcome = await syncGlookoQuietly();
+      const outcome = await runSavedGlookoConnectionCheck(
+        credentialStatus,
+        glookoSyncState,
+        markGlookoCredentialsReady,
+        syncGlookoQuietly,
+      );
       connectorDiagnostic = await refreshLastTrace(
         'diagnostic' in outcome ? outcome.diagnostic : undefined,
       );
@@ -383,13 +415,13 @@ export function GlookoImportCard() {
           message:
             outcome.status === 'skipped'
               ? 'Glooko refresh is already being handled.'
-              : outcome.message,
+              : presentGlookoFailure(outcome.reason),
           diagnostic: connectorDiagnostic,
         });
         showSyncNotice(
-          outcome.status === 'session-required'
-            ? 'Saved Glooko sign-in has expired. Use Sync now to sign in again.'
-            : 'Quiet Glooko refresh did not complete. Open connector details in Sources.',
+          outcome.status === 'skipped'
+            ? 'Another Glooko refresh is already running.'
+            : presentGlookoFailure(outcome.reason),
         );
         return;
       }
@@ -402,21 +434,18 @@ export function GlookoImportCard() {
       const inserted = insertedRecords(outcome.result);
       showSyncNotice(
         inserted
-          ? `Quiet Glooko refresh complete: ${inserted} records added.`
-          : 'Quiet Glooko refresh worked. Your saved sign-in is ready for automatic updates.',
+          ? `Glooko updated: ${inserted} new items added.`
+          : 'Glooko is connected and ready for automatic updates.',
       );
     } catch (error) {
       connectorDiagnostic = await refreshLastTrace(connectorDiagnostic);
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The saved Glooko session could not be tested.',
+        message: 'The saved Glooko connection could not be checked. Try again in a moment.',
         diagnostic: connectorDiagnostic,
       });
       showSyncNotice(
-        'Quiet Glooko refresh did not complete. Open connector details in Sources.',
+        'Glooko did not update. Open Glooko in Sources to try again.',
       );
     }
   }
@@ -439,11 +468,11 @@ export function GlookoImportCard() {
           message:
             outcome.status === 'skipped'
               ? 'Glooko refresh is already being handled.'
-              : outcome.message,
+              : presentGlookoFailure(outcome.reason),
           diagnostic: connectorDiagnostic,
         });
         showSyncNotice(
-          'Older Glooko history was not imported. Open connector details in Sources.',
+          'Older Glooko history was not added. Open Glooko in Sources to try again.',
         );
         return;
       }
@@ -463,10 +492,7 @@ export function GlookoImportCard() {
       connectorDiagnostic = await refreshLastTrace(connectorDiagnostic);
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Older Glooko history could not be imported.',
+        message: 'Older Glooko history could not be added. Try again in a moment.',
         diagnostic: connectorDiagnostic,
       });
     }
@@ -486,7 +512,7 @@ export function GlookoImportCard() {
     });
     Alert.alert(
       'Add the next older 90 days?',
-      `T1 Arc will ask Glooko for ${start} to ${end}, retain the complete export in encrypted storage, and merge new records without duplicates. Glooko may take 1–2 minutes to prepare it.`,
+      `T1 Arc will ask Glooko for ${start} to ${end} and add anything new. Your original download stays secure on this phone. This can take a couple of minutes.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -519,7 +545,7 @@ export function GlookoImportCard() {
         });
         Alert.alert(
           'Build history back to this date?',
-          `T1 Arc will work backwards to ${label}, retaining at most one complete Glooko export per day. Recent refreshes stay higher priority, and the process pauses if Glooko asks you to sign in again.`,
+          `T1 Arc will work backwards to ${label}, adding one older period each day. Recent updates stay the priority, and the process pauses if Glooko asks you to sign in again.`,
           [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -544,7 +570,7 @@ export function GlookoImportCard() {
   function stopAutomaticBackfill() {
     Alert.alert(
       'Stop automatic history?',
-      'Already retained exports and organised records stay encrypted on this phone. You can resume from the same point later.',
+      'History already added stays securely on this phone. You can continue from the same point later.',
       [
         { text: 'Keep running', style: 'cancel' },
         {
@@ -583,33 +609,48 @@ export function GlookoImportCard() {
     } catch (error) {
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The selected export could not be read.',
+        message: 'T1 Arc could not safely read this Glooko file. Choose a fresh download from Glooko and try again.',
       });
     }
   }
 
-  async function commitImport() {
+  function commitImport() {
     if (!prepared || !canImport(prepared)) return;
+    Alert.alert(
+      'Confirm this Glooko data',
+      'This file must belong to the same person as any Glooko data already in T1 Arc, or be the first Glooko data added. Its times must be UK local time and its dates must be written day/month/year.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm and import',
+          onPress: () => void commitConfirmedImport(),
+        },
+      ],
+    );
+  }
+
+  async function commitConfirmedImport() {
+    if (!prepared || !canImport(prepared)) return;
+    sourceCommitGuard.begin(prepared);
     setState({ kind: 'importing', prepared });
     try {
-      const result = await importGlookoData(prepared);
+      const result = await importGlookoData(prepared, {
+        samePersonOrFirstGlookoDataConfirmed: true,
+        ukTimestampFormatConfirmed: true,
+      });
       setState({
         kind: 'success',
-        prepared: releaseSourcePayload(prepared),
+        prepared: releasePreparedGlookoImportSource(prepared),
         result,
       });
       if (result.sourcePayloadStored) setSavedExportAvailable(true);
     } catch (error) {
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The encrypted import did not complete.',
+        message: 'T1 Arc could not add this Glooko data. Nothing was changed. Try a fresh download from Glooko.',
       });
+    } finally {
+      sourceCommitGuard.finish(prepared);
     }
   }
 
@@ -624,21 +665,18 @@ export function GlookoImportCard() {
         result.insertedBoluses +
         result.insertedContext +
         result.insertedDailyTotals;
-      const message = `${result.archivesProcessed} saved ${
-        result.archivesProcessed === 1 ? 'snapshot' : 'snapshots'
-      } reorganised · ${inserted} new ${
-        inserted === 1 ? 'record' : 'records'
-      }${result.archivesFailed ? ` · ${result.archivesFailed} could not be read and were kept unchanged` : ''}.`;
+      const message = `${result.archivesProcessed} saved Glooko ${
+        result.archivesProcessed === 1 ? 'update was' : 'updates were'
+      } checked again · ${inserted} new ${
+        inserted === 1 ? 'item' : 'items'
+      } added${result.archivesFailed ? ` · ${result.archivesFailed} could not be read and were left unchanged` : ''}.`;
       setState({ kind: 'idle' });
       setReprocessMessage(message);
       showSyncNotice(message);
     } catch (error) {
       setState({
         kind: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The saved Glooko export could not be reprocessed.',
+        message: 'T1 Arc could not check the saved Glooko history again. Nothing was changed.',
       });
     }
   }
@@ -646,7 +684,7 @@ export function GlookoImportCard() {
   function confirmClear() {
     Alert.alert(
       'Remove imported Glooko data?',
-      'This deletes Glooko historical glucose, basal, bolus, pump carbohydrate/context records and import history from T1 Arc. Direct Libre history and manual entries are kept.',
+      'This removes Glooko glucose, basal insulin, bolus insulin, pump carbs and notes from T1 Arc. Libre history and anything entered by hand are kept.',
       [
         { text: 'Keep data', style: 'cancel' },
         {
@@ -673,9 +711,7 @@ export function GlookoImportCard() {
               })
               .catch((error) => {
                 setClearMessage(
-                  error instanceof Error
-                    ? error.message
-                    : 'Imported data could not be removed.',
+                  'Imported Glooko data could not be removed. Try again.',
                 );
               })
               .finally(() => setClearing(false));
@@ -688,7 +724,7 @@ export function GlookoImportCard() {
   function confirmForgetSession() {
     Alert.alert(
       'Remove the Glooko sign-in?',
-      'This deletes the encrypted Glooko email and password plus its web session from this phone. Imported health data stays on this device.',
+      'This removes the saved Glooko connection from this phone. Glucose and insulin already added to T1 Arc are kept.',
       [
         { text: 'Keep sign-in', style: 'cancel' },
         {
@@ -700,16 +736,16 @@ export function GlookoImportCard() {
             void DaymarkGlookoExport.clearSessionAsync()
               .then(async () => {
                 await markGlookoSessionForgotten();
-                setCredentialStatus({ configured: false });
+                const status =
+                  await DaymarkGlookoExport.getCredentialStatusAsync();
+                setCredentialStatus(status);
                 setClearMessage(
                   'Encrypted Glooko sign-in removed. Imported records were kept.',
                 );
               })
               .catch((error) =>
                 setClearMessage(
-                  error instanceof Error
-                    ? error.message
-                    : 'The Glooko sign-in could not be cleared.',
+                  'The saved Glooko connection could not be removed. Try again.',
                 ),
               )
               .finally(() => setForgettingSession(false));
@@ -741,8 +777,9 @@ export function GlookoImportCard() {
         <View style={styles.headerCopy}>
           <Text style={[styles.title, { color: colors.text }]}>Glooko</Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Sign in once. T1 Arc securely keeps your glucose, insulin, pump
-            activity and settings up to date on this phone.
+            If you have one Glooko patient and use UK dates and times, sign in
+            once to keep your glucose and insulin history up to date. Pump
+            reports can still be added by hand.
           </Text>
         </View>
       </View>
@@ -789,15 +826,15 @@ export function GlookoImportCard() {
           <View style={styles.credentialCopy}>
             <Text style={[styles.credentialTitle, { color: colors.text }]}>
               {credentialStatus.configured
-                ? 'Encrypted on this phone'
+                ? 'Saved securely on this phone'
                 : 'Set up automatic sign-in'}
             </Text>
             <Text
               style={[styles.credentialDetail, { color: colors.textSecondary }]}
             >
               {credentialStatus.configured
-                ? `${credentialStatus.maskedEmail ?? 'Saved Glooko account'} · protected by Android Keystore`
-                : 'Glooko ends its session after every export. Save the sign-in securely so T1 Arc can reconnect itself.'}
+                ? `${credentialStatus.maskedEmail ?? 'Saved Glooko account'} · UK dates and times confirmed`
+                : 'Confirm that this account uses UK local time and dates written day/month/year. Being on Glooko EU does not guarantee this.'}
             </Text>
           </View>
           <Pressable
@@ -838,8 +875,14 @@ export function GlookoImportCard() {
               style={[styles.automaticDetail, { color: colors.textSecondary }]}
             >
               {glookoSyncState.automaticEnabled
-                ? 'On — T1 Arc quietly collects everything available from Glooko.'
-                : 'Sign in to keep your Glooko history up to date automatically.'}
+                ? 'On — T1 Arc checks Glooko and adds anything new.'
+                : glookoSyncState.sessionStatus === 'pending-verification'
+                  ? automaticActionRequired
+                    ? 'Paused — this account needs attention before automatic updates can start.'
+                    : 'Your saved sign-in needs one successful check before automatic updates can start.'
+                  : automaticActionRequired
+                    ? 'Paused — this account needs attention before automatic updates can resume.'
+                    : 'Sign in to keep your Glooko history up to date automatically.'}
             </Text>
           </View>
           <Ionicons
@@ -933,7 +976,7 @@ export function GlookoImportCard() {
             ]}
           >
             {glookoSyncing
-              ? 'Refreshing locally on this phone…'
+              ? 'Checking Glooko on this phone…'
               : glookoSyncState.sessionStatus === 'needs-sign-in'
                 ? credentialStatus.configured
                   ? 'The encrypted sign-in needs updating before automatic refresh can continue.'
@@ -941,7 +984,7 @@ export function GlookoImportCard() {
                 : syncPresentation.message}
           </Text>
         </View>
-        {showAdvanced && glookoSyncState.automaticEnabled ? (
+        {showAdvanced && credentialStatus.configured ? (
           <>
             <View
               style={[
@@ -974,17 +1017,18 @@ export function GlookoImportCard() {
                 ]}
               >
                 {glookoSyncState.lastBackgroundRunAt
-                  ? `Android worker ran ${relativeAge(
+                  ? `Last automatic check ${relativeAge(
                       glookoSyncState.lastBackgroundRunAt,
                       now,
                     )}${glookoSyncState.lastBackgroundDetail ? ` · ${glookoSyncState.lastBackgroundDetail}` : ''}.`
                   : glookoBackgroundSyncAvailable
-                    ? 'Android background worker is registered and waiting for its first system run.'
-                    : 'Android background worker is unavailable; opening the app still checks whether a sync is due.'}
+                    ? 'Waiting for the first automatic check.'
+                    : 'Opening T1 Arc will still check whether Glooko needs updating.'}
               </Text>
             </View>
             <Pressable
-              accessibilityHint="Signs into Glooko securely on this phone without opening its page"
+              accessibilityLabel={savedConnectionActionLabel}
+              accessibilityHint="Checks that T1 Arc can update from Glooko"
               accessibilityRole="button"
               disabled={glookoSyncing || state.kind === 'preparing'}
               onPress={() => void testAutomaticGlookoRefresh()}
@@ -1009,7 +1053,7 @@ export function GlookoImportCard() {
                 <Text
                   style={[styles.quietRefreshTitle, { color: colors.primary }]}
                 >
-                  Check saved connection
+                  {savedConnectionActionLabel}
                 </Text>
                 <Text
                   style={[
@@ -1017,7 +1061,16 @@ export function GlookoImportCard() {
                     { color: colors.textTertiary },
                   ]}
                 >
-                  Confirms that automatic updates can run
+                  {glookoSyncState.verifiedAccountFingerprint === undefined &&
+                  !automaticActionRequired
+                    ? 'Runs the verified download required before automatic updates can start'
+                    : glookoSyncState.sessionStatus === 'pending-verification'
+                      ? automaticActionRequired
+                        ? 'Try again after resolving the issue shown above'
+                        : 'Retries the verified download required before automatic updates can start'
+                      : automaticActionRequired
+                        ? 'Try again after resolving the issue shown above'
+                        : 'Confirms that automatic updates can run'}
                 </Text>
               </View>
             </Pressable>
@@ -1045,33 +1098,23 @@ export function GlookoImportCard() {
             />
             <View style={styles.archiveCopy}>
               <Text style={[styles.archiveTitle, { color: colors.text }]}>
-                Private source archive
+                Saved Glooko history
               </Text>
               <Text
                 style={[styles.archiveDetail, { color: colors.textSecondary }]}
               >
-                Complete original exports stay encrypted on this phone,
-                including files T1 Arc cannot organise yet.
+                Your saved Glooko history stays secure on this phone so T1 Arc
+                can check it again after an app update.
               </Text>
             </View>
           </View>
           <View style={[styles.syncFacts, { borderTopColor: colors.divider }]}>
             <SyncFact
-              label="Snapshots"
+              label="Saved updates"
               value={archiveSummary.archiveCount.toLocaleString('en-GB')}
             />
             <SyncFact
-              label="On-device size"
-              value={formatStoredBytes(archiveSummary.totalBytes)}
-            />
-            <SyncFact
-              label="Indexed rows"
-              value={(archiveSummary.indexedRecordCount ?? 0).toLocaleString(
-                'en-GB',
-              )}
-            />
-            <SyncFact
-              label="Last retained"
+              label="Last saved"
               value={
                 archiveSummary.latestStoredAt === undefined
                   ? 'Unknown'
@@ -1080,12 +1123,9 @@ export function GlookoImportCard() {
             />
           </View>
           <Text style={[styles.archiveMeta, { color: colors.textTertiary }]}>
-            {archiveSummary.loadedEntryCount +
-              archiveSummary.retainedEntryCount}{' '}
-            source files represented across retained snapshots
             {archiveSummary.dataStart !== undefined &&
             archiveSummary.dataThrough !== undefined
-              ? ` · data coverage ${formatDate(
+              ? `History from ${formatDate(
                   toDateKey(archiveSummary.dataStart),
                   { day: 'numeric', month: 'short', year: 'numeric' },
                 )} to ${formatDate(toDateKey(archiveSummary.dataThrough), {
@@ -1156,7 +1196,7 @@ export function GlookoImportCard() {
               value={prepared.preview.dailyInsulinTotals.length}
             />
             <Metric
-              label="Exact rows"
+              label="Details"
               value={prepared.preview.rawRecords.length}
             />
             <Metric
@@ -1167,14 +1207,10 @@ export function GlookoImportCard() {
             />
           </View>
           <Text style={[styles.fileMeta, { color: colors.textTertiary }]}>
-            {prepared.preview.recognisedFiles.length} recognised CSV
-            {prepared.preview.recognisedFiles.length === 1 ? '' : 's'} ·{' '}
-            {prepared.preview.retainedFiles.length} source file
-            {prepared.preview.retainedFiles.length === 1 ? '' : 's'} retained
-            {' · '}
-            {prepared.preview.ignoredFiles.length} retained file
-            {prepared.preview.ignoredFiles.length === 1 ? '' : 's'} awaiting
-            interpretation
+            {prepared.preview.recognisedFiles.length} file
+            {prepared.preview.recognisedFiles.length === 1 ? '' : 's'} read ·{' '}
+            {prepared.preview.retainedFiles.length} saved securely ·{' '}
+            {prepared.preview.ignoredFiles.length} not used yet
           </Text>
           {warnings.length ? (
             <View style={styles.warningStack}>
@@ -1232,22 +1268,26 @@ export function GlookoImportCard() {
           <View style={styles.resultCopy}>
             <Text style={[styles.resultTitle, { color: colors.text }]}>
               {state.mode === 'quiet'
-                ? 'Quiet automatic refresh complete'
+                  ? 'Automatic update complete'
                 : totalRecords(state.prepared) === 0 &&
                     state.result.sourcePayloadStored
-                  ? 'Export saved — records not recognised yet'
+                  ? 'Glooko file saved — no data added'
                   : insertedRecords(state.result)
                     ? state.result.alreadyImported
-                      ? 'Saved export reprocessed'
-                      : 'Encrypted import complete'
+                      ? 'Saved Glooko file checked again'
+                      : 'Glooko data added'
                     : state.result.alreadyImported
-                      ? 'This exact export was already imported'
-                      : 'Encrypted import complete'}
+                      ? 'This Glooko file was already added'
+                      : 'Glooko data added'}
             </Text>
             <Text style={[styles.resultBody, { color: colors.textSecondary }]}>
-              {totalRecords(state.prepared) === 0
-                ? 'The download worked, but no glucose, basal, bolus, daily insulin total or context rows matched a supported Glooko table.'
-                : `${state.result.insertedGlucose} glucose, ${state.result.insertedBasal} basal, ${state.result.insertedBoluses} bolus, ${state.result.insertedDailyTotals} daily insulin total and ${state.result.insertedContext} context records added${
+              {state.mode === 'quiet'
+                ? insertedRecords(state.result)
+                  ? `T1 Arc added ${insertedRecords(state.result)} new items and left your existing history unchanged.`
+                  : 'Glooko is up to date. Your existing history was left unchanged.'
+                : totalRecords(state.prepared) === 0
+                ? 'The download worked, but T1 Arc could not find glucose or insulin data it understands.'
+                : `${state.result.insertedGlucose} glucose, ${state.result.insertedBasal} basal, ${state.result.insertedBoluses} bolus, ${state.result.insertedDailyTotals} daily insulin total and ${state.result.insertedContext} pump notes added${
                     state.result.duplicateCount
                       ? ` · ${state.result.duplicateCount} duplicates skipped`
                       : ''
@@ -1260,10 +1300,7 @@ export function GlookoImportCard() {
                   key={file.name}
                   style={[styles.resultHint, { color: colors.textTertiary }]}
                 >
-                  Retained for interpretation: {file.name}
-                  {file.headers.length
-                    ? ` (${file.headers.slice(0, 5).join(' · ')})`
-                    : ''}
+                  Kept securely, but no data was added from {file.name}.
                 </Text>
               ))}
             {totalRecords(state.prepared) === 0
@@ -1277,15 +1314,14 @@ export function GlookoImportCard() {
                         { color: colors.textTertiary },
                       ]}
                     >
-                      Read {file.name}: {file.records} records,{' '}
-                      {file.skippedRows} rows skipped
+                      Checked {file.name}: no new items were added.
                     </Text>
                   ))
               : null}
             {totalRecords(state.prepared) === 0 &&
             state.prepared.preview.retainedFiles.length ? (
               <Text style={[styles.resultHint, { color: colors.textTertiary }]}>
-                Retained without normalising:{' '}
+                Saved for a future T1 Arc update:{' '}
                 {state.prepared.preview.retainedFiles
                   .slice(0, 3)
                   .map((file) => file.name)
@@ -1294,8 +1330,7 @@ export function GlookoImportCard() {
             ) : null}
             {state.result.sourcePayloadStored ? (
               <Text style={[styles.resultHint, { color: colors.textTertiary }]}>
-                The complete original export is retained in encrypted storage on
-                this device, including files not yet normalised.
+                The original Glooko file is saved securely on this phone.
               </Text>
             ) : null}
             {dataMode === 'demo' ? (
@@ -1328,16 +1363,11 @@ export function GlookoImportCard() {
           />
           <View style={styles.resultCopy}>
             <Text style={[styles.resultTitle, { color: colors.text }]}>
-              Export not ready to import
+              Glooko update needs attention
             </Text>
             <Text style={[styles.resultBody, { color: colors.textSecondary }]}>
               {state.message}
             </Text>
-            {state.diagnostic ? (
-              <Text style={[styles.resultHint, { color: colors.textTertiary }]}>
-                Connector details from this attempt are saved below.
-              </Text>
-            ) : null}
           </View>
         </View>
       ) : null}
@@ -1381,17 +1411,18 @@ export function GlookoImportCard() {
             ]}
           >
             {state.kind === 'importing'
-              ? 'Importing securely…'
+              ? 'Adding Glooko data…'
               : count
-                ? `Import ${count} records`
+                ? `Add ${count} items`
                 : prepared.sourcePayload
-                  ? 'Retain complete source export'
-                  : 'No supported records'}
+                  ? 'Save Glooko file'
+                  : 'No data to add'}
           </Text>
         </Pressable>
       ) : (
         <>
           <Pressable
+            accessibilityLabel="Update Glooko now"
             accessibilityRole="button"
             disabled={state.kind === 'preparing' || glookoSyncing}
             onPress={() => void syncFromGlooko()}
@@ -1415,10 +1446,11 @@ export function GlookoImportCard() {
             </Text>
           </Pressable>
           <Text style={[styles.syncFootnote, { color: colors.textTertiary }]}>
-            New data is merged without duplicates. Complete source files remain
-            encrypted on your phone.
+            New readings are added once. Your saved Glooko history stays secure
+            on this phone.
           </Text>
           <Pressable
+            accessibilityLabel="Connection options"
             accessibilityRole="button"
             accessibilityState={{ expanded: showAdvanced }}
             onPress={() => setShowAdvanced((visible) => !visible)}
@@ -1484,9 +1516,9 @@ export function GlookoImportCard() {
                       { color: colors.textSecondary },
                     ]}
                   >
-                    Glooko limits each CSV export to 90 days. T1 Arc walks
-                    backwards one non-overlapping range at a time and remembers
-                    where it reached, including empty periods.
+                    Glooko provides up to 90 days at a time. T1 Arc works
+                    backwards one period at a time and remembers where it got
+                    to.
                   </Text>
                 </View>
               </View>
@@ -1602,7 +1634,7 @@ export function GlookoImportCard() {
                               year: 'numeric',
                             },
                           )}.`
-                      : 'Choose the earliest date once. T1 Arc retains one older block per day while recent refreshes remain the priority.'}
+                      : "Choose the earliest date once. T1 Arc adds one older period each day while keeping today's data up to date first."}
                   </Text>
                   {glookoSyncState.historyBackfillTargetDate &&
                   glookoSyncState.lastHistoryBackfillAt !== undefined ? (
@@ -1698,15 +1730,7 @@ export function GlookoImportCard() {
                   { color: colors.textSecondary },
                 ]}
               >
-                {archiveSummary?.archiveCount
-                  ? `Reorganise all ${archiveSummary.archiveCount.toLocaleString(
-                      'en-GB',
-                    )} saved ${
-                      archiveSummary.archiveCount === 1
-                        ? 'snapshot'
-                        : 'snapshots'
-                    }`
-                  : 'Reorganise saved Glooko history'}
+                Check saved Glooko history again
               </Text>
             </Pressable>
           ) : null}
@@ -1729,7 +1753,7 @@ export function GlookoImportCard() {
               ]}
             >
               <Text style={[styles.secondaryText, { color: colors.primary }]}>
-                Or choose an existing ZIP or CSV
+                Choose a Glooko file from this phone
               </Text>
             </Pressable>
           ) : null}
@@ -1750,65 +1774,6 @@ export function GlookoImportCard() {
             Choose a different file
           </Text>
         </Pressable>
-      ) : null}
-
-      {showAdvanced && lastTrace ? (
-        <View
-          style={[
-            styles.traceArea,
-            {
-              borderColor: colors.border,
-              borderRadius: radius.md,
-            },
-          ]}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: showTrace }}
-            onPress={() => setShowTrace((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.traceButton,
-              { opacity: pressed ? 0.65 : 1 },
-            ]}
-          >
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.textSecondary}
-              name="pulse-outline"
-              size={17}
-            />
-            <View style={styles.traceButtonCopy}>
-              <Text
-                style={[styles.traceTitle, { color: colors.textSecondary }]}
-              >
-                Last connector details
-              </Text>
-              <Text style={[styles.traceHint, { color: colors.textTertiary }]}>
-                Timings and stages only — no credentials or health values
-              </Text>
-            </View>
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.textTertiary}
-              name={showTrace ? 'chevron-up' : 'chevron-down'}
-              size={17}
-            />
-          </Pressable>
-          {showTrace ? (
-            <Text
-              selectable
-              style={[
-                styles.diagnosticText,
-                {
-                  backgroundColor: colors.surfaceMuted,
-                  color: colors.textSecondary,
-                },
-              ]}
-            >
-              {lastTrace}
-            </Text>
-          ) : null}
-        </View>
       ) : null}
 
       {showAdvanced ? (
@@ -2218,13 +2183,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 15,
     marginTop: 5,
-  },
-  diagnosticText: {
-    fontSize: 9,
-    lineHeight: 14,
-    marginHorizontal: 10,
-    marginBottom: 10,
-    padding: 9,
   },
   primaryButton: {
     minHeight: 50,

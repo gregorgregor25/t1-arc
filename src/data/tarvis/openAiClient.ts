@@ -1,7 +1,4 @@
-import {
-  checkTarvisRateLimit,
-  parseTarvisAnswer,
-} from './guardrails';
+import { checkTarvisRateLimit, parseTarvisAnswer } from './guardrails';
 import { selectTarvisEvidencePacket } from './evidencePacket';
 import { applyTarvisCoverageGuardrail } from './evidencePresentation';
 import {
@@ -11,6 +8,7 @@ import {
   saveTarvisUsage,
 } from './secureStore';
 import { classifyTarvisQuestion } from './scope';
+import { estimateTarvisCostUsd } from './cost';
 import { classifyTarvisSafety } from './safety';
 import { TARVIS_SYSTEM_PROMPT } from './prompt';
 import {
@@ -22,8 +20,6 @@ import {
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const MODEL = 'gpt-5.6-luna';
-const INPUT_USD_PER_MILLION_TOKENS = 1;
-const OUTPUT_USD_PER_MILLION_TOKENS = 6;
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_QUESTION_LENGTH = 1_500;
 const MAX_CONTEXT_CHARACTERS = 70_000;
@@ -87,7 +83,7 @@ function openAiError(status: number, body: OpenAiResponseBody) {
 
 export async function askTarvis(
   question: string,
-  packet: TarvisEvidencePacket,
+  packet?: TarvisEvidencePacket,
   history: TarvisConversationTurn[] = [],
 ): Promise<TarvisResponse> {
   const prompt = question.trim();
@@ -130,8 +126,10 @@ export async function askTarvis(
 
   const key = await loadTarvisApiKey();
   if (!key) throw new Error('Add your OpenAI API key first.');
-  const selectedPacket = selectTarvisEvidencePacket(prompt, packet);
-  const encodedPacket = JSON.stringify(selectedPacket);
+  const selectedPacket = packet
+    ? selectTarvisEvidencePacket(prompt, packet)
+    : undefined;
+  const encodedPacket = selectedPacket ? JSON.stringify(selectedPacket) : '';
   if (encodedPacket.length > MAX_CONTEXT_CHARACTERS) {
     throw new Error(
       'This evidence window is too large to send safely. Choose a shorter comparison period.',
@@ -170,11 +168,20 @@ export async function askTarvis(
             content: [
               {
                 type: 'input_text',
-                text: JSON.stringify({
-                  evidencePacket: selectedPacket,
-                  recentConversation: trimHistory(history),
-                  question: prompt,
-                }),
+                text: JSON.stringify(
+                  selectedPacket
+                    ? {
+                        requestMode: 'evidence',
+                        evidencePacket: selectedPacket,
+                        recentConversation: trimHistory(history),
+                        question: prompt,
+                      }
+                    : {
+                        requestMode: 'education',
+                        recentConversation: trimHistory(history),
+                        question: prompt,
+                      },
+                ),
               },
             ],
           },
@@ -224,33 +231,34 @@ export async function askTarvis(
     const tokens = body.usage ?? {};
     const usage: TarvisUsage = {
       ...reservedUsage,
-      inputTokens:
-        reservedUsage.inputTokens + (tokens.input_tokens ?? 0),
-      outputTokens:
-        reservedUsage.outputTokens + (tokens.output_tokens ?? 0),
-      totalTokens:
-        reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
+      inputTokens: reservedUsage.inputTokens + (tokens.input_tokens ?? 0),
+      outputTokens: reservedUsage.outputTokens + (tokens.output_tokens ?? 0),
+      totalTokens: reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
     };
     await saveTarvisUsage(usage);
+    const parsedAnswer = parseTarvisAnswer(
+      extractOutputText(body),
+      selectedPacket,
+    );
     return {
-      answer: applyTarvisCoverageGuardrail(
-        prompt,
-        selectedPacket,
-        parseTarvisAnswer(extractOutputText(body), selectedPacket),
-        history,
-      ),
+      answer: selectedPacket
+        ? applyTarvisCoverageGuardrail(
+            prompt,
+            selectedPacket,
+            parsedAnswer,
+            history,
+          )
+        : { ...parsedAnswer, evidenceIds: [] },
       usage,
       requestMetrics: {
         model: MODEL,
         inputTokens: tokens.input_tokens ?? 0,
         outputTokens: tokens.output_tokens ?? 0,
         totalTokens: tokens.total_tokens ?? 0,
-        estimatedCostUsd:
-          ((tokens.input_tokens ?? 0) *
-            INPUT_USD_PER_MILLION_TOKENS +
-            (tokens.output_tokens ?? 0) *
-              OUTPUT_USD_PER_MILLION_TOKENS) /
-          1_000_000,
+        estimatedCostUsd: estimateTarvisCostUsd(
+          tokens.input_tokens ?? 0,
+          tokens.output_tokens ?? 0,
+        ),
         evidenceCharacters: encodedPacket.length,
       },
     };

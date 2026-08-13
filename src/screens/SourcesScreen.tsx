@@ -48,7 +48,7 @@ type TestState =
   | { kind: 'success'; snapshot: LibreLinkUpSnapshot; testedAt: number }
   | { kind: 'error'; error: LibreLinkUpError };
 
-type SourceJump =
+export type SourceJump =
   | 'libre'
   | 'dexcom'
   | 'nightscout'
@@ -59,6 +59,24 @@ type SourceJump =
   | 'display'
   | 'privacy';
 
+const SOURCE_JUMP_VALUES = new Set<SourceJump>([
+  'libre',
+  'dexcom',
+  'nightscout',
+  'xdrip',
+  'notification',
+  'health',
+  'glooko',
+  'display',
+  'privacy',
+]);
+
+function sourceJumpFromRoute(value: unknown): SourceJump | undefined {
+  return typeof value === 'string' && SOURCE_JUMP_VALUES.has(value as SourceJump)
+    ? (value as SourceJump)
+    : undefined;
+}
+
 function maskEmail(value: string) {
   const [name = '', domain = ''] = value.split('@');
   if (!domain) return 'Saved follower account';
@@ -66,7 +84,11 @@ function maskEmail(value: string) {
   return `${visible}${'•'.repeat(Math.max(3, Math.min(7, name.length - visible.length)))}@${domain}`;
 }
 
-export function SourcesScreen() {
+export function SourcesScreen({
+  route,
+}: {
+  route?: { params?: { source?: SourceJump } };
+}) {
   const { colors, radius } = useAppTheme();
   const {
     activateLibreSnapshot,
@@ -83,7 +105,14 @@ export function SourcesScreen() {
   const [editing, setEditing] = useState(true);
   const [testState, setTestState] = useState<TestState>({ kind: 'idle' });
   const scrollViewRef = useRef<ScrollView | null>(null);
-  const [activeSource, setActiveSource] = useState<SourceJump>();
+  const requestedSource = sourceJumpFromRoute(route?.params?.source);
+  const [activeSource, setActiveSource] = useState<SourceJump | undefined>(
+    requestedSource,
+  );
+
+  useEffect(() => {
+    if (requestedSource) setActiveSource(requestedSource);
+  }, [requestedSource]);
 
   useEffect(() => {
     let active = true;
@@ -149,7 +178,7 @@ export function SourcesScreen() {
   function confirmClear() {
     Alert.alert(
       'Remove saved LibreLinkUp connection?',
-      'This removes the saved email, password and session. Previously collected glucose history stays encrypted on this Pixel.',
+      'This removes the saved LibreLinkUp sign-in. Glucose already collected stays secure on this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -253,7 +282,7 @@ export function SourcesScreen() {
 
           <SectionHeading
             title="Automatic updates"
-            detail="What Android has actually refreshed in the background."
+            detail="See when each source last updated automatically."
           />
           <AutomationStatusCard />
         </>
@@ -595,8 +624,8 @@ export function SourcesScreen() {
       {activeSource === 'xdrip' ? (
       <View>
         <SectionHeading
-          title="Local glucose endpoint"
-          detail="Read a same-phone xDrip-compatible feed without another T1 Arc server."
+          title="xDrip glucose"
+          detail="Bring current readings into T1 Arc from xDrip on this phone."
         />
         <XdripSourceCard />
       </View>
@@ -655,7 +684,7 @@ export function SourcesScreen() {
         <View>
           <SectionHeading
             title="Your data, your copy"
-            detail="Portable encrypted backup without a T1 Arc server."
+            detail="Keep a protected copy you control."
           />
           <EncryptedBackupCard onDataChanged={showChangedPersonalData} />
           <SectionHeading
@@ -696,8 +725,8 @@ const SOURCE_JUMPS: Array<{
   },
   {
     source: 'xdrip',
-    label: 'xDrip endpoint',
-    detail: 'Local /sgv.json',
+    label: 'xDrip',
+    detail: 'Current readings',
     icon: 'git-network-outline',
   },
   {
@@ -789,6 +818,11 @@ function SourceJumpGrid({
         return (
         <Pressable
           key={item.source}
+          accessibilityLabel={
+            item.source === 'glooko'
+              ? 'Open Glooko connection'
+              : `Open ${item.label}`
+          }
           accessibilityHint={`Opens ${item.label} controls.`}
           accessibilityRole="button"
           accessibilityState={{ selected }}

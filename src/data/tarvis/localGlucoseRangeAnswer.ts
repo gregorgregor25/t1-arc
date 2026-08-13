@@ -820,10 +820,10 @@ function queryVisualizationFor(
       kind: 'range-distribution-v1',
       metric: 'glucose.time_in_range',
       title: calculations.length > 1
-        ? 'Time in range across the exact comparison periods'
-        : 'Time in range for the exact requested period',
+        ? 'Time in range across the comparison periods'
+        : 'Time in range for the requested period',
       subtitle:
-        'Each reading and duration segment is restricted to the exact calculation period; missing sensor time is omitted.',
+        'Only readings from the requested time are counted; missing sensor time is left out.',
       lowerBoundMmolL: targetRange.minimum,
       upperBoundMmolL: targetRange.maximum,
     };
@@ -838,10 +838,10 @@ function queryVisualizationFor(
       eventKind,
       thresholdMmolL: thresholdFor(executable.thresholds, eventKind).value,
       title: calculations.length > 1
-        ? `${eventKind === 'low' ? 'Low' : 'High'}-glucose events across the exact periods`
-        : `${eventKind === 'low' ? 'Low' : 'High'}-glucose events in the exact requested period`,
+        ? `${eventKind === 'low' ? 'Low' : 'High'}-glucose events across the comparison periods`
+        : `${eventKind === 'low' ? 'Low' : 'High'}-glucose events in the requested period`,
       subtitle:
-        'The trace contains only in-period readings. Boundary context can classify a start or recovery, but never supplies plotted values, extremes, or record IDs.',
+        'Only readings from the requested time appear on the chart. A few nearby readings may help decide whether a high or low started or ended during that time, but they do not change the plotted values.',
     };
   }
   if (calculations.length > 1) {
@@ -849,9 +849,9 @@ function queryVisualizationFor(
       ...common,
       kind: 'period-comparison-v1',
       metric: 'glucose.mean',
-      title: 'Glucose across the exact comparison periods',
+      title: 'Glucose across the comparison periods',
       subtitle:
-        'The periods retain their exact elapsed ranges, readings, coverage and observed arithmetic means.',
+        'Each period keeps its own readings, coverage and average glucose.',
     };
   }
   return {
@@ -860,7 +860,7 @@ function queryVisualizationFor(
     metric: 'glucose.mean',
     title: 'Glucose readings and observed average',
     subtitle:
-      'Timestamp-normalised samples from the exact half-open requested period are shown; any deterministic display compaction is disclosed with the chart. Lines stop across sensor gaps.',
+      'Readings from the time you asked about are shown. The chart may show fewer points to stay clear, but calculations still use them all. Lines stop where readings are missing.',
   };
 }
 
@@ -897,7 +897,7 @@ function metricPresentation(
       case 'glucose.mean':
         return [{
           id: 'average-glucose',
-          label: 'Observed arithmetic mean glucose',
+          label: 'Average glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -905,7 +905,7 @@ function metricPresentation(
       case 'glucose.median':
         return [{
           id: 'median-glucose',
-          label: 'Observed median glucose',
+          label: 'Median glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -913,7 +913,7 @@ function metricPresentation(
       case 'glucose.minimum':
         return [{
           id: 'minimum-glucose',
-          label: 'Observed minimum glucose',
+          label: 'Lowest glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -921,7 +921,7 @@ function metricPresentation(
       case 'glucose.maximum':
         return [{
           id: 'maximum-glucose',
-          label: 'Observed maximum glucose',
+          label: 'Highest glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -929,7 +929,7 @@ function metricPresentation(
       case 'glucose.standard_deviation':
         return [{
           id: 'glucose-standard-deviation',
-          label: 'Observed population standard deviation',
+          label: 'Glucose variation (SD)',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -937,7 +937,7 @@ function metricPresentation(
       case 'glucose.coefficient_of_variation':
         return [{
           id: 'glucose-coefficient-of-variation',
-          label: 'Observed glucose coefficient of variation',
+          label: 'Glucose variation (CV)',
           value: metric.value,
           decimals: 1,
           unit: '%',
@@ -945,7 +945,7 @@ function metricPresentation(
       case 'glucose.gmi':
         return [{
           id: 'glucose-management-indicator',
-          label: 'Estimated glucose management indicator',
+          label: 'Estimated GMI',
           value: metric.value,
           decimals: 1,
           unit: '%',
@@ -953,28 +953,28 @@ function metricPresentation(
       case 'glucose.low_episodes':
         return [{
           id: 'low-events',
-          label: 'Observed sustained lows',
+          label: 'Sustained lows',
           value: metric.value,
           decimals: 0,
         }];
       case 'glucose.high_episodes':
         return [{
           id: 'high-events',
-          label: 'Observed sustained highs',
+          label: 'Sustained highs',
           value: metric.value,
           decimals: 0,
         }];
       case 'glucose.low_readings':
         return [{
           id: 'low-readings',
-          label: 'Timestamp-normalised readings below threshold',
+          label: 'Readings below your chosen level',
           value: metric.value,
           decimals: 0,
         }];
       case 'glucose.high_readings':
         return [{
           id: 'high-readings',
-          label: 'Timestamp-normalised readings above threshold',
+          label: 'Readings above your chosen level',
           value: metric.value,
           decimals: 0,
         }];
@@ -982,21 +982,21 @@ function metricPresentation(
         return [
           {
             id: 'time-below-range',
-            label: 'Observed time below range',
+            label: 'Time below range',
             value: calculation.distribution?.belowPercent ?? null,
             decimals: 1,
             unit: '%',
           },
           {
             id: 'time-in-range',
-            label: 'Observed time in range',
+            label: 'Time in range',
             value: calculation.distribution?.inRangePercent ?? null,
             decimals: 1,
             unit: '%',
           },
           {
             id: 'time-above-range',
-            label: 'Observed time above range',
+            label: 'Time above range',
             value: calculation.distribution?.abovePercent ?? null,
             decimals: 1,
             unit: '%',
@@ -1018,9 +1018,9 @@ function metricCopy(
       case 'glucose.median':
         return `the observed median was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.minimum':
-        return `the lowest observed timestamp-normalised reading was ${metric.value.toFixed(1)} mmol/L`;
+        return `the lowest recorded reading was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.maximum':
-        return `the highest observed timestamp-normalised reading was ${metric.value.toFixed(1)} mmol/L`;
+        return `the highest recorded reading was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.standard_deviation':
         return `the observed population standard deviation was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.coefficient_of_variation':
@@ -1043,7 +1043,7 @@ function metricCopy(
           executable.thresholds,
           metric.id === 'glucose.low_readings' ? 'low' : 'high',
         );
-        return `${metric.value} timestamp-normalised reading${metric.value === 1 ? ' was' : 's were'} ${kind} ${threshold.value.toFixed(1)} mmol/L`;
+        return `${metric.value} reading${metric.value === 1 ? ' was' : 's were'} ${kind} ${threshold.value.toFixed(1)} mmol/L`;
       }
     }
   });
@@ -1127,8 +1127,8 @@ function evidenceFor(
   };
   const evidence: EvidenceReference = {
     id: `${queryId}:${label === 'Requested period' ? 'current' : 'previous'}`,
-    label: `${label} exact ${executable.metrics.map(metricTitle).join(' and ').toLocaleLowerCase('en-GB')} inputs`,
-    description: `${calculation.readings.length} exact normalised glucose readings inside the requested half-open period.${calculation.evidenceRange.start !== calculation.range.start || calculation.evidenceRange.end !== calculation.range.end ? ' A 15-minute boundary context is retained in immutable answer provenance only to classify sustained event starts; it is excluded from this calculation evidence, All Records, averages, duration, and coverage.' : ''} Every calculation record ID is retained; missing time is not represented as zero.`,
+    label: `${label}: readings used for ${executable.metrics.map(metricTitle).join(' and ').toLocaleLowerCase('en-GB')}`,
+    description: `${calculation.readings.length} glucose readings from the time you asked about.${calculation.evidenceRange.start !== calculation.range.start || calculation.evidenceRange.end !== calculation.range.end ? ' A few nearby readings are used only to tell whether a high or low began during that time; they do not change the calculation or All Records list.' : ''} Missing time is not counted as zero.`,
     range: { ...calculation.range },
     recordIds: calculation.readings.map(({ id }) => id),
     examples: representativeReadings(calculation.readings).map((reading) => ({
@@ -1136,7 +1136,7 @@ function evidenceFor(
       kind: 'glucose',
       timestamp: reading.timestamp,
       primary: `${reading.mmolL.toFixed(1)} mmol/L`,
-      secondary: `${reading.quality} · exact scoped record`,
+      secondary: `${reading.quality} · saved reading`,
       sourceId: reading.sourceId,
     })),
     calculation: calculationReference,
@@ -1227,7 +1227,7 @@ function metricTitle(metric: SupportedMetric) {
 function metricDetail(executable: ExecutableRangeIntent) {
   const metric = executable.metrics[0];
   if (executable.metrics.length > 1) {
-    return 'Each requested result is calculated independently from the same timestamp-normalised samples inside the exact half-open period. Missing readings are not estimated.';
+    return 'Each result uses the same readings from the time you asked about. Missing readings are not guessed.';
   }
   if (metric === 'glucose.time_in_range') {
     return 'Observed duration is carried forward only until the next reading or 12 minutes, whichever comes first. Missing time is excluded.';
@@ -1236,16 +1236,16 @@ function metricDetail(executable: ExecutableRangeIntent) {
     return `Events use ${GLUCOSE_EPISODE_DEFINITION_VERSION}: 15 minutes beyond the threshold confirms a start, 15 minutes back across it confirms recovery, and a sensor gap over 12 minutes breaks continuity.`;
   }
   if (metric?.endsWith('_readings')) {
-    return 'This counts timestamp-normalised physiological samples, not sustained events. Source records at the same instant are averaged once before the threshold is applied.';
+    return 'This counts individual readings, not sustained high or low periods. Readings saved at the same moment are combined once.';
   }
   if (metric === 'glucose.gmi') {
-    return `GMI uses ${GMI_FORMULA_VERSION} on the timestamp-normalised arithmetic mean. It is an estimate derived from sensor glucose and is not a laboratory HbA1c result.`;
+    return 'GMI is estimated from your average sensor glucose. It is not the same as a laboratory HbA1c result.';
   }
   if (metric === 'glucose.standard_deviation') {
-    return 'Population standard deviation of timestamp-normalised samples inside the exact half-open period. Missing readings are not estimated.';
+    return 'This shows how widely your readings varied during the time you asked about. Missing readings are not guessed.';
   }
   if (metric === 'glucose.coefficient_of_variation') {
-    return 'Coefficient of variation is the population standard deviation divided by the arithmetic mean for the same timestamp-normalised samples.';
+    return 'This compares the amount of glucose variation with your average glucose for the same time.';
   }
   const name = metric === 'glucose.mean'
     ? 'Arithmetic mean'
@@ -1254,7 +1254,7 @@ function metricDetail(executable: ExecutableRangeIntent) {
       : metric === 'glucose.minimum'
         ? 'Minimum'
         : 'Maximum';
-  return `${name} of timestamp-normalised samples inside the exact half-open period. Source records at the same instant are averaged once while every source record ID is retained.`;
+  return `${name} for the time you asked about. Readings saved at the same moment are combined once.`;
 }
 
 function previousPeriodLabel(
@@ -1333,9 +1333,9 @@ export function buildLocalGlucoseRangeAnswer({
     visualization && calculations.length > 1
       ? {
           id: `${periodEvidence[0]!.id}:combined-chart:${visualization.kind}`,
-          label: 'Combined exact comparison chart inputs',
+          label: 'Readings used for the comparison chart',
           description:
-            `${combinedCalculationReadings.length} exact normalised glucose readings across both calculation periods. The chart uses all and only these record IDs; each period's calculation claim remains linked to its separate evidence reference.`,
+            `${combinedCalculationReadings.length} glucose readings across both periods. Each result still keeps its own supporting records.`,
           range: {
             start: Math.min(...calculations.map(({ value }) => value.range.start)),
             end: Math.max(...calculations.map(({ value }) => value.range.end)),
@@ -1347,7 +1347,7 @@ export function buildLocalGlucoseRangeAnswer({
               kind: 'glucose' as const,
               timestamp: reading.timestamp,
               primary: `${reading.mmolL.toFixed(1)} mmol/L`,
-              secondary: `${reading.quality} · exact chart record`,
+              secondary: `${reading.quality} · saved reading`,
               sourceId: reading.sourceId,
             }),
           ),
@@ -1452,7 +1452,7 @@ export function buildLocalGlucoseRangeAnswer({
       : []),
     ...(executable.metrics.includes('glucose.gmi')
       ? [
-          `GMI uses ${GMI_FORMULA_VERSION} and is an estimate derived from mean sensor glucose, not a laboratory HbA1c result. Pregnancy status and individual treatment targets were not inferred.`,
+          'GMI is estimated from average sensor glucose, not a laboratory HbA1c result. It does not account for pregnancy or individual treatment targets.',
         ]
       : []),
     ...(gmiInsufficient
@@ -1464,7 +1464,7 @@ export function buildLocalGlucoseRangeAnswer({
     calculations[0]!.value.range.end - calculations[0]!.value.range.start !==
       calculations[1]!.value.range.end - calculations[1]!.value.range.start
       ? [
-          `The local-calendar periods have different elapsed durations (${round((calculations[0]!.value.range.end - calculations[0]!.value.range.start) / 3_600_000, 2)} versus ${round((calculations[1]!.value.range.end - calculations[1]!.value.range.start) / 3_600_000, 2)} hours); raw event counts are not duration-normalised.`,
+          `These dates last different amounts of time because the clocks changed (${round((calculations[0]!.value.range.end - calculations[0]!.value.range.start) / 3_600_000, 2)} versus ${round((calculations[1]!.value.range.end - calculations[1]!.value.range.start) / 3_600_000, 2)} hours). Event counts are shown as recorded and are not adjusted for that difference.`,
         ]
       : []),
   ];
@@ -1477,7 +1477,7 @@ export function buildLocalGlucoseRangeAnswer({
             ? 'Glucose comparison incomplete'
             : 'Observed glucose comparison'
           : answerHeadline(current),
-      answer: `${answerParts.join('. ')}. I kept the calculation to those exact periods and did not treat missing time as zero. This describes your recorded data, not a treatment recommendation.`,
+      answer: `${answerParts.join('. ')}. I used only the periods you asked about and did not count missing time as zero. This describes your recorded data, not a treatment recommendation.`,
       confidence: limited || noData || gmiInsufficient ? 'limited' : 'high',
       evidenceIds: evidence.map(({ id }) => id),
       limitations: limitations.slice(0, 5),
@@ -1488,8 +1488,8 @@ export function buildLocalGlucoseRangeAnswer({
       kind,
       title:
         calculations.length > 1
-          ? 'Glucose comparison for the exact periods'
-          : `${metricTitle(executable.metrics[0]!)} for the exact period`,
+          ? 'Glucose comparison for the selected periods'
+          : `${metricTitle(executable.metrics[0]!)} for the requested period`,
       detail: metricDetail(executable),
       windows: calculations.map(({ label, value }) => ({
         label,

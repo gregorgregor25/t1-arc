@@ -83,8 +83,7 @@ export function pumpStateIntervalFromRawRecord(
       typeof payload.start !== 'number' ||
       typeof payload.end !== 'number' ||
       payload.end <= payload.start ||
-      (payload.kind !== 'activity-mode' &&
-        payload.kind !== 'automated-pause')
+      (payload.kind !== 'activity-mode' && payload.kind !== 'automated-pause')
     ) {
       return undefined;
     }
@@ -97,9 +96,7 @@ export function pumpStateIntervalFromRawRecord(
       importedAt: record.importedAt,
       sourceFile: record.sourceFile,
       sourcePage:
-        typeof payload.sourcePage === 'number'
-          ? payload.sourcePage
-          : undefined,
+        typeof payload.sourcePage === 'number' ? payload.sourcePage : undefined,
     };
   } catch {
     return undefined;
@@ -169,9 +166,7 @@ export interface HealthRecordStore {
   getImportSourcePayload(
     batchId: string,
   ): Promise<StoredImportSourcePayload | undefined>;
-  getImportSourceSummary(
-    sourceId: string,
-  ): Promise<StoredImportSourceSummary>;
+  getImportSourceSummary(sourceId: string): Promise<StoredImportSourceSummary>;
   getRawSourceRecords(
     sourceId: string,
     range?: TimeRange,
@@ -218,6 +213,27 @@ function isCorrectedRetainedBasal(
   );
 }
 
+function removeLegacyInsulinAlias<
+  T extends {
+    id: string;
+    legacyId?: string;
+    sourceId: string;
+    sourceDeviceId?: string;
+  },
+>(records: Map<string, T>, incoming: T) {
+  if (!incoming.legacyId || incoming.legacyId === incoming.id) return false;
+  const stored = records.get(incoming.legacyId);
+  if (
+    !stored ||
+    stored.sourceId !== incoming.sourceId ||
+    (stored.sourceDeviceId ?? '') !== (incoming.sourceDeviceId ?? '')
+  ) {
+    return false;
+  }
+  records.delete(incoming.legacyId);
+  return true;
+}
+
 export class MemoryHealthRecordStore implements HealthRecordStore {
   private readonly basal = new Map<string, BasalDelivery>();
   private readonly boluses = new Map<string, BolusDelivery>();
@@ -231,7 +247,9 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
 
   async getBasalDeliveries(range: TimeRange) {
     return [...this.basal.values()]
-      .filter((delivery) => delivery.start < range.end && delivery.end > range.start)
+      .filter(
+        (delivery) => delivery.start < range.end && delivery.end > range.start,
+      )
       .sort((a, b) => a.start - b.start);
   }
 
@@ -246,10 +264,7 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
 
   async getPumpStateIntervals(range: TimeRange) {
     return [...this.rawRecords.values()]
-      .filter(
-        (record) =>
-          record.recordKind === 'pump-state-interval',
-      )
+      .filter((record) => record.recordKind === 'pump-state-interval')
       .flatMap((record) => {
         const interval = pumpStateIntervalFromRawRecord(record);
         return interval &&
@@ -266,10 +281,7 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     const startDate = toDateKey(range.start);
     const endDate = toDateKey(range.end - 1);
     return [...this.dailyTotals.values()]
-      .filter(
-        (total) =>
-          total.dateKey >= startDate && total.dateKey <= endDate,
-      )
+      .filter((total) => total.dateKey >= startDate && total.dateKey <= endDate)
       .sort((a, b) => a.timestamp - b.timestamp);
   }
 
@@ -294,8 +306,7 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
           (!kinds || kinds.has(record.recordKind)) &&
           (!range ||
             record.timestamp === undefined ||
-            (record.timestamp >= range.start &&
-              record.timestamp < range.end)),
+            (record.timestamp >= range.start && record.timestamp < range.end)),
       )
       .sort(
         (left, right) =>
@@ -509,15 +520,17 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
           replacedBasal += 1;
         }
       }
+      const migratedLegacyId = removeLegacyInsulinAlias(this.basal, delivery);
       if (!this.basal.has(delivery.id)) {
         this.basal.set(delivery.id, { ...delivery });
-        insertedBasal += 1;
+        if (!migratedLegacyId) insertedBasal += 1;
       }
     });
     boluses.forEach((delivery) => {
+      const migratedLegacyId = removeLegacyInsulinAlias(this.boluses, delivery);
       if (!this.boluses.has(delivery.id)) {
         this.boluses.set(delivery.id, { ...delivery });
-        insertedBoluses += 1;
+        if (!migratedLegacyId) insertedBoluses += 1;
       }
     });
     context.forEach((event) => {
@@ -527,9 +540,13 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
       }
     });
     dailyTotals.forEach((total) => {
+      const migratedLegacyId = removeLegacyInsulinAlias(
+        this.dailyTotals,
+        total,
+      );
       if (!this.dailyTotals.has(total.id)) {
         this.dailyTotals.set(total.id, { ...total });
-        insertedDailyTotals += 1;
+        if (!migratedLegacyId) insertedDailyTotals += 1;
       }
     });
     rawRecords.forEach((record) => {
@@ -569,12 +586,10 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
                 ? batch.dataThrough
                 : Math.max(existing.dataThrough, batch.dataThrough),
           basalCount:
-            existing.basalCount +
-            Math.max(0, insertedBasal - replacedBasal),
+            existing.basalCount + Math.max(0, insertedBasal - replacedBasal),
           bolusCount: existing.bolusCount + insertedBoluses,
           contextCount: existing.contextCount + insertedContext,
-          dailyTotalCount:
-            existing.dailyTotalCount + insertedDailyTotals,
+          dailyTotalCount: existing.dailyTotalCount + insertedDailyTotals,
           duplicateCount: existing.duplicateCount + duplicateCount,
           skippedCount: batch.skippedCount,
           warnings: [...batch.warnings],

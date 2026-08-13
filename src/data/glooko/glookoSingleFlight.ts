@@ -1,6 +1,12 @@
 interface ActiveGlookoWork<T> {
   promise: Promise<T>;
   interactive: boolean;
+  generation: number;
+}
+
+export interface GlookoSingleFlightLease {
+  readonly generation: number;
+  isCurrent(): boolean;
 }
 
 /**
@@ -10,10 +16,27 @@ interface ActiveGlookoWork<T> {
  */
 export class GlookoSingleFlight<T> {
   private active?: ActiveGlookoWork<T>;
+  private generation = 0;
 
-  run(factory: () => Promise<T>, interactive = false): Promise<T> {
-    if (this.active) return this.active.promise;
-    return this.reserve(factory, interactive);
+  run(
+    factory: (lease: GlookoSingleFlightLease) => Promise<T>,
+    interactive = false,
+  ): Promise<T> {
+    if (this.active?.generation === this.generation) {
+      return this.active.promise;
+    }
+    const predecessor = this.active?.promise;
+    if (!predecessor) {
+      return this.reserve(factory, interactive, this.generation);
+    }
+    return this.reserve(
+      async (lease) => {
+        await predecessor?.catch(() => undefined);
+        return factory(lease);
+      },
+      interactive,
+      this.generation,
+    );
   }
 
   /**
@@ -21,28 +44,66 @@ export class GlookoSingleFlight<T> {
    * second interactive caller joins the same request instead of opening a
    * second native export.
    */
-  runInteractive(factory: () => Promise<T>): Promise<T> {
-    if (this.active?.interactive) return this.active.promise;
+  runInteractive(
+    factory: (lease: GlookoSingleFlightLease) => Promise<T>,
+  ): Promise<T> {
+    if (
+      this.active?.interactive &&
+      this.active.generation === this.generation
+    ) {
+      return this.active.promise;
+    }
 
     const predecessor = this.active?.promise;
-    return this.reserve(async () => {
-      await predecessor?.catch(() => undefined);
-      return factory();
-    }, true);
+    return this.reserve(
+      async (lease) => {
+        await predecessor?.catch(() => undefined);
+        return factory(lease);
+      },
+      true,
+      this.generation,
+    );
+  }
+
+  /**
+   * Invalidates every older lease and reserves a distinct run immediately.
+   * This is used at credential-change boundaries: the new account must never
+   * join work that authenticated with the previous account.
+   */
+  runFresh(
+    factory: (lease: GlookoSingleFlightLease) => Promise<T>,
+    interactive = false,
+  ): Promise<T> {
+    this.generation += 1;
+    const generation = this.generation;
+    const predecessor = this.active?.promise;
+    return this.reserve(
+      async (lease) => {
+        await predecessor?.catch(() => undefined);
+        return factory(lease);
+      },
+      interactive,
+      generation,
+    );
   }
 
   private reserve(
-    factory: () => Promise<T>,
+    factory: (lease: GlookoSingleFlightLease) => Promise<T>,
     interactive: boolean,
+    generation: number,
   ): Promise<T> {
     let tracked: Promise<T>;
+    const lease: GlookoSingleFlightLease = {
+      generation,
+      isCurrent: () => this.generation === generation,
+    };
     // Deferring the factory by one microtask makes the reservation observable
     // before even the first state read or policy calculation can yield.
-    const work = Promise.resolve().then(factory);
+    const work = Promise.resolve().then(() => factory(lease));
     tracked = work.finally(() => {
       if (this.active?.promise === tracked) this.active = undefined;
     });
-    this.active = { promise: tracked, interactive };
+    this.active = { promise: tracked, interactive, generation };
     return tracked;
   }
 }

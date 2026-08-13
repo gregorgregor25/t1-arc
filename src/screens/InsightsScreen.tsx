@@ -1,18 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen, SectionHeading } from '@/components/AppScreen';
 import { DateNavigator } from '@/components/DateNavigator';
@@ -27,6 +15,7 @@ import { SectionCard } from '@/components/SectionCard';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import {
   EvidenceReference,
+  buildInsightReport,
   InsightCategory,
   InsightFinding,
   InsightKind,
@@ -54,10 +43,7 @@ import { useAppTheme } from '@/theme/theme';
 
 type InsightPeriodChoice = '3' | '7' | '14' | '30';
 
-const CATEGORY_ICON: Record<
-  InsightCategory,
-  keyof typeof Ionicons.glyphMap
-> = {
+const CATEGORY_ICON: Record<InsightCategory, keyof typeof Ionicons.glyphMap> = {
   glucose: 'pulse-outline',
   insulin: 'water-outline',
   food: 'restaurant-outline',
@@ -102,7 +88,9 @@ function EvidenceBlock({
           {evidence.recordIds.length} records in calculation
         </Text>
       </View>
-      <Text style={[styles.evidenceDescription, { color: colors.textSecondary }]}>
+      <Text
+        style={[styles.evidenceDescription, { color: colors.textSecondary }]}
+      >
         {evidence.description} ·{' '}
         {formatDate(toDateKey(evidence.range.start), {
           day: 'numeric',
@@ -139,7 +127,7 @@ function EvidenceBlock({
         </View>
       ))}
       <Pressable
-        accessibilityLabel={`Open all ${evidence.recordIds.length} exact records for ${evidence.label}`}
+        accessibilityLabel={`Open all ${evidence.recordIds.length} records used for ${evidence.label}`}
         accessibilityRole="button"
         onPress={onInspectRecords}
         style={({ pressed }) => [
@@ -158,7 +146,7 @@ function EvidenceBlock({
           size={17}
         />
         <Text style={[styles.openRecordsText, { color: colors.primary }]}>
-          Open all {evidence.recordIds.length} exact records
+          Open all {evidence.recordIds.length} records used
         </Text>
         <Ionicons
           accessibilityElementsHidden
@@ -282,8 +270,7 @@ export function InsightsScreen() {
     today,
   } = useDataContext();
   const latestCompleteDate = addDays(today, -1);
-  const [periodChoice, setPeriodChoice] =
-    useState<InsightPeriodChoice>('7');
+  const [periodChoice, setPeriodChoice] = useState<InsightPeriodChoice>('7');
   const periodDays = Number(periodChoice) as InsightPeriodDays;
   const [comparisonEndDate, setComparisonEndDate] =
     useState(latestCompleteDate);
@@ -297,54 +284,55 @@ export function InsightsScreen() {
     },
     [repository],
   );
+  const loadTarvisTimelineData = useCallback(
+    async (range: TimeRange) => {
+      if (!repository) {
+        throw new Error('Your local health data is not ready yet.');
+      }
+      return repository.getTimeline(range);
+    },
+    [repository],
+  );
+  const loadTarvisReportForRange = useCallback(
+    async (
+      currentRange: TimeRange,
+      previousRange: TimeRange,
+      generatedAt: number,
+    ) => {
+      if (!repository) {
+        throw new Error('Your local health data is not ready yet.');
+      }
+      const [current, previous] = await Promise.all([
+        repository.getTimeline(currentRange),
+        repository.getTimeline(previousRange),
+      ]);
+      return buildInsightReport(current, previous, generatedAt);
+    },
+    [repository],
+  );
   const reviewHistory = useSavedInsightReports();
   const scrollViewRef = useRef<ScrollView>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [reviewsVisible, setReviewsVisible] = useState(false);
   const [allFindingsVisible, setAllFindingsVisible] = useState(false);
   const [tarvisVisible, setTarvisVisible] = useState(false);
-  const [selectedEvidence, setSelectedEvidence] =
-    useState<EvidenceReference>();
-  const [selectedReview, setSelectedReview] =
-    useState<SavedInsightReport>();
-  const loadTarvisReportForPeriod = useCallback(
-    async (requestedDays: InsightPeriodDays) => {
-      if (!repository) {
-        throw new Error('Your local health data is not ready yet.');
-      }
-      const historicalEnd = selectedReview?.report.currentRange.end;
-      return loadInsightReport({
-        repository,
-        dataMode,
-        periodDays: requestedDays,
-        comparisonEndDate: historicalEnd
-          ? toDateKey(historicalEnd - 1)
-          : latestCompleteDate,
-        now: historicalEnd ?? now,
-      });
-    },
-    [dataMode, latestCompleteDate, now, repository, selectedReview],
-  );
-  const requestedRangeEnd = dayRange(
-    comparisonEndDate,
-    Date.now(),
-  ).end;
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceReference>();
+  const [selectedReview, setSelectedReview] = useState<SavedInsightReport>();
+  const requestedRangeEnd = dayRange(comparisonEndDate, Date.now()).end;
   const cachedReport = reviewHistory.reports.find(
     (saved) =>
       Math.round(
-        (saved.report.currentRange.end -
-          saved.report.currentRange.start) /
+        (saved.report.currentRange.end - saved.report.currentRange.start) /
           86_400_000,
-      ) === periodDays &&
-      saved.report.currentRange.end === requestedRangeEnd,
+      ) === periodDays && saved.report.currentRange.end === requestedRangeEnd,
   )?.report;
   const activeReport =
     selectedReview?.report ?? insightState.report ?? cachedReport;
   const hasGlucoseEvidence = Boolean(
     activeReport &&
-      activeReport.current.glucoseReadings +
-        activeReport.previous.glucoseReadings >
-        0,
+    activeReport.current.glucoseReadings +
+      activeReport.previous.glucoseReadings >
+      0,
   );
   const isLatestRollingWeek =
     periodDays === 7 && comparisonEndDate === latestCompleteDate;
@@ -363,13 +351,8 @@ export function InsightsScreen() {
       )
     : periodDays;
 
-  const findings = useMemo(
-    () => activeReport?.findings ?? [],
-    [activeReport],
-  );
-  const visibleFindings = allFindingsVisible
-    ? findings
-    : findings.slice(0, 3);
+  const findings = useMemo(() => activeReport?.findings ?? [], [activeReport]);
+  const visibleFindings = allFindingsVisible ? findings : findings.slice(0, 3);
 
   useEffect(() => {
     if (dataMode !== 'live') {
@@ -469,7 +452,8 @@ export function InsightsScreen() {
           liveData={dataMode === 'live' && !selectedReview}
           report={activeReport}
           loadGlucoseReadings={loadTarvisGlucoseReadings}
-          loadReportForPeriod={loadTarvisReportForPeriod}
+          loadTimelineData={loadTarvisTimelineData}
+          loadReportForRange={loadTarvisReportForRange}
           onBack={() => setTarvisVisible(false)}
           onInspectEvidence={setSelectedEvidence}
         />
@@ -484,352 +468,367 @@ export function InsightsScreen() {
   return (
     <>
       <AppScreen
-      title="Insights"
-      eyebrow="Evidence, not guesses"
-      refreshing={syncing}
-      onRefresh={() => void refreshData()}
-      scrollViewRef={scrollViewRef}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{
-          disabled: !activeReport || !hasGlucoseEvidence,
-        }}
-        disabled={!activeReport || !hasGlucoseEvidence}
-        onPress={() => setTarvisVisible(true)}
-        style={({ pressed }) => [
-          styles.tarvisLaunch,
-          {
-            backgroundColor: colors.surfaceElevated,
-            borderColor: `${colors.accent}66`,
-            borderRadius: radius.lg,
-            opacity:
-              !activeReport || !hasGlucoseEvidence
-                ? 0.55
-                : pressed
-                  ? 0.72
-                  : 1,
-          },
-        ]}
+        title="Insights"
+        eyebrow="Evidence, not guesses"
+        refreshing={syncing}
+        onRefresh={() => void refreshData()}
+        scrollViewRef={scrollViewRef}
       >
-        <View
-          style={[
-            styles.tarvisIcon,
+        <Pressable
+          accessibilityLabel="Open Tarv1s"
+          accessibilityRole="button"
+          accessibilityState={{
+            disabled: !activeReport,
+          }}
+          disabled={!activeReport}
+          onPress={() => setTarvisVisible(true)}
+          style={({ pressed }) => [
+            styles.tarvisLaunch,
             {
-              backgroundColor: `${colors.accent}18`,
-              borderRadius: radius.md,
+              backgroundColor: colors.surfaceElevated,
+              borderColor: `${colors.accent}66`,
+              borderRadius: radius.lg,
+              opacity: !activeReport ? 0.55 : pressed ? 0.72 : 1,
             },
           ]}
         >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.accent}
-            name="sparkles"
-            size={24}
-          />
-        </View>
-        <View style={styles.tarvisCopy}>
-          <Text style={[styles.tarvisEyebrow, { color: colors.accent }]}>
-            TARV1S
-          </Text>
-          <Text style={[styles.tarvisTitle, { color: colors.text }]}>
-            Ask Tarv1s
-          </Text>
-          <Text
-            style={[styles.tarvisDetail, { color: colors.textSecondary }]}
-          >
-            Ask naturally about your data, continue the conversation, then
-            inspect the records behind every supported claim.
-          </Text>
-        </View>
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.primary}
-          name="arrow-forward"
-          size={20}
-        />
-      </Pressable>
-
-      <SectionHeading
-        title="Comparison window"
-        detail="One completed period against the same period immediately before it."
-      />
-      <SectionCard style={styles.comparisonCard}>
-        <SegmentedControl
-          accessibilityLabel="Insight comparison window"
-          options={[
-            { value: '3', label: '3D' },
-            { value: '7', label: '7D' },
-            { value: '14', label: '14D' },
-            { value: '30', label: '30D' },
-          ]}
-          value={periodChoice}
-          onChange={choosePeriod}
-        />
-        <View style={styles.periodNavigator}>
-          <DateNavigator
-            date={comparisonEndDate}
-            canGoBack={comparisonEndDate > earliestDate}
-            canGoForward={comparisonEndDate < latestCompleteDate}
-            onBack={() => chooseEndDate(addDays(comparisonEndDate, -1))}
-            onForward={() => chooseEndDate(addDays(comparisonEndDate, 1))}
-            onDateChange={chooseEndDate}
-            earliestDate={earliestDate}
-            latestDate={latestCompleteDate}
-            isToday={false}
-            caption={
-              comparisonEndDate === latestCompleteDate
-                ? 'Latest complete day'
-                : 'Period ends'
-            }
-          />
-        </View>
-      </SectionCard>
-
-      {dataMode === 'live' && hasGlucoseEvidence ? (
-        <View style={styles.reviewArea}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: reviewsVisible }}
-            onPress={() => setReviewsVisible((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.reviewToggle,
+          <View
+            style={[
+              styles.tarvisIcon,
               {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
+                backgroundColor: `${colors.accent}18`,
                 borderRadius: radius.md,
-                opacity: pressed ? 0.72 : 1,
               },
             ]}
           >
             <Ionicons
               accessibilityElementsHidden
-              color={colors.primary}
-              name="calendar-outline"
-              size={19}
+              color={colors.accent}
+              name="sparkles"
+              size={24}
             />
-            <View style={styles.reviewCopy}>
-              <Text style={[styles.reviewTitle, { color: colors.text }]}>
-                Weekly reviews
-              </Text>
-              <Text
-                style={[styles.reviewDetail, { color: colors.textSecondary }]}
-              >
-                Schedule and previously saved comparisons
-              </Text>
-            </View>
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.textTertiary}
-              name={reviewsVisible ? 'chevron-up' : 'chevron-down'}
-              size={18}
-            />
-          </Pressable>
-          {reviewsVisible ? (
-            <View style={styles.reviewStack}>
-              <InsightReviewScheduleCard />
-              {periodDays === 7 && reviewHistory.reports.length ? (
-                <InsightReviewHistoryCard
-                  reports={reviewHistory.reports}
-                  selectedId={activeReviewId}
-                  onSelect={selectReview}
-                />
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {insightState.error ? (
-        <ErrorCard message={insightState.error} />
-      ) : !activeReport ? (
-        <LoadingCard
-          label={`Comparing two ${periodDays}-day evidence windows…`}
-        />
-      ) : !hasGlucoseEvidence ? (
-        <SectionCard>
-          <EmptyState
-            title="No glucose evidence yet"
-            detail="Connect a glucose source and let the encrypted history build. T1 Arc will not create a comparison or review from an empty record."
-          />
-        </SectionCard>
-      ) : (
-        <>
-          <SectionCard
-            style={[
-              styles.hero,
-              { backgroundColor: colors.surfaceElevated },
-            ]}
-          >
-            <Text style={[styles.heroEyebrow, { color: colors.accent }]}>
-              {activePeriodDays} DAYS ENDING{' '}
-              {formatDate(
-                toDateKey(activeReport.currentRange.end - 1),
-                { day: 'numeric', month: 'short' },
-              ).toUpperCase()}{' '}
-              VS PREVIOUS {activePeriodDays}
-            </Text>
-            {insightState.loading ? (
-              <Text style={[styles.updating, { color: colors.textTertiary }]}>
-                Updating with the latest local records…
-              </Text>
-            ) : null}
-            <Text style={[styles.heroTitle, { color: colors.text }]}>
-              {activeReport.headline}
-            </Text>
-            <Text style={[styles.heroSummary, { color: colors.textSecondary }]}>
-              {activeReport.summary}
-            </Text>
-            <View style={[styles.metricRow, { borderColor: colors.divider }]}>
-              <View style={styles.metric}>
-                <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
-                  Time in range
-                </Text>
-                <Text style={[styles.metricValue, { color: colors.text }]}>
-                  {activeReport.current.timeInRangePercent}%
-                </Text>
-                <Text style={[styles.metricDelta, { color: colors.textTertiary }]}>
-                  was {activeReport.previous.timeInRangePercent}%
-                </Text>
-              </View>
-              <View style={styles.metric}>
-                <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
-                  Coverage
-                </Text>
-                <Text style={[styles.metricValue, { color: colors.text }]}>
-                  {activeReport.current.coveragePercent}%
-                </Text>
-                <Text style={[styles.metricDelta, { color: colors.textTertiary }]}>
-                  {activeReport.current.glucoseReadings} readings
-                </Text>
-              </View>
-            </View>
-            <View style={styles.signalRow}>
-              <View
-                style={[
-                  styles.signal,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderRadius: radius.sm,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.signalLabel, { color: colors.textSecondary }]}
-                >
-                  Average
-                </Text>
-                <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {activeReport.current.glucoseAverage?.toFixed(1) ??
-                    '—'}
-                </Text>
-                <Text
-                  style={[styles.signalUnit, { color: colors.textTertiary }]}
-                >
-                  mmol/L
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.signal,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderRadius: radius.sm,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.signalLabel, { color: colors.textSecondary }]}
-                >
-                  Variability
-                </Text>
-                <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {activeReport.current.glucoseCvPercent === null
-                    ? '—'
-                    : `${activeReport.current.glucoseCvPercent}%`}
-                </Text>
-                <Text
-                  style={[styles.signalUnit, { color: colors.textTertiary }]}
-                >
-                  coefficient
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.signal,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderRadius: radius.sm,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.signalLabel, { color: colors.textSecondary }]}
-                >
-                  Sustained runs
-                </Text>
-                <Text style={[styles.signalValue, { color: colors.text }]}>
-                  {activeReport.current.highGlucoseRuns +
-                    activeReport.current.lowGlucoseRuns}
-                </Text>
-                <Text
-                  style={[styles.signalUnit, { color: colors.textTertiary }]}
-                >
-                  high + low
-                </Text>
-              </View>
-            </View>
-          </SectionCard>
-
-          <SectionHeading
-            title="Findings and evidence"
-            detail={
-              findings.length > 3 && !allFindingsVisible
-                ? `Showing the three most relevant of ${findings.length} findings.`
-                : 'Open a finding only when you want its calculation and records.'
-            }
-          />
-          <View style={styles.findingStack}>
-            {visibleFindings.map((finding) => (
-              <FindingCard
-                key={finding.id}
-                finding={finding}
-                expanded={expanded.has(finding.id)}
-                highlighted={false}
-                onToggle={() => toggleFinding(finding.id)}
-                onInspectRecords={setSelectedEvidence}
-              />
-            ))}
           </View>
-          {findings.length > 3 ? (
+          <View style={styles.tarvisCopy}>
+            <Text style={[styles.tarvisEyebrow, { color: colors.accent }]}>
+              TARV1S
+            </Text>
+            <Text style={[styles.tarvisTitle, { color: colors.text }]}>
+              Ask Tarv1s
+            </Text>
+            <Text
+              style={[styles.tarvisDetail, { color: colors.textSecondary }]}
+            >
+              Ask about Type 1 diabetes or your available records, in your own
+              words.
+            </Text>
+          </View>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.primary}
+            name="arrow-forward"
+            size={20}
+          />
+        </Pressable>
+
+        <SectionHeading
+          title="Comparison window"
+          detail="One completed period against the same period immediately before it."
+        />
+        <SectionCard style={styles.comparisonCard}>
+          <SegmentedControl
+            accessibilityLabel="Insight comparison window"
+            options={[
+              { value: '3', label: '3D' },
+              { value: '7', label: '7D' },
+              { value: '14', label: '14D' },
+              { value: '30', label: '30D' },
+            ]}
+            value={periodChoice}
+            onChange={choosePeriod}
+          />
+          <View style={styles.periodNavigator}>
+            <DateNavigator
+              date={comparisonEndDate}
+              canGoBack={comparisonEndDate > earliestDate}
+              canGoForward={comparisonEndDate < latestCompleteDate}
+              onBack={() => chooseEndDate(addDays(comparisonEndDate, -1))}
+              onForward={() => chooseEndDate(addDays(comparisonEndDate, 1))}
+              onDateChange={chooseEndDate}
+              earliestDate={earliestDate}
+              latestDate={latestCompleteDate}
+              isToday={false}
+              caption={
+                comparisonEndDate === latestCompleteDate
+                  ? 'Latest complete day'
+                  : 'Period ends'
+              }
+            />
+          </View>
+        </SectionCard>
+
+        {dataMode === 'live' && hasGlucoseEvidence ? (
+          <View style={styles.reviewArea}>
             <Pressable
               accessibilityRole="button"
-              onPress={() =>
-                setAllFindingsVisible((visible) => !visible)
-              }
+              accessibilityState={{ expanded: reviewsVisible }}
+              onPress={() => setReviewsVisible((visible) => !visible)}
               style={({ pressed }) => [
-                styles.allFindingsButton,
+                styles.reviewToggle,
                 {
+                  backgroundColor: colors.surface,
                   borderColor: colors.border,
                   borderRadius: radius.md,
-                  opacity: pressed ? 0.7 : 1,
+                  opacity: pressed ? 0.72 : 1,
                 },
               ]}
             >
-              <Text
-                style={[styles.allFindingsText, { color: colors.primary }]}
-              >
-                {allFindingsVisible
-                  ? 'Show top three'
-                  : `View all ${findings.length} findings`}
-              </Text>
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.primary}
+                name="calendar-outline"
+                size={19}
+              />
+              <View style={styles.reviewCopy}>
+                <Text style={[styles.reviewTitle, { color: colors.text }]}>
+                  Weekly reviews
+                </Text>
+                <Text
+                  style={[styles.reviewDetail, { color: colors.textSecondary }]}
+                >
+                  Schedule and previously saved comparisons
+                </Text>
+              </View>
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.textTertiary}
+                name={reviewsVisible ? 'chevron-up' : 'chevron-down'}
+                size={18}
+              />
             </Pressable>
-          ) : null}
-          <View style={styles.safety}>
-            <SafetyNote />
+            {reviewsVisible ? (
+              <View style={styles.reviewStack}>
+                <InsightReviewScheduleCard />
+                {periodDays === 7 && reviewHistory.reports.length ? (
+                  <InsightReviewHistoryCard
+                    reports={reviewHistory.reports}
+                    selectedId={activeReviewId}
+                    onSelect={selectReview}
+                  />
+                ) : null}
+              </View>
+            ) : null}
           </View>
-        </>
-      )}
+        ) : null}
+
+        {insightState.error ? (
+          <ErrorCard message={insightState.error} />
+        ) : !activeReport ? (
+          <LoadingCard
+            label={`Comparing two ${periodDays}-day evidence windows…`}
+          />
+        ) : !hasGlucoseEvidence ? (
+          <SectionCard>
+            <EmptyState
+              title="No glucose evidence yet"
+              detail="Connect a glucose source and let the encrypted history build. T1 Arc will not create a comparison or review from an empty record."
+            />
+          </SectionCard>
+        ) : (
+          <>
+            <SectionCard
+              style={[styles.hero, { backgroundColor: colors.surfaceElevated }]}
+            >
+              <Text style={[styles.heroEyebrow, { color: colors.accent }]}>
+                {activePeriodDays} DAYS ENDING{' '}
+                {formatDate(toDateKey(activeReport.currentRange.end - 1), {
+                  day: 'numeric',
+                  month: 'short',
+                }).toUpperCase()}{' '}
+                VS PREVIOUS {activePeriodDays}
+              </Text>
+              {insightState.loading ? (
+                <Text style={[styles.updating, { color: colors.textTertiary }]}>
+                  Bringing your latest records together…
+                </Text>
+              ) : null}
+              <Text style={[styles.heroTitle, { color: colors.text }]}>
+                {activeReport.headline}
+              </Text>
+              <Text
+                style={[styles.heroSummary, { color: colors.textSecondary }]}
+              >
+                {activeReport.summary}
+              </Text>
+              <View style={[styles.metricRow, { borderColor: colors.divider }]}>
+                <View style={styles.metric}>
+                  <Text
+                    style={[
+                      styles.metricLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Time in range
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.text }]}>
+                    {activeReport.current.timeInRangePercent}%
+                  </Text>
+                  <Text
+                    style={[styles.metricDelta, { color: colors.textTertiary }]}
+                  >
+                    was {activeReport.previous.timeInRangePercent}%
+                  </Text>
+                </View>
+                <View style={styles.metric}>
+                  <Text
+                    style={[
+                      styles.metricLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Coverage
+                  </Text>
+                  <Text style={[styles.metricValue, { color: colors.text }]}>
+                    {activeReport.current.coveragePercent}%
+                  </Text>
+                  <Text
+                    style={[styles.metricDelta, { color: colors.textTertiary }]}
+                  >
+                    {activeReport.current.glucoseReadings} readings
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.signalRow}>
+                <View
+                  style={[
+                    styles.signal,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderRadius: radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.signalLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Average
+                  </Text>
+                  <Text style={[styles.signalValue, { color: colors.text }]}>
+                    {activeReport.current.glucoseAverage?.toFixed(1) ?? '—'}
+                  </Text>
+                  <Text
+                    style={[styles.signalUnit, { color: colors.textTertiary }]}
+                  >
+                    mmol/L
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.signal,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderRadius: radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.signalLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Variability
+                  </Text>
+                  <Text style={[styles.signalValue, { color: colors.text }]}>
+                    {activeReport.current.glucoseCvPercent === null
+                      ? '—'
+                      : `${activeReport.current.glucoseCvPercent}%`}
+                  </Text>
+                  <Text
+                    style={[styles.signalUnit, { color: colors.textTertiary }]}
+                  >
+                    coefficient
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.signal,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderRadius: radius.sm,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.signalLabel,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Sustained runs
+                  </Text>
+                  <Text style={[styles.signalValue, { color: colors.text }]}>
+                    {activeReport.current.highGlucoseRuns +
+                      activeReport.current.lowGlucoseRuns}
+                  </Text>
+                  <Text
+                    style={[styles.signalUnit, { color: colors.textTertiary }]}
+                  >
+                    high + low
+                  </Text>
+                </View>
+              </View>
+            </SectionCard>
+
+            <SectionHeading
+              title="Findings and evidence"
+              detail={
+                findings.length > 3 && !allFindingsVisible
+                  ? `Showing the three most relevant of ${findings.length} findings.`
+                  : 'Open a finding only when you want its calculation and records.'
+              }
+            />
+            <View style={styles.findingStack}>
+              {visibleFindings.map((finding) => (
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  expanded={expanded.has(finding.id)}
+                  highlighted={false}
+                  onToggle={() => toggleFinding(finding.id)}
+                  onInspectRecords={setSelectedEvidence}
+                />
+              ))}
+            </View>
+            {findings.length > 3 ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setAllFindingsVisible((visible) => !visible)}
+                style={({ pressed }) => [
+                  styles.allFindingsButton,
+                  {
+                    borderColor: colors.border,
+                    borderRadius: radius.md,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.allFindingsText, { color: colors.primary }]}
+                >
+                  {allFindingsVisible
+                    ? 'Show top three'
+                    : `View all ${findings.length} findings`}
+                </Text>
+              </Pressable>
+            ) : null}
+            <View style={styles.safety}>
+              <SafetyNote />
+            </View>
+          </>
+        )}
       </AppScreen>
       <EvidenceRecordInspector
         evidence={selectedEvidence}

@@ -22,11 +22,33 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
       - run: npm ci
       - name: Generate the native Android project for identity checks
         run: npx expo prebuild --platform android --clean --no-install
       - run: npm run typecheck
       - run: npm test -- --run
+      - name: Test native Glooko connector
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :daymark-glooko-export:testDebugUnitTest --no-daemon
+      - name: Lint native Glooko connector
+        working-directory: android
+        run: ./gradlew :daymark-glooko-export:lintDebug --no-daemon
+      - name: Verify release packaging fails closed without an explicit signer
+        working-directory: android
+        run: |
+          if ./gradlew :app:packageRelease --dry-run --no-daemon > signing-policy.log 2>&1; then
+            cat signing-policy.log
+            echo "Release packaging unexpectedly accepted implicit signing."
+            exit 1
+          fi
+          grep -q "refuses an implicitly debug-signed release APK" signing-policy.log
 
   private-android-release:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
@@ -49,6 +71,8 @@ jobs:
         run: npx expo prebuild --platform android --clean --no-install
       - name: Build phone, companion and watch faces
         working-directory: android
+        env:
+          T1ARC_PRIVATE_TEST_BUILD: '1'
         run: |
           chmod +x gradlew
           ./gradlew \

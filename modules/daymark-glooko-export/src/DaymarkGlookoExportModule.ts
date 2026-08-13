@@ -3,6 +3,9 @@ import { NativeModule, requireNativeModule } from 'expo';
 import {
   GlookoCredentialSetupResult,
   GlookoCredentialStatus,
+  GlookoCredentialCommitLease,
+  GlookoDataResetLease,
+  GlookoDataCommitLease,
   GlookoExportResult,
   GlookoReportExtraction,
 } from './DaymarkGlookoExport.types';
@@ -22,10 +25,21 @@ declare class DaymarkGlookoExportModule extends NativeModule<
     endDate: string,
   ): Promise<GlookoExportResult>;
   getLastTraceAsync(): Promise<string | null>;
+  releaseDownloadAsync(uri: string): Promise<boolean>;
   extractReportTextAsync(uri: string): Promise<string>;
   extractReportDataAsync(uri: string): Promise<GlookoReportExtraction>;
-  openCredentialSetupAsync(): Promise<GlookoCredentialSetupResult>;
+  openCredentialSetupAsync(
+    legacyCredentialContinuityRequired: boolean,
+  ): Promise<GlookoCredentialSetupResult>;
   getCredentialStatusAsync(): Promise<GlookoCredentialStatus>;
+  beginCredentialCommitAsync(
+    credentialGeneration: number,
+  ): Promise<GlookoCredentialCommitLease>;
+  endCredentialCommitAsync(token: string): Promise<boolean>;
+  beginDataCommitAsync(): Promise<GlookoDataCommitLease>;
+  endDataCommitAsync(token: string): Promise<boolean>;
+  beginDataResetAsync(): Promise<GlookoDataResetLease>;
+  endDataResetAsync(token: string): Promise<boolean>;
   clearCredentialsAsync(): Promise<boolean>;
   clearSessionAsync(): Promise<boolean>;
 }

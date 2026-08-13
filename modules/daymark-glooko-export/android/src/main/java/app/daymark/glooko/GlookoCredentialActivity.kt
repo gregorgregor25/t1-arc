@@ -12,15 +12,33 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
+internal fun glookoCredentialConfirmationCopy(
+  legacyCredentialContinuity: Boolean,
+) =
+  if (legacyCredentialContinuity) {
+    "I confirm this saved Glooko sign-in belongs to the same person as " +
+      "the existing Glooko data in T1 Arc, and it uses UK local time " +
+      "with dates written day/month/year."
+  } else {
+    "I confirm this account uses UK local time with dates written " +
+      "day/month/year."
+  }
+
 class GlookoCredentialActivity : Activity() {
   companion object {
     const val RESULT_STATUS = "status"
     const val RESULT_MASKED_EMAIL = "maskedEmail"
+    const val RESULT_CREDENTIAL_GENERATION = "credentialGeneration"
+    const val RESULT_LEGACY_CREDENTIAL_CONTINUITY =
+      "legacyCredentialContinuity"
+    const val EXTRA_LEGACY_CREDENTIAL_CONTINUITY_REQUIRED =
+      "legacyCredentialContinuityRequired"
   }
 
   private val vault by lazy { GlookoCredentialVault(this) }
@@ -40,6 +58,15 @@ class GlookoCredentialActivity : Activity() {
       resolveColor(android.R.attr.textColorPrimary, Color.WHITE)
     val secondary = resolveColor(android.R.attr.textColorSecondary, Color.LTGRAY)
     val accent = Color.rgb(91, 202, 223)
+    val hasStoredCredentials = vault.hasStoredCredentials()
+    val needsFormatConfirmation =
+      hasStoredCredentials && !vault.isUkFormatConfirmed()
+    val legacyCredentialContinuityRequired =
+      needsFormatConfirmation ||
+        intent.getBooleanExtra(
+          EXTRA_LEGACY_CREDENTIAL_CONTINUITY_REQUIRED,
+          false,
+        )
 
     val content =
       LinearLayout(this).apply {
@@ -59,9 +86,23 @@ class GlookoCredentialActivity : Activity() {
     content.addView(
       TextView(this).apply {
         this.text =
-          "Glooko ends its web session after each CSV export. T1 Arc can " +
-            "sign in again automatically using credentials encrypted by " +
-            "Android Keystore on this phone."
+          if (legacyCredentialContinuityRequired) {
+            if (hasStoredCredentials) {
+              "A Glooko sign-in is already saved securely on this phone. "
+            } else {
+              "Enter the Glooko sign-in you want to reconnect on this phone. "
+            } +
+              "Confirm that it belongs to the same person " +
+              "as the existing Glooko data and uses UK dates and times." +
+              if (needsFormatConfirmation) {
+                " You do not need to enter the password again."
+              } else {
+                ""
+              }
+          } else {
+            "T1 Arc can use your Glooko sign-in to keep your glucose and " +
+              "insulin history up to date automatically."
+          }
         textSize = 16f
         setTextColor(secondary)
         setLineSpacing(0f, 1.18f)
@@ -91,9 +132,9 @@ class GlookoCredentialActivity : Activity() {
     privacyCard.addView(
       TextView(this).apply {
         this.text =
-          "Your password is never returned to the T1 Arc interface, logs, " +
-            "backups, GitHub or a T1 Arc server. It is decrypted only inside " +
-            "the native connector when Glooko asks for login."
+          "Your sign-in stays securely on this phone and is sent only to " +
+            "Glooko when T1 Arc checks for updates. It is never included in " +
+            "backups or sent to T1 Arc, GitHub or another service."
         textSize = 14f
         setTextColor(secondary)
         setLineSpacing(0f, 1.15f)
@@ -134,22 +175,57 @@ class GlookoCredentialActivity : Activity() {
         importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
         setAutofillHints("password")
       }
+    if (!needsFormatConfirmation) {
+      content.addView(
+        emailInput,
+        LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          dp(58),
+        ).apply {
+          bottomMargin = dp(12)
+        },
+      )
+      content.addView(
+        passwordInput,
+        LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          dp(58),
+        ).apply {
+          bottomMargin = dp(12)
+        },
+      )
+    }
     content.addView(
-      emailInput,
-      LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(58),
-      ).apply {
-        bottomMargin = dp(12)
+      TextView(this).apply {
+        text = "Available for UK accounts on Glooko EU"
+        textSize = 14f
+        setTextColor(secondary)
+        setPadding(0, dp(4), 0, dp(12))
       },
     )
+
+    val formatConfirmation =
+      CheckBox(this).apply {
+        text =
+          glookoCredentialConfirmationCopy(
+            legacyCredentialContinuityRequired,
+          )
+        textSize = 14f
+        setTextColor(primaryTextColor)
+        buttonTintList =
+          android.content.res.ColorStateList.valueOf(accent)
+        setPadding(0, dp(4), 0, dp(12))
+      }
+    content.addView(formatConfirmation)
     content.addView(
-      passwordInput,
-      LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(58),
-      ).apply {
-        bottomMargin = dp(12)
+      TextView(this).apply {
+        text =
+          "T1 Arc cannot safely use dates from other regions yet. If this " +
+            "account does not use UK local time and day/month/year dates, cancel."
+        textSize = 13f
+        setTextColor(secondary)
+        setLineSpacing(0f, 1.15f)
+        setPadding(dp(4), 0, dp(4), dp(12))
       },
     )
 
@@ -164,17 +240,33 @@ class GlookoCredentialActivity : Activity() {
 
     val saveButton =
       Button(this).apply {
-        this.text = "Encrypt and enable automatic sign-in"
+        this.text =
+          if (needsFormatConfirmation) {
+            "Confirm account and UK format"
+          } else {
+            "Save sign-in"
+          }
         isAllCaps = false
         textSize = 15f
         setTextColor(Color.rgb(4, 28, 31))
         backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
+        isEnabled = false
+        alpha = 0.55f
         setOnClickListener {
           runCatching {
-            vault.save(
-              emailInput.text?.toString().orEmpty(),
-              passwordInput.text?.toString().orEmpty(),
-            )
+            require(formatConfirmation.isChecked) {
+              "Confirm the UK export format before continuing."
+            }
+            if (needsFormatConfirmation) {
+              vault.confirmUkFormat()
+            } else {
+              vault.save(
+                emailInput.text?.toString().orEmpty(),
+                passwordInput.text?.toString().orEmpty(),
+                GlookoRegion.EU,
+                ukFormatConfirmed = true,
+              )
+            }
           }.onSuccess {
             passwordInput.text?.clear()
             setResult(
@@ -184,16 +276,29 @@ class GlookoCredentialActivity : Activity() {
                 vault.maskedEmail()?.let {
                   putExtra(RESULT_MASKED_EMAIL, it)
                 }
+                putExtra(
+                  RESULT_CREDENTIAL_GENERATION,
+                  vault.credentialGeneration(),
+                )
+                putExtra(
+                  RESULT_LEGACY_CREDENTIAL_CONTINUITY,
+                  legacyCredentialContinuityRequired,
+                )
               },
             )
             finish()
           }.onFailure { error ->
             errorText.text =
-              error.message ?: "The encrypted sign-in could not be saved."
+              error.message ?: "The sign-in could not be saved."
             errorText.visibility = View.VISIBLE
           }
         }
       }
+    formatConfirmation.setOnCheckedChangeListener { _, checked ->
+      saveButton.isEnabled = checked
+      saveButton.alpha = if (checked) 1f else 0.55f
+      if (checked) errorText.visibility = View.GONE
+    }
     content.addView(
       saveButton,
       LinearLayout.LayoutParams(
@@ -229,7 +334,7 @@ class GlookoCredentialActivity : Activity() {
     content.addView(
       TextView(this).apply {
         this.text =
-          "You can remove the encrypted sign-in at any time from Sources. " +
+          "You can remove the saved sign-in at any time from Sources. " +
             "Doing so never removes imported glucose or insulin."
         textSize = 13f
         gravity = Gravity.CENTER

@@ -75,4 +75,26 @@ describe('Glooko historical glucose persistence', () => {
     });
     expect(preview.glucose[0]!.mmolL).toBeCloseTo(90 / 18.016, 2);
   });
+
+  it('preserves same-time readings from separate source devices', async () => {
+    const readings = parseGlookoTextFiles(
+      [
+        {
+          name: 'cgm_data_1.csv',
+          text: `Timestamp,Glucose Value (mmol/L),Device Serial Number
+2026-07-25 08:00:00,6.2,SENSOR-A
+2026-07-25 08:00:00,6.4,SENSOR-B`,
+        },
+      ],
+      IMPORTED_AT,
+    ).glucose;
+
+    expect(readings).toHaveLength(2);
+    expect(new Set(readings.map((reading) => reading.id)).size).toBe(2);
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings(readings);
+    await expect(store.getBounds(GLOOKO_CGM_SOURCE_ID)).resolves.toMatchObject({
+      count: 2,
+    });
+  });
 });

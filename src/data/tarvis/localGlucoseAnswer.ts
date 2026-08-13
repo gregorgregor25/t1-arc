@@ -143,7 +143,7 @@ function metricTitle(metric: SupportedMetric) {
 function metricDetail(executable: ExecutableLocalGlucoseIntent) {
   const metric = executable.metrics[0];
   if (executable.metrics.length > 1) {
-    return 'Each requested result is calculated independently from the same timestamp-normalised samples inside the exact clock windows. Missing readings are not estimated.';
+    return 'Each result uses the same readings from the times you asked about. Missing readings are not guessed.';
   }
   if (metric === 'glucose.time_in_range') {
     return `Observed duration is carried forward only until the next reading or ${OBSERVATION_GAP_MINUTES} minutes, whichever comes first. Missing time is excluded.`;
@@ -159,16 +159,16 @@ function metricDetail(executable: ExecutableLocalGlucoseIntent) {
     ].join(' or ')} use ${GLUCOSE_EPISODE_DEFINITION_VERSION}: 15 minutes beyond the threshold confirms a start, 15 minutes across it confirms recovery, and a sensor gap over 12 minutes breaks continuity.`;
   }
   if (metric?.endsWith('_readings')) {
-    return 'This counts timestamp-normalised physiological samples, not sustained events. Source records at the same instant are averaged once before the threshold is applied.';
+    return 'This counts individual readings, not sustained high or low periods. Readings saved at the same moment are combined once.';
   }
   if (metric === 'glucose.gmi') {
-    return `GMI uses ${GMI_FORMULA_VERSION} on the timestamp-normalised arithmetic mean. It is an estimate derived from sensor glucose and is not a laboratory HbA1c result.`;
+    return 'GMI is estimated from your average sensor glucose. It is not the same as a laboratory HbA1c result.';
   }
   if (metric === 'glucose.standard_deviation') {
-    return 'Population standard deviation of timestamp-normalised samples inside the exact clock windows. Missing readings are not estimated.';
+    return 'This shows how widely your readings varied during the times you asked about. Missing readings are not guessed.';
   }
   if (metric === 'glucose.coefficient_of_variation') {
-    return 'Coefficient of variation is the population standard deviation divided by the arithmetic mean for the same timestamp-normalised samples.';
+    return 'This compares the amount of glucose variation with your average glucose for the same times.';
   }
   const name = metric === 'glucose.mean'
     ? 'Arithmetic mean'
@@ -177,7 +177,7 @@ function metricDetail(executable: ExecutableLocalGlucoseIntent) {
       : metric === 'glucose.minimum'
         ? 'Minimum'
         : 'Maximum';
-  return `${name} of timestamp-normalised samples inside the exact clock windows. Source records at the same instant are averaged once while every source record ID is retained.`;
+  return `${name} for the times you asked about. Readings saved at the same moment are combined once.`;
 }
 
 interface NormalizedThreshold
@@ -294,7 +294,7 @@ function validateIntent(intent: TarvisIntentV1): ExecutableLocalGlucoseIntent {
   const supportedMetrics = metrics as SupportedMetric[];
   if (supportedMetrics.includes('glucose.gmi')) {
     return unsupported(
-      'GMI requires a continuous exact date/range scope; partial recurring clock windows are not a valid GMI basis.',
+      'GMI needs a complete date range. It cannot be calculated from selected hours repeated across several days.',
     );
   }
   if (
@@ -477,7 +477,7 @@ function durationDistribution(
   const lower = thresholds.find(({ role }) => role === 'range_lower');
   const upper = thresholds.find(({ role }) => role === 'range_upper');
   if (!lower || !upper) {
-    return unsupported('Time in range requires exact lower and upper thresholds.');
+    return unsupported('Tell me both the lower and upper levels for time in range.');
   }
   let belowMilliseconds = 0;
   let inRangeMilliseconds = 0;
@@ -733,7 +733,7 @@ function answerFor(
       confidence: 'limited',
       evidenceIds: [evidenceId],
       limitations: [
-        'No glucose readings were available inside the exact requested windows.',
+        'No glucose readings were available during the times you asked about.',
       ],
     };
   }
@@ -746,9 +746,9 @@ function answerFor(
       case 'glucose.median':
         return `Across those readings, your observed median was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.minimum':
-        return `Across those readings, your lowest observed timestamp-normalised reading was ${metric.value.toFixed(1)} mmol/L`;
+        return `Across those readings, your lowest recorded reading was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.maximum':
-        return `Across those readings, your highest observed timestamp-normalised reading was ${metric.value.toFixed(1)} mmol/L`;
+        return `Across those readings, your highest recorded reading was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.standard_deviation':
         return `Across those readings, the observed population standard deviation was ${metric.value.toFixed(1)} mmol/L`;
       case 'glucose.coefficient_of_variation':
@@ -770,7 +770,7 @@ function answerFor(
           executable.thresholds,
           metric.id === 'glucose.low_readings' ? 'low' : 'high',
         );
-        return `Across those readings, I found ${metric.value} timestamp-normalised reading${metric.value === 1 ? '' : 's'} ${metric.id === 'glucose.low_readings' ? 'below' : 'above'} ${threshold.value.toFixed(1)} mmol/L`;
+        return `Across those readings, I found ${metric.value} reading${metric.value === 1 ? '' : 's'} ${metric.id === 'glucose.low_readings' ? 'below' : 'above'} ${threshold.value.toFixed(1)} mmol/L`;
       }
     }
   });
@@ -792,7 +792,7 @@ function answerFor(
       : []),
     ...(executable.metrics.includes('glucose.gmi')
       ? [
-          `GMI uses ${GMI_FORMULA_VERSION} and is an estimate derived from mean sensor glucose, not a laboratory HbA1c result. Pregnancy status and individual treatment targets were not inferred.`,
+          'GMI is estimated from average sensor glucose, not a laboratory HbA1c result. It does not account for pregnancy or individual treatment targets.',
         ]
       : []),
     ...(executable.metrics.includes('glucose.gmi') &&
@@ -862,7 +862,7 @@ function presentationFor(
       case 'glucose.mean':
         return [{
           id: 'average-glucose' as const,
-          label: 'Observed arithmetic mean glucose',
+          label: 'Average glucose',
           value: metric.value,
           decimals: 1 as const,
           unit: 'mmol/L' as const,
@@ -870,7 +870,7 @@ function presentationFor(
       case 'glucose.median':
         return [{
           id: 'median-glucose',
-          label: 'Observed median glucose',
+          label: 'Median glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -878,7 +878,7 @@ function presentationFor(
       case 'glucose.minimum':
         return [{
           id: 'minimum-glucose',
-          label: 'Observed minimum glucose',
+          label: 'Lowest glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -886,7 +886,7 @@ function presentationFor(
       case 'glucose.maximum':
         return [{
           id: 'maximum-glucose',
-          label: 'Observed maximum glucose',
+          label: 'Highest glucose',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -894,7 +894,7 @@ function presentationFor(
       case 'glucose.standard_deviation':
         return [{
           id: 'glucose-standard-deviation',
-          label: 'Observed population standard deviation',
+          label: 'Glucose variation (SD)',
           value: metric.value,
           decimals: 1,
           unit: 'mmol/L',
@@ -902,7 +902,7 @@ function presentationFor(
       case 'glucose.coefficient_of_variation':
         return [{
           id: 'glucose-coefficient-of-variation',
-          label: 'Observed glucose coefficient of variation',
+          label: 'Glucose variation (CV)',
           value: metric.value,
           decimals: 1,
           unit: '%',
@@ -910,7 +910,7 @@ function presentationFor(
       case 'glucose.gmi':
         return [{
           id: 'glucose-management-indicator',
-          label: 'Estimated glucose management indicator',
+          label: 'Estimated GMI',
           value: metric.value,
           decimals: 1,
           unit: '%',
@@ -918,28 +918,28 @@ function presentationFor(
       case 'glucose.low_episodes':
         return [{
           id: 'low-events' as const,
-          label: 'Observed sustained lows',
+          label: 'Sustained lows',
           value: metric.value,
           decimals: 0 as const,
         }];
       case 'glucose.high_episodes':
         return [{
           id: 'high-events' as const,
-          label: 'Observed sustained highs',
+          label: 'Sustained highs',
           value: metric.value,
           decimals: 0 as const,
         }];
       case 'glucose.low_readings':
         return [{
           id: 'low-readings',
-          label: 'Timestamp-normalised readings below threshold',
+          label: 'Readings below your chosen level',
           value: metric.value,
           decimals: 0,
         }];
       case 'glucose.high_readings':
         return [{
           id: 'high-readings',
-          label: 'Timestamp-normalised readings above threshold',
+          label: 'Readings above your chosen level',
           value: metric.value,
           decimals: 0,
         }];
@@ -947,21 +947,21 @@ function presentationFor(
         return [
           {
             id: 'time-below-range' as const,
-            label: 'Observed time below range',
+            label: 'Time below range',
             value: distribution?.belowPercent ?? null,
             decimals: 1 as const,
             unit: '%' as const,
           },
           {
             id: 'time-in-range' as const,
-            label: 'Observed time in range',
+            label: 'Time in range',
             value: distribution?.inRangePercent ?? null,
             decimals: 1 as const,
             unit: '%' as const,
           },
           {
             id: 'time-above-range' as const,
-            label: 'Observed time above range',
+            label: 'Time above range',
             value: distribution?.abovePercent ?? null,
             decimals: 1 as const,
             unit: '%' as const,
@@ -1085,8 +1085,8 @@ function evidenceFor(
   );
   const evidence: EvidenceReference = {
     id,
-    label: `Exact ${clockLabel(executable)} ${executable.metrics.map(metricTitle).join(' and ')} inputs`,
-    description: `${bundle.result.readingCount} exact normalised glucose readings from ${bundle.result.requestedWindowCount} completed Europe/London clock windows. Every calculation record ID is retained; missing time is not represented as zero.${clockTransitionSummary(bundle) ? ` ${clockTransitionSummary(bundle)}` : ''}`,
+    label: `Readings used for ${clockLabel(executable)} ${executable.metrics.map(metricTitle).join(' and ')}`,
+    description: `${bundle.result.readingCount} readings from ${bundle.result.requestedWindowCount} completed UK time window${bundle.result.requestedWindowCount === 1 ? '' : 's'}. Missing time is not counted as zero.${clockTransitionSummary(bundle) ? ` ${clockTransitionSummary(bundle)}` : ''}`,
     range: { start: firstRange.start, end: lastRange.end },
     recordIds: [...bundle.evidence.recordIds],
     examples: representativeReadings(readings).map((reading) => ({
@@ -1094,7 +1094,7 @@ function evidenceFor(
       kind: 'glucose',
       timestamp: reading.timestamp,
       primary: `${reading.mmolL.toFixed(1)} mmol/L`,
-      secondary: `${reading.quality} · exact scoped record`,
+      secondary: `${reading.quality} · saved reading`,
       sourceId: reading.sourceId,
     })),
     calculation,
@@ -1104,7 +1104,7 @@ function evidenceFor(
             ...bundle.chart,
             timezone: APP_TIME_ZONE,
             title: `Glucose from ${clockLabel(executable)}`,
-            subtitle: `${bundle.result.requestedWindowCount} completed local windows on the exact requested clock axis. Thin traces are ${CHART_BIN_MINUTES}-minute bin averages; the thick line is an equal-occurrence profile average, and the dashed horizontal line is the exact overall answer mean.`,
+            subtitle: `${bundle.result.requestedWindowCount} completed time windows. Each thin line shows one window, the thicker line shows their overall pattern, and the dashed line marks the average.`,
             coverageSummary: `${bundle.result.windowsWithData} of ${bundle.result.requestedWindowCount} requested windows contain readings · ${bundle.result.coverage.percent.toFixed(1)}% observed coverage${clockTransitionSummary(bundle) ? ` · ${clockTransitionSummary(bundle)}` : ''}`,
             overallMeanMmolL,
             traceSemantics: {

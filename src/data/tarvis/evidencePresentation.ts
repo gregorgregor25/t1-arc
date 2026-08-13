@@ -19,22 +19,33 @@ export type TarvisEvidenceMetricId =
   | 'high-events'
   | 'time-below-range'
   | 'time-in-range'
-  | 'time-above-range';
+  | 'time-above-range'
+  | 'current-glucose'
+  | 'insulin-total'
+  | 'basal-insulin'
+  | 'bolus-insulin'
+  | 'carbohydrates'
+  | 'activity-duration'
+  | 'sleep-duration'
+  | 'sensor-coverage'
+  | 'sensor-gaps';
 
 export interface TarvisEvidenceMetric {
   id: TarvisEvidenceMetricId;
   label: string;
   value: number | null;
   decimals: 0 | 1;
-  unit?: 'mmol/L' | '%';
+  unit?: 'mmol/L' | '%' | 'U' | 'g' | 'min' | 'gaps';
 }
 
 export interface TarvisEvidenceWindowPresentation {
   label: string;
   range: { start: number; end: number };
   recordCount: number;
-  coveragePercent: number;
+  /** Present only when coverage is a meaningful, measured property. */
+  coveragePercent?: number;
   coverageStatus: 'sufficient' | 'limited' | 'unavailable';
+  recordLabel?: string;
   metrics: TarvisEvidenceMetric[];
 }
 
@@ -47,7 +58,9 @@ export interface TarvisEvidencePresentation {
     | 'high-events'
     | 'glucose-events'
     | 'time-in-range'
-    | 'glucose-summary';
+    | 'glucose-summary'
+    | 'current-glucose'
+    | 'personal-data';
   title: string;
   detail: string;
   windows: TarvisEvidenceWindowPresentation[];
@@ -231,7 +244,7 @@ function presentationDetail(
 ) {
   const details: string[] = [];
   if (signals.average) {
-    details.push('The average is weighted across observed sensor time');
+    details.push('The average accounts for the time covered by each reading');
   }
   if (signals.lowEvents || signals.highEvents) {
     const thresholds = [
@@ -241,12 +254,12 @@ function presentationDetail(
       .filter(Boolean)
       .join(' or ');
     details.push(
-      `A sustained event starts after readings remain ${thresholds} for at least 15 minutes and ends after readings remain back across the threshold for at least 15 minutes; a sensor gap over 12 minutes breaks continuity`,
+      `A sustained event starts after readings stay ${thresholds} for at least 15 minutes and ends after they stay back across the level for at least 15 minutes. A gap longer than 12 minutes ends the event`,
     );
   }
   if (signals.timeInRange) {
     details.push(
-      'Range percentages use observed sensor time between 3.9 and 10.0 mmol/L',
+      'Range percentages use the time covered by readings between 3.9 and 10.0 mmol/L',
     );
   }
   return `${details.join('. ')}.`;
@@ -447,7 +460,8 @@ export function isTarvisEvidencePresentation(
         Number.isFinite(window.range?.start) &&
         Number.isFinite(window.range?.end) &&
         typeof window.recordCount === 'number' &&
-        typeof window.coveragePercent === 'number' &&
+        (window.coveragePercent === undefined ||
+          typeof window.coveragePercent === 'number') &&
         (window.coverageStatus === 'sufficient' ||
           window.coverageStatus === 'limited' ||
           window.coverageStatus === 'unavailable') &&

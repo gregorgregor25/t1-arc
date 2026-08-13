@@ -782,11 +782,18 @@ export function backupRestoreBinding(
     columns: backupColumns.map((column) =>
       column === 'payload_base64' ? 'payload_bytes' : column,
     ),
-    values: backupColumns.map((column) =>
-      column === 'payload_base64'
-        ? backupBase64ToBytes(String(row[column] ?? ''))
-        : row[column] ?? null,
-    ),
+    values: backupColumns.map((column) => {
+      if (column === 'payload_base64') {
+        return backupBase64ToBytes(String(row[column] ?? ''));
+      }
+      if (
+        table === 'glucose_readings' &&
+        column === 'source_device_id'
+      ) {
+        return row[column] ?? '';
+      }
+      return row[column] ?? null;
+    }),
   };
 }
 

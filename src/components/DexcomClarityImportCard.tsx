@@ -222,7 +222,7 @@ export function DexcomClarityImportCard({
   function confirmClear() {
     Alert.alert(
       'Remove imported Dexcom history?',
-      'This removes the normalised readings and retained encrypted Clarity CSV copies from this phone. Other glucose sources are not changed.',
+      'This removes imported Dexcom readings and their saved files from this phone. Other glucose sources are not changed.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -278,8 +278,8 @@ export function DexcomClarityImportCard({
             Dexcom Clarity history
           </Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Import the raw CSV you control. T1 Arc normalises glucose locally
-            and keeps the original file encrypted on this phone.
+            Choose a Dexcom Clarity file you downloaded. T1 Arc imports the
+            readings and keeps the original file encrypted on this phone.
           </Text>
         </View>
       </View>
@@ -551,7 +551,7 @@ export function DexcomClarityImportCard({
 
       {!prepared ? (
         <Pressable
-          accessibilityHint="Choose the raw CSV exported from Dexcom Clarity."
+          accessibilityHint="Choose a file exported from Dexcom Clarity."
           accessibilityRole="button"
           disabled={busy}
           onPress={() => void chooseExport()}
@@ -582,9 +582,8 @@ export function DexcomClarityImportCard({
       ) : null}
 
       <Text style={[styles.footnote, { color: colors.textTertiary }]}>
-        Clarity CSV adds historical glucose only. A future direct Dexcom
-        connection needs Dexcom production approval and secure server-based
-        sign-in.
+        Clarity files add historical glucose only. Use Nightscout or xDrip if
+        you also want current Dexcom readings in T1 Arc.
       </Text>
 
       {summary?.archiveCount ? (

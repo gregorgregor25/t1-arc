@@ -97,7 +97,7 @@ function runCounts(run: AutomationRun) {
   const parts: string[] = [];
   if (run.recordsProcessed) {
     parts.push(
-      `${run.recordsProcessed.toLocaleString('en-GB')} records handled`,
+      `${run.recordsProcessed.toLocaleString('en-GB')} items checked`,
     );
   }
   if (run.recordsRemoved) {
@@ -128,8 +128,8 @@ export function automationEvidenceMeta(
   }
   parts.push(
     evidence.recordCount
-      ? `${evidence.recordCount.toLocaleString('en-GB')} stored`
-      : 'No records stored',
+      ? `${evidence.recordCount.toLocaleString('en-GB')} items saved`
+      : 'No information saved yet',
   );
   return parts.join(' · ');
 }
@@ -147,7 +147,7 @@ function friendlyRunDetail(
     return run.detail;
   }
   if (isInterruptedAutomationRun(run)) {
-    return 'Android stopped this update. T1 Arc will try again automatically.';
+    return 'Your phone paused this update. T1 Arc will try again automatically.';
   }
   if (run.outcome === 'running') return 'The update is still in progress.';
   if (run.outcome === 'failed') {
@@ -211,8 +211,8 @@ function ConnectorRow({
     (run ? friendlyRunDetail(run, item.label) : undefined) ??
     (registered
       ? evidence.recordCount
-        ? 'Android is waiting for the next suitable background window.'
-        : 'The background worker is ready; no source records have arrived yet.'
+        ? 'The next automatic check is ready and will run when your phone allows it.'
+        : 'Automatic checks are ready; no information has arrived yet.'
       : evidence.recordCount
         ? 'Stored data is available; automatic updates are not enabled.'
         : item.disabledDetail);
@@ -414,11 +414,11 @@ export function AutomationStatusCard() {
           </Text>
           <Text style={[styles.summary, { color: colors.textSecondary }]}>
             {latestRun
-              ? `Last background activity ${relativeAge(
+              ? `Last automatic check ${relativeAge(
                   latestRun.completedAt ?? latestRun.startedAt,
                   status?.checkedAt,
                 ).toLowerCase()}.`
-              : 'Android is waiting for the first background run.'}
+              : 'Waiting for the first automatic check.'}
           </Text>
         </View>
         <View
@@ -453,9 +453,8 @@ export function AutomationStatusCard() {
           size={20}
         />
         <Text style={[styles.explanationText, { color: colors.textSecondary }]}>
-          Android chooses the exact battery-friendly time. Each connected
-          source still keeps its own refresh interval and records every
-          background check locally.
+          Your phone chooses a battery-friendly time. Each connected source
+          keeps its own update schedule.
         </Text>
       </View>
 

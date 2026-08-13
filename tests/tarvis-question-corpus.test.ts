@@ -86,6 +86,7 @@ function defaultThresholds(metrics: readonly TarvisMetric[]) {
 interface ReadyCase {
   name: string;
   question: string;
+  domain?: 'glucose' | 'insulin' | 'food' | 'activity' | 'sleep' | 'health' | 'data_quality';
   metrics: TarvisMetric[];
   operation: TarvisOperation;
   scope: TarvisTemporalScope;
@@ -95,6 +96,53 @@ interface ReadyCase {
 }
 
 const READY_CASES: ReadyCase[] = [
+  {
+    name: 'current glucose lookup',
+    question: 'What is my current glucose right now?',
+    metrics: ['glucose.current'],
+    operation: 'current',
+    scope: rolling(24, 'hour'),
+  },
+  {
+    name: 'local insulin total',
+    question: 'What was my total insulin over the last seven days?',
+    metrics: ['insulin.delivered_total'],
+    domain: 'insulin',
+    operation: 'aggregate',
+    scope: localDays(7),
+  },
+  {
+    name: 'local basal total',
+    question: 'What was my total basal insulin over the last seven days?',
+    metrics: ['insulin.basal_total'],
+    domain: 'insulin',
+    operation: 'aggregate',
+    scope: localDays(7),
+  },
+  {
+    name: 'local carbohydrate total',
+    question: 'How many carbs did I have over the last seven days?',
+    metrics: ['food.carbohydrate_total'],
+    domain: 'food',
+    operation: 'aggregate',
+    scope: localDays(7),
+  },
+  {
+    name: 'local sensor coverage',
+    question: 'What was my CGM coverage over the last seven days?',
+    metrics: ['data_quality.coverage'],
+    domain: 'data_quality',
+    operation: 'inspect_data_quality',
+    scope: localDays(7),
+  },
+  {
+    name: 'local sensor gaps',
+    question: 'Where were my sensor data gaps over the last seven days?',
+    metrics: ['data_quality.gaps'],
+    domain: 'data_quality',
+    operation: 'inspect_data_quality',
+    scope: localDays(7),
+  },
   {
     name: 'digit local-day mean',
     question: 'What was my average glucose over the last 7 days?',
@@ -639,54 +687,6 @@ const FAIL_CLOSED_CASES: FailClosedCase[] = [
     code: 'ambiguous_time_scope',
     recognisedMetrics: ['glucose.mean'],
   },
-  ...(
-    [
-      ['current', 'What is my current glucose right now?', 'glucose.current'],
-    ] as const
-  ).map(
-    ([name, question, metric]): FailClosedCase => ({
-      name: `recognised unsupported ${name}`,
-      question,
-      status: 'unsupported',
-      code: 'unsupported_metric',
-      recognisedMetrics: [metric],
-    }),
-  ),
-  {
-    name: 'insulin is not treated as glucose',
-    question: 'What was my total insulin over the last seven days?',
-    status: 'unsupported',
-    code: 'unsupported_domain',
-    recognisedMetrics: ['insulin.delivered_total'],
-  },
-  {
-    name: 'basal is not treated as glucose',
-    question: 'What was my total basal insulin over the last seven days?',
-    status: 'unsupported',
-    code: 'unsupported_domain',
-    recognisedMetrics: ['insulin.basal_total'],
-  },
-  {
-    name: 'carbohydrates are not treated as glucose',
-    question: 'How many carbs did I have over the last seven days?',
-    status: 'unsupported',
-    code: 'unsupported_domain',
-    recognisedMetrics: ['food.carbohydrate_total'],
-  },
-  {
-    name: 'coverage request is not replaced by TIR',
-    question: 'What was my CGM coverage over the last seven days?',
-    status: 'unsupported',
-    code: 'unsupported_domain',
-    recognisedMetrics: ['data_quality.coverage'],
-  },
-  {
-    name: 'missing-data request is not replaced by glucose average',
-    question: 'Where were my sensor data gaps over the last seven days?',
-    status: 'unsupported',
-    code: 'unsupported_domain',
-    recognisedMetrics: ['data_quality.gaps'],
-  },
   {
     name: 'cross-domain compound question',
     question:
@@ -777,7 +777,7 @@ describe('Tarv1s adversarial ready-question corpus', () => {
       throw new Error(`Expected ready intent for: ${testCase.question}`);
     }
 
-    expect(resolution.intent.domain.value).toBe('glucose');
+    expect(resolution.intent.domain.value).toBe(testCase.domain ?? 'glucose');
     expect(resolution.intent.domain.provenance.kind).toBe('explicit');
     expect(resolution.intent.metrics.map((metric) => metric.value)).toEqual(
       testCase.metrics,
@@ -787,7 +787,9 @@ describe('Tarv1s adversarial ready-question corpus', () => {
     ).toEqual(testCase.metrics.map(() => 'explicit'));
     expect(resolution.intent.operation.value).toBe(testCase.operation);
     expect(resolution.intent.temporalScope.value).toEqual(testCase.scope);
-    expect(resolution.intent.temporalScope.provenance.kind).toBe('explicit');
+    expect(resolution.intent.temporalScope.provenance.kind).toBe(
+      testCase.metrics.includes('glucose.current') ? 'default' : 'explicit',
+    );
     expect(resolution.intent.clockWindow?.value ?? null).toEqual(
       testCase.clockWindow ?? null,
     );

@@ -1,6 +1,6 @@
 {
   "name": "daymark",
-  "version": "1.6.7",
+  "version": "1.6.9",
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

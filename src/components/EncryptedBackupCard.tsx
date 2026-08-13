@@ -120,7 +120,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
 
   async function saveEncryptedBackup(secret: string) {
     setBusy('exporting');
-    setWorkingLabel('Reading a consistent encrypted database snapshot…');
+    setWorkingLabel('Preparing your encrypted backup…');
     setMessage(undefined);
     let plaintextUri: string | undefined;
     let encryptedUri: string | undefined;
@@ -354,9 +354,8 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
             size={18}
           />
           <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
-            LibreLinkUp credentials, session tokens and Glooko web cookies are
-            never included. There is no recovery service if you forget the
-            backup passphrase.
+            Your saved sign-ins are never included. Keep the backup passphrase
+            safe because it cannot be recovered if you forget it.
           </Text>
         </View>
 

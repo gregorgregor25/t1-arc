@@ -13,6 +13,7 @@ import {
 } from '@/domain/models';
 import {
   DateKey,
+  isDateKey,
   toDateKey,
   zonedDateTimeToTimestamp,
 } from '@/domain/time';
@@ -51,6 +52,10 @@ export interface GlookoFileSummary {
     | 'daily-insulin';
   records: number;
   skippedRows: number;
+  /** Insulin deliveries/totals only; excludes context parsed from bolus rows. */
+  insulinRecords?: number;
+  /** Rows that looked like insulin rows but could not be normalised. */
+  rejectedInsulinRows?: number;
 }
 
 export interface GlookoUnrecognisedFileSummary {
@@ -70,6 +75,8 @@ export interface GlookoImportPreview {
   ignoredFiles: string[];
   unrecognisedFiles: GlookoUnrecognisedFileSummary[];
   warnings: string[];
+  /** A locale or DST transition made at least one local timestamp unsafe. */
+  unsafeTimestampLocale: boolean;
   skippedRows: number;
   duplicateRows: number;
   dataStart?: number;
@@ -136,11 +143,14 @@ const BASAL_RATE_ALIASES = [
   'rate units hr',
   'rate',
 ];
-const DURATION_ALIASES = [
-  'duration min',
-  'duration minutes',
-  'duration',
+const BASAL_DELIVERED_ALIASES = [
+  'insulin delivered u',
+  'delivered insulin units',
+  'insulin delivered units',
+  'delivered insulin',
+  'basal amount',
 ];
+const DURATION_ALIASES = ['duration min', 'duration minutes', 'duration'];
 const END_ALIASES = ['end timestamp', 'end time', 'ended at'];
 const CARB_ALIASES = [
   'carbs g',
@@ -239,37 +249,19 @@ const CARB_RATIO_ALIASES = [
   'insulin carb ratio',
   'insulin to carb ratio',
 ];
-const PERCENTAGE_ALIASES = [
-  'percentage',
-  'percentage percent',
-  'percent',
-];
-const ALARM_EVENT_ALIASES = [
-  'alarm event',
-  'alarm',
-  'event',
-  'alarm name',
-];
+const PERCENTAGE_ALIASES = ['percentage', 'percentage percent', 'percent'];
+const ALARM_EVENT_ALIASES = ['alarm event', 'alarm', 'event', 'alarm name'];
 const ENERGY_ALIASES = ['calories', 'energy kcal', 'energy'];
 const PROTEIN_ALIASES = ['protein', 'protein g'];
 const FAT_ALIASES = ['fat', 'fat g', 'total fat'];
-const SERVING_QUANTITY_ALIASES = [
-  'serving quantity',
-  'serving size',
-];
+const SERVING_QUANTITY_ALIASES = ['serving quantity', 'serving size'];
 const SERVING_COUNT_ALIASES = [
   'number of servings',
   'servings',
   'serving count',
 ];
-const CALORIES_BURNED_ALIASES = [
-  'calories burned',
-  'energy burned',
-];
-const MEDICATION_TYPE_ALIASES = [
-  'medication type',
-  'medicine type',
-];
+const CALORIES_BURNED_ALIASES = ['calories burned', 'energy burned'];
+const MEDICATION_TYPE_ALIASES = ['medication type', 'medicine type'];
 
 function normaliseHeader(value: string) {
   return value
@@ -321,15 +313,17 @@ function detectDelimiter(text: string) {
     .filter(Boolean)
     .slice(0, 8);
   const candidates = ['\t', ',', ';'];
-  return candidates
-    .map((delimiter) => ({
-      delimiter,
-      score: lines.reduce((sum, line) => {
-        const count = countDelimiter(line, delimiter);
-        return sum + (count > 0 ? 100 + count : 0);
-      }, 0),
-    }))
-    .sort((a, b) => b.score - a.score)[0]?.delimiter ?? ',';
+  return (
+    candidates
+      .map((delimiter) => ({
+        delimiter,
+        score: lines.reduce((sum, line) => {
+          const count = countDelimiter(line, delimiter);
+          return sum + (count > 0 ? 100 + count : 0);
+        }, 0),
+      }))
+      .sort((a, b) => b.score - a.score)[0]?.delimiter ?? ','
+  );
 }
 
 function createDelimitedRowParser(delimiter: string) {
@@ -344,9 +338,7 @@ function createDelimitedRowParser(delimiter: string) {
     field = '';
     const completed = row;
     row = [];
-    return completed.some((value) => value.length > 0)
-      ? completed
-      : undefined;
+    return completed.some((value) => value.length > 0) ? completed : undefined;
   };
 
   const push = (text: string, final = false) => {
@@ -431,7 +423,10 @@ export function parseDelimitedText(text: string) {
 
 function parseNumber(value: string | undefined) {
   if (!value?.trim()) return undefined;
-  let normalised = value.trim().replace(/\s/g, '').replace(/[^\d,.\-]/g, '');
+  let normalised = value
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/[^\d,.\-]/g, '');
   if (normalised.includes(',') && !normalised.includes('.')) {
     normalised = normalised.replace(',', '.');
   } else {
@@ -479,19 +474,69 @@ function timestampParts(value: string) {
   return undefined;
 }
 
-export function parseGlookoTimestamp(value: string | undefined) {
-  if (!value?.trim()) return undefined;
+function isDetectablyMonthFirstTimestamp(value: string | undefined) {
+  const match = value
+    ?.trim()
+    .match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{4})(?:\D|$)/);
+  if (!match) return false;
+  return Number(match[1]) <= 12 && Number(match[2]) > 12;
+}
+
+type GlookoTimestampCandidates = {
+  candidates: number[];
+  status: 'valid' | 'invalid' | 'nonexistent' | 'ambiguous';
+};
+
+const londonTimestampPartsFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function londonTimestampMatches(
+  timestamp: number,
+  expected: NonNullable<ReturnType<typeof timestampParts>>,
+) {
+  const values = new Map(
+    londonTimestampPartsFormatter
+      .formatToParts(timestamp)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
+  );
+  const [year, month, day] = expected.dateKey.split('-').map(Number);
+  return (
+    values.get('year') === year &&
+    values.get('month') === month &&
+    values.get('day') === day &&
+    values.get('hour') === expected.hour &&
+    values.get('minute') === expected.minute &&
+    values.get('second') === expected.second
+  );
+}
+
+function glookoTimestampCandidates(
+  value: string | undefined,
+): GlookoTimestampCandidates {
+  if (!value?.trim()) return { candidates: [], status: 'invalid' };
   const trimmed = value.trim();
   if (
     /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed) ||
     /^[A-Za-z]{3},/.test(trimmed)
   ) {
     const parsed = Date.parse(trimmed);
-    return Number.isFinite(parsed) ? parsed : undefined;
+    return Number.isFinite(parsed)
+      ? { candidates: [parsed], status: 'valid' }
+      : { candidates: [], status: 'invalid' };
   }
   const parts = timestampParts(trimmed);
-  if (!parts) return undefined;
   if (
+    !parts ||
+    !isDateKey(parts.dateKey) ||
     parts.hour < 0 ||
     parts.hour > 23 ||
     parts.minute < 0 ||
@@ -499,14 +544,134 @@ export function parseGlookoTimestamp(value: string | undefined) {
     parts.second < 0 ||
     parts.second > 59
   ) {
-    return undefined;
+    return { candidates: [], status: 'invalid' };
   }
-  return zonedDateTimeToTimestamp(
+
+  // `zonedDateTimeToTimestamp` supplies a close instant. Round-tripping it
+  // and its neighbouring UK offsets distinguishes normal, skipped and
+  // repeated Europe/London wall-clock times without trusting the host zone.
+  const close = zonedDateTimeToTimestamp(
     parts.dateKey,
     parts.hour,
     parts.minute,
     parts.second,
   );
+  const candidates = [...new Set([close - 60 * 60_000, close, close + 60 * 60_000])]
+    .filter((candidate) => londonTimestampMatches(candidate, parts))
+    .sort((left, right) => left - right);
+  if (candidates.length === 0) {
+    return { candidates, status: 'nonexistent' };
+  }
+  if (candidates.length > 1) {
+    return { candidates, status: 'ambiguous' };
+  }
+  return { candidates, status: 'valid' };
+}
+
+type TimestampSequenceResolution = {
+  timestamps: Array<number | undefined>;
+  unsafeTransition?: 'nonexistent' | 'ambiguous';
+};
+
+function monotonicTimestampSolution(
+  candidates: number[][],
+  direction: 'ascending' | 'descending',
+) {
+  type State = { count: number; path: number[] };
+  let states = candidates[0]!.map<State>((candidate) => ({
+    count: 1,
+    path: [candidate],
+  }));
+  for (let index = 1; index < candidates.length; index += 1) {
+    const previousCandidates = candidates[index - 1]!;
+    states = candidates[index]!.map((candidate) => {
+      let count = 0;
+      let path: number[] = [];
+      states.forEach((state, previousIndex) => {
+        const previous = previousCandidates[previousIndex]!;
+        const ordered =
+          direction === 'ascending'
+            ? candidate >= previous
+            : candidate <= previous;
+        if (!ordered || state.count === 0) return;
+        if (count === 0) path = [...state.path, candidate];
+        count = Math.min(2, count + state.count);
+      });
+      return { count, path };
+    });
+  }
+  const possible = states.filter((state) => state.count > 0);
+  const count = Math.min(
+    2,
+    possible.reduce((total, state) => total + state.count, 0),
+  );
+  return { count, path: count === 1 ? possible[0]!.path : undefined };
+}
+
+/**
+ * Resolves a file's repeated autumn hour only when row order yields one
+ * monotonic instant sequence. A visible clock rollback can therefore retain
+ * both folds; a lone 01:xx value (or unordered rows) fails closed.
+ */
+function resolveGlookoTimestampSequence(
+  values: Array<string | undefined>,
+): TimestampSequenceResolution {
+  const parsed = values.map(glookoTimestampCandidates);
+  if (parsed.some((entry) => entry.status === 'nonexistent')) {
+    return {
+      timestamps: parsed.map((entry) => entry.candidates[0]),
+      unsafeTransition: 'nonexistent',
+    };
+  }
+  const ambiguous = parsed.some((entry) => entry.status === 'ambiguous');
+  if (!ambiguous) {
+    return { timestamps: parsed.map((entry) => entry.candidates[0]) };
+  }
+
+  const validEntries = parsed.filter((entry) => entry.candidates.length > 0);
+  const candidateRows = validEntries.map((entry) => entry.candidates);
+  const solutions = [
+    monotonicTimestampSolution(candidateRows, 'ascending'),
+    monotonicTimestampSolution(candidateRows, 'descending'),
+  ];
+  if (solutions.some((solution) => solution.count > 1)) {
+    return {
+      timestamps: parsed.map((entry) =>
+        entry.status === 'valid' ? entry.candidates[0] : undefined,
+      ),
+      unsafeTransition: 'ambiguous',
+    };
+  }
+  const uniquePaths = new Map<string, number[]>();
+  solutions.forEach((solution) => {
+    if (solution.count === 1 && solution.path) {
+      uniquePaths.set(solution.path.join(','), solution.path);
+    }
+  });
+  if (uniquePaths.size !== 1) {
+    return {
+      timestamps: parsed.map((entry) =>
+        entry.status === 'valid' ? entry.candidates[0] : undefined,
+      ),
+      unsafeTransition: 'ambiguous',
+    };
+  }
+
+  const resolved = [...uniquePaths.values()][0]!;
+  let validIndex = 0;
+  return {
+    timestamps: parsed.map((entry) => {
+      if (!entry.candidates.length) return undefined;
+      const timestamp = resolved[validIndex];
+      validIndex += 1;
+      return timestamp;
+    }),
+  };
+}
+
+export function parseGlookoTimestamp(value: string | undefined) {
+  const parsed = glookoTimestampCandidates(value);
+  return parsed.candidates.length === 1 ? parsed.candidates[0] : undefined;
 }
 
 function localHour(timestamp: number) {
@@ -523,7 +688,8 @@ function mealType(title: string, timestamp: number): MealEvent['mealType'] {
   const lower = title.toLowerCase();
   if (lower.includes('breakfast')) return 'breakfast';
   if (lower.includes('lunch')) return 'lunch';
-  if (lower.includes('dinner') || lower.includes('evening meal')) return 'dinner';
+  if (lower.includes('dinner') || lower.includes('evening meal'))
+    return 'dinner';
   const hour = localHour(timestamp);
   if (hour < 10) return 'breakfast';
   if (hour < 15) return 'lunch';
@@ -586,6 +752,20 @@ function recordId(
   return `${GLOOKO_SOURCE_ID}:${kind}:${timestamp}:${fingerprint(parts)}`;
 }
 
+function deviceAwareRecordId(
+  kind: 'basal' | 'bolus' | 'daily-insulin',
+  timestamp: number,
+  parts: Array<string | number | undefined>,
+  sourceDeviceId: string,
+) {
+  const legacyId = recordId(kind, timestamp, parts);
+  if (!sourceDeviceId) return { id: legacyId };
+  return {
+    id: recordId(kind, timestamp, [...parts, 'source-device', sourceDeviceId]),
+    legacyId,
+  };
+}
+
 function rawRecordKind(name: string) {
   const lower = safeName(name).toLowerCase();
   if (lower.includes('cgm_carbs')) return 'cgm-carbohydrate';
@@ -600,7 +780,8 @@ function rawRecordKind(name: string) {
   if (lower.includes('insulin_data') || lower.includes('insulin-data')) {
     return 'daily-insulin';
   }
-  if (lower.includes('exercise') || lower.includes('activity')) return 'activity';
+  if (lower.includes('exercise') || lower.includes('activity'))
+    return 'activity';
   if (lower.includes('food')) return 'meal';
   if (lower.includes('medication')) return 'medication';
   if (lower.includes('note')) return 'note';
@@ -635,7 +816,10 @@ function rawRecord(
   };
 }
 
-function classifyFile(name: string, headers?: string[]): SupportedFileKind | undefined {
+function classifyFile(
+  name: string,
+  headers?: string[],
+): SupportedFileKind | undefined {
   const lower = safeName(name).toLowerCase();
   if (isGlookoCgmFileName(lower)) return 'cgm';
   if (lower.includes('manual_insulin') || lower.includes('manual-insulin')) {
@@ -648,7 +832,8 @@ function classifyFile(name: string, headers?: string[]): SupportedFileKind | und
   }
   if (lower.includes('basal')) return 'basal';
   if (lower.includes('bolus')) return 'bolus';
-  if (lower.includes('exercise') || lower.includes('activity')) return 'activity';
+  if (lower.includes('exercise') || lower.includes('activity'))
+    return 'activity';
   if (lower.includes('food') || lower.includes('carb')) return 'meal';
   if (lower.includes('medication')) return 'medication';
   if (lower.includes('note')) return 'note';
@@ -684,16 +869,43 @@ export function isGlookoCgmFileName(name: string) {
   return lower.includes('cgm') && !lower.includes('cgm_carbs');
 }
 
+function supportsInsulinTableHeaders(
+  headers: string[],
+  kind: SupportedFileKind,
+) {
+  if (kind === 'bolus') {
+    return (
+      findColumn(headers, BOLUS_DOSE_ALIASES) >= 0 ||
+      findColumn(headers, INITIAL_DOSE_ALIASES) >= 0 ||
+      findColumn(headers, EXTENDED_DOSE_ALIASES) >= 0
+    );
+  }
+  if (kind === 'basal') {
+    return (
+      findColumn(headers, BASAL_RATE_ALIASES) >= 0 ||
+      findColumn(headers, BASAL_DELIVERED_ALIASES) >= 0
+    );
+  }
+  if (kind === 'daily-insulin') {
+    return (
+      findColumn(headers, TOTAL_INSULIN_ALIASES) >= 0 ||
+      (findColumn(headers, TOTAL_BASAL_ALIASES) >= 0 &&
+        findColumn(headers, TOTAL_BOLUS_ALIASES) >= 0)
+    );
+  }
+  return true;
+}
+
 function findHeaderIndex(rows: string[][], hintedKind?: SupportedFileKind) {
   return rows.slice(0, 12).findIndex((row) => {
     if (findColumn(row, TIMESTAMP_ALIASES) < 0) return false;
     const kind = hintedKind ?? classifyFile('unknown.csv', row);
-    return kind !== undefined;
+    return kind !== undefined && supportsInsulinTableHeaders(row, kind);
   });
 }
 
 function valueAt(row: string[], index: number) {
-  return index >= 0 ? row[index]?.trim() ?? '' : '';
+  return index >= 0 ? (row[index]?.trim() ?? '') : '';
 }
 
 function validDose(value: number | undefined) {
@@ -778,6 +990,18 @@ function parseCgmTextFile(
   let unitColumn = -1;
   let trendColumn = -1;
   let deviceColumn = -1;
+  let nonEmptyDataRows = 0;
+  let monthFirstDetected = false;
+  const pending: Array<{
+    rawTimestamp: string;
+    mmolL?: number;
+    rawValue: string;
+    trend: string;
+    device: string;
+    rowNumber: number;
+    nonEmpty: boolean;
+    exact?: ImportRawRecord;
+  }> = [];
 
   for (const row of parseDelimitedRows(input)) {
     rowNumber += 1;
@@ -806,15 +1030,11 @@ function parseCgmTextFile(
     }
 
     const rawTimestamp = valueAt(row, timestampColumn);
-    const exact = rawRecord(
-      fileName,
-      headers,
-      row,
-      rowNumber,
-      importedAt,
-    );
-    if (exact) rawRecords.push(exact);
-    const timestamp = parseGlookoTimestamp(rawTimestamp);
+    if (row.some((value) => value.trim())) nonEmptyDataRows += 1;
+    if (isDetectablyMonthFirstTimestamp(rawTimestamp)) {
+      monthFirstDetected = true;
+    }
+    const exact = rawRecord(fileName, headers, row, rowNumber, importedAt);
     let mmolL: number | undefined;
     if (mmolColumn >= 0) {
       mmolL = parseNumber(valueAt(row, mmolColumn));
@@ -835,47 +1055,82 @@ function parseCgmTextFile(
             : value;
     }
 
-    if (
-      timestamp === undefined ||
-      mmolL === undefined ||
-      mmolL < 1 ||
-      mmolL > 40
-    ) {
-      if (row.some(Boolean)) skipped += 1;
-      continue;
-    }
     const device = valueAt(row, deviceColumn);
     const rawValue =
       valueAt(
         row,
-        mmolColumn >= 0
-          ? mmolColumn
-          : mgColumn >= 0
-            ? mgColumn
-            : genericColumn,
+        mmolColumn >= 0 ? mmolColumn : mgColumn >= 0 ? mgColumn : genericColumn,
       ) || '';
-    glucose.push({
-      id: `${GLOOKO_CGM_SOURCE_ID}:${timestamp}`,
-      timestamp,
-      receivedAt: importedAt,
-      mmolL: Math.round(mmolL * 100) / 100,
-      trend: cgmTrend(valueAt(row, trendColumn)),
-      quality: /[<>]/.test(rawValue) ? 'estimated' : 'measured',
-      sourceId: GLOOKO_CGM_SOURCE_ID,
-      importedAt,
-      sourceFile: fileName,
-      sourceRow: rowNumber,
-      sourceDeviceId: device || undefined,
-      sourceLocalTimestamp: rawTimestamp || undefined,
+    pending.push({
+      rawTimestamp,
+      mmolL,
+      rawValue,
+      trend: valueAt(row, trendColumn),
+      device,
+      rowNumber,
+      nonEmpty: row.some(Boolean),
+      exact,
+    });
+  }
+
+  const resolution = resolveGlookoTimestampSequence(
+    pending.map((row) => row.rawTimestamp),
+  );
+  if (!monthFirstDetected && !resolution.unsafeTransition) {
+    pending.forEach((row, index) => {
+      const timestamp = resolution.timestamps[index];
+      if (row.exact) {
+        row.exact.timestamp = timestamp;
+        if (
+          timestamp !== undefined &&
+          glookoTimestampCandidates(row.rawTimestamp).status === 'ambiguous'
+        ) {
+          row.exact.id = `${row.exact.id}:instant:${timestamp}`;
+        }
+        rawRecords.push(row.exact);
+      }
+      if (
+        timestamp === undefined ||
+        row.mmolL === undefined ||
+        row.mmolL < 1 ||
+        row.mmolL > 40
+      ) {
+        if (row.nonEmpty) skipped += 1;
+        return;
+      }
+      glucose.push({
+        id: `${GLOOKO_CGM_SOURCE_ID}:${timestamp}:${fingerprint([
+          'source-device',
+          row.device || 'device-unspecified',
+        ])}`,
+        timestamp,
+        receivedAt: importedAt,
+        mmolL: Math.round(row.mmolL * 100) / 100,
+        trend: cgmTrend(row.trend),
+        quality: /[<>]/.test(row.rawValue) ? 'estimated' : 'measured',
+        sourceId: GLOOKO_CGM_SOURCE_ID,
+        importedAt,
+        sourceFile: fileName,
+        sourceRow: row.rowNumber,
+        sourceDeviceId: row.device || undefined,
+        sourceLocalTimestamp: row.rawTimestamp || undefined,
+      });
     });
   }
 
   return {
-    glucose,
-    rawRecords,
+    glucose:
+      monthFirstDetected || resolution.unsafeTransition ? [] : glucose,
+    rawRecords:
+      monthFirstDetected || resolution.unsafeTransition ? [] : rawRecords,
     headers,
     headerRowNumber,
-    skipped,
+    skipped:
+      monthFirstDetected || resolution.unsafeTransition
+        ? nonEmptyDataRows
+        : skipped,
+    monthFirstDetected,
+    unsafeTimestampTransition: resolution.unsafeTransition,
   };
 }
 
@@ -893,15 +1148,13 @@ function parseBolusRows(
   const carbsColumn = findColumn(headers, CARB_ALIASES);
   const typeColumn = findColumn(headers, TYPE_ALIASES);
   const notesColumn = findColumn(headers, ['notes', 'comment', 'description']);
-  const bloodGlucoseColumn = findColumn(
-    headers,
-    BLOOD_GLUCOSE_INPUT_ALIASES,
-  );
+  const bloodGlucoseColumn = findColumn(headers, BLOOD_GLUCOSE_INPUT_ALIASES);
   const carbRatioColumn = findColumn(headers, CARB_RATIO_ALIASES);
   const deviceColumn = findColumn(headers, DEVICE_ALIASES);
   const boluses: BolusDelivery[] = [];
   const context: MealEvent[] = [];
   let skipped = 0;
+  let rejectedInsulinRows = 0;
 
   rows.forEach((row, index) => {
     const timestamp = parseGlookoTimestamp(valueAt(row, timestampColumn));
@@ -913,9 +1166,7 @@ function parseBolusRows(
     const carbs = parseNumber(valueAt(row, carbsColumn));
     const deliveryType = valueAt(row, typeColumn);
     const note = valueAt(row, notesColumn);
-    const bloodGlucoseInput = parseNumber(
-      valueAt(row, bloodGlucoseColumn),
-    );
+    const bloodGlucoseInput = parseNumber(valueAt(row, bloodGlucoseColumn));
     const carbRatio = parseNumber(valueAt(row, carbRatioColumn));
     const initialUnits = parseNumber(valueAt(row, initialColumn));
     const extendedUnits = parseNumber(valueAt(row, extendedColumn));
@@ -923,13 +1174,20 @@ function parseBolusRows(
     const sourceRow = firstRowNumber + index;
     let accepted = false;
 
-    if (timestamp !== undefined && validDose(dose)) {
+    const insulinAccepted = timestamp !== undefined && validDose(dose);
+    if (insulinAccepted) {
+      const identityParts = [
+        dose!.toFixed(4),
+        deliveryType,
+        componentDose.toFixed(4),
+      ];
       boluses.push({
-        id: recordId('bolus', timestamp, [
-          dose!.toFixed(4),
-          deliveryType,
-          componentDose.toFixed(4),
-        ]),
+        ...deviceAwareRecordId(
+          'bolus',
+          timestamp,
+          identityParts,
+          sourceDeviceId,
+        ),
         timestamp,
         units: dose!,
         deliveryType: deliveryType || undefined,
@@ -947,6 +1205,8 @@ function parseBolusRows(
       accepted = true;
     }
 
+    if (!insulinAccepted && row.some(Boolean)) rejectedInsulinRows += 1;
+
     if (
       timestamp !== undefined &&
       carbs !== undefined &&
@@ -955,7 +1215,11 @@ function parseBolusRows(
     ) {
       const title = note || 'Pump carbohydrate entry';
       context.push({
-        id: recordId('meal', timestamp, [carbs.toFixed(2), title, 'pump-entry']),
+        id: recordId('meal', timestamp, [
+          carbs.toFixed(2),
+          title,
+          'pump-entry',
+        ]),
         kind: 'meal',
         start: timestamp,
         title,
@@ -972,7 +1236,7 @@ function parseBolusRows(
 
     if (!accepted && row.some(Boolean)) skipped += 1;
   });
-  return { boluses, context, skipped };
+  return { boluses, context, skipped, rejectedInsulinRows };
 }
 
 function parseBasalRows(
@@ -986,13 +1250,7 @@ function parseBasalRows(
   const endColumn = findColumn(headers, END_ALIASES);
   const durationColumn = findColumn(headers, DURATION_ALIASES);
   const rateColumn = findColumn(headers, BASAL_RATE_ALIASES);
-  const unitsColumn = findColumn(headers, [
-    'insulin delivered u',
-    'delivered insulin units',
-    'insulin delivered units',
-    'delivered insulin',
-    'basal amount',
-  ]);
+  const unitsColumn = findColumn(headers, BASAL_DELIVERED_ALIASES);
   const typeColumn = findColumn(headers, TYPE_ALIASES);
   const percentageColumn = findColumn(headers, PERCENTAGE_ALIASES);
   const deviceColumn = findColumn(headers, DEVICE_ALIASES);
@@ -1053,12 +1311,9 @@ function parseBasalRows(
       return;
     }
     const sourceRow = firstRowNumber + index;
+    const identityParts = [end, rate.toFixed(5), units.toFixed(5)];
     basal.push({
-      id: recordId('basal', start, [
-        end,
-        rate.toFixed(5),
-        units.toFixed(5),
-      ]),
+      ...deviceAwareRecordId('basal', start, identityParts, sourceDeviceId),
       start,
       end,
       rateUnitsPerHour: rate,
@@ -1089,10 +1344,7 @@ function parseMealRows(
   const energyColumn = findColumn(headers, ENERGY_ALIASES);
   const proteinColumn = findColumn(headers, PROTEIN_ALIASES);
   const fatColumn = findColumn(headers, FAT_ALIASES);
-  const servingQuantityColumn = findColumn(
-    headers,
-    SERVING_QUANTITY_ALIASES,
-  );
+  const servingQuantityColumn = findColumn(headers, SERVING_QUANTITY_ALIASES);
   const servingCountColumn = findColumn(headers, SERVING_COUNT_ALIASES);
   const events: MealEvent[] = [];
   let skipped = 0;
@@ -1150,10 +1402,7 @@ function parseActivityRows(
   const durationColumn = findColumn(headers, DURATION_ALIASES);
   const titleColumn = findColumn(headers, TITLE_ALIASES);
   const intensityColumn = findColumn(headers, INTENSITY_ALIASES);
-  const caloriesBurnedColumn = findColumn(
-    headers,
-    CALORIES_BURNED_ALIASES,
-  );
+  const caloriesBurnedColumn = findColumn(headers, CALORIES_BURNED_ALIASES);
   const events: ActivityEvent[] = [];
   let skipped = 0;
   rows.forEach((row, index) => {
@@ -1206,10 +1455,7 @@ function parseMedicationRows(
   const titleColumn = findColumn(headers, TITLE_ALIASES);
   const amountColumn = findColumn(headers, AMOUNT_ALIASES);
   const unitColumn = findColumn(headers, UNIT_ALIASES);
-  const medicationTypeColumn = findColumn(
-    headers,
-    MEDICATION_TYPE_ALIASES,
-  );
+  const medicationTypeColumn = findColumn(headers, MEDICATION_TYPE_ALIASES);
   const events: MedicationEvent[] = [];
   let skipped = 0;
   rows.forEach((row, index) => {
@@ -1233,8 +1479,7 @@ function parseMedicationRows(
       title,
       amount,
       unit,
-      medicationType:
-        valueAt(row, medicationTypeColumn) || undefined,
+      medicationType: valueAt(row, medicationTypeColumn) || undefined,
       sourceId: GLOOKO_SOURCE_ID,
       origin: 'imported',
       recordedAt: importedAt,
@@ -1471,24 +1716,35 @@ function parseDailyInsulinRows(
       if (row.some(Boolean)) skipped += 1;
       return;
     }
+    const sourceDeviceId = valueAt(row, deviceColumn);
+    const identityParts = [
+      basalUnits?.toFixed(4),
+      bolusUnits?.toFixed(4),
+      totalUnits.toFixed(4),
+    ];
     totals.push({
-      id: recordId('daily-insulin', timestamp, [
-        basalUnits?.toFixed(4),
-        bolusUnits?.toFixed(4),
-        totalUnits.toFixed(4),
-      ]),
+      ...deviceAwareRecordId(
+        'daily-insulin',
+        timestamp,
+        identityParts,
+        sourceDeviceId,
+      ),
       timestamp,
       dateKey: toDateKey(timestamp),
       basalUnits:
-        basalUnits === undefined ? undefined : Math.round(basalUnits * 100) / 100,
+        basalUnits === undefined
+          ? undefined
+          : Math.round(basalUnits * 100) / 100,
       bolusUnits:
-        bolusUnits === undefined ? undefined : Math.round(bolusUnits * 100) / 100,
+        bolusUnits === undefined
+          ? undefined
+          : Math.round(bolusUnits * 100) / 100,
       totalUnits: Math.round(totalUnits * 100) / 100,
       sourceId: GLOOKO_SOURCE_ID,
       importedAt,
       sourceFile: fileName,
       sourceRow: firstRowNumber + index,
-      sourceDeviceId: valueAt(row, deviceColumn) || undefined,
+      sourceDeviceId: sourceDeviceId || undefined,
     });
   });
   return { totals, skipped };
@@ -1519,9 +1775,11 @@ export function parseGlookoTextFiles(
   const ignoredFiles: string[] = [];
   const unrecognisedFiles: GlookoUnrecognisedFileSummary[] = [];
   const warnings: string[] = [];
+  let unsafeTimestampLocale = false;
   let skippedRows = 0;
 
   files.forEach((input) => {
+    const rawRecordStart = rawRecords.length;
     const name = safeName(input.name);
     if (input.retainedOnly) {
       retainedFiles.push({
@@ -1555,7 +1813,19 @@ export function parseGlookoTextFiles(
         skippedRows: parsed.skipped,
       });
       skippedRows += parsed.skipped;
-      if (parsed.skipped > 0) {
+      if (parsed.monthFirstDetected) {
+        unsafeTimestampLocale = true;
+        warnings.push(
+          `${name}: month/day/year timestamps are not supported; the file was not normalised.`,
+        );
+      } else if (parsed.unsafeTimestampTransition) {
+        unsafeTimestampLocale = true;
+        warnings.push(
+          parsed.unsafeTimestampTransition === 'nonexistent'
+            ? `${name}: a Europe/London local time was skipped by the spring clock change; the file was not normalised.`
+            : `${name}: a repeated autumn Europe/London hour could not be uniquely disambiguated from source row order; the file was not normalised.`,
+        );
+      } else if (parsed.skipped > 0) {
         warnings.push(
           `${name}: ${parsed.skipped} row${
             parsed.skipped === 1 ? '' : 's'
@@ -1608,10 +1878,105 @@ export function parseGlookoTextFiles(
       unrecognisedFiles.push({ name, headers: headers.slice(0, 10) });
       return;
     }
-    const dataRows = rows.slice(headerIndex + 1);
+    let dataRows = rows.slice(headerIndex + 1);
     const firstRowNumber = headerIndex + 2;
+    const timestampColumn = findColumn(headers, TIMESTAMP_ALIASES);
+    if (
+      dataRows.some((row) =>
+        isDetectablyMonthFirstTimestamp(valueAt(row, timestampColumn)),
+      )
+    ) {
+      unsafeTimestampLocale = true;
+      rawRecords.splice(rawRecordStart);
+      const rejectedRows = dataRows.filter((row) =>
+        row.some((value) => value.trim()),
+      ).length;
+      recognisedFiles.push({
+        name,
+        kind,
+        records: 0,
+        skippedRows: rejectedRows,
+        ...(kind === 'bolus' || kind === 'basal' || kind === 'daily-insulin'
+          ? { insulinRecords: 0, rejectedInsulinRows: rejectedRows }
+          : {}),
+      });
+      skippedRows += rejectedRows;
+      warnings.push(
+        `${name}: month/day/year timestamps are not supported; the file was not normalised.`,
+      );
+      return;
+    }
+    const timestampResolution = resolveGlookoTimestampSequence(
+      dataRows.map((row) => valueAt(row, timestampColumn)),
+    );
+    const ambiguousTimestampRows = dataRows.map(
+      (row) =>
+        glookoTimestampCandidates(valueAt(row, timestampColumn)).status ===
+        'ambiguous',
+    );
+    const endColumn = findColumn(headers, END_ALIASES);
+    const endResolution =
+      endColumn >= 0
+        ? resolveGlookoTimestampSequence(
+            dataRows.map((row) => valueAt(row, endColumn)),
+          )
+        : undefined;
+    const unsafeTransition =
+      timestampResolution.unsafeTransition ??
+      endResolution?.unsafeTransition;
+    if (unsafeTransition) {
+      unsafeTimestampLocale = true;
+      rawRecords.splice(rawRecordStart);
+      const rejectedRows = dataRows.filter((row) =>
+        row.some((value) => value.trim()),
+      ).length;
+      recognisedFiles.push({
+        name,
+        kind,
+        records: 0,
+        skippedRows: rejectedRows,
+        ...(kind === 'bolus' || kind === 'basal' || kind === 'daily-insulin'
+          ? { insulinRecords: 0, rejectedInsulinRows: rejectedRows }
+          : {}),
+      });
+      skippedRows += rejectedRows;
+      warnings.push(
+        unsafeTransition === 'nonexistent'
+          ? `${name}: a Europe/London local time was skipped by the spring clock change; the file was not normalised.`
+          : `${name}: a repeated autumn Europe/London hour could not be uniquely disambiguated from source row order; the file was not normalised.`,
+      );
+      return;
+    }
+
+    // Give the existing row parsers explicit instants while retaining the
+    // exact local source text in rawRecords. This also makes record IDs from
+    // the two autumn folds distinct rather than collapsing on wall time.
+    dataRows = dataRows.map((row, index) => {
+      const timestamp = timestampResolution.timestamps[index];
+      const end = endResolution?.timestamps[index];
+      if (timestamp === undefined && end === undefined) return row;
+      const resolved = [...row];
+      if (timestamp !== undefined) {
+        resolved[timestampColumn] = new Date(timestamp).toISOString();
+      }
+      if (endColumn >= 0 && end !== undefined) {
+        resolved[endColumn] = new Date(end).toISOString();
+      }
+      return resolved;
+    });
+    rawRecords.slice(rawRecordStart).forEach((record) => {
+      const index = record.sourceRow - firstRowNumber;
+      if (index >= 0 && index < timestampResolution.timestamps.length) {
+        record.timestamp = timestampResolution.timestamps[index];
+        if (record.timestamp !== undefined && ambiguousTimestampRows[index]) {
+          record.id = `${record.id}:instant:${record.timestamp}`;
+        }
+      }
+    });
     let records = 0;
     let skipped = 0;
+    let insulinRecords: number | undefined;
+    let rejectedInsulinRows: number | undefined;
 
     if (kind === 'cgm') {
       // Named Glooko CGM files take the streaming path above. This protects
@@ -1632,6 +1997,8 @@ export function parseGlookoTextFiles(
       context.push(...parsed.context);
       records = parsed.boluses.length + parsed.context.length;
       skipped = parsed.skipped;
+      insulinRecords = parsed.boluses.length;
+      rejectedInsulinRows = parsed.rejectedInsulinRows;
     } else if (kind === 'basal') {
       const parsed = parseBasalRows(
         name,
@@ -1643,6 +2010,8 @@ export function parseGlookoTextFiles(
       basal.push(...parsed.basal);
       records = parsed.basal.length;
       skipped = parsed.skipped;
+      insulinRecords = records;
+      rejectedInsulinRows = skipped;
     } else if (kind === 'meal') {
       const parsed = parseMealRows(
         name,
@@ -1731,9 +2100,19 @@ export function parseGlookoTextFiles(
       dailyInsulinTotals.push(...parsed.totals);
       records = parsed.totals.length;
       skipped = parsed.skipped;
+      insulinRecords = records;
+      rejectedInsulinRows = skipped;
     }
 
-    recognisedFiles.push({ name, kind, records, skippedRows: skipped });
+    recognisedFiles.push({
+      name,
+      kind,
+      records,
+      skippedRows: skipped,
+      ...(insulinRecords === undefined
+        ? {}
+        : { insulinRecords, rejectedInsulinRows }),
+    });
     skippedRows += skipped;
     if (skipped > 0) {
       warnings.push(
@@ -1762,7 +2141,10 @@ export function parseGlookoTextFiles(
 
   const timestamps = [
     ...uniqueGlucose.records.map((reading) => reading.timestamp),
-    ...uniqueBasal.records.flatMap((delivery) => [delivery.start, delivery.end]),
+    ...uniqueBasal.records.flatMap((delivery) => [
+      delivery.start,
+      delivery.end,
+    ]),
     ...uniqueBoluses.records.map((delivery) => delivery.timestamp),
     ...uniqueDailyInsulinTotals.records.map((total) => total.timestamp),
     ...uniqueContext.records.flatMap((event) => [
@@ -1792,15 +2174,14 @@ export function parseGlookoTextFiles(
     ),
     context: uniqueContext.records.sort((a, b) => a.start - b.start),
     rawRecords: uniqueRawRecords.records.sort(
-      (a, b) =>
-        (a.timestamp ?? a.importedAt) -
-        (b.timestamp ?? b.importedAt),
+      (a, b) => (a.timestamp ?? a.importedAt) - (b.timestamp ?? b.importedAt),
     ),
     recognisedFiles,
     retainedFiles,
     ignoredFiles,
     unrecognisedFiles,
     warnings,
+    unsafeTimestampLocale,
     skippedRows,
     duplicateRows,
     dataStart: timestamps.length ? Math.min(...timestamps) : undefined,

@@ -22,5 +22,7 @@ export function glookoStepCountsAsFailure(outcome: GlookoStepOutcome) {
 export function stateAfterBusyGlookoAttempt<
   State extends { lastAttemptAt?: number },
 >(previous: State, current: State, startedAt: number) {
-  return current.lastAttemptAt === startedAt ? previous : current;
+  return current.lastAttemptAt === startedAt
+    ? { ...current, lastAttemptAt: previous.lastAttemptAt }
+    : current;
 }

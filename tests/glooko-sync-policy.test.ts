@@ -7,6 +7,8 @@ import {
   GLOOKO_INCREMENTAL_INTERVAL_MS,
   GLOOKO_HISTORY_BACKFILL_INTERVAL_MS,
   GLOOKO_RECONCILIATION_INTERVAL_MS,
+  glookoBackgroundSchedulingEnabled,
+  glookoFailureDisposition,
   glookoFailureBackoffMs,
   planAutomaticGlookoSync,
 } from '@/data/glooko/glookoSyncPolicy';
@@ -25,6 +27,22 @@ describe('Glooko automatic sync policy', () => {
     expect(planAutomaticGlookoSync(DEFAULT_GLOOKO_SYNC_STATE, NOW)).toEqual({
       due: false,
       reason: 'disabled',
+    });
+  });
+
+  it('does not schedule saved credentials before a real download verifies them', () => {
+    expect(
+      planAutomaticGlookoSync(
+        {
+          ...DEFAULT_GLOOKO_SYNC_STATE,
+          automaticEnabled: false,
+          sessionStatus: 'pending-verification',
+        },
+        NOW,
+      ),
+    ).toEqual({
+      due: false,
+      reason: 'verification-pending',
     });
   });
 
@@ -199,6 +217,65 @@ describe('Glooko automatic sync policy', () => {
       reason: 'backoff',
       nextEligibleAt,
     });
+  });
+
+  it('classifies persistent account and protocol failures as action-required', () => {
+    for (const reason of [
+      'account-selection-required',
+      'export-not-authorized',
+      'account-code-not-found',
+      'authentication-protocol-changed',
+      'unsupported-region',
+      'unsafe-timestamp-locale',
+      'credential-generation-mismatch',
+      'unbound-existing-data',
+      'unverified-credentials',
+    ]) {
+      expect(glookoFailureDisposition(reason)).toBe('action-required');
+    }
+  });
+
+  it('keeps transient service and transport failures on automatic backoff', () => {
+    for (const reason of [
+      'network',
+      'timeout',
+      'rate-limited',
+      'server-error',
+      'invalid-zip',
+      'http-error',
+    ]) {
+      expect(glookoFailureDisposition(reason)).toBe('retryable');
+    }
+  });
+
+  it('does not schedule an action-required failure even if an old state still says enabled', () => {
+    const blocked = {
+      ...DEFAULT_GLOOKO_SYNC_STATE,
+      automaticEnabled: true,
+      sessionStatus: 'ready' as const,
+      lastSuccessAt: NOW - GLOOKO_INCREMENTAL_INTERVAL_MS,
+      lastErrorCode: 'account-selection-required',
+    };
+    expect(planAutomaticGlookoSync(blocked, NOW)).toEqual({
+      due: false,
+      reason: 'action-required',
+    });
+    expect(glookoBackgroundSchedulingEnabled(blocked, NOW)).toBe(false);
+  });
+
+  it('keeps the Android schedule registered during transient backoff', () => {
+    expect(
+      glookoBackgroundSchedulingEnabled(
+        {
+          ...DEFAULT_GLOOKO_SYNC_STATE,
+          automaticEnabled: true,
+          sessionStatus: 'ready',
+          lastErrorCode: 'network',
+          nextEligibleAt: NOW + 30 * 60 * 1000,
+        },
+        NOW,
+      ),
+    ).toBe(true);
   });
 
   it('labels the successful one-hour eligibility window as fresh', () => {

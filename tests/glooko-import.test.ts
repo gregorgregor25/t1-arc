@@ -3,6 +3,7 @@ import { strToU8, zipSync } from 'fflate';
 
 import {
   glookoEntryLimitForName,
+  unpackGlookoExport,
   unpackGlookoFiles,
 } from '@/data/import/glookoArchive';
 import {
@@ -11,6 +12,10 @@ import {
   parseGlookoTextFiles,
   parseGlookoTimestamp,
 } from '@/data/import/glookoCsv';
+import {
+  GlookoImportSourceCommitGuard,
+  releasePreparedGlookoImportSource,
+} from '@/data/import/glookoImportLifecycle';
 import {
   ImportBatch,
   MemoryHealthRecordStore,
@@ -60,6 +65,148 @@ function overwriteFirstCentralUncompressedSize(
 }
 
 describe('Glooko ZIP/CSV normalisation', () => {
+  it('zeroes and detaches a selected source archive when it is released', () => {
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    const released = releasePreparedGlookoImportSource({
+      preview: {},
+      batch: {},
+      sourcePayload: { format: 'zip', bytes, entries: [] },
+    } as never);
+
+    expect([...bytes]).toEqual([0, 0, 0, 0]);
+    expect(released.sourcePayload).toBeUndefined();
+  });
+
+  it('does not zero a source archive when its preview unmounts mid-commit', () => {
+    const guard = new GlookoImportSourceCommitGuard();
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    const prepared = {
+      preview: {},
+      batch: {},
+      sourcePayload: { format: 'zip', bytes, entries: [] },
+    } as never;
+
+    guard.begin(prepared);
+    guard.disposePreview(prepared);
+    expect([...bytes]).toEqual([9, 8, 7, 6]);
+
+    guard.finish(prepared);
+    expect([...bytes]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('still zeroes a replaced preview that has no active commit', () => {
+    const guard = new GlookoImportSourceCommitGuard();
+    const bytes = new Uint8Array([4, 3, 2, 1]);
+    const prepared = {
+      preview: {},
+      batch: {},
+      sourcePayload: { format: 'zip', bytes, entries: [] },
+    } as never;
+
+    guard.disposePreview(prepared);
+
+    expect([...bytes]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('uses pump identity to preserve otherwise identical insulin records', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Name:Example\nTimestamp,Insulin delivered (U),Serial number\n29/03/2026 09:17,4.8,PDM-A\n29/03/2026 09:17,4.8,PDM-B`,
+        },
+        {
+          name: 'basal_data_1.csv',
+          text: `Name:Example\nTimestamp,Insulin delivered (U),Duration (min),Serial number\n29/03/2026 09:00,0.4,30,PDM-A\n29/03/2026 09:00,0.4,30,PDM-B`,
+        },
+        {
+          name: 'insulin_data_1.csv',
+          text: `Name:Example\nTimestamp,Total basal (U),Total bolus (U),Total insulin (U),Serial number\n29/03/2026 23:58,10,12,22,PDM-A\n29/03/2026 23:58,10,12,22,PDM-B`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(2);
+    expect(preview.basal).toHaveLength(2);
+    expect(preview.dailyInsulinTotals).toHaveLength(2);
+    for (const records of [
+      preview.boluses,
+      preview.basal,
+      preview.dailyInsulinTotals,
+    ]) {
+      expect(new Set(records.map((record) => record.id)).size).toBe(2);
+      expect(records.every((record) => Boolean(record.legacyId))).toBe(true);
+      expect(new Set(records.map((record) => record.legacyId)).size).toBe(1);
+    }
+  });
+
+  it('migrates pre-device insulin IDs without counting or retaining duplicates', async () => {
+    const parsed = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Name:Example\nTimestamp,Insulin delivered (U),Serial number\n29/03/2026 09:17,4.8,PDM-A`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+    const current = parsed.boluses[0]!;
+    const legacy = {
+      ...current,
+      id: current.legacyId!,
+      legacyId: undefined,
+    };
+    const store = new MemoryHealthRecordStore();
+    const batch = (id: string): ImportBatch => ({
+      id,
+      sourceId: 'glooko-export',
+      fileName: `${id}.zip`,
+      fileSha256: id,
+      importedAt: IMPORTED_AT,
+      skippedCount: 0,
+      warnings: [],
+    });
+
+    await store.writeImport(batch('legacy'), [], [legacy], []);
+    const result = await store.writeImport(
+      batch('device-aware'),
+      [],
+      [current],
+      [],
+    );
+    const stored = await store.getBolusDeliveries({
+      start: current.timestamp - 1,
+      end: current.timestamp + 1,
+    });
+
+    expect(result.insertedBoluses).toBe(0);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.id).toBe(current.id);
+  });
+
+  it('reports rejected bolus doses separately from accepted carbohydrate context', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Name:Example\nTimestamp,Insulin delivered (U),Carbs input (g)\n29/03/2026 09:17,not-a-dose,45`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.context).toHaveLength(1);
+    expect(preview.recognisedFiles[0]).toMatchObject({
+      kind: 'bolus',
+      records: 1,
+      skippedRows: 0,
+      insulinRecords: 0,
+      rejectedInsulinRows: 1,
+    });
+  });
+
   it('extracts only CSV data and removes archive paths from provenance', async () => {
     const archive = zipSync({
       'private/export/bolus_data.csv': strToU8(BOLUS_TSV),
@@ -151,12 +298,33 @@ describe('Glooko ZIP/CSV normalisation', () => {
     expect(preview.retainedFiles).toEqual([
       {
         name: 'food_data_1.csv',
-        originalBytes: oversizedFood.length,
+        // Extraction stops immediately after proving the entry is too large;
+        // this is a measured lower bound, not trusted ZIP metadata.
+        originalBytes: glookoEntryLimitForName('food_data_1.csv') + 1,
       },
     ]);
     expect(preview.warnings).toContain(
       '1 source file was retained exactly in the encrypted source archive for future processing.',
     );
+  });
+
+  it('bounds work after the first forty CSV entries even when files are retained', async () => {
+    const entries = Object.fromEntries(
+      Array.from({ length: 41 }, (_, index) => [
+        `private/export/food_data_${index + 1}.csv`,
+        strToU8('Timestamp,Food name\n29/03/2026 09:00,Example'),
+      ]),
+    );
+    const unpacked = await unpackGlookoExport('glooko.zip', zipSync(entries));
+
+    expect(unpacked.entries).toHaveLength(41);
+    expect(
+      unpacked.entries.filter((entry) => entry.handling === 'loaded'),
+    ).toHaveLength(40);
+    expect(unpacked.entries[40]).toMatchObject({
+      handling: 'retained',
+      reason: 'file-limit',
+    });
   });
 
   it('rejects empty or unrelated selections before parsing', async () => {
@@ -538,6 +706,218 @@ Timestamp,Glucose Value (mg/dL),Direction,Device Serial Number
     expect(parseGlookoTimestamp('15/07/2026 12:00:00')).toBe(
       Date.parse('2026-07-15T11:00:00Z'),
     );
+    expect(parseGlookoTimestamp('29/03/2026 01:30:00')).toBeUndefined();
+    expect(parseGlookoTimestamp('25/10/2026 01:30:00')).toBeUndefined();
+    expect(parseGlookoTimestamp('2026-10-25T01:30:00+01:00')).toBe(
+      Date.parse('2026-10-25T00:30:00Z'),
+    );
+    expect(parseGlookoTimestamp('2026-10-25T01:30:00+00:00')).toBe(
+      Date.parse('2026-10-25T01:30:00Z'),
+    );
+  });
+
+  it('fails closed on a nonexistent spring Europe/London local time', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Timestamp,Insulin delivered (U)
+29/03/2026 00:55:00,1.0
+29/03/2026 01:30:00,1.1
+29/03/2026 02:05:00,1.2`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.unsafeTimestampLocale).toBe(true);
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.rawRecords).toHaveLength(0);
+    expect(preview.recognisedFiles[0]).toMatchObject({
+      kind: 'bolus',
+      records: 0,
+      skippedRows: 3,
+      rejectedInsulinRows: 3,
+    });
+    expect(preview.warnings).toContain(
+      'bolus_data_1.csv: a Europe/London local time was skipped by the spring clock change; the file was not normalised.',
+    );
+  });
+
+  it('fails closed on a nonexistent spring time in streaming CGM data', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'cgm_data_1.csv',
+          text: `Timestamp,Glucose Value (mmol/L),Serial number
+29/03/2026 00:55:00,6.0,SN-1
+29/03/2026 01:30:00,6.1,SN-1
+29/03/2026 02:05:00,6.2,SN-1`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.unsafeTimestampLocale).toBe(true);
+    expect(preview.glucose).toHaveLength(0);
+    expect(preview.rawRecords).toHaveLength(0);
+    expect(preview.recognisedFiles[0]).toMatchObject({
+      kind: 'cgm',
+      records: 0,
+      skippedRows: 3,
+    });
+  });
+
+  it('retains both autumn folds when ordered rows uniquely show the rollback', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Timestamp,Insulin delivered (U),Serial number
+25/10/2026 00:55:00,0.9,SN-1
+25/10/2026 01:00:00,1.0,SN-1
+25/10/2026 01:05:00,1.1,SN-1
+25/10/2026 01:55:00,1.2,SN-1
+25/10/2026 01:00:00,1.0,SN-1
+25/10/2026 01:05:00,1.1,SN-1
+25/10/2026 02:05:00,1.3,SN-1`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.unsafeTimestampLocale).toBe(false);
+    expect(preview.boluses).toHaveLength(7);
+    expect(preview.boluses.map((record) => record.timestamp)).toEqual([
+      Date.parse('2026-10-24T23:55:00Z'),
+      Date.parse('2026-10-25T00:00:00Z'),
+      Date.parse('2026-10-25T00:05:00Z'),
+      Date.parse('2026-10-25T00:55:00Z'),
+      Date.parse('2026-10-25T01:00:00Z'),
+      Date.parse('2026-10-25T01:05:00Z'),
+      Date.parse('2026-10-25T02:05:00Z'),
+    ]);
+    expect(new Set(preview.boluses.map((record) => record.id)).size).toBe(7);
+    expect(preview.rawRecords).toHaveLength(7);
+    expect(new Set(preview.rawRecords.map((record) => record.id)).size).toBe(7);
+    expect(preview.duplicateRows).toBe(0);
+  });
+
+  it('retains both autumn folds in ordered streaming CGM rows', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'cgm_data_1.csv',
+          text: `Timestamp,Glucose Value (mmol/L),Serial number
+25/10/2026 00:55:00,6.0,SN-1
+25/10/2026 01:00:00,6.1,SN-1
+25/10/2026 01:05:00,6.2,SN-1
+25/10/2026 01:55:00,6.3,SN-1
+25/10/2026 01:00:00,6.1,SN-1
+25/10/2026 01:05:00,6.2,SN-1
+25/10/2026 02:05:00,6.6,SN-1`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.unsafeTimestampLocale).toBe(false);
+    expect(preview.glucose).toHaveLength(7);
+    expect(preview.glucose[1]?.timestamp).toBe(
+      Date.parse('2026-10-25T00:00:00Z'),
+    );
+    expect(preview.glucose[4]?.timestamp).toBe(
+      Date.parse('2026-10-25T01:00:00Z'),
+    );
+    expect(new Set(preview.glucose.map((record) => record.id)).size).toBe(7);
+    expect(preview.rawRecords).toHaveLength(7);
+    expect(new Set(preview.rawRecords.map((record) => record.id)).size).toBe(7);
+    expect(preview.rawRecords.map((record) => record.timestamp)).toEqual(
+      preview.glucose.map((record) => record.timestamp),
+    );
+  });
+
+  it('fails closed when autumn row order cannot identify the fold', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Timestamp,Insulin delivered (U)
+25/10/2026 00:55:00,1.0
+25/10/2026 01:30:00,1.1
+25/10/2026 02:05:00,1.2`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.unsafeTimestampLocale).toBe(true);
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.rawRecords).toHaveLength(0);
+    expect(preview.warnings).toContain(
+      'bolus_data_1.csv: a repeated autumn Europe/London hour could not be uniquely disambiguated from source row order; the file was not normalised.',
+    );
+  });
+
+  it('rejects impossible and detectably month-first calendar dates', () => {
+    expect(parseGlookoTimestamp('31/02/2026 12:00:00')).toBeUndefined();
+    expect(parseGlookoTimestamp('08/13/2026 12:00:00')).toBeUndefined();
+  });
+
+  it('rejects an entire file when any row proves it is month-first', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_1.csv',
+          text: `Timestamp,Insulin delivered (U)
+08/10/2026 12:00:00,1.5
+08/13/2026 12:00:00,2.0`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(0);
+    expect(preview.rawRecords).toHaveLength(0);
+    expect(preview.recognisedFiles[0]).toMatchObject({
+      records: 0,
+      skippedRows: 2,
+    });
+    expect(preview.warnings).toContain(
+      'bolus_data_1.csv: month/day/year timestamps are not supported; the file was not normalised.',
+    );
+  });
+
+  it('marks a mixed archive unsafe even when a UK-format sibling parses', () => {
+    const preview = parseGlookoTextFiles(
+      [
+        {
+          name: 'bolus_data_uk.csv',
+          text: `Timestamp,Insulin delivered (U)
+13/08/2026 12:00:00,1.5`,
+        },
+        {
+          name: 'cgm_data_month_first.csv',
+          text: `Timestamp,Glucose Value (mmol/L)
+08/13/2026 13:00:00,6.2`,
+        },
+      ],
+      IMPORTED_AT,
+    );
+
+    expect(preview.boluses).toHaveLength(1);
+    expect(preview.unsafeTimestampLocale).toBe(true);
+    expect(preview.recognisedFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'bolus_data_uk.csv', records: 1 }),
+        expect.objectContaining({
+          name: 'cgm_data_month_first.csv',
+          kind: 'cgm',
+          records: 0,
+          skippedRows: 1,
+        }),
+      ]),
+    );
   });
 
   it('parses quoted delimiters without splitting note text', () => {
@@ -545,11 +925,7 @@ Timestamp,Glucose Value (mg/dL),Direction,Device Serial Number
       parseDelimitedText(
         'Timestamp,Dose (units),Notes\n2026-07-01 12:00:00,2.4,"Lunch, away from home"',
       )[1],
-    ).toEqual([
-      '2026-07-01 12:00:00',
-      '2.4',
-      'Lunch, away from home',
-    ]);
+    ).toEqual(['2026-07-01 12:00:00', '2.4', 'Lunch, away from home']);
   });
 });
 
@@ -617,13 +993,11 @@ describe('encrypted health-record store contract', () => {
     expect(second.sourcePayloadStored).toBe(true);
     expect((await store.getInsulinBounds()).count).toBe(4);
     expect((await store.getContextBounds()).count).toBe(1);
-    expect(
-      await store.getRawSourceRecords('glooko-export'),
-    ).toHaveLength(4);
+    expect(await store.getRawSourceRecords('glooko-export')).toHaveLength(4);
     const raw = await store.getRawSourceRecords('glooko-export');
-    expect(
-      await store.getRawSourceRecordsByIds([raw[0]!.id]),
-    ).toEqual([raw[0]]);
+    expect(await store.getRawSourceRecordsByIds([raw[0]!.id])).toEqual([
+      raw[0],
+    ]);
   });
 
   it('stores an exact source archive even when no rows are normalised yet', async () => {
@@ -740,8 +1114,8 @@ describe('encrypted health-record store contract', () => {
     expect(firstPayload?.payload.bytes).toEqual(new Uint8Array(4));
     firstPayload?.payload.bytes.fill(9);
     expect(
-      (await store.getImportSourcePayload('glooko-export:summary-1'))
-        ?.payload.bytes,
+      (await store.getImportSourcePayload('glooko-export:summary-1'))?.payload
+        .bytes,
     ).toEqual(new Uint8Array(4));
   });
 
@@ -791,7 +1165,8 @@ describe('encrypted health-record store contract', () => {
     });
     expect(await store.hasImportSourcePayload('glooko-export')).toBe(true);
     expect(
-      (await store.getLatestImportSourcePayload('glooko-export'))?.payload.bytes,
+      (await store.getLatestImportSourcePayload('glooko-export'))?.payload
+        .bytes,
     ).toEqual(sourceBytes);
   });
 
@@ -904,9 +1279,7 @@ describe('encrypted health-record store contract', () => {
       end: Date.parse('2026-08-06T12:00:00+01:00'),
     });
 
-    expect(totals.map((total) => total.id)).toEqual([
-      'daily-total:2026-08-06',
-    ]);
+    expect(totals.map((total) => total.id)).toEqual(['daily-total:2026-08-06']);
   });
 
   it('only permits deleting user-created context', async () => {
@@ -924,7 +1297,9 @@ describe('encrypted health-record store contract', () => {
     });
 
     expect(await store.deleteManualContext('daymark-manual:meal:1')).toBe(true);
-    expect(await store.deleteManualContext('daymark-manual:meal:1')).toBe(false);
+    expect(await store.deleteManualContext('daymark-manual:meal:1')).toBe(
+      false,
+    );
   });
 
   it('removes an imported source without deleting manual context', async () => {

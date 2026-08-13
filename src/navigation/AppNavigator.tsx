@@ -19,7 +19,10 @@ import { HistoryScreen } from '@/screens/HistoryScreen';
 import { InsightsScreen } from '@/screens/InsightsScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { HealthScreen } from '@/screens/RecordsScreen';
-import { SourcesScreen } from '@/screens/SourcesScreen';
+import {
+  SourcesScreen,
+  type SourceJump,
+} from '@/screens/SourcesScreen';
 import { TodayScreen } from '@/screens/TodayScreen';
 import { useAppTheme } from '@/theme/theme';
 
@@ -30,7 +33,7 @@ export type RootTabParamList = {
   History: undefined;
   Health: undefined;
   Insights: undefined;
-  Sources: undefined;
+  Sources: { source?: SourceJump } | undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -43,7 +46,7 @@ const linking: LinkingOptions<RootTabParamList> = {
       History: 'history',
       Health: 'health',
       Insights: 'insights',
-      Sources: 'sources',
+      Sources: 'sources/:source?',
     },
   },
 };

@@ -1,11 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -36,8 +30,11 @@ import {
   buildLocalGlucoseRangeAnswer,
   rangeForLocalGlucoseRangeIntent,
 } from '@/data/tarvis/localGlucoseRangeAnswer';
-import { routeTarvisIntent } from '@/data/tarvis/onDeviceRouting';
-import { classifyTarvisSafety } from '@/data/tarvis/safety';
+import {
+  buildLocalPersonalDataAnswer,
+  rangesForLocalPersonalDataIntent,
+} from '@/data/tarvis/localPersonalDataAnswer';
+import { coordinateTarvisRequest } from '@/data/tarvis/requestCoordinator';
 import {
   clearTarvisConversation,
   loadTarvisConversation,
@@ -47,13 +44,10 @@ import {
   TarvisConversationStorageLimitError,
 } from '@/data/tarvis/conversationStore';
 import { formatTarvisConversation } from '@/data/tarvis/conversationExport';
-import { requestedTarvisPeriodDays } from '@/data/tarvis/scope';
 import type { GlucoseAnswerBundleV2 } from '@/data/tarvis/glucoseAnswerBundleV2';
 import {
   describeTarvisIntent,
-  isReadyTarvisIntent,
   PendingTarvisClarification,
-  resolveTarvisClarificationReply,
   resolveTarvisIntent,
   TarvisIntentHistoryEntry,
   TarvisIntentV1,
@@ -71,8 +65,7 @@ import {
   TarvisUsage,
 } from '@/data/tarvis/types';
 import { EvidenceReference, InsightReport } from '@/domain/insights';
-import { InsightPeriodDays } from '@/domain/insightRanges';
-import { GlucoseReading, TimeRange } from '@/domain/models';
+import { GlucoseReading, TimelineData, TimeRange } from '@/domain/models';
 import { formatDate, toDateKey } from '@/domain/time';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useAppTheme } from '@/theme/theme';
@@ -100,15 +93,14 @@ interface Props {
   liveData: boolean;
   report: InsightReport;
   loadGlucoseReadings?(range: TimeRange): Promise<GlucoseReading[]>;
-  loadReportForPeriod?(periodDays: InsightPeriodDays): Promise<InsightReport>;
+  loadTimelineData?(range: TimeRange): Promise<TimelineData>;
+  loadReportForRange?(
+    current: TimeRange,
+    previous: TimeRange,
+    generatedAt: number,
+  ): Promise<InsightReport>;
   onBack(): void;
   onInspectEvidence(evidence: EvidenceReference): void;
-}
-
-function requestCountToday(usage?: TarvisUsage) {
-  const cutoff = Date.now() - 24 * 60 * 60 * 1_000;
-  return usage?.requestTimestamps.filter((timestamp) => timestamp >= cutoff)
-    .length ?? 0;
 }
 
 function confidenceLabel(confidence: TarvisAnswer['confidence']) {
@@ -126,7 +118,7 @@ function evidenceRangeLabel(range: { start: number; end: number }) {
   return `${formatDate(toDateKey(range.start), {
     day: 'numeric',
     month: 'short',
-  })} – ${formatDate(toDateKey(range.end - 1), {
+  })} - ${formatDate(toDateKey(range.end - 1), {
     day: 'numeric',
     month: 'short',
   })}`;
@@ -145,7 +137,7 @@ function TarvisEvidenceSummary({
       accessibilityLabel={`${presentation.title}. ${presentation.windows
         .map(
           (window) =>
-            `${window.label}, ${evidenceRangeLabel(window.range)}, ${window.recordCount} glucose readings, ${window.coveragePercent}% coverage. ${
+            `${window.label}, ${evidenceRangeLabel(window.range)}, ${window.recordCount} ${window.recordLabel ?? 'glucose readings'}${window.coveragePercent === undefined ? '' : `, ${window.coveragePercent}% coverage`}. ${
               window.coverageStatus === 'unavailable'
                 ? 'Glucose metrics are unavailable.'
                 : window.coverageStatus === 'limited'
@@ -253,10 +245,23 @@ function TarvisEvidenceSummary({
           <Text
             style={[styles.evidenceCoverage, { color: colors.textTertiary }]}
           >
-            {window.recordCount.toLocaleString()} glucose readings ·{' '}
-            {window.coveragePercent}% coverage
+            {window.recordLabel ? (
+              <>
+                {window.recordCount.toLocaleString()} {window.recordLabel}
+                {window.coveragePercent === undefined
+                  ? null
+                  : ` | ${window.coveragePercent}% coverage`}
+              </>
+            ) : null}
+            {!window.recordLabel ? (
+              <>
+                {window.recordCount.toLocaleString()} glucose readings |{' '}
+                {window.coveragePercent}% coverage
+              </>
+            ) : null}
           </Text>
-          {window.coverageStatus !== 'sufficient' ? (
+          {window.coverageStatus !== 'sufficient' &&
+          window.coveragePercent !== undefined ? (
             <View
               style={[
                 styles.evidenceCoverageNotice,
@@ -295,44 +300,28 @@ function TarvisEvidenceSummary({
   );
 }
 
-function TarvisRequestDetails({ metrics }: { metrics?: TarvisRequestMetrics }) {
-  const { colors } = useAppTheme();
-  const [visible, setVisible] = useState(false);
+function TarvisRouteMarker({
+  latest,
+  usedOpenAi,
+}: {
+  latest: boolean;
+  usedOpenAi: boolean;
+}) {
+  if (!latest) return null;
   return (
-    <View style={[styles.requestDetails, { borderTopColor: colors.divider }]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: visible }}
-        onPress={() => setVisible((current) => !current)}
-        style={({ pressed }) => [
-          styles.requestDetailsButton,
-          { opacity: pressed ? 0.65 : 1 },
-        ]}
-      >
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.textTertiary}
-          name="information-circle-outline"
-          size={15}
-        />
-        <Text style={[styles.requestDetailsLabel, { color: colors.textTertiary }]}>
-          Response details
-        </Text>
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.textTertiary}
-          name={visible ? 'chevron-up' : 'chevron-down'}
-          size={14}
-        />
-      </Pressable>
-      {visible ? (
-        <Text style={[styles.requestMetrics, { color: colors.textTertiary }]}>
-          {metrics
-            ? `Luna · ${metrics.inputTokens.toLocaleString()} input + ${metrics.outputTokens.toLocaleString()} output tokens · approx. $${metrics.estimatedCostUsd.toFixed(metrics.estimatedCostUsd < 0.01 ? 4 : 3)}`
-            : 'On-device response · no API request'}
-        </Text>
-      ) : null}
-    </View>
+    <View
+      accessible
+      accessibilityLabel="Latest TARV1S response"
+      collapsable={false}
+      importantForAccessibility="yes"
+      nativeID={
+        usedOpenAi ? 'tarvis-response-assisted' : 'tarvis-response-local'
+      }
+      style={styles.routeMarker}
+      testID={
+        usedOpenAi ? 'tarvis-response-assisted' : 'tarvis-response-local'
+      }
+    />
   );
 }
 
@@ -341,15 +330,13 @@ export function TarvisScreen({
   liveData,
   report,
   loadGlucoseReadings,
-  loadReportForPeriod,
+  loadTimelineData,
+  loadReportForRange,
   onBack,
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
-  const evidence = useMemo(
-    () => buildTarvisEvidencePacket(report),
-    [report],
-  );
+  const evidence = useMemo(() => buildTarvisEvidencePacket(report), [report]);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
@@ -379,7 +366,7 @@ export function TarvisScreen({
         if (!active) return;
         setSettingsLoadFailed(true);
         setError(
-          'Tarv1s could not verify secure settings. Close and reopen Tarv1s to retry before using an OpenAI-backed question.',
+          'Tarv1s could not open its saved connection. Close and reopen Tarv1s to try again. Questions answered on this phone still work.',
         );
       })
       .finally(() => {
@@ -396,21 +383,21 @@ export function TarvisScreen({
       .then((stored) => {
         if (!active) return;
         const restored = stored.map((exchange) => ({
-            id: exchange.id,
-            question: exchange.question,
-            answer: exchange.answer,
-            clarificationQuestion: exchange.clarificationQuestion,
-            intent: exchange.intent,
-            presentation: exchange.presentation,
-            requestMetrics: exchange.requestMetrics,
-            answerBundle: exchange.answerBundle,
-            evidence: {
-              packet: evidence.packet,
-              references: new Map(
-                exchange.evidence.map((reference) => [reference.id, reference]),
-              ),
-            },
-          }));
+          id: exchange.id,
+          question: exchange.question,
+          answer: exchange.answer,
+          clarificationQuestion: exchange.clarificationQuestion,
+          intent: exchange.intent,
+          presentation: exchange.presentation,
+          requestMetrics: exchange.requestMetrics,
+          answerBundle: exchange.answerBundle,
+          evidence: {
+            packet: evidence.packet,
+            references: new Map(
+              exchange.evidence.map((reference) => [reference.id, reference]),
+            ),
+          },
+        }));
         setExchanges(restored);
         const clarificationQuestion = stored.at(-1)?.clarificationQuestion;
         if (clarificationQuestion) {
@@ -579,8 +566,8 @@ export function TarvisScreen({
 
   function removeKey() {
     Alert.alert(
-      'Remove OpenAI key?',
-      'TARV1S will stop making requests until another key is added.',
+      'Disconnect broader answers?',
+      'Tarv1s can still answer supported questions using data on this phone. Broader questions will be unavailable until you reconnect.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -604,15 +591,13 @@ export function TarvisScreen({
     setQuestion('');
     setError(undefined);
     setWorking(true);
-    const history: TarvisConversationTurn[] = exchanges.flatMap(
-      (exchange) => [
-        { role: 'user' as const, text: exchange.question },
-        {
-          role: 'assistant' as const,
-          text: `${exchange.answer.headline}\n${exchange.answer.answer}`,
-        },
-      ],
-    );
+    const history: TarvisConversationTurn[] = exchanges.flatMap((exchange) => [
+      { role: 'user' as const, text: exchange.question },
+      {
+        role: 'assistant' as const,
+        text: `${exchange.answer.headline}\n${exchange.answer.answer}`,
+      },
+    ]);
     const previousExchange = exchanges.at(-1);
     const intentHistory: TarvisIntentHistoryEntry[] = previousExchange?.intent
       ? [
@@ -624,44 +609,19 @@ export function TarvisScreen({
         ]
       : [];
     try {
-      const safety = classifyTarvisSafety(prompt);
-      if (safety.kind !== 'allow') {
-        setPendingClarification(undefined);
-        appendExchange({
-          answer: safety.answer,
-          evidenceLookup: {
-            packet: evidence.packet,
-            references: new Map(),
-          },
-          prompt,
-        });
-        return;
-      }
-
       const questionAsOf = liveData ? Date.now() : asOf;
-      const resolverOptions = {
-        history: intentHistory,
-        now: questionAsOf,
-        timezone: 'Europe/London',
-      } as const;
-      const intentResolution = resolveTarvisClarificationReply(
-        prompt,
-        resolverOptions,
+      const plan = coordinateTarvisRequest({
+        question: prompt,
+        asOf: questionAsOf,
+        conversationHistory: history,
+        intentHistory,
         pendingClarification,
-      );
-      const route = routeTarvisIntent(intentResolution);
-      if (route.kind === 'capability') {
-        const clarification =
-          intentResolution.outcome.status === 'needs_clarification'
-            ? pendingClarification ?? {
-                question: prompt,
-                resolution: intentResolution,
-              }
-            : undefined;
-        setPendingClarification(clarification);
+      });
+      if (plan.kind === 'answer') {
+        setPendingClarification(plan.pendingClarification);
         appendExchange({
-          answer: route.answer,
-          clarificationQuestion: clarification?.question,
+          answer: plan.answer,
+          clarificationQuestion: plan.pendingClarification?.question,
           evidenceLookup: {
             packet: evidence.packet,
             references: new Map(),
@@ -670,31 +630,25 @@ export function TarvisScreen({
         });
         return;
       }
-      if (route.kind === 'scoped-glucose') {
+      if (plan.kind === 'scoped-glucose') {
         setPendingClarification(undefined);
-        if (!isReadyTarvisIntent(intentResolution)) {
-          throw new Error('The scoped glucose request was not fully resolved.');
-        }
         if (!loadGlucoseReadings) {
           throw new Error('Your local glucose data is not ready yet.');
         }
-        const recurring = intentResolution.intent.clockWindow !== null;
+        const recurring = plan.intent.clockWindow !== null;
         const range = recurring
-          ? rangeForLocalGlucoseIntent(intentResolution.intent, questionAsOf)
-          : rangeForLocalGlucoseRangeIntent(
-              intentResolution.intent,
-              questionAsOf,
-            );
+          ? rangeForLocalGlucoseIntent(plan.intent, questionAsOf)
+          : rangeForLocalGlucoseRangeIntent(plan.intent, questionAsOf);
         const readings = await loadGlucoseReadings(range);
         const local = recurring
           ? buildLocalGlucoseAnswer({
               asOf: questionAsOf,
-              intent: intentResolution.intent,
+              intent: plan.intent,
               readings,
             })
           : buildLocalGlucoseRangeAnswer({
               asOf: questionAsOf,
-              intent: intentResolution.intent,
+              intent: plan.intent,
               readings,
             });
         const localEvidence = compactTarvisEvidence(
@@ -708,9 +662,45 @@ export function TarvisScreen({
               localEvidence.map((reference) => [reference.id, reference]),
             ),
           },
-          intent: intentResolution.intent,
+          intent: plan.intent,
           presentation: local.presentation,
           answerBundle: local.answerBundle,
+          prompt,
+        });
+        return;
+      }
+      if (plan.kind === 'scoped-personal-data') {
+        setPendingClarification(undefined);
+        if (!loadTimelineData) {
+          throw new Error('Your local health data is not ready yet.');
+        }
+        const ranges = rangesForLocalPersonalDataIntent(
+          plan.intent,
+          questionAsOf,
+        );
+        const [currentTimeline, previousTimeline] = await Promise.all([
+          loadTimelineData(ranges.current),
+          ranges.previous
+            ? loadTimelineData(ranges.previous)
+            : Promise.resolve(undefined),
+        ]);
+        const local = buildLocalPersonalDataAnswer({
+          asOf: questionAsOf,
+          intent: plan.intent,
+          current: currentTimeline,
+          previous: previousTimeline,
+        });
+        const localEvidence = compactTarvisEvidence(local.evidence);
+        appendExchange({
+          answer: local.answer,
+          evidenceLookup: {
+            packet: evidence.packet,
+            references: new Map(
+              localEvidence.map((reference) => [reference.id, reference]),
+            ),
+          },
+          intent: plan.intent,
+          presentation: local.presentation,
           prompt,
         });
         return;
@@ -720,13 +710,13 @@ export function TarvisScreen({
       if (settingsLoadFailed) {
         appendExchange({
           answer: {
-            headline: 'I could not verify the saved OpenAI key',
+            headline: 'I could not open the saved connection',
             answer:
-              'Your secure settings did not load, so I have not assumed that the key is missing and I have not made an OpenAI request. Close and reopen Tarv1s to retry; supported glucose calculations still run on this phone.',
+              'Your secure settings did not load. Close and reopen Tarv1s to retry. Supported calculations still work on this phone.',
             confidence: 'limited',
             evidenceIds: [],
             limitations: [
-              'No OpenAI request was made because secure-key status could not be verified.',
+              'Nothing left this phone.',
             ],
           },
           evidenceLookup: { packet: evidence.packet, references: new Map() },
@@ -737,13 +727,13 @@ export function TarvisScreen({
       if (!hasApiKey) {
         appendExchange({
           answer: {
-            headline: 'An OpenAI key is needed for that question',
+            headline: 'Connect broader answers for that question',
             answer:
-              'I can calculate supported glucose averages, time in range, and low or high events entirely on this phone. This broader question needs the language model, so add an OpenAI API key in Tarv1s settings when you want me to answer it.',
+              'Supported personal calculations still work on this phone. To ask broader questions, open Tarv1s settings and connect your OpenAI project.',
             confidence: 'limited',
             evidenceIds: [],
             limitations: [
-              'No OpenAI request was made because this phone has no saved API key.',
+              'Nothing left this phone.',
             ],
           },
           evidenceLookup: { packet: evidence.packet, references: new Map() },
@@ -752,32 +742,43 @@ export function TarvisScreen({
         return;
       }
 
-      const requestedPeriod = requestedTarvisPeriodDays(prompt);
       const reportForQuestion =
-        requestedPeriod && loadReportForPeriod
-          ? await loadReportForPeriod(requestedPeriod)
+        plan.kind === 'model-evidence' &&
+        plan.evidenceRanges &&
+        loadReportForRange
+          ? await loadReportForRange(
+              plan.evidenceRanges.current,
+              plan.evidenceRanges.previous,
+              questionAsOf,
+            )
           : undefined;
-      const evidenceForQuestion = reportForQuestion
-        ? buildTarvisEvidencePacket(reportForQuestion)
-        : evidence;
+      const evidenceForQuestion =
+        plan.kind === 'model-education'
+          ? undefined
+          : reportForQuestion
+            ? buildTarvisEvidencePacket(reportForQuestion)
+            : evidence;
       const response = await askTarvis(
         prompt,
-        evidenceForQuestion.packet,
-        history,
+        evidenceForQuestion?.packet,
+        plan.history,
       );
       setUsage(response.usage);
       appendExchange({
         answer: response.answer,
-        evidenceLookup: evidenceForQuestion,
-        intent: isReadyTarvisIntent(intentResolution)
-          ? intentResolution.intent
+        evidenceLookup: evidenceForQuestion ?? {
+          packet: evidence.packet,
+          references: new Map(),
+        },
+        intent: plan.intent,
+        presentation: evidenceForQuestion
+          ? buildTarvisEvidencePresentation(
+              prompt,
+              evidenceForQuestion.packet,
+              response.answer,
+              plan.history,
+            )
           : undefined,
-        presentation: buildTarvisEvidencePresentation(
-          prompt,
-          evidenceForQuestion.packet,
-          response.answer,
-          history,
-        ),
         prompt,
         requestMetrics: response.requestMetrics,
       });
@@ -815,9 +816,7 @@ export function TarvisScreen({
       style={({ pressed }) => [
         styles.headerButton,
         {
-          backgroundColor: pressed
-            ? colors.surfaceMuted
-            : colors.surface,
+          backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
           borderColor: colors.border,
           borderRadius: radius.pill,
         },
@@ -906,10 +905,9 @@ export function TarvisScreen({
             style={({ pressed }) => [
               styles.sendButton,
               {
-                backgroundColor:
-                  canSendQuestion
-                    ? colors.primary
-                    : colors.border,
+                backgroundColor: canSendQuestion
+                  ? colors.primary
+                  : colors.border,
                 borderRadius: radius.pill,
                 opacity: pressed ? 0.7 : 1,
               },
@@ -917,19 +915,14 @@ export function TarvisScreen({
           >
             <Ionicons
               accessibilityElementsHidden
-              color={
-                canSendQuestion
-                  ? colors.onPrimary
-                  : colors.textTertiary
-              }
+              color={canSendQuestion ? colors.onPrimary : colors.textTertiary}
               name="arrow-up"
               size={21}
             />
           </Pressable>
         </View>
         <Text style={[styles.boundary, { color: colors.textTertiary }]}>
-          Diabetes and personal health questions only. Off-topic questions are
-          blocked before any API request.
+          Diabetes and personal health questions only.
         </Text>
       </View>
     ) : undefined;
@@ -994,13 +987,13 @@ export function TarvisScreen({
                 </View>
                 <View style={styles.keyCopy}>
                   <Text style={[styles.keyTitle, { color: colors.text }]}>
-                    Use your OpenAI project
+                    Connect broader answers
                   </Text>
                   <Text
                     style={[styles.keyDetail, { color: colors.textSecondary }]}
                   >
-                    Your key is stored in Android secure storage. It is never
-                    written to the health database, logs or backups.
+                    Paste a key from your OpenAI project. It stays secure on
+                    this phone and is not included in logs or backups.
                   </Text>
                 </View>
               </View>
@@ -1040,9 +1033,7 @@ export function TarvisScreen({
               >
                 <Ionicons
                   accessibilityElementsHidden
-                  color={
-                    apiKey.trim() ? colors.onPrimary : colors.textTertiary
-                  }
+                  color={apiKey.trim() ? colors.onPrimary : colors.textTertiary}
                   name="shield-checkmark-outline"
                   size={19}
                 />
@@ -1063,17 +1054,14 @@ export function TarvisScreen({
 
             <SectionCard>
               <Text style={[styles.guardTitle, { color: colors.text }]}>
-                Cost and loop protection
+                Your privacy
               </Text>
               <View style={styles.guardList}>
                 {[
-                  'Only tapping Send can make a request.',
-                  'One request at a time; no automatic retries.',
-                  '10 questions per hour and 30 per day.',
-                  'Off-topic questions are blocked before reaching OpenAI.',
-                  'Luna handles normal questions with low reasoning.',
-                  'Responses are capped at 800 output tokens.',
-                  'No scheduled AI is enabled in this build.',
+                  'Tarv1s only shares information after you tap Send.',
+                  'Tarv1s answers supported personal totals directly.',
+                  'Tarv1s only answers diabetes and personal health questions and never reveals saved sign-ins.',
+                  'Tarv1s never sends questions while running in the background.',
                 ].map((item) => (
                   <View key={item} style={styles.guardRow}>
                     <Ionicons
@@ -1096,12 +1084,10 @@ export function TarvisScreen({
               <Text
                 style={[styles.privacyNote, { color: colors.textTertiary }]}
               >
-                Questions that need the language model send up to four recent
-                chat turns and only the relevant parts of the evidence packet
-                to OpenAI. Exact supported glucose calculations run on this
-                phone instead. OpenAI responses are requested with storage
-                disabled, and your project budget remains the final spending
-                ceiling.
+                General diabetes questions do not share your health records.
+                When you ask about your own patterns, Tarv1s shares only the
+                information needed to answer that question. These conversations
+                are not stored by OpenAI.
               </Text>
               {hasApiKey ? (
                 <Pressable
@@ -1122,9 +1108,7 @@ export function TarvisScreen({
                     name="trash-outline"
                     size={18}
                   />
-                  <Text
-                    style={[styles.removeText, { color: colors.danger }]}
-                  >
+                  <Text style={[styles.removeText, { color: colors.danger }]}>
                     Remove saved key
                   </Text>
                 </Pressable>
@@ -1161,18 +1145,16 @@ export function TarvisScreen({
                     Ask Tarv1s
                   </Text>
                   <Text
-                    style={[styles.introDetail, { color: colors.textSecondary }]}
+                    style={[
+                      styles.introDetail,
+                      { color: colors.textSecondary },
+                    ]}
                   >
                     Talk things through with Tarv1s in your own words. It uses
-                    your records to give a clear answer, and you can always open
-                    the evidence behind it.
+                    your records to give a clear answer, and you can always see
+                    what it used.
                   </Text>
                 </View>
-              </View>
-              <View style={styles.usageRow}>
-                <Text style={[styles.usageText, { color: colors.textTertiary }]}>
-                  {requestCountToday(usage)}/30 OpenAI requests today
-                </Text>
               </View>
               {exchanges.length ? (
                 <View style={styles.conversationActions}>
@@ -1194,7 +1176,12 @@ export function TarvisScreen({
                       name="share-outline"
                       size={18}
                     />
-                    <Text style={[styles.conversationActionText, { color: colors.primary }]}>
+                    <Text
+                      style={[
+                        styles.conversationActionText,
+                        { color: colors.primary },
+                      ]}
+                    >
                       Export conversation
                     </Text>
                   </Pressable>
@@ -1216,7 +1203,12 @@ export function TarvisScreen({
                       name="add-circle-outline"
                       size={18}
                     />
-                    <Text style={[styles.conversationActionText, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.conversationActionText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       New conversation
                     </Text>
                   </Pressable>
@@ -1266,7 +1258,7 @@ export function TarvisScreen({
               </View>
             ) : null}
 
-            {exchanges.map((exchange) => (
+            {exchanges.map((exchange, exchangeIndex) => (
               <View
                 key={exchange.id}
                 onLayout={(event) => {
@@ -1319,7 +1311,7 @@ export function TarvisScreen({
                   {exchange.intent ? (
                     <View
                       accessible
-                      accessibilityLabel={`Calculated as ${describeTarvisIntent(exchange.intent)}`}
+                      accessibilityLabel={`Answering for ${describeTarvisIntent(exchange.intent, { timezone: 'UK time' })}`}
                       style={[
                         styles.interpretation,
                         {
@@ -1342,9 +1334,11 @@ export function TarvisScreen({
                         ]}
                       >
                         <Text style={styles.interpretationLabel}>
-                          Calculated as{' '}
+                          Answering for{' '}
                         </Text>
-                        {describeTarvisIntent(exchange.intent)}
+                        {describeTarvisIntent(exchange.intent, {
+                          timezone: 'UK time',
+                        })}
                       </Text>
                     </View>
                   ) : null}
@@ -1357,12 +1351,9 @@ export function TarvisScreen({
                   {exchange.answer.evidenceIds.length ? (
                     <View style={styles.evidenceList}>
                       <Text
-                        style={[
-                          styles.evidenceHeading,
-                          { color: colors.text },
-                        ]}
+                        style={[styles.evidenceHeading, { color: colors.text }]}
                       >
-                        Evidence behind this answer
+                        What Tarv1s used
                       </Text>
                       {exchange.answer.evidenceIds.map((id) => {
                         const reference = exchange.evidence.references.get(id);
@@ -1402,7 +1393,10 @@ export function TarvisScreen({
                                   { color: colors.textTertiary },
                                 ]}
                               >
-                                {reference.recordIds.length} exact records
+                                {reference.recordIds.length}{' '}
+                                {reference.recordIds.length === 1
+                                  ? 'record'
+                                  : 'records'}
                               </Text>
                             </View>
                             <Ionicons
@@ -1444,11 +1438,13 @@ export function TarvisScreen({
                       ))}
                     </View>
                   ) : null}
-                  <TarvisRequestDetails metrics={exchange.requestMetrics} />
+                  <TarvisRouteMarker
+                    latest={exchangeIndex === exchanges.length - 1}
+                    usedOpenAi={Boolean(exchange.requestMetrics)}
+                  />
                 </SectionCard>
               </View>
             ))}
-
           </>
         )}
       </AppScreen>
@@ -1564,12 +1560,6 @@ const styles = StyleSheet.create({
   introCopy: { flex: 1 },
   introTitle: { fontSize: 18, lineHeight: 24, fontWeight: '800' },
   introDetail: { fontSize: 13, lineHeight: 19, marginTop: 3 },
-  usageRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 15,
-  },
-  usageText: { fontSize: 10, lineHeight: 15, fontWeight: '700' },
   conversationActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1749,29 +1739,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   limitationText: { fontSize: 11, lineHeight: 17 },
-  requestDetails: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: 14,
-    paddingTop: 8,
-  },
-  requestDetailsButton: {
-    alignSelf: 'flex-end',
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  requestDetailsLabel: {
-    fontSize: 10,
-    lineHeight: 15,
-    fontWeight: '700',
-  },
-  requestMetrics: {
-    fontSize: 9,
-    lineHeight: 14,
-    marginTop: 3,
-    textAlign: 'right',
-  },
+  routeMarker: { height: 0, width: 0 },
   errorCard: {
     minHeight: 58,
     borderWidth: StyleSheet.hairlineWidth,

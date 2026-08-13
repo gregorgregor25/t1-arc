@@ -57,11 +57,11 @@ describe('local Tarv1s exact range glucose answers', () => {
     expect(result.answer.headline).toBe('Observed average glucose: 7.0 mmol/L');
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]!.recordIds).toEqual(['start', 'midday']);
-    expect(result.answer.answer).toContain('exact periods');
+    expect(result.answer.answer).toContain('periods you asked about');
     expect(result.evidence[0]!.visualization).toMatchObject({
       kind: 'range-trace-v1',
       metric: 'glucose.mean',
-      subtitle: expect.stringContaining('display compaction is disclosed'),
+      subtitle: expect.stringContaining('chart may show fewer points to stay clear'),
       windows: [{
         recordCount: 2,
         points: [
@@ -105,7 +105,7 @@ describe('local Tarv1s exact range glucose answers', () => {
       visualization === undefined,
     )).toBe(true);
     expect(result.evidence[2]).toMatchObject({
-      label: 'Combined exact comparison chart inputs',
+      label: 'Readings used for the comparison chart',
       visualization: { kind: 'period-comparison-v1' },
     });
     expect(result.presentation.windows).toHaveLength(2);
@@ -184,7 +184,7 @@ describe('local Tarv1s exact range glucose answers', () => {
       'still-inside',
     ]);
     expect(result.evidence[0]!.recordIds).not.toContain('confirm-after');
-    expect(result.evidence[0]!.description).toContain('boundary context');
+    expect(result.evidence[0]!.description).toContain('nearby readings');
     expect(result.evidence[0]!.description).toContain('All Records');
     expect(result.answerBundle.scope.windows[0]?.contextRecordIds).toEqual([
       'confirm-after',

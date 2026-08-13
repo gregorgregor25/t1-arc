@@ -42,7 +42,9 @@ android {
             shrinkResources false
             signingConfig t1ArcProductionSigningConfigured
                 ? signingConfigs.production
-                : signingConfigs.privateTest
+                : t1ArcPrivateTestBuildRequested
+                    ? signingConfigs.privateTest
+                    : null
         }
     }
 }

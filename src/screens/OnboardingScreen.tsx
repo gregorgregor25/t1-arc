@@ -733,8 +733,8 @@ function PrivacyNote() {
         size={19}
       />
       <Text style={[styles.privateText, { color: colors.textSecondary }]}>
-        Your sign-in is stored in Android secure storage on this phone. T1 Arc
-        does not send it to a T1 Arc server or accept account terms for you.
+        Your sign-in is protected on this phone. T1 Arc uses it only to connect
+        to your account, and it never accepts account terms for you.
       </Text>
     </View>
   );

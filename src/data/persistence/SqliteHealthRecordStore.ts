@@ -29,10 +29,7 @@ import {
   StoredImportSourceSummary,
   StoredRecordBounds,
 } from './HealthRecordStore';
-import {
-  openDaymarkDatabase,
-  withDaymarkTransaction,
-} from './daymarkDatabase';
+import { openDaymarkDatabase, withDaymarkTransaction } from './daymarkDatabase';
 import {
   HealthConnectContextPreference,
   selectHealthConnectContext,
@@ -170,11 +167,9 @@ function bolusFromRow(row: BolusRow): BolusDelivery {
     timestamp: row.timestamp_ms,
     units: row.units,
     deliveryType: row.delivery_type ?? undefined,
-    bloodGlucoseInputMmolL:
-      row.blood_glucose_input_mmol_l ?? undefined,
+    bloodGlucoseInputMmolL: row.blood_glucose_input_mmol_l ?? undefined,
     carbsInputGrams: row.carbs_input_grams ?? undefined,
-    carbRatioGramsPerUnit:
-      row.carb_ratio_grams_per_unit ?? undefined,
+    carbRatioGramsPerUnit: row.carb_ratio_grams_per_unit ?? undefined,
     initialUnits: row.initial_units ?? undefined,
     extendedUnits: row.extended_units ?? undefined,
     importedAt: row.imported_at_ms,
@@ -316,14 +311,12 @@ function contextColumns(event: HealthContextEvent) {
   return {
     mealType: event.kind === 'meal' ? event.mealType : null,
     carbsGrams: event.kind === 'meal' ? event.carbsGrams : null,
-    energyKcal: event.kind === 'meal' ? event.energyKcal ?? null : null,
-    proteinGrams:
-      event.kind === 'meal' ? event.proteinGrams ?? null : null,
-    fatGrams: event.kind === 'meal' ? event.fatGrams ?? null : null,
+    energyKcal: event.kind === 'meal' ? (event.energyKcal ?? null) : null,
+    proteinGrams: event.kind === 'meal' ? (event.proteinGrams ?? null) : null,
+    fatGrams: event.kind === 'meal' ? (event.fatGrams ?? null) : null,
     servingQuantity:
-      event.kind === 'meal' ? event.servingQuantity ?? null : null,
-    servingCount:
-      event.kind === 'meal' ? event.servingCount ?? null : null,
+      event.kind === 'meal' ? (event.servingQuantity ?? null) : null,
+    servingCount: event.kind === 'meal' ? (event.servingCount ?? null) : null,
     activityType: event.kind === 'activity' ? event.activityType : null,
     durationMinutes:
       event.kind === 'activity' || event.kind === 'sleep'
@@ -331,14 +324,14 @@ function contextColumns(event: HealthContextEvent) {
         : null,
     intensity: event.kind === 'activity' ? event.intensity : null,
     caloriesBurned:
-      event.kind === 'activity' ? event.caloriesBurned ?? null : null,
+      event.kind === 'activity' ? (event.caloriesBurned ?? null) : null,
     qualityPercent:
-      event.kind === 'sleep' ? event.qualityPercent ?? null : null,
+      event.kind === 'sleep' ? (event.qualityPercent ?? null) : null,
     kilograms: event.kind === 'weight' ? event.kilograms : null,
-    amount: event.kind === 'medication' ? event.amount ?? null : null,
-    unit: event.kind === 'medication' ? event.unit ?? null : null,
+    amount: event.kind === 'medication' ? (event.amount ?? null) : null,
+    unit: event.kind === 'medication' ? (event.unit ?? null) : null,
     medicationType:
-      event.kind === 'medication' ? event.medicationType ?? null : null,
+      event.kind === 'medication' ? (event.medicationType ?? null) : null,
   };
 }
 
@@ -477,9 +470,7 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       values.push(range.start, range.end);
     }
     if (recordKinds?.length) {
-      clauses.push(
-        `record_kind IN (${recordKinds.map(() => '?').join(', ')})`,
-      );
+      clauses.push(`record_kind IN (${recordKinds.map(() => '?').join(', ')})`);
       values.push(...recordKinds);
     }
     const rows = await database.getAllAsync<{
@@ -956,6 +947,18 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           );
           replacedBasal += replaced.changes;
         }
+        const migratedLegacyId =
+          delivery.legacyId && delivery.legacyId !== delivery.id
+            ? await transaction.runAsync(
+                `DELETE FROM insulin_basal
+                 WHERE id = ?
+                   AND source_id = ?
+                   AND COALESCE(source_device_id, '') = ?`,
+                delivery.legacyId,
+                delivery.sourceId,
+                delivery.sourceDeviceId ?? '',
+              )
+            : { changes: 0 };
         const write = await transaction.runAsync(
           `INSERT OR IGNORE INTO insulin_basal (
              id, source_id, start_ms, end_ms, rate_units_per_hour, units,
@@ -976,10 +979,22 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           delivery.sourceRow ?? null,
           delivery.sourceDeviceId ?? null,
         );
-        insertedBasal += write.changes;
+        insertedBasal += Math.max(0, write.changes - migratedLegacyId.changes);
       }
 
       for (const delivery of boluses) {
+        const migratedLegacyId =
+          delivery.legacyId && delivery.legacyId !== delivery.id
+            ? await transaction.runAsync(
+                `DELETE FROM insulin_bolus
+                 WHERE id = ?
+                   AND source_id = ?
+                   AND COALESCE(source_device_id, '') = ?`,
+                delivery.legacyId,
+                delivery.sourceId,
+                delivery.sourceDeviceId ?? '',
+              )
+            : { changes: 0 };
         const write = await transaction.runAsync(
           `INSERT OR IGNORE INTO insulin_bolus (
              id, source_id, timestamp_ms, units, delivery_type,
@@ -1002,7 +1017,10 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           delivery.sourceRow ?? null,
           delivery.sourceDeviceId ?? null,
         );
-        insertedBoluses += write.changes;
+        insertedBoluses += Math.max(
+          0,
+          write.changes - migratedLegacyId.changes,
+        );
       }
 
       for (const event of context) {
@@ -1067,6 +1085,18 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       }
 
       for (const total of dailyTotals) {
+        const migratedLegacyId =
+          total.legacyId && total.legacyId !== total.id
+            ? await transaction.runAsync(
+                `DELETE FROM insulin_daily_totals
+                 WHERE id = ?
+                   AND source_id = ?
+                   AND COALESCE(source_device_id, '') = ?`,
+                total.legacyId,
+                total.sourceId,
+                total.sourceDeviceId ?? '',
+              )
+            : { changes: 0 };
         const write = await transaction.runAsync(
           `INSERT OR IGNORE INTO insulin_daily_totals (
              id, source_id, timestamp_ms, date_key, basal_units, bolus_units,
@@ -1085,22 +1115,27 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           total.sourceRow ?? null,
           total.sourceDeviceId ?? null,
         );
-        insertedDailyTotals += write.changes;
+        insertedDailyTotals += Math.max(
+          0,
+          write.changes - migratedLegacyId.changes,
+        );
       }
 
-      for (const record of rawRecords) {
-        await transaction.runAsync(
-          `INSERT INTO import_raw_records (
-             id, source_id, record_kind, timestamp_ms, source_file, source_row,
-             payload_json, first_import_batch_id, first_seen_at_ms,
-             last_import_batch_id, last_seen_at_ms
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             last_import_batch_id = excluded.last_import_batch_id,
-             last_seen_at_ms = MAX(
-               import_raw_records.last_seen_at_ms,
-               excluded.last_seen_at_ms
-             )`,
+      // A 90-day Glooko archive can contain tens of thousands of exact CGM
+      // rows. Crossing the React Native/SQLite boundary once per row made a
+      // no-op re-import take minutes on a current flagship phone. Keep the
+      // same transaction and conflict semantics while using deliberately
+      // small multi-row statements that remain below conservative SQLite
+      // parameter limits.
+      const rawRecordBatchSize = 40;
+      for (
+        let offset = 0;
+        offset < rawRecords.length;
+        offset += rawRecordBatchSize
+      ) {
+        const records = rawRecords.slice(offset, offset + rawRecordBatchSize);
+        const values = records.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const parameters = records.flatMap((record) => [
           record.id,
           record.sourceId,
           record.recordKind,
@@ -1112,6 +1147,20 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           record.importedAt,
           existing?.id ?? batch.id,
           record.importedAt,
+        ]);
+        await transaction.runAsync(
+          `INSERT INTO import_raw_records (
+             id, source_id, record_kind, timestamp_ms, source_file, source_row,
+             payload_json, first_import_batch_id, first_seen_at_ms,
+             last_import_batch_id, last_seen_at_ms
+           ) VALUES ${values.join(', ')}
+           ON CONFLICT(id) DO UPDATE SET
+             last_import_batch_id = excluded.last_import_batch_id,
+             last_seen_at_ms = MAX(
+               import_raw_records.last_seen_at_ms,
+               excluded.last_seen_at_ms
+             )`,
+          ...parameters,
         );
       }
 
@@ -1142,12 +1191,10 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
                 ? batch.dataThrough
                 : Math.max(previous.dataThrough, batch.dataThrough),
           basalCount:
-            previous.basalCount +
-            Math.max(0, insertedBasal - replacedBasal),
+            previous.basalCount + Math.max(0, insertedBasal - replacedBasal),
           bolusCount: previous.bolusCount + insertedBoluses,
           contextCount: previous.contextCount + insertedContext,
-          dailyTotalCount:
-            previous.dailyTotalCount + insertedDailyTotals,
+          dailyTotalCount: previous.dailyTotalCount + insertedDailyTotals,
           duplicateCount: previous.duplicateCount + duplicateCount,
           skippedCount: batch.skippedCount,
           warnings: [...batch.warnings],

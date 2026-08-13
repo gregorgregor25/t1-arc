@@ -14,6 +14,8 @@ import org.json.JSONObject
 internal data class GlookoCredentials(
   val email: String,
   val password: String,
+  val region: GlookoRegion = GlookoRegion.EU,
+  val credentialGeneration: Long,
 )
 
 /**
@@ -28,8 +30,13 @@ internal class GlookoCredentialVault(context: Context) {
     private const val KEY_ALIAS = "t1arc_glooko_credentials_v1"
     private const val PREFERENCES = "t1arc_glooko_credentials_v1"
     private const val PAYLOAD = "encrypted_credentials"
+    private const val MASKED_EMAIL = "masked_email"
+    private const val REGION = "region"
+    private const val UK_FORMAT_CONFIRMED = "uk_format_confirmed"
+    private const val CREDENTIAL_GENERATION = "credential_generation"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val GCM_TAG_BITS = 128
+    private const val MAX_SAFE_JS_GENERATION = 9_007_199_254_740_991L
   }
 
   private val preferences =
@@ -38,7 +45,15 @@ internal class GlookoCredentialVault(context: Context) {
       Context.MODE_PRIVATE,
     )
 
-  fun save(email: String, password: String) {
+  fun save(
+    email: String,
+    password: String,
+    region: GlookoRegion = GlookoRegion.EU,
+    ukFormatConfirmed: Boolean,
+  ) = GlookoCredentialCommitGate.mutateCredentials {
+    require(ukFormatConfirmed) {
+      "Confirm that this Glooko account exports UK local time and day/month/year dates."
+    }
     val normalisedEmail = email.trim()
     require(normalisedEmail.length in 3..320 && normalisedEmail.contains('@')) {
       "Enter a valid Glooko email address."
@@ -46,10 +61,13 @@ internal class GlookoCredentialVault(context: Context) {
     require(password.isNotBlank() && password.length <= 512) {
       "Enter your Glooko password."
     }
+    val nextGeneration = nextGeneration()
     val plaintext =
       JSONObject()
         .put("email", normalisedEmail)
         .put("password", password)
+        .put("region", region.name.lowercase())
+        .put("credentialGeneration", nextGeneration)
         .toString()
         .toByteArray(Charsets.UTF_8)
     try {
@@ -60,7 +78,15 @@ internal class GlookoCredentialVault(context: Context) {
         Base64.encodeToString(cipher.iv, Base64.NO_WRAP) +
           "." +
           Base64.encodeToString(encrypted, Base64.NO_WRAP)
-      check(preferences.edit().putString(PAYLOAD, encoded).commit()) {
+      check(
+        preferences.edit()
+          .putString(PAYLOAD, encoded)
+          .putString(MASKED_EMAIL, maskEmail(normalisedEmail))
+          .putString(REGION, region.name.lowercase())
+          .putBoolean(UK_FORMAT_CONFIRMED, true)
+          .putLong(CREDENTIAL_GENERATION, nextGeneration)
+          .commit(),
+      ) {
         "Android could not retain the encrypted Glooko sign-in."
       }
     } finally {
@@ -68,7 +94,12 @@ internal class GlookoCredentialVault(context: Context) {
     }
   }
 
-  fun read(): GlookoCredentials? {
+  fun read(): GlookoCredentials? =
+    GlookoCredentialCommitGate.readCredentials { readUnlocked() }
+
+  private fun readUnlocked(): GlookoCredentials? {
+    if (!isConfigured()) return null
+    val observedGeneration = credentialGeneration()
     val encoded = preferences.getString(PAYLOAD, null) ?: return null
     val separator = encoded.indexOf('.')
     if (separator <= 0 || separator >= encoded.lastIndex) return null
@@ -94,6 +125,12 @@ internal class GlookoCredentialVault(context: Context) {
         val payload = JSONObject(plaintext.toString(Charsets.UTF_8))
         val email = payload.optString("email").trim()
         val password = payload.optString("password")
+        val region =
+          runCatching {
+            GlookoRegion.valueOf(
+              payload.optString("region", "eu").uppercase(),
+            )
+          }.getOrDefault(GlookoRegion.EU)
         if (
           email.length !in 3..320 ||
           !email.contains('@') ||
@@ -102,7 +139,10 @@ internal class GlookoCredentialVault(context: Context) {
         ) {
           null
         } else {
-          GlookoCredentials(email, password)
+          // The separate monotonic epoch is authoritative. Imported-data
+          // reset advances it without replacing the encrypted secret so any
+          // export that started before deletion remains permanently stale.
+          GlookoCredentials(email, password, region, observedGeneration)
         }
       } finally {
         plaintext.fill(0)
@@ -113,32 +153,97 @@ internal class GlookoCredentialVault(context: Context) {
     }
   }
 
-  fun isConfigured() =
+  fun hasStoredCredentials() =
     preferences.contains(PAYLOAD) &&
       runCatching { existingKey() != null }.getOrDefault(false)
 
-  fun maskedEmail(): String? =
-    read()?.email?.let { email ->
-      val at = email.indexOf('@')
-      if (at <= 0) return@let "Saved account"
-      val local = email.substring(0, at)
-      val domain = email.substring(at + 1)
-      val visible =
-        when (local.length) {
-          1 -> local
-          2 -> "${local.first()}*"
-          else -> "${local.first()}${"*".repeat((local.length - 2).coerceAtMost(6))}${local.last()}"
-        }
-      "$visible@$domain"
-    }
+  fun isUkFormatConfirmed() =
+    hasStoredCredentials() &&
+      preferences.getBoolean(UK_FORMAT_CONFIRMED, false)
 
-  fun clear() {
-    preferences.edit().clear().commit()
+  fun isConfigured() = isUkFormatConfirmed()
+
+  fun confirmUkFormat() = GlookoCredentialCommitGate.mutateCredentials {
+    check(hasStoredCredentials()) {
+      "No encrypted Glooko sign-in is available to confirm."
+    }
+    val nextGeneration = nextGeneration()
+    check(
+      preferences.edit()
+        .putBoolean(UK_FORMAT_CONFIRMED, true)
+        .putLong(CREDENTIAL_GENERATION, nextGeneration)
+        .commit(),
+    ) {
+      "Android could not retain the UK export-format confirmation."
+    }
+  }
+
+  /**
+   * Non-secret, monotonic account epoch. It deliberately survives clear so
+   * an archive produced with deleted credentials can never match a later
+   * account after reconfiguration.
+   */
+  fun credentialGeneration(): Long {
+    val stored = preferences.getLong(CREDENTIAL_GENERATION, 0L)
+    return if (stored > 0L) {
+      stored
+    } else if (preferences.contains(PAYLOAD)) {
+      1L
+    } else {
+      0L
+    }
+  }
+
+  fun maskedEmail(): String? =
+    preferences.getString(MASKED_EMAIL, null)?.takeIf(String::isNotBlank)
+
+  fun region(): GlookoRegion? {
+    if (!isConfigured()) return null
+    return runCatching {
+      GlookoRegion.valueOf(
+        preferences.getString(REGION, "eu").orEmpty().uppercase(),
+      )
+    }.getOrDefault(GlookoRegion.EU)
+  }
+
+  fun clear() = GlookoCredentialCommitGate.mutateCredentials {
+    val nextGeneration = nextGeneration()
+    check(
+      preferences.edit()
+        .remove(PAYLOAD)
+        .remove(MASKED_EMAIL)
+        .remove(REGION)
+        .remove(UK_FORMAT_CONFIRMED)
+        .putLong(CREDENTIAL_GENERATION, nextGeneration)
+        .commit(),
+    ) {
+      "Android could not clear the encrypted Glooko sign-in."
+    }
     runCatching {
       keyStore().apply {
         if (containsAlias(KEY_ALIAS)) deleteEntry(KEY_ALIAS)
       }
     }
+  }
+
+  fun finishDataReset(token: String): Boolean =
+    GlookoCredentialCommitGate.finishDataReset(token) {
+      val nextGeneration = nextGeneration()
+      check(
+        preferences.edit()
+          .putLong(CREDENTIAL_GENERATION, nextGeneration)
+          .commit(),
+      ) {
+        "Android could not revoke the previous Glooko data generation."
+      }
+    }
+
+  private fun nextGeneration(): Long {
+    val current = credentialGeneration()
+    check(current < MAX_SAFE_JS_GENERATION) {
+      "The Glooko credential generation counter is exhausted."
+    }
+    return current + 1L
   }
 
   private fun keyStore() =
@@ -167,4 +272,18 @@ internal class GlookoCredentialVault(context: Context) {
             .build(),
         )
       }.generateKey()
+
+  private fun maskEmail(email: String): String {
+    val at = email.indexOf('@')
+    if (at <= 0) return "Saved account"
+    val local = email.substring(0, at)
+    val domain = email.substring(at + 1)
+    val visible =
+      when (local.length) {
+        1 -> local
+        2 -> "${local.first()}*"
+        else -> "${local.first()}${"*".repeat((local.length - 2).coerceAtMost(6))}${local.last()}"
+      }
+    return "$visible@$domain"
+  }
 }

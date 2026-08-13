@@ -252,7 +252,7 @@ export function HealthMetricRecordList({
           size={18}
         />
         <Text style={[styles.toggleText, { color: colors.primary }]}>
-          {expanded ? 'Hide exact records' : 'Inspect exact records'}
+          {expanded ? 'Hide records' : 'Show records'}
         </Text>
       </Pressable>
       {expanded ? (

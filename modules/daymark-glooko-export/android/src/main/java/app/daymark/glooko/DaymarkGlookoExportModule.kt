@@ -10,8 +10,6 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import android.webkit.CookieManager
-import android.webkit.WebStorage
 import expo.modules.kotlin.activityresult.AppContextActivityResultContract
 import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
 import expo.modules.kotlin.functions.Coroutine
@@ -23,6 +21,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -31,28 +30,16 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 internal const val GLOOKO_TRACE_PREFERENCES = "daymark_glooko_export"
 internal const val GLOOKO_LAST_TRACE_KEY = "last_privacy_safe_trace"
 
-private data class ExportRequest(
-  val days: Int,
-  val startDate: String? = null,
-  val endDate: String? = null,
-) : Serializable
-
-private data class ExportResult(
-  val status: String,
-  val uri: String? = null,
-  val fileName: String? = null,
-  val byteLength: Long = 0,
-  val message: String? = null,
-  val diagnostic: String? = null,
-)
-
 private data class CredentialRequest(
   val requestedAt: Long = System.currentTimeMillis(),
+  val legacyCredentialContinuityRequired: Boolean = false,
 ) : Serializable
 
 private data class CredentialResult(
   val status: String,
   val maskedEmail: String? = null,
+  val credentialGeneration: Long? = null,
+  val legacyCredentialContinuity: Boolean = false,
 )
 
 private data class ExtractedReport(
@@ -67,6 +54,21 @@ private data class PumpTrackInterval(
   val kind: String,
   val pageNumber: Int,
 )
+
+private fun SilentGlookoExportResult.toBridgeResult(): Map<String, Any> =
+  buildMap {
+    put("status", status)
+    uri?.let { put("uri", it) }
+    fileName?.let { put("fileName", it) }
+    if (byteLength > 0) put("byteLength", byteLength.toDouble())
+    message?.let { put("message", it) }
+    diagnostic?.let { put("diagnostic", it) }
+    reason?.let { put("reason", it) }
+    credentialGeneration?.let {
+      put("credentialGeneration", it.toDouble())
+    }
+    accountFingerprint?.let { put("accountFingerprint", it) }
+  }
 
 private fun readReportBytes(context: Context, uriValue: String): ByteArray {
   val uri = Uri.parse(uriValue)
@@ -356,65 +358,18 @@ private fun extractPumpTrackIntervals(
   }
 }
 
-private class GlookoExportContract :
-  AppContextActivityResultContract<ExportRequest, ExportResult> {
-  override fun createIntent(context: Context, input: ExportRequest): Intent =
-    Intent(context, GlookoExportActivity::class.java).apply {
-      putExtra(GlookoExportActivity.EXTRA_DAYS, input.days)
-      input.startDate?.let {
-        putExtra(GlookoExportActivity.EXTRA_START_DATE, it)
-      }
-      input.endDate?.let {
-        putExtra(GlookoExportActivity.EXTRA_END_DATE, it)
-      }
-    }
-
-  override fun parseResult(
-    input: ExportRequest,
-    resultCode: Int,
-    intent: Intent?,
-  ): ExportResult {
-    if (intent?.getStringExtra(GlookoExportActivity.RESULT_STATUS) == "cancelled") {
-      return ExportResult(
-        status = "cancelled",
-        message = intent.getStringExtra(GlookoExportActivity.RESULT_MESSAGE),
-        diagnostic = intent.getStringExtra(GlookoExportActivity.RESULT_DIAGNOSTIC),
-      )
-    }
-    if (resultCode != Activity.RESULT_OK || intent == null) {
-      return ExportResult(
-        status = "cancelled",
-        message = intent?.getStringExtra(GlookoExportActivity.RESULT_MESSAGE),
-        diagnostic = intent?.getStringExtra(GlookoExportActivity.RESULT_DIAGNOSTIC),
-      )
-    }
-    val uri = intent.getStringExtra(GlookoExportActivity.RESULT_URI)
-    val fileName = intent.getStringExtra(GlookoExportActivity.RESULT_FILE_NAME)
-    val byteLength = intent.getLongExtra(GlookoExportActivity.RESULT_BYTE_LENGTH, 0)
-    if (uri.isNullOrBlank() || fileName.isNullOrBlank() || byteLength <= 0) {
-      return ExportResult(
-        status = "cancelled",
-        message = intent.getStringExtra(GlookoExportActivity.RESULT_MESSAGE),
-        diagnostic = intent.getStringExtra(GlookoExportActivity.RESULT_DIAGNOSTIC),
-      )
-    }
-    return ExportResult(
-      status = "downloaded",
-      uri = uri,
-      fileName = fileName,
-      byteLength = byteLength,
-      diagnostic = intent.getStringExtra(GlookoExportActivity.RESULT_DIAGNOSTIC),
-    )
-  }
-}
-
 private class GlookoCredentialContract :
   AppContextActivityResultContract<CredentialRequest, CredentialResult> {
   override fun createIntent(
     context: Context,
     input: CredentialRequest,
   ): Intent =
-    Intent(context, GlookoCredentialActivity::class.java)
+    Intent(context, GlookoCredentialActivity::class.java).apply {
+      putExtra(
+        GlookoCredentialActivity.EXTRA_LEGACY_CREDENTIAL_CONTINUITY_REQUIRED,
+        input.legacyCredentialContinuityRequired,
+      )
+    }
 
   override fun parseResult(
     input: CredentialRequest,
@@ -435,6 +390,22 @@ private class GlookoCredentialContract :
         intent?.getStringExtra(
           GlookoCredentialActivity.RESULT_MASKED_EMAIL,
         ),
+      credentialGeneration =
+        intent
+          ?.takeIf {
+            it.hasExtra(
+              GlookoCredentialActivity.RESULT_CREDENTIAL_GENERATION,
+            )
+          }
+          ?.getLongExtra(
+            GlookoCredentialActivity.RESULT_CREDENTIAL_GENERATION,
+            0L,
+          ),
+      legacyCredentialContinuity =
+        intent?.getBooleanExtra(
+          GlookoCredentialActivity.RESULT_LEGACY_CREDENTIAL_CONTINUITY,
+          false,
+        ) == true,
     )
 }
 
@@ -442,35 +413,33 @@ class DaymarkGlookoExportModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("DaymarkGlookoExport")
 
-    lateinit var exportLauncher:
-      AppContextActivityResultLauncher<ExportRequest, ExportResult>
     lateinit var credentialLauncher:
       AppContextActivityResultLauncher<CredentialRequest, CredentialResult>
 
+    OnCreate {
+      appContext.reactContext?.let { context ->
+        GlookoLegacyPrivacyCleanup.migrate(context)
+        GlookoDirectExporter.cleanOrphanedDownloads(context)
+      }
+    }
+
+    OnActivityEntersForeground {
+      // OnCreate can precede a usable React context, and a failed asynchronous
+      // cookie callback must be retried on a later foreground lifecycle pass.
+      appContext.reactContext?.let(GlookoLegacyPrivacyCleanup::migrate)
+    }
+
     RegisterActivityContracts {
-      exportLauncher = registerForActivityResult(GlookoExportContract())
       credentialLauncher =
         registerForActivityResult(GlookoCredentialContract())
     }
 
     AsyncFunction("startExportAsync") Coroutine { days: Int ->
       require(days in 1..90) { "Glooko export range must be between 1 and 90 days." }
-      val result = exportLauncher.launch(ExportRequest(days))
-      if (result.status == "downloaded") {
-        buildMap<String, Any> {
-          put("status", result.status)
-          result.uri?.let { put("uri", it) }
-          result.fileName?.let { put("fileName", it) }
-          put("byteLength", result.byteLength.toDouble())
-          result.diagnostic?.let { put("diagnostic", it) }
-        }
-      } else {
-        buildMap<String, Any> {
-          put("status", "cancelled")
-          result.message?.let { put("message", it) }
-          result.diagnostic?.let { put("diagnostic", it) }
-        }
-      }
+      val context = requireNotNull(appContext.reactContext)
+      val end = LocalDate.now(ZoneId.of("Europe/London"))
+      val start = end.minusDays((days - 1).toLong())
+      GlookoDirectExporter(context).export(start, end).toBridgeResult()
     }
 
     AsyncFunction("startRangeExportAsync") Coroutine { startDate: String, endDate: String ->
@@ -486,60 +455,30 @@ class DaymarkGlookoExportModule : Module() {
       require(days in 1..90) {
         "Glooko custom exports must contain between 1 and 90 calendar days."
       }
-      val result =
-        exportLauncher.launch(
-          ExportRequest(
-            days = days.toInt(),
-            startDate = start.toString(),
-            endDate = end.toString(),
-          ),
-        )
-      if (result.status == "downloaded") {
-        buildMap<String, Any> {
-          put("status", result.status)
-          result.uri?.let { put("uri", it) }
-          result.fileName?.let { put("fileName", it) }
-          put("byteLength", result.byteLength.toDouble())
-          result.diagnostic?.let { put("diagnostic", it) }
-        }
-      } else {
-        buildMap<String, Any> {
-          put("status", "cancelled")
-          result.message?.let { put("message", it) }
-          result.diagnostic?.let { put("diagnostic", it) }
-        }
-      }
+      val context = requireNotNull(appContext.reactContext)
+      GlookoDirectExporter(context).export(start, end).toBridgeResult()
     }
 
     AsyncFunction("startSilentExportAsync") Coroutine { days: Int ->
       require(days in 1..90) { "Glooko export range must be between 1 and 90 days." }
       val context = requireNotNull(appContext.reactContext)
-      val result = GlookoSilentExporter(context).export(days)
-      buildMap<String, Any> {
-        put("status", result.status)
-        result.uri?.let { put("uri", it) }
-        result.fileName?.let { put("fileName", it) }
-        if (result.byteLength > 0) put("byteLength", result.byteLength.toDouble())
-        result.message?.let { put("message", it) }
-        result.diagnostic?.let { put("diagnostic", it) }
-        result.reason?.let { put("reason", it) }
-      }
+      val end = LocalDate.now(ZoneId.of("Europe/London"))
+      val start = end.minusDays((days - 1).toLong())
+      GlookoDirectExporter(context).export(start, end).toBridgeResult()
     }
 
     AsyncFunction("startSilentReportExportAsync") Coroutine { days: Int ->
       require(days in 7..90) {
         "Glooko PDF report range must be between 7 and 90 days."
       }
-      val context = requireNotNull(appContext.reactContext)
-      val result = GlookoSilentExporter(context).exportReport(days)
       buildMap<String, Any> {
-        put("status", result.status)
-        result.uri?.let { put("uri", it) }
-        result.fileName?.let { put("fileName", it) }
-        if (result.byteLength > 0) put("byteLength", result.byteLength.toDouble())
-        result.message?.let { put("message", it) }
-        result.diagnostic?.let { put("diagnostic", it) }
-        result.reason?.let { put("reason", it) }
+        put("status", "failed")
+        put("reason", "legacy-report-disabled")
+        put(
+          "message",
+          "Automatic PDF download is paused. Import a Glooko PDF manually instead.",
+        )
+        put("diagnostic", "Legacy PDF connector is disabled.")
       }
     }
 
@@ -560,20 +499,7 @@ class DaymarkGlookoExportModule : Module() {
         "Glooko custom exports must contain between 1 and 90 calendar days."
       }
       val context = requireNotNull(appContext.reactContext)
-      val result =
-        GlookoSilentExporter(context).exportRange(
-          start.toString(),
-          end.toString(),
-        )
-      buildMap<String, Any> {
-        put("status", result.status)
-        result.uri?.let { put("uri", it) }
-        result.fileName?.let { put("fileName", it) }
-        if (result.byteLength > 0) put("byteLength", result.byteLength.toDouble())
-        result.message?.let { put("message", it) }
-        result.diagnostic?.let { put("diagnostic", it) }
-        result.reason?.let { put("reason", it) }
-      }
+      GlookoDirectExporter(context).export(start, end).toBridgeResult()
     }
 
     AsyncFunction("getLastTraceAsync") Coroutine { ->
@@ -581,6 +507,11 @@ class DaymarkGlookoExportModule : Module() {
       context
         .getSharedPreferences(GLOOKO_TRACE_PREFERENCES, Context.MODE_PRIVATE)
         .getString(GLOOKO_LAST_TRACE_KEY, null)
+    }
+
+    AsyncFunction("releaseDownloadAsync") Coroutine { uriValue: String ->
+      val context = requireNotNull(appContext.reactContext)
+      GlookoDirectExporter.releaseDownload(context, uriValue)
     }
 
     AsyncFunction("extractReportTextAsync") Coroutine { uriValue: String ->
@@ -634,11 +565,26 @@ class DaymarkGlookoExportModule : Module() {
       }
     }
 
-    AsyncFunction("openCredentialSetupAsync") Coroutine { ->
-      val result = credentialLauncher.launch(CredentialRequest())
+    AsyncFunction("openCredentialSetupAsync") Coroutine {
+        legacyCredentialContinuityRequired: Boolean,
+      ->
+      val result =
+        credentialLauncher.launch(
+          CredentialRequest(
+            legacyCredentialContinuityRequired =
+              legacyCredentialContinuityRequired,
+          ),
+        )
       buildMap<String, Any> {
         put("status", result.status)
         result.maskedEmail?.let { put("maskedEmail", it) }
+        result.credentialGeneration?.let {
+          put("credentialGeneration", it.toDouble())
+        }
+        put(
+          "legacyCredentialContinuity",
+          result.legacyCredentialContinuity,
+        )
       }
     }
 
@@ -648,32 +594,82 @@ class DaymarkGlookoExportModule : Module() {
       buildMap<String, Any> {
         put("configured", vault.isConfigured())
         vault.maskedEmail()?.let { put("maskedEmail", it) }
+        vault.region()?.let { put("region", it.name.lowercase()) }
+        put(
+          "credentialGeneration",
+          vault.credentialGeneration().toDouble(),
+        )
       }
+    }
+
+    AsyncFunction("beginCredentialCommitAsync") Coroutine {
+        credentialGeneration: Double,
+      ->
+      val context = requireNotNull(appContext.reactContext)
+      val expected = credentialGeneration.toLong()
+      val valid =
+        credentialGeneration.isFinite() &&
+          credentialGeneration == expected.toDouble() &&
+          expected > 0L
+      val vault = GlookoCredentialVault(context)
+      val token =
+        if (valid) {
+          GlookoCredentialCommitGate.beginCommit(expected) {
+            vault.isConfigured() &&
+              vault.credentialGeneration() == expected
+          }
+        } else {
+          null
+        }
+      buildMap<String, Any> {
+        put("acquired", token != null)
+        token?.let { put("token", it) }
+      }
+    }
+
+    AsyncFunction("endCredentialCommitAsync") Coroutine { token: String ->
+      GlookoCredentialCommitGate.endCommit(token)
+    }
+
+    AsyncFunction("beginDataCommitAsync") Coroutine { ->
+      val token = GlookoCredentialCommitGate.beginDataCommit()
+      buildMap<String, Any> {
+        put("acquired", token != null)
+        token?.let { put("token", it) }
+      }
+    }
+
+    AsyncFunction("endDataCommitAsync") Coroutine { token: String ->
+      GlookoCredentialCommitGate.endCommit(token)
+    }
+
+    AsyncFunction("beginDataResetAsync") Coroutine { ->
+      val token = GlookoCredentialCommitGate.beginDataReset()
+      buildMap<String, Any> {
+        put("acquired", token != null)
+        token?.let { put("token", it) }
+      }
+    }
+
+    AsyncFunction("endDataResetAsync") Coroutine { token: String ->
+      val context = requireNotNull(appContext.reactContext)
+      GlookoCredentialVault(context).finishDataReset(token)
     }
 
     AsyncFunction("clearCredentialsAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)
       GlookoCredentialVault(context).clear()
-      GlookoSessionVault(context).clear()
-      CookieManager.getInstance().removeAllCookies(null)
-      CookieManager.getInstance().flush()
-      WebStorage.getInstance().deleteAllData()
-      true
+      val privacyCleared = GlookoLegacyPrivacyCleanup.clear(context)
+      val downloadsCleared = GlookoDirectExporter.clearAllDownloads(context)
+      privacyCleared && downloadsCleared
     }
 
     AsyncFunction("clearSessionAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)
       GlookoCredentialVault(context).clear()
-      val vault = GlookoSessionVault(context)
-      vault.clear()
-      CookieManager.getInstance().removeAllCookies(null)
-      CookieManager.getInstance().flush()
-      WebStorage.getInstance().deleteAllData()
-      context.cacheDir
-        .resolve("glooko-downloads")
-        .listFiles()
-        ?.forEach { file -> file.delete() }
-      true
+      val privacyCleared = GlookoLegacyPrivacyCleanup.clear(context)
+      val downloadsCleared = GlookoDirectExporter.clearAllDownloads(context)
+      privacyCleared && downloadsCleared
     }
   }
 }

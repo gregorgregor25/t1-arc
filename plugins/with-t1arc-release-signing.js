@@ -14,6 +14,11 @@ const PRODUCTION_CONFIG = `${PRODUCTION_CONFIG_MARKER}
                 keyPassword t1ArcProductionKeyPassword
             }
         }`;
+const RELEASE_SIGNING = `signingConfig t1ArcProductionSigningConfigured
+                ? signingConfigs.production
+                : t1ArcPrivateTestBuildRequested
+                    ? signingConfigs.debug
+                    : null`;
 
 function injectT1ArcReleaseSigning(contents) {
   let next = contents;
@@ -49,15 +54,13 @@ function injectT1ArcReleaseSigning(contents) {
   }
   const releaseEnd = next.indexOf('\n        }', releaseStart);
   const releaseBlock = next.slice(releaseStart, releaseEnd);
-  if (
-    !releaseBlock.includes(
-      'signingConfig t1ArcProductionSigningConfigured ? signingConfigs.production : signingConfigs.debug',
-    )
-  ) {
-    const replaced = releaseBlock.replace(
-      'signingConfig signingConfigs.debug',
-      'signingConfig t1ArcProductionSigningConfigured ? signingConfigs.production : signingConfigs.debug',
-    );
+  if (!releaseBlock.includes(RELEASE_SIGNING)) {
+    const replaced = releaseBlock
+      .replace(
+        'signingConfig t1ArcProductionSigningConfigured ? signingConfigs.production : signingConfigs.debug',
+        RELEASE_SIGNING,
+      )
+      .replace('signingConfig signingConfigs.debug', RELEASE_SIGNING);
     if (replaced === releaseBlock) {
       throw new Error(
         'T1 Arc could not replace the generated private release signing line.',

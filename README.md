@@ -4,7 +4,7 @@ T1 Arc is a private, evidence-first Android app for understanding Type 1
 diabetes data. It is built for one person, mmol/L, metric units, and
 `Europe/London`.
 
-Version 1.5.3 has two deliberately separate experiences:
+Version 1.6.9 has two deliberately separate experiences:
 
 - **Personal data** is usable without requiring any one glucose provider.
   T1 Arc's own LibreLinkUp connector does not require GlucoDataHandler (GDH),
@@ -12,7 +12,8 @@ Version 1.5.3 has two deliberately separate experiences:
   context and Health Connect can be used independently. Readings are
   deduplicated into an encrypted local
   SQLCipher database. Glooko exports can backfill historical CGM and delayed
-  pump records through an on-device web session or ZIP/CSV fallback.
+  pump records through an on-device Glooko consumer export or UK-format
+  ZIP/CSV fallback.
   Food can
   be logged from an offline UK catalog, recents, favourites, or a barcode;
   compatible phone and wearable records can be selected through Health
@@ -115,13 +116,17 @@ Synthetic records are never silently combined with personal records.
   profile: half-hour medians, middle-50% bands and 10th-to-90th-percentile
   whiskers appear only when enough separate days contribute. The profile opens
   every exact reading behind it.
-- An on-device Glooko sync flow. The user signs into Glooko's own page once;
-  T1 Arc retains only the WebView session and then requests overlapping
+- An opt-in, on-device Glooko sync for single-patient UK consumer
+  accounts whose exports use UK local time and day/month/year dates. Setup
+  requires an explicit confirmation of that format because Glooko's EU service
+  and ZIP metadata do not prove the account timezone. Android Keystore encrypts
+  the saved email and password. Every run
+  creates a fresh in-memory Rails session, discovers that account's export
+  identifier, and requests overlapping
   14-day automatic updates every hour, a 30-day reconciliation every
   24 hours, and a 90-day reconciliation weekly. Manual sync requests 90 days.
-  The connector waits for the
-  real archive rather than treating an
-  intermediate acknowledgement as a download, retains the exact source export
+  The connector calls Glooko's synchronous v3 ZIP exchange directly, validates
+  the real archive, and retains selected source exports
   in SQLCipher, selectively extracts bounded files, normalises supported
   records locally, removes the transient raw cache copy, and never presents
   the result as live pump state. Automatic 14-day snapshots are normalised
@@ -161,10 +166,21 @@ Synthetic records are never silently combined with personal records.
   archived health bytes into the UI.
   Large CGM files remain byte-backed after extraction and are decoded in
   bounded chunks rather than duplicated as one full JavaScript string.
-  If a retained web session expires during background work, one quiet
-  value-free notification opens Sources for sign-in; successful sync clears
-  it, and retries stay paused instead of repeatedly failing.
-  Manual ZIP/CSV import remains available when Glooko changes its web interface.
+  Rejected credentials or an authentication challenge pause retries instead of
+  repeatedly failing. A saved password enables automation only after a genuine
+  ZIP contains a recognised Glooko table, parses, and commits. Multiple-patient
+  accounts fail closed until explicit patient selection exists. US automatic
+  sync is not exposed because its date locale and timezone are not yet modelled
+  safely. If any recognised file proves it uses month/day/year timestamps, the
+  entire automatic archive is rejected before any sibling file is written.
+  Existing saved credentials also remain paused after upgrade until
+  the UK export-format confirmation is supplied; the encrypted password does
+  not need to be re-entered for that confirmation. Manual ZIP/CSV import
+  remains available for MFA/CAPTCHA, protocol changes and unsupported account
+  types only when the selected export already follows the UK time/date
+  contract. It is not a safe fallback for non-UK timezone-free timestamps;
+  those require explicit timezone and date-locale selection. Daily Overview PDF automation is
+  paused; an existing Glooko PDF can still be selected and processed locally.
 - Health Connect permission, category and source controls spanning 37 stored
   record types: movement, energy, workouts, heart and recovery, sleep, body
   composition, vitals, hydration, nutrition, cycle and hormone context.
@@ -363,9 +379,9 @@ reconciliation after 24 hours, and a 90-day reconciliation weekly. Opening or
 foregrounding the app performs a due check. The shared Android worker is
 eligible every 15 minutes and runs the Glooko export only when its hourly or
 reconciliation policy is due; Android may defer execution for battery or
-system conditions. Expired Glooko
-sessions stop silent retries until the user signs in through the foreground
-connector again.
+system conditions. Rejected credentials or an authentication challenge stop
+silent retries until the saved connection is updated or a ZIP is imported
+manually.
 
 Health Connect uses a 15-minute eligibility check in both the foreground and
 the shared Android background worker when background health access is
@@ -395,17 +411,30 @@ broken.
   must use HTTPS.
 - Normalised glucose history uses a per-install 256-bit SQLCipher key held in
   secure storage. Insulin and context use the same encrypted database.
-- Glooko sign-in happens on Glooko's own HTTPS page in a screenshot-protected
-  Android WebView. T1 Arc does not receive or persist the password. Android
-  WebView cookies are retained locally for faster later sync and can be erased
-  independently with **Forget saved Glooko sign-in**.
+- Glooko automatic CSV sync is opt-in for single-patient accounts on Glooko's
+  EU service only after the user confirms that exports use UK local time and
+  day/month/year dates. The endpoint and ZIP do not establish that locale.
+  The raw email and password are
+  encrypted with Android Keystore and used only by the native on-device
+  connector. Each run creates a fresh in-memory Glooko session, discovers that
+  user's export identifier, validates the returned ZIP, and discards session
+  material; the password, raw email and export identifier never cross the React
+  Native bridge or enter backups. An installation-keyed, nonreversible HMAC of
+  the identifier crosses only to bind local records to that account; it cannot
+  be correlated across installations. This permits same-account password
+  rotation or reconnect while rejecting another account before writes. The
+  bridge otherwise exposes only a masked email and non-secret region label.
+  **Forget saved Glooko sign-in** erases the encrypted sign-in.
 - Glooko exports are processed on-device. T1 Arc removes temporary raw copies
   after the exact export has been copied into SQLCipher, so they are not left
   in the public Downloads folder. Supported records are normalised separately;
   the original encrypted archive preserves files and fields that are not yet
-  indexed. Its saved connector trace contains only stage names and relative
-  timings, never credentials, cookies, filenames, account details or health
-  values.
+  indexed. Connector diagnostics contain only stable outcome categories,
+  never credentials, cookies, URLs, filenames, account details or health
+  values. Manual Glooko ZIP/CSV selection remains available for UK-format
+  exports if the private consumer protocol changes or an account requires an
+  interactive authentication challenge. It does not make non-UK naive
+  timestamps safe to normalise.
 - Android backups are disabled.
 - Portable `.t1arc` backups are user initiated, passphrase encrypted and
   contain normalised health records, raw source evidence and saved reviews.
@@ -442,7 +471,7 @@ adb install -r .\android\app\build\outputs\apk\release\app-release.apk
 ```
 
 The `-r` update path preserves existing app data and secure-store connections
-when the signing certificate matches. Version 1.5.3 includes the Pixel always-on
+when the signing certificate matches. Version 1.6.9 includes the Pixel always-on
 glucose overlay, encrypted display recovery after Android process restarts,
 and user-configurable glucose ranges and colours shared by the app,
 notification, and always-on display.
@@ -452,11 +481,16 @@ To rebuild:
 ```powershell
 $env:JAVA_HOME = 'C:\path\to\jdk-21'
 $env:NODE_ENV = 'production'
+$env:T1ARC_PRIVATE_TEST_BUILD = '1' # Private phone/watch sideloads only.
 npx expo prebuild --platform android --clean
 Set-Location android
 .\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
 Set-Location ..
 ```
+
+Without `T1ARC_PRIVATE_TEST_BUILD=1`, a release APK requires all four
+`T1ARC_RELEASE_*` production-signing variables. Store bundles always require
+the production key and never accept the private test certificate.
 
 Use JDK 21 for Android releases. JDK 25 emits a restricted-native-access
 warning from the Android PREFAB tool which Android Gradle Plugin 9 currently
@@ -490,6 +524,7 @@ project:
 
 ```powershell
 Set-Location android
+$env:T1ARC_PRIVATE_TEST_BUILD = '1'
 .\gradlew.bat :wear:testDebugUnitTest :wear:assembleRelease `
   :watchface-meridian:assembleRelease `
   :watchface-chronograph:assembleRelease `

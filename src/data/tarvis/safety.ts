@@ -25,7 +25,7 @@ const FIRST_PERSON_CURRENT_URGENT =
 const HISTORICAL_ONLY_URGENT =
   /\b(?:i (?:was|had)|my [a-z ]+ (?:was|were))\b[\s\S]{0,50}\b(?:yesterday|last (?:night|week|month|tuesday|monday|wednesday|thursday|friday|saturday|sunday)|\d+ (?:minutes?|hours?|days?) ago)\b/i;
 const DESCRIPTIVE_INSULIN_HISTORY =
-  /\b(?:how much|how many|what)\b[\s\S]{0,50}\b(?:did i (?:take|receive|deliver)|was delivered|did (?:my )?pump deliver)\b/i;
+  /\b(?:how much|how many|what)\b[\s\S]{0,70}\b(?:did i (?:take|receive|deliver|use|have)|i (?:took|received|used|had)|was delivered|did (?:my )?pump deliver)\b|\b(?:how much|how many|what)\s+(?:total\s+)?(?:insulin|bolus|basal)\b[\s\S]{0,50}\b(?:today|yesterday|last|past|previous|on\s+\d|between|from)\b/i;
 const DANGEROUS_CURRENT_GLUCOSE =
   /\b(?:my (?:glucose|blood sugar|sugar|reading)|i(?:'m| am))\b[\s\S]{0,40}\b(?:low|hypo|very high|2(?:[.,]\d)?\s*mmol|3(?:[.,][0-4])?\s*mmol|(?:below|under)\s*3(?:[.,]9)?|(?:above|over)\s*(?:20|360))\b/i;
 const DIAGNOSIS_REQUEST =

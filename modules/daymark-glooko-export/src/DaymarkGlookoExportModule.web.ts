@@ -3,6 +3,9 @@ import { NativeModule, registerWebModule } from 'expo';
 import {
   GlookoCredentialSetupResult,
   GlookoCredentialStatus,
+  GlookoCredentialCommitLease,
+  GlookoDataResetLease,
+  GlookoDataCommitLease,
   GlookoExportResult,
   GlookoReportExtraction,
 } from './DaymarkGlookoExport.types';
@@ -46,24 +49,54 @@ class DaymarkGlookoExportModule extends NativeModule<Record<string, never>> {
     return null;
   }
 
+  async releaseDownloadAsync(_uri: string) {
+    return false;
+  }
+
   async extractReportTextAsync(_uri: string) {
     throw new Error('Glooko PDF report import requires Android.');
   }
 
-  async extractReportDataAsync(
-    _uri: string,
-  ): Promise<GlookoReportExtraction> {
+  async extractReportDataAsync(_uri: string): Promise<GlookoReportExtraction> {
     throw new Error('Glooko PDF report import requires Android.');
   }
 
-  async openCredentialSetupAsync(): Promise<GlookoCredentialSetupResult> {
+  async openCredentialSetupAsync(
+    _legacyCredentialContinuityRequired: boolean,
+  ): Promise<GlookoCredentialSetupResult> {
     throw new Error(
       'Encrypted automatic Glooko sign-in requires the Android connector.',
     );
   }
 
   async getCredentialStatusAsync(): Promise<GlookoCredentialStatus> {
-    return { configured: false };
+    return { configured: false, credentialGeneration: 0 };
+  }
+
+  async beginCredentialCommitAsync(
+    _credentialGeneration: number,
+  ): Promise<GlookoCredentialCommitLease> {
+    return { acquired: false };
+  }
+
+  async endCredentialCommitAsync(_token: string) {
+    return false;
+  }
+
+  async beginDataCommitAsync(): Promise<GlookoDataCommitLease> {
+    return { acquired: false };
+  }
+
+  async endDataCommitAsync(_token: string) {
+    return false;
+  }
+
+  async beginDataResetAsync(): Promise<GlookoDataResetLease> {
+    return { acquired: false };
+  }
+
+  async endDataResetAsync(_token: string) {
+    return false;
   }
 
   async clearCredentialsAsync() {

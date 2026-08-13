@@ -49,7 +49,7 @@ function glookoTiming(
   if (!plan.due && plan.reason === 'disabled') {
     return {
       state: 'off',
-      detail: 'Automatic Glooko exports are off.',
+      detail: 'Automatic Glooko updates are off.',
     };
   }
   if (!plan.due && plan.reason === 'sign-in-required') {
@@ -61,23 +61,23 @@ function glookoTiming(
   if (plan.due) {
     const work =
       plan.reason === 'reconciliation' || plan.reason === 'initial'
-        ? '30-day reconciliation'
+        ? '30-day check'
         : plan.reason === 'history-backfill'
-          ? 'older-history block'
-          : 'latest-day export';
+          ? 'older history'
+          : 'latest Glooko data';
     return {
       state: 'due',
       detail: registered
-        ? `${work} eligible now; waiting for Android or app use.`
-        : `${work} eligible now; opening T1 Arc will run the check.`,
+        ? `${work} is ready to update when Android allows it.`
+        : `${work} is ready; open T1 Arc to update now.`,
     };
   }
   return {
     state: 'waiting',
     detail:
       plan.reason === 'backoff'
-        ? 'Automatic retry is temporarily backed off.'
-        : 'Two-week exports are eligible hourly; reconciliation runs daily.',
+        ? 'T1 Arc is waiting before trying again.'
+        : 'Recent Glooko data is checked hourly; the past 30 days are checked daily.',
     nextEligibleAt:
       plan.nextEligibleAt ??
       (state.lastSuccessAt === undefined
@@ -144,14 +144,14 @@ function healthConnectTiming(
     return {
       state: 'due',
       detail: registered
-        ? 'Health refresh eligible now; waiting for Android or app use.'
-        : 'Health refresh eligible now; opening T1 Arc will run the check.',
+        ? 'Health data is ready to update when Android allows it.'
+        : 'Health data is ready; open T1 Arc to update now.',
     };
   }
   return {
     state: 'waiting',
     detail: registered
-      ? 'Checks every 5 minutes in use; Android chooses the background window.'
+      ? 'Checks every 5 minutes while you use T1 Arc, and automatically when Android allows it.'
       : 'Checks every 5 minutes while T1 Arc is in use.',
     nextEligibleAt,
   };
@@ -171,8 +171,8 @@ export function buildAutomationTiming(input: {
   return {
     glucose: sharedWorkerTiming(
       input.registered.glucose,
-      'Shared Android worker requests a check every 15 minutes.',
-      'Background glucose checks are not registered.',
+      'Checks automatically about every 15 minutes.',
+      'Automatic glucose checks are off.',
     ),
     glooko: glookoTiming(
       input.glooko,
@@ -187,7 +187,7 @@ export function buildAutomationTiming(input: {
     ),
     'insight-review': sharedWorkerTiming(
       input.registered['insight-review'],
-      'Android checks for a due review in shared 15-minute windows.',
+      'Checks about every 15 minutes for a scheduled review.',
       'Scheduled review checks are off.',
     ),
   };

@@ -5,10 +5,7 @@ import {
   GlookoImportPreview,
   parseGlookoTextFiles,
 } from './glookoCsv';
-import {
-  safeGlookoFileName,
-  unpackGlookoExport,
-} from './glookoArchive';
+import { safeGlookoFileName, unpackGlookoExport } from './glookoArchive';
 import {
   ImportBatch,
   ImportSourcePayload,
@@ -40,7 +37,15 @@ export async function prepareGlookoImport(
   ).finally(() => digestInput.fill(0));
   const fileSha256 = toHex(digest);
   const unpacked = await unpackGlookoExport(name, bytes);
-  const preview = parseGlookoTextFiles(unpacked.files, importedAt);
+  const preview = (() => {
+    try {
+      return parseGlookoTextFiles(unpacked.files, importedAt);
+    } finally {
+      // Decompressed CGM buffers are working copies. The exact selected ZIP
+      // or CSV remains in sourcePayload and has its own explicit lifecycle.
+      unpacked.files.forEach((file) => file.bytes?.fill(0));
+    }
+  })();
   return {
     preview,
     batch: {

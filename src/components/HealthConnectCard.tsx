@@ -76,12 +76,12 @@ function syncResultMessage(
   emptyMessage: string,
 ) {
   const checked = result.recordsProcessed
-    ? `${result.recordsProcessed.toLocaleString('en-GB')} records checked and stored locally.`
+    ? `${result.recordsProcessed.toLocaleString('en-GB')} health items checked.`
     : emptyMessage;
   const removed = result.recordsRemoved
     ? ` ${result.recordsRemoved.toLocaleString('en-GB')} deleted ${
-        result.recordsRemoved === 1 ? 'record was' : 'records were'
-      } removed locally.`
+        result.recordsRemoved === 1 ? 'item was' : 'items were'
+      } cleared.`
     : '';
   if (!result.failures.length) return `${checked}${removed}`;
   const failedLabels = result.failures
@@ -207,14 +207,14 @@ export function HealthConnectCard({
         await updateHealthConnectBackgroundSyncRegistration();
       setMessage(
         enabled
-          ? 'Automatic health updates are enabled. Android schedules them around battery use.'
-          : 'Background access was not enabled. T1 Arc will still refresh health data whenever you open it.',
+          ? 'Automatic health updates are on.'
+          : 'Automatic updates are off. T1 Arc will still refresh health data whenever you open it.',
       );
     } catch (actionError) {
       setError(
         actionError instanceof Error
           ? actionError.message
-          : 'Background health updates could not be enabled.',
+          : 'Automatic health updates could not be enabled.',
       );
     } finally {
       setOperation(undefined);
@@ -358,7 +358,7 @@ export function HealthConnectCard({
   function confirmFullHistoryRecheck() {
     Alert.alert(
       'Recheck all health history?',
-      'T1 Arc will reread every available record for the selected categories. This can take a while for heart-rate history, but it stays on this phone and safely merges with existing records.',
+      'T1 Arc will check all available history for the selected categories again. Heart-rate history may take a while. Your data stays on this phone and existing information is kept.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -389,8 +389,8 @@ export function HealthConnectCard({
       await finishRefresh();
       setMessage(
         packageName
-          ? 'Source locked. Other copies stay archived but are excluded from the active view.'
-          : 'Automatic source selection restored. Only its chosen source is used in the active view.',
+          ? 'This app or device will now be used for this type of health data. Other copies are kept but hidden from the main view.'
+          : 'T1 Arc will choose the best app or device for this health data.',
       );
     } catch (actionError) {
       setError(
@@ -478,8 +478,8 @@ export function HealthConnectCard({
           size={19}
         />
         <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
-          Choose everything here. Android asks once for confirmation, then the
-          app copies approved records into its encrypted database on this Pixel.
+          Choose what you want to include. Your phone asks once for permission,
+          and the approved information stays encrypted on this phone.
         </Text>
       </View>
 
@@ -788,22 +788,28 @@ export function HealthConnectCard({
               ]}
             >
               {overview?.background
-                ? `Android worker ran ${relativeAge(
+                ? `Automatic check ran ${relativeAge(
                     overview.background.lastRunAt,
-                  )} · ${overview.background.outcome}${
+                  )} · ${
+                    overview.background.outcome === 'failed'
+                      ? 'needs attention'
+                      : overview.background.outcome === 'partial'
+                        ? 'partly complete'
+                        : 'complete'
+                  }${
                     overview.background.recordsProcessed
                       ? ` · ${overview.background.recordsProcessed.toLocaleString(
                           'en-GB',
-                        )} records checked`
+                        )} changes checked`
                       : ''
                   }${
                     overview.background.recordsRemoved
                       ? ` · ${overview.background.recordsRemoved.toLocaleString(
                           'en-GB',
-                        )} deleted records removed`
+                        )} removed items cleared`
                       : ''
-                  }${overview.background.failures ? ` · ${overview.background.failures} failed category` : ''}.`
-                : 'Android background access is allowed; the worker is waiting for its first system run.'}
+                  }${overview.background.failures ? ` · ${overview.background.failures} ${overview.background.failures === 1 ? 'area needs' : 'areas need'} attention` : ''}.`
+                : 'Automatic checks are ready and waiting for their first run.'}
             </Text>
           ) : null}
           <View style={styles.syncCategoryList}>
@@ -857,8 +863,8 @@ export function HealthConnectCard({
           </View>
           <Text style={[styles.syncNote, { color: colors.textTertiary }]}>
             {changeTrackingReady
-              ? 'Historical edits and deletions are tracked for every selected category. Categories still update independently, so one source problem cannot stop the rest.'
-              : 'The next complete refresh will establish historical edit and deletion tracking. Categories update independently.'}
+              ? 'Changes and deletions stay up to date for every selected area. If one area has a problem, the others can still refresh.'
+              : 'The next full refresh will bring earlier changes and deletions up to date. Each area refreshes separately.'}
           </Text>
         </View>
       ) : null}
@@ -893,7 +899,7 @@ export function HealthConnectCard({
             <Text
               style={[styles.backgroundDetail, { color: colors.textSecondary }]}
             >
-              One Android permission; no T1 Arc server involved.
+              Keep this information up to date even when you are not using the app.
             </Text>
           </View>
         </Pressable>
@@ -902,7 +908,7 @@ export function HealthConnectCard({
       status.historyGranted &&
       Boolean(overview?.totalRecords) ? (
         <Pressable
-          accessibilityHint="Rereads all available selected-category history and merges it locally."
+          accessibilityHint="Checks all available selected health history again without creating duplicates."
           accessibilityRole="button"
           disabled={busy}
           onPress={confirmFullHistoryRecheck}

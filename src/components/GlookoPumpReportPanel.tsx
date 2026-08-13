@@ -140,12 +140,10 @@ export function GlookoPumpReportPanel({
   const {
     getLatestGlookoReport,
     glookoReportSyncState,
-    glookoReportSyncing,
     glookoSyncing,
     importGlookoReport,
     now,
     revision,
-    syncGlookoReport,
   } = useDataContext();
   const [report, setReport] = useState<StoredGlookoReport>();
   const [busy, setBusy] = useState(false);
@@ -222,7 +220,7 @@ export function GlookoPumpReportPanel({
       setReport(next);
       setExpanded(true);
       setMessage(
-        `Pump modes, settings and ${next.preview.pumpStateIntervals.length} timed Activity or pause windows were indexed. The complete PDF is encrypted on this phone.`,
+        `T1 Arc found pump modes, settings and ${next.preview.pumpStateIntervals.length} timed Activity or pause windows. The full PDF stays encrypted on this phone.`,
       );
     } catch (error) {
       setMessage(
@@ -239,30 +237,6 @@ export function GlookoPumpReportPanel({
       }
       setBusy(false);
     }
-  }
-
-  async function refreshReport() {
-    setMessage(undefined);
-    const outcome = await syncGlookoReport();
-    if (outcome.status === 'success') {
-      setReport(outcome.report);
-      setExpanded(true);
-      setMessage(
-        outcome.inserted
-          ? `Latest rolling seven-day report added with ${outcome.report.preview.pumpStateIntervals.length} timed Activity or pause windows.`
-          : `The current report was rechecked with ${outcome.report.preview.pumpStateIntervals.length} timed Activity or pause windows; nothing was duplicated.`,
-      );
-      return;
-    }
-    if (outcome.status === 'skipped') {
-      setMessage(
-        outcome.reason === 'busy'
-          ? 'A Glooko export is already being handled.'
-          : 'The daily Glooko report is already current.',
-      );
-      return;
-    }
-    setMessage(outcome.message);
   }
 
   const modes = report?.preview.modeSummary;
@@ -398,30 +372,20 @@ export function GlookoPumpReportPanel({
         >
           <Ionicons
             accessibilityElementsHidden
-            color={
-              glookoReportSyncState.lastErrorMessage
-                ? colors.warning
-                : colors.accent
-            }
-            name={
-              glookoReportSyncState.lastErrorMessage
-                ? 'alert-circle-outline'
-                : 'sync-outline'
-            }
+            color={colors.accent}
+            name="document-text-outline"
             size={17}
           />
           <View style={styles.automaticStatusCopy}>
             <Text style={[styles.automaticTitle, { color: colors.text }]}>
-              Automatic daily report
+              Manual PDF report
             </Text>
             <Text
               style={[styles.automaticBody, { color: colors.textTertiary }]}
             >
-              {glookoReportSyncState.lastErrorMessage
-                ? `Will retry automatically: ${glookoReportSyncState.lastErrorMessage}`
-                : glookoReportSyncState.lastSuccessAt
-                  ? `Last refreshed ${relativeAge(glookoReportSyncState.lastSuccessAt, now)} · rolling 7 days · ${glookoReportSyncState.lastDailyModeCount ?? 0} daily mode summaries`
-                  : 'Runs securely after Glooko automatic sync is enabled.'}
+              {glookoReportSyncState.lastSuccessAt
+                ? `Last imported ${relativeAge(glookoReportSyncState.lastSuccessAt, now)} · ${glookoReportSyncState.lastDailyModeCount ?? 0} daily mode summaries`
+                : 'For now, add a Glooko PDF when you want pump settings or Activity Mode included.'}
             </Text>
           </View>
         </View>
@@ -439,42 +403,7 @@ export function GlookoPumpReportPanel({
       {showControls ? (
         <Pressable
           accessibilityRole="button"
-          disabled={busy || glookoReportSyncing || glookoSyncing}
-          onPress={() => void refreshReport()}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            {
-              backgroundColor: colors.insulin,
-              borderRadius: radius.md,
-              opacity:
-                pressed || busy || glookoReportSyncing || glookoSyncing
-                  ? 0.6
-                  : 1,
-            },
-          ]}
-        >
-          {glookoReportSyncing ? (
-            <ActivityIndicator color={colors.onPrimary} size="small" />
-          ) : (
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.onPrimary}
-              name="sync-outline"
-              size={17}
-            />
-          )}
-          <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
-            {glookoReportSyncing
-              ? 'Refreshing seven-day report…'
-              : 'Refresh seven-day report now'}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {showControls ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy || glookoReportSyncing || glookoSyncing}
+          disabled={busy || glookoSyncing}
           onPress={() => void chooseReport()}
           style={({ pressed }) => [
             styles.button,
@@ -482,7 +411,7 @@ export function GlookoPumpReportPanel({
               borderColor: `${colors.insulin}55`,
               borderRadius: radius.md,
               opacity:
-                pressed || busy || glookoReportSyncing || glookoSyncing
+                pressed || busy || glookoSyncing
                   ? 0.6
                   : 1,
             },
@@ -501,7 +430,7 @@ export function GlookoPumpReportPanel({
           <Text style={[styles.buttonText, { color: colors.insulin }]}>
             {busy
               ? 'Reading report locally…'
-              : 'Import an existing PDF instead'}
+              : 'Import a Glooko PDF'}
           </Text>
         </Pressable>
       ) : null}
@@ -692,20 +621,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     lineHeight: 13,
     marginTop: 1,
-  },
-  primaryButton: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-    paddingHorizontal: 12,
-  },
-  primaryButtonText: {
-    fontSize: 10,
-    lineHeight: 15,
-    fontWeight: '800',
   },
   button: {
     minHeight: 42,

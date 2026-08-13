@@ -80,7 +80,7 @@ export function XdripSourceCard() {
       setError(
         nextError instanceof Error
           ? nextError.message
-          : 'Check the xDrip endpoint.',
+          : 'Check the xDrip address.',
       );
       return;
     }
@@ -98,7 +98,7 @@ export function XdripSourceCard() {
       setError(
         nextError instanceof XdripError || nextError instanceof Error
           ? nextError.message
-          : 'The xDrip endpoint could not be connected.',
+          : 'T1 Arc could not connect to xDrip.',
       );
     } finally {
       setWorking(false);
@@ -107,8 +107,8 @@ export function XdripSourceCard() {
 
   function confirmDisconnect() {
     Alert.alert(
-      'Disconnect xDrip endpoint?',
-      'This removes the saved endpoint. Glucose already copied into encrypted T1 Arc history is kept.',
+      'Disconnect xDrip?',
+      'This removes the saved connection. Glucose already copied into T1 Arc is kept.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -128,7 +128,7 @@ export function XdripSourceCard() {
                 setError(
                   nextError instanceof Error
                     ? nextError.message
-                    : 'The xDrip endpoint could not be disconnected.',
+                    : 'T1 Arc could not disconnect xDrip.',
                 );
               } finally {
                 setWorking(false);
@@ -162,7 +162,7 @@ export function XdripSourceCard() {
           </View>
           <View style={styles.headerCopy}>
             <Text style={[styles.title, { color: colors.text }]}>
-              xDrip endpoint connected
+              xDrip connected
             </Text>
             <Text style={[styles.body, { color: colors.textSecondary }]}>
               {xdripEndpointLabel(saved)} ·{' '}
@@ -221,7 +221,7 @@ export function XdripSourceCard() {
             ]}
           >
             <Text style={[styles.secondaryText, { color: colors.primary }]}>
-              Update endpoint
+              Update connection
             </Text>
           </Pressable>
           <Pressable
@@ -275,17 +275,17 @@ export function XdripSourceCard() {
         </View>
         <View style={styles.headerCopy}>
           <Text style={[styles.title, { color: colors.text }]}>
-            Connect an xDrip endpoint
+              Connect xDrip
           </Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Read an xDrip-compatible /sgv.json feed directly into T1 Arc’s
-            encrypted glucose history.
+            Bring glucose readings from xDrip into your encrypted T1 Arc
+            history.
           </Text>
         </View>
       </View>
 
       <Pressable
-        accessibilityHint="Fills the standard same-phone xDrip web service address."
+        accessibilityHint="Fills the usual address for xDrip on this phone."
         accessibilityRole="button"
         disabled={working}
         onPress={() => {
@@ -310,19 +310,19 @@ export function XdripSourceCard() {
         />
         <View style={styles.presetCopy}>
           <Text style={[styles.presetTitle, { color: colors.text }]}>
-            Use an endpoint on this phone
+            Use xDrip on this phone
           </Text>
           <Text style={[styles.presetDetail, { color: colors.textSecondary }]}>
-            127.0.0.1:17580 · the usual local xDrip-compatible address
+            127.0.0.1:17580 · the usual address when xDrip is on this phone
           </Text>
         </View>
       </Pressable>
 
       <Text style={[styles.label, { color: colors.text }]}>
-        Endpoint address
+        xDrip address
       </Text>
       <TextInput
-        accessibilityLabel="xDrip-compatible endpoint address"
+        accessibilityLabel="xDrip address"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
@@ -358,9 +358,8 @@ export function XdripSourceCard() {
           size={20}
         />
         <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
-          Local HTTP is accepted only from this phone. Any other endpoint must
-          use HTTPS. T1 Arc requests glucose read-only and never exposes this
-          feed as a server.
+          A local address is allowed only for xDrip on this phone. Connections
+          elsewhere must be secure. T1 Arc only reads glucose from xDrip.
         </Text>
       </View>
 
@@ -409,7 +408,7 @@ export function XdripSourceCard() {
             },
           ]}
         >
-          {working ? 'Testing endpoint…' : 'Test and save endpoint'}
+          {working ? 'Checking xDrip…' : 'Check and save connection'}
         </Text>
       </Pressable>
 

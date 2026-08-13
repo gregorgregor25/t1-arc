@@ -507,7 +507,7 @@ describe('evidence-backed insights', () => {
         'meal-nearby',
       ]),
     );
-    expect(evidence.description).toContain('Nearby does not mean causal');
+    expect(evidence.description).toContain('Nearby records may not explain');
     expect(glucoseEpisodeBurden(highs[0]!)).toBeGreaterThan(0);
     expect(rankGlucoseEpisodes([...lows, ...highs], 1)[0]?.id).toBe(
       highs[0]?.id,
@@ -1382,7 +1382,7 @@ describe('evidence-backed insights', () => {
       (item) => item.id === 'glucose-data-completeness',
     );
     expect(finding?.summary).toContain('longest uncovered interval');
-    expect(finding?.caveat).toContain('does not interpret');
+    expect(finding?.caveat).toContain('does not assume');
     expect(
       answerInsightQuestion('Were there missing sensor gaps?', report)
         .findingIds,

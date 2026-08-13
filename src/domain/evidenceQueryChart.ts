@@ -583,7 +583,7 @@ export function buildEvidenceQueryAccessibilitySummary(
     )}.`;
     const base = `${period} ${coverageSentence(window)}`;
     const sampling = window.sampling
-      ? `For display, ${window.sampling.displayedPointCount} of ${window.sampling.sourceSampleCount} timestamp-normalised samples are plotted using a deterministic time-bucket envelope; the calculation and Records view retain all ${window.sampling.sourceRecordCount} exact source records.`
+      ? `This chart shows ${window.sampling.displayedPointCount} of ${window.sampling.sourceSampleCount} readings to stay clear; the calculation and Records view still use all ${window.sampling.sourceRecordCount} saved records.`
       : '';
     if (visualization.kind === 'range-distribution-v1') {
       const distribution = window.distribution;
@@ -650,7 +650,7 @@ export function buildEvidenceQueryAccessibilitySummary(
     `The shaded target range is ${rounded(
       visualization.targetRange.minimum,
     )} to ${rounded(visualization.targetRange.maximum)} mmol/L.`,
-    'All Records is the complete text alternative for every exact source record.',
+    'All Records lists every saved reading used here.',
   ]
     .filter(Boolean)
     .join(' ');

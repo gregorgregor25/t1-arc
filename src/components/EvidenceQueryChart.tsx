@@ -53,8 +53,8 @@ function DataAlternativeButton({ onPress }: { onPress(): void }) {
   const { colors, radius } = useAppTheme();
   return (
     <Pressable
-      accessibilityHint="Switches to the complete text list of exact records used for this chart."
-      accessibilityLabel="View chart data as exact records"
+      accessibilityHint="Switches to the complete list of readings used for this chart."
+      accessibilityLabel="View chart readings as a list"
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
@@ -76,7 +76,7 @@ function DataAlternativeButton({ onPress }: { onPress(): void }) {
       />
       <View style={styles.dataButtonCopy}>
         <Text style={[styles.dataButtonTitle, { color: colors.text }]}>
-          View chart data as exact records
+          View readings as a list
         </Text>
         <Text style={[styles.dataButtonDetail, { color: colors.textSecondary }]}>
           Complete paged text alternative for the supporting records
@@ -203,11 +203,10 @@ function SamplingNote({ window }: { window: EvidenceQueryChartWindow }) {
         size={14}
       />
       <Text style={[styles.noteText, { color: colors.textSecondary }]}>
-        Displaying {window.sampling.displayedPointCount} of{' '}
-        {window.sampling.sourceSampleCount} timestamp-normalised samples using
-        a deterministic min/max time-bucket envelope. The calculation and All
-        records retain all {window.sampling.sourceRecordCount} exact source
-        records.
+        Showing {window.sampling.displayedPointCount} of{' '}
+        {window.sampling.sourceSampleCount} readings to keep this chart clear.
+        Calculations and All records still use all{' '}
+        {window.sampling.sourceRecordCount} saved records.
       </Text>
     </View>
   );

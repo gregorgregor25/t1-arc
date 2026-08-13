@@ -1410,7 +1410,7 @@ function episodeEvidence(
   return {
     id,
     label,
-    description: `${episodes.length} sustained run${episodes.length === 1 ? '' : 's'} across ${readings.length} timestamp-normalised physiological samples`,
+    description: `${episodes.length} sustained period${episodes.length === 1 ? '' : 's'} found across ${readings.length} readings`,
     range,
     recordIds: readings.flatMap((reading) => reading.recordIds),
     examples: representativeGlucose(readings),
@@ -1461,7 +1461,7 @@ export function buildGlucoseEpisodeEvidence(
   return {
     id: `episode-detail:${episode.id}`,
     label: `${episode.kind === 'high' ? 'High' : 'Low'} run to ${episode.extremeMmolL.toFixed(1)} mmol/L`,
-    description: `${episode.readings.length} qualifying timestamp-normalised samples across an observed ${durationMinutes}-minute span, plus ${nearbyRecordCount} nearby recorded context or insulin records. Nearby does not mean causal`,
+    description: `${episode.readings.length} readings across a ${durationMinutes}-minute period, with ${nearbyRecordCount} nearby food, activity, or insulin records. Nearby records may not explain the change`,
     range: { start: contextStart, end: Math.max(contextStart + 1, contextEnd) },
     recordIds: [
       ...episode.readings.flatMap((reading) => reading.recordIds),
@@ -1828,7 +1828,7 @@ export function buildInsightReport(
       title: `Glucose coverage ${coverageDirection}`,
       summary: `Recent glucose coverage was ${currentCompleteness.glucose.coveragePercent}% versus ${previousCompleteness.glucose.coveragePercent}%. The longest uncovered interval was ${currentCompleteness.glucose.longestGapMinutes} minutes recently and ${previousCompleteness.glucose.longestGapMinutes} minutes previously.`,
       caveat:
-        'Missing sensor time can bias comparisons. T1 Arc does not interpret an uncovered interval as stable glucose or as a physiological event.',
+        'Missing sensor time can skew comparisons. T1 Arc does not assume glucose stayed steady while readings were missing.',
       evidence: [
         glucoseEvidence(
           'current-completeness',
@@ -1950,7 +1950,7 @@ export function buildInsightReport(
       kind: 'limitation',
       category: 'data-quality',
       title: 'Some health context cannot be compared',
-      summary: `Selected-source records are present in only one comparison window for ${incomparableHealthGroups
+      summary: `Information is available in only one comparison period for ${incomparableHealthGroups
         .map((group) => group.label)
         .join(', ')}. T1 Arc does not treat the other window as zero.`,
       caveat:
@@ -2157,7 +2157,7 @@ export function buildInsightReport(
           : ''
       }`,
       caveat:
-        'This is a deterministic grouping of sensor readings, not a clinical diagnosis. Nearby records are shown for inspection and never treated as proof of cause.',
+        'These are grouped sensor readings, not a diagnosis. Nearby records are shown for context and are never treated as proof of a cause.',
       evidence: [
         ...(currentHighRuns.length
           ? [

@@ -3,7 +3,6 @@ import { File } from 'expo-file-system';
 import DaymarkGlookoExport, {
   GlookoExportResult,
 } from '../../../modules/daymark-glooko-export';
-import DaymarkGlucoseDisplay from '../../../modules/daymark-glucose-display';
 import {
   GlookoReportAutomaticPlan,
   GlookoReportSyncState,
@@ -21,10 +20,7 @@ import {
 import { GlookoSingleFlight } from './glookoSingleFlight';
 import { saveGlookoReport, StoredGlookoReport } from './glookoReportRepository';
 import { glookoFailureBackoffMs } from './glookoSyncPolicy';
-import {
-  loadGlookoSyncState,
-  updateGlookoSyncState,
-} from './glookoSyncState';
+import { loadGlookoSyncState } from './glookoSyncState';
 import { clearSavedInsightReports } from '@/data/insights/insightReportRepository';
 import { generateInsightReviewIfDue } from '@/data/insights/insightReviewGenerator';
 
@@ -139,27 +135,15 @@ async function execute(
       const next = await markFailure(
         previous,
         startedAt,
-        sessionRequired
-          ? 'session-required'
-          : exported.reason ?? 'cancelled',
+        exported.reason ?? (sessionRequired ? 'session-required' : 'cancelled'),
         message,
       );
-      if (sessionRequired) {
-        await updateGlookoSyncState((current) => ({
-          ...current,
-          sessionStatus: 'needs-sign-in',
-          nextEligibleAt: undefined,
-          lastErrorCode: 'session-required',
-          lastErrorMessage: message,
-        }));
-        if (origin === 'background') {
-          await DaymarkGlucoseDisplay.showGlookoSignInRequiredAsync().catch(
-            () => false,
-          );
-        }
-      }
       return {
-        status: sessionRequired ? 'session-required' : 'cancelled',
+        status: sessionRequired
+          ? 'session-required'
+          : exported.status === 'failed'
+            ? 'failed'
+            : 'cancelled',
         origin,
         days: 7,
         message,

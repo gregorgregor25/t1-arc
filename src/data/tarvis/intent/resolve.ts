@@ -52,6 +52,7 @@ const EVENT_RELATIVE_FILTER_PATTERN =
   /\b(?:(?:before|after|around|following|since|upon|during|from|on|at|between)\s+(?:(?:i|my|a|an|the)\s+){0,2}(?:wak(?:e|es|ing)|woke|getting\s+(?:up|out\s+of\s+bed)|bedtime|going\s+to\s+bed|sleep(?:ing)?|meals?|eating|fast(?:ing)?|breakfast|lunch|dinner|exercise|exercising|activity|active|workouts?|training|correction(?:\s+bolus)?|bolus|insulin\s+dose|medication|dose|commut(?:e|ing)|work|shifts?|stress|illness|drinking|alcohol|lows?|highs?|hypos?|hypers?|spikes?)|(?:while|when)\s+(?:(?:i(?:'m|\s+am)?|my)\s+)?(?:[a-z]+ing|asleep|awake|active)|within\s+(?:\w+[ -]?){0,4}(?:of|before|after)\s+(?:(?:a|an|the|my)\s+)?(?:wak(?:e|ing)|meals?|eating|breakfast|lunch|dinner|exercise|workouts?|bolus|dose)|(?:pre|post)[ -]?(?:meal|breakfast|lunch|dinner|exercise|workout|bolus))\b/;
 
 const SUPPORTED_METRICS = new Set<TarvisMetric>([
+  'glucose.current',
   'glucose.mean',
   'glucose.median',
   'glucose.minimum',
@@ -64,6 +65,14 @@ const SUPPORTED_METRICS = new Set<TarvisMetric>([
   'glucose.low_readings',
   'glucose.high_readings',
   'glucose.time_in_range',
+  'insulin.delivered_total',
+  'insulin.basal_total',
+  'insulin.bolus_total',
+  'food.carbohydrate_total',
+  'activity.duration',
+  'sleep.duration',
+  'data_quality.coverage',
+  'data_quality.gaps',
 ]);
 
 const TYPO_REPLACEMENTS: Array<[RegExp, string]> = [
@@ -74,6 +83,7 @@ const TYPO_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\b(?:hihgs|higs)\b/g, 'highs'],
   [/\b(?:lwo|lwoes)\b/g, 'lows'],
   [/\btim[ -]in[ -]range\b/g, 'time in range'],
+  [/\byday\b/g, 'yesterday'],
 ];
 
 interface MetricCandidate {
@@ -370,7 +380,7 @@ function extractMetricCandidates(
 ): MetricCandidate[] {
   const candidates: MetricCandidate[] = [];
   const glucoseObject =
-    '(?:glucose|blood[- ]?sugar|bg|cgm|sensor|readings?|levels?|numbers?)';
+    '(?:glucose|blood[- ]?sugar|sugars?|bg|cgm|sensor|readings?|levels?|numbers?)';
   const meanModifier =
     '(?:(?:recorded|recent|daily|weekly|last|past|previous|overnight|night|nighttime|morning|afternoon|evening)\\s+)*';
   const trailingMeanModifier =
@@ -388,6 +398,22 @@ function extractMetricCandidates(
       meanPattern,
     ),
   );
+  // Natural chat often leaves the glucose object implicit when the time
+  // phrase makes the personal metric clear ("average overnight", "my
+  // average today"). Keep this narrow so "average insulin" is never recast
+  // as glucose.
+  if (!/\b(?:insulin|basal|bolus|carbs?|carbohydrates?|sleep|activity|exercise)\b/.test(normalizedQuestion)) {
+    pushCandidate(
+      candidates,
+      candidateFromPattern(
+        originalQuestion,
+        normalizedQuestion,
+        'glucose.mean',
+        'aggregate',
+        /\b(?:my\s+)?(?:average|avg|(?<!i )mean)\b(?=[\s\S]{0,100}\b(?:today|yesterday|overnight|nights?|days?|weeks?|months?|hours?|between|from|midnight)\b)/,
+      ),
+    );
+  }
   pushCandidate(
     candidates,
     candidateFromPattern(
@@ -420,7 +446,7 @@ function extractMetricCandidates(
       normalizedQuestion,
       'glucose.time_in_range',
       'range_distribution',
-      /\b(?:time[- ]in[- ]range|tir|percentage\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|percent\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|(?:what\s+)?(?:percentage|percent)\s+of\s+(?:my\s+)?(?:glucose\s+)?readings?\s+(?:was|were)\s+between)\b/,
+      /\b(?:time[- ]in[- ]range|tir|percentage\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|percent\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|(?:what\s+)?(?:percentage|percent)\s+(?:of\s+(?:my\s+)?(?:glucose\s+)?readings?\s+)?(?:(?:was|were|am|is)\s+(?:i\s+)?)?between)\b/,
     ),
   );
 
@@ -465,25 +491,53 @@ function extractMetricCandidates(
       ),
     );
   }
+  if (
+    !lowReadings &&
+    !highReadings &&
+    /\b(?:lows?|hypos?)\s+(?:and|or)\s+(?:highs?|hypers?|spikes?)\b|\b(?:highs?|hypers?|spikes?)\s+(?:and|or)\s+(?:lows?|hypos?)\b/.test(
+      normalizedQuestion,
+    )
+  ) {
+    pushCandidate(
+      candidates,
+      candidateFromPattern(
+        originalQuestion,
+        normalizedQuestion,
+        'glucose.low_episodes',
+        'count_episodes',
+        /\b(?:lows?|hypos?)\b/,
+      ),
+    );
+    pushCandidate(
+      candidates,
+      candidateFromPattern(
+        originalQuestion,
+        normalizedQuestion,
+        'glucose.high_episodes',
+        'count_episodes',
+        /\b(?:highs?|hypers?|spikes?)\b/,
+      ),
+    );
+  }
 
   const unsupportedPatterns: Array<
     [TarvisMetric, TarvisOperation, RegExp]
   > = [
-    ['glucose.current', 'current', /\b(?:current|latest|right now)\s+(?:glucose|reading|blood sugar)\b/],
+    ['glucose.current', 'current', /\b(?:(?:current|latest|right now)\s+(?:glucose|reading|blood sugar|sugar|bg)|(?:glucose|reading|blood sugar|sugar|bg)\s+(?:now|right now)|what(?:'s| is)\s+(?:my\s+)?(?:glucose|reading|blood sugar|sugar|bg)\s*(?:now|right now)?|am i\s+(?:going|trending|moving)\s+(?:up|down)|(?:am i|is my (?:glucose|sugar|bg))\s+(?:rising|falling|steady))\b/],
     ['glucose.median', 'aggregate', new RegExp(`\\bmedian\\b(?=[\\s\\S]{0,120}\\b${glucoseObject}\\b)|\\b${glucoseObject}\\b[\\s\\S]{0,60}\\bmedian\\b`)],
     ['glucose.minimum', 'aggregate', new RegExp(`\\b(?:minimum|lowest)\\b(?=[\\s\\S]{0,120}\\b${glucoseObject}\\b)|\\b${glucoseObject}\\b[\\s\\S]{0,60}\\b(?:minimum|lowest)\\b`)],
     ['glucose.maximum', 'aggregate', new RegExp(`\\b(?:maximum|highest)\\b(?=[\\s\\S]{0,120}\\b${glucoseObject}\\b)|\\b${glucoseObject}\\b[\\s\\S]{0,60}\\b(?:maximum|highest)\\b`)],
     ['glucose.standard_deviation', 'aggregate', /\b(?:standard deviation|sd)\b/],
     ['glucose.coefficient_of_variation', 'aggregate', /\b(?:coefficient of variation|glucose variability|variability|how variable|cv)\b/],
     ['glucose.gmi', 'aggregate', /\b(?:(?:estimated\s+)?gmi|glucose management indicator)\b/],
-    ['insulin.delivered_total', 'aggregate', /\b(?:total|how much)\s+(?:delivered\s+)?insulin\b/],
-    ['insulin.basal_total', 'aggregate', /\b(?:total\s+)?basal(?: insulin)?\b/],
-    ['insulin.bolus_total', 'aggregate', /\b(?:total\s+)?bolus(?: insulin)?\b/],
-    ['food.carbohydrate_total', 'aggregate', /\b(?:total|how many|how much)\s+(?:carbs?|carbohydrates?)\b/],
-    ['activity.duration', 'aggregate', /\b(?:exercise|activity|workout)\s+(?:time|duration|minutes?)\b/],
-    ['sleep.duration', 'aggregate', /\b(?:sleep|asleep)\s+(?:time|duration|hours?)\b/],
+    ['insulin.delivered_total', 'aggregate', /\b(?:(?:total|how much)\s+(?:delivered\s+)?insulin|how much insulin\s+(?:did i\s+)?(?:use|have|take)|insulin\s+(?:did i\s+)?(?:use|have|take))\b/],
+    ['insulin.basal_total', 'aggregate', /\b(?:(?:total|how much)\s+basal(?: insulin)?|basal(?: insulin)?\s+total)\b/],
+    ['insulin.bolus_total', 'aggregate', /\b(?:(?:total|how much)\s+bolus(?: insulin)?|bolus(?: insulin)?\s+total)\b/],
+    ['food.carbohydrate_total', 'aggregate', /\b(?:(?:total|how many|how much)\s+(?:carbs?|carbohydrates?)|(?:carbs?|carbohydrates?)\s+(?:total|did i (?:eat|have|log|record)))\b/],
+    ['activity.duration', 'aggregate', /\b(?:(?:exercise|activity|workout)\s+(?:time|duration|minutes?)|how (?:long|much time)\s+(?:did i\s+)?(?:exercise|work ?out|train)|how many minutes\s+(?:did i\s+)?(?:exercise|work ?out|train))\b/],
+    ['sleep.duration', 'aggregate', /\b(?:(?:sleep|asleep)\s+(?:time|duration|hours?)|how (?:long|many hours|much time)\s+(?:did i\s+)?sleep)\b/],
     ['data_quality.coverage', 'inspect_data_quality', /\b(?:sensor|cgm|glucose)?\s*coverage\b/],
-    ['data_quality.gaps', 'inspect_data_quality', /\b(?:data|sensor|cgm)?\s*(?:gaps?|missing data)\b/],
+    ['data_quality.gaps', 'inspect_data_quality', /\b(?:(?:data|sensor|cgm)?\s*(?:gaps?|missing data)|any\s+(?:data\s+|sensor\s+|cgm\s+)?gaps?)\b/],
   ];
   for (const [metric, operation, expression] of unsupportedPatterns) {
     pushCandidate(
@@ -843,7 +897,8 @@ function resolveTemporalScope(
     };
   }
   const comparisonToPrevious =
-    literals.comparisons.length > 0 && /\bprevious\b/.test(normalizedQuestion);
+    literals.comparisons.length > 0 &&
+    /\bprevious\b|\bbefore\s+that\b/.test(normalizedQuestion);
   if (durations.length > 1 && !comparisonToPrevious) {
     const resolvedDurations = durations.map((duration) =>
       scopeFromDuration(
@@ -1074,7 +1129,7 @@ function comparisonField(
 ): TarvisIntentField<TarvisComparison> | undefined {
   if (literals.comparisons.length === 0) return undefined;
   const source = literals.comparisons[0]!;
-  if (/\bprevious\b/.test(normalizedQuestion)) {
+  if (/\bprevious\b|\bbefore\s+that\b/.test(normalizedQuestion)) {
     return explicitField({ kind: 'previous_equal_period' }, source);
   }
   if (
@@ -1520,16 +1575,6 @@ export function resolveTarvisIntent(
       ),
     );
   }
-  if (draft.domain.value !== 'glucose') {
-    return incomplete(
-      draft,
-      literals,
-      unsupported(
-        'unsupported_domain',
-        `Structured execution for the ${draft.domain.value} domain is not available yet.`,
-      ),
-    );
-  }
   const unsupportedMetric = draft.metrics.find(
     (metric) => !SUPPORTED_METRICS.has(metric.value),
   );
@@ -1568,6 +1613,24 @@ export function resolveTarvisIntent(
         'What calculation should I perform?',
       ),
     );
+  }
+  if (
+    !draft.temporalScope &&
+    draft.metrics.length === 1 &&
+    draft.metrics[0]?.value === 'glucose.current'
+  ) {
+    draft.temporalScope = {
+      value: { kind: 'rolling', amount: 24, unit: 'hour', anchor: 'now' },
+      provenance: {
+        kind: 'default',
+        sourceText: draft.metrics[0].provenance.sourceText,
+        sourceStart: draft.metrics[0].provenance.sourceStart,
+        sourceEnd: draft.metrics[0].provenance.sourceEnd,
+        turnId: null,
+        note:
+          'A 24-hour lookup window is used only to find the latest recorded reading; freshness is evaluated separately.',
+      },
+    };
   }
   if (!draft.temporalScope) {
     return incomplete(

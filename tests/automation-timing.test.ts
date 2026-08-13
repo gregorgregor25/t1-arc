@@ -54,8 +54,7 @@ describe('automatic connector timing', () => {
 
     expect(timing.glooko).toEqual({
       state: 'due',
-      detail:
-        'latest-day export eligible now; waiting for Android or app use.',
+      detail: 'latest Glooko data is ready to update when Android allows it.',
     });
   });
 
@@ -119,7 +118,7 @@ describe('automatic connector timing', () => {
     expect(timing['health-connect']).toEqual({
       state: 'waiting',
       detail:
-        'Checks every 5 minutes in use; Android chooses the background window.',
+        'Checks every 5 minutes while you use T1 Arc, and automatically when Android allows it.',
       nextEligibleAt: NOW + 2 * 60 * 1000,
     });
   });
@@ -143,8 +142,7 @@ describe('automatic connector timing', () => {
 
     expect(timing['health-connect']).toEqual({
       state: 'due',
-      detail:
-        'Health refresh eligible now; opening T1 Arc will run the check.',
+      detail: 'Health data is ready; open T1 Arc to update now.',
     });
   });
 
@@ -185,7 +183,7 @@ describe('automatic connector timing', () => {
     expect(timing['health-connect']).toEqual({
       state: 'waiting',
       detail:
-        'Checks every 5 minutes in use; Android chooses the background window.',
+        'Checks every 5 minutes while you use T1 Arc, and automatically when Android allows it.',
       nextEligibleAt:
         recentAttempt + 5 * 60 * 1000,
     });

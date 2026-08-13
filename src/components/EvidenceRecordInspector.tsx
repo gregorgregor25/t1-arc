@@ -374,9 +374,8 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                       { color: colors.textSecondary },
                     ]}
                   >
-                    {sentence(evidence.description)} Every record ID used for
-                    this claim is resolved against the same normalised local
-                    data.
+                    {sentence(evidence.description)} Every saved record used
+                    for this answer is shown below.
                   </Text>
                 </View>
               </View>
@@ -394,7 +393,7 @@ export function EvidenceRecordInspector({ evidence, onClose }: Props) {
                     {evidence.recordIds.length}
                   </Text>
                   <Text style={[styles.summaryLabel, { color: colors.textTertiary }]}>
-                    REFERENCED
+                    USED
                   </Text>
                 </View>
                 <View style={styles.summaryDates}>
@@ -766,7 +765,7 @@ function sourceRecordRows(record: ImportRawRecord) {
         return [key, String(value)] as const;
       });
   } catch {
-    return [['Source record', 'The retained payload could not be displayed.']] as const;
+    return [['Saved details', 'The original details could not be displayed.']] as const;
   }
 }
 

@@ -882,9 +882,8 @@ export function HealthTrendsCard({
       ) : null}
 
       <Text style={[styles.note, { color: colors.textTertiary }]}>
-        Gaps mean no selected-source record was available. Values are
-        deterministic summaries of the underlying records stored on this
-        phone.
+        Gaps mean there was no information for that time. These summaries use
+        the records saved on this phone.
       </Text>
     </SectionCard>
   );

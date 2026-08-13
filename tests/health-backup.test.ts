@@ -213,6 +213,13 @@ describe('health backup validation', () => {
 
     const parsed = validateHealthBackupDocument(backup);
     expect(parsed.tables.glucose_readings[0]?.mmol_l).toBe(6.4);
+    const binding = backupRestoreBinding(
+      'glucose_readings',
+      parsed.tables.glucose_readings[0]!,
+    );
+    expect(
+      binding.values[binding.columns.indexOf('source_device_id')],
+    ).toBe('');
   });
 
   it('upgrades version 1 glucose rows without import provenance', () => {

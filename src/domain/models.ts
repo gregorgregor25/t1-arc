@@ -38,6 +38,8 @@ export interface GlucoseReading {
 
 export interface BasalDelivery {
   id: string;
+  /** Transient pre-device ID used only to migrate an existing local row. */
+  legacyId?: string;
   start: number;
   end: number;
   rateUnitsPerHour: number;
@@ -57,6 +59,8 @@ export interface BasalDelivery {
 
 export interface BolusDelivery {
   id: string;
+  /** Transient pre-device ID used only to migrate an existing local row. */
+  legacyId?: string;
   timestamp: number;
   units: number;
   deliveryType?: string;
@@ -74,6 +78,8 @@ export interface BolusDelivery {
 
 export interface InsulinDailyTotal {
   id: string;
+  /** Transient pre-device ID used only to migrate an existing local row. */
+  legacyId?: string;
   timestamp: number;
   dateKey: string;
   basalUnits?: number;
@@ -107,7 +113,12 @@ export interface TimeRange {
 }
 
 export type SourceFreshness = 'current' | 'delayed' | 'stale' | 'missing';
-export type DataOrigin = 'live' | 'delayed' | 'synthetic' | 'manual' | 'imported';
+export type DataOrigin =
+  | 'live'
+  | 'delayed'
+  | 'synthetic'
+  | 'manual'
+  | 'imported';
 
 export interface DataSourceStatus {
   id: string;

@@ -52,8 +52,10 @@ describe('T1 Arc Android release signing policy', () => {
     expect(result).toContain('production {');
     expect(result).toContain('storeFile t1ArcProductionStoreFile');
     expect(result).toContain(
-      'signingConfig t1ArcProductionSigningConfigured ? signingConfigs.production : signingConfigs.debug',
+      'signingConfig t1ArcProductionSigningConfigured',
     );
+    expect(result).toContain('t1ArcPrivateTestBuildRequested');
+    expect(result).toContain(': null');
   });
 
   it('is idempotent across repeated Expo prebuilds', () => {
@@ -95,6 +97,8 @@ describe('T1 Arc Android release signing policy', () => {
       expect(contents).toContain(
         'signingConfig t1ArcProductionSigningConfigured',
       );
+      expect(contents).toContain('t1ArcPrivateTestBuildRequested');
+      expect(contents).toContain(': null');
     }
   });
 
@@ -109,10 +113,30 @@ describe('T1 Arc Android release signing policy', () => {
       'utf8',
     );
 
-    expect(policy).toContain("task.name == 'bundleRelease'");
-    expect(policy).toContain("task.name == 'publishReleaseBundle'");
+    expect(policy).toContain("lowerName.contains('bundle')");
+    expect(policy).toContain("lowerName.startsWith('publish')");
     expect(policy).toContain(
       'T1 Arc refuses to create a store bundle with the private test certificate.',
+    );
+  });
+
+  it('requires an explicit switch for a private debug-signed APK', () => {
+    const policy = readFileSync(
+      path.join(
+        process.cwd(),
+        'scripts',
+        'gradle',
+        't1arc-signing.gradle',
+      ),
+      'utf8',
+    );
+
+    expect(policy).toContain("System.getenv('T1ARC_PRIVATE_TEST_BUILD') == '1'");
+    expect(policy).toContain(
+      '/(?i)(assemble|package|install|bundle|publish|sign).*release.*/',
+    );
+    expect(policy).toContain(
+      'T1 Arc refuses an implicitly debug-signed release APK.',
     );
   });
 });

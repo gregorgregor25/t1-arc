@@ -13,11 +13,13 @@ android {
     versionName "0.1.0"
   }
   lintOptions {
-    abortOnError false
+    abortOnError true
   }
 }
 
 dependencies {
   implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+  implementation 'com.squareup.okhttp3:okhttp:4.9.2'
   testImplementation 'junit:junit:4.13.2'
+  testImplementation 'com.squareup.okhttp3:mockwebserver:4.9.2'
 }

@@ -13,19 +13,28 @@ import {
   GLOOKO_INCREMENTAL_INTERVAL_MS,
   GlookoAutomaticPlan,
   GlookoSyncState,
+  glookoFailureDisposition,
   glookoFailureBackoffMs,
+  isGlookoAccountFingerprint,
   planAutomaticGlookoSync,
 } from './glookoSyncPolicy';
 import {
+  hasImportedGlookoData,
   loadGlookoSyncState,
-  saveGlookoSyncState,
   updateGlookoSyncState,
 } from './glookoSyncState';
+import {
+  automaticGlookoCgmTableHealthIssue,
+  automaticGlookoInsulinTableHealthIssue,
+} from './glookoImportHealth';
 import {
   isBusyGlookoExportResult,
   stateAfterBusyGlookoAttempt,
 } from './glookoSyncOutcome';
-import { GlookoSingleFlight } from './glookoSingleFlight';
+import {
+  GlookoSingleFlight,
+  GlookoSingleFlightLease,
+} from './glookoSingleFlight';
 import {
   PreparedGlookoImport,
   prepareGlookoImport,
@@ -52,7 +61,7 @@ export interface GlookoSyncSkipped {
   status: 'skipped';
   origin: GlookoSyncOrigin;
   plan?: GlookoAutomaticPlan;
-  reason?: 'busy';
+  reason?: 'busy' | 'superseded';
   syncState: GlookoSyncState;
   diagnostic?: string;
 }
@@ -68,11 +77,172 @@ export interface GlookoSyncUnavailable {
 }
 
 export type GlookoSyncOutcome =
-  | GlookoSyncSuccess
-  | GlookoSyncSkipped
-  | GlookoSyncUnavailable;
+  GlookoSyncSuccess | GlookoSyncSkipped | GlookoSyncUnavailable;
 
 const syncSingleFlight = new GlookoSingleFlight<GlookoSyncOutcome>();
+
+class GlookoVerificationError extends Error {
+  constructor(
+    readonly code:
+      | 'unsupported-archive'
+      | 'rejected-archive-rows'
+      | 'unsafe-timestamp-locale'
+      | 'credential-generation-mismatch'
+      | 'account-identity-mismatch'
+      | 'missing-account-identity'
+      | 'insulin-table-missing'
+      | 'insulin-table-unreadable'
+      | 'insulin-table-rows-rejected'
+      | 'unbound-existing-data'
+      | 'unverified-credentials',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GlookoVerificationError';
+  }
+}
+
+class GlookoSyncSupersededError extends Error {
+  constructor() {
+    super('A newer Glooko credential generation replaced this refresh.');
+    this.name = 'GlookoSyncSupersededError';
+  }
+}
+
+function ensureCurrentLease(lease: GlookoSingleFlightLease) {
+  if (!lease.isCurrent()) throw new GlookoSyncSupersededError();
+}
+
+function isCredentialGeneration(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+async function assertDirectAccountBinding(
+  accountFingerprint: string,
+  credentialGeneration: number,
+  lease: GlookoSingleFlightLease,
+  allowInitialCredentialBinding: boolean,
+  legacyCredentialContinuity: boolean,
+) {
+  ensureCurrentLease(lease);
+  const current = await loadGlookoSyncState();
+  ensureCurrentLease(lease);
+  if (!isGlookoAccountFingerprint(accountFingerprint)) {
+    throw new GlookoVerificationError(
+      'missing-account-identity',
+      'Glooko did not provide a protected account identity, so nothing was imported.',
+    );
+  }
+  if (current.verifiedAccountFingerprint !== undefined) {
+    if (current.verifiedAccountFingerprint !== accountFingerprint) {
+      throw new GlookoVerificationError(
+        'account-identity-mismatch',
+        'This is a different Glooko account from the one that owns the imported data. Nothing was imported.',
+      );
+    }
+    ensureCurrentLease(lease);
+    return;
+  }
+
+  const hasExistingData = await hasImportedGlookoData();
+  ensureCurrentLease(lease);
+  // Upgrade bridge: the pre-fingerprint build recorded the exact native
+  // generation that had already completed a verified import. It may bind
+  // that same generation once, then the legacy field is discarded.
+  if (
+    current.verifiedCredentialGeneration !== undefined &&
+    current.verifiedCredentialGeneration === credentialGeneration
+  ) {
+    return;
+  }
+  if (!allowInitialCredentialBinding) {
+    throw new GlookoVerificationError(
+      hasExistingData ? 'unbound-existing-data' : 'unverified-credentials',
+      hasExistingData
+        ? 'Existing Glooko data is not bound to a verified sign-in. Remove imported Glooko data, then verify the saved connection.'
+        : 'Verify the saved Glooko connection before it can import data for the first time.',
+    );
+  }
+  const continuityApproved =
+    legacyCredentialContinuity ||
+    current.pendingLegacyCredentialContinuity === true;
+  if (hasExistingData && !continuityApproved) {
+    ensureCurrentLease(lease);
+    throw new GlookoVerificationError(
+      'unbound-existing-data',
+      'Existing Glooko data is not bound to this verified sign-in. Remove imported Glooko data before connecting this account.',
+    );
+  }
+  ensureCurrentLease(lease);
+}
+
+async function assertKnownAccountFingerprint(
+  accountFingerprint: string,
+  lease: GlookoSingleFlightLease,
+) {
+  ensureCurrentLease(lease);
+  if (!isGlookoAccountFingerprint(accountFingerprint)) {
+    throw new GlookoVerificationError(
+      'missing-account-identity',
+      'Glooko did not provide a protected account identity, so nothing was imported.',
+    );
+  }
+  const current = await loadGlookoSyncState();
+  ensureCurrentLease(lease);
+  if (
+    current.verifiedAccountFingerprint !== undefined &&
+    current.verifiedAccountFingerprint !== accountFingerprint
+  ) {
+    throw new GlookoVerificationError(
+      'account-identity-mismatch',
+      'This is a different Glooko account from the one that owns the imported data. Nothing was imported.',
+    );
+  }
+}
+
+async function supersededOutcome(
+  origin: GlookoSyncOrigin,
+  diagnostic?: string,
+): Promise<GlookoSyncSkipped> {
+  return {
+    status: 'skipped',
+    origin,
+    reason: 'superseded',
+    syncState: await loadGlookoSyncState(),
+    diagnostic,
+  };
+}
+
+async function assertCredentialGeneration(
+  exported: GlookoExportResult,
+  lease: GlookoSingleFlightLease,
+  expectedCredentialGeneration?: number,
+) {
+  ensureCurrentLease(lease);
+  const exportedGeneration = exported.credentialGeneration;
+  if (
+    expectedCredentialGeneration !== undefined &&
+    exportedGeneration !== expectedCredentialGeneration
+  ) {
+    throw new GlookoSyncSupersededError();
+  }
+  if (
+    exported.status === 'downloaded' &&
+    !isCredentialGeneration(exportedGeneration)
+  ) {
+    throw new GlookoSyncSupersededError();
+  }
+  if (!isCredentialGeneration(exportedGeneration)) return;
+
+  const current = await DaymarkGlookoExport.getCredentialStatusAsync();
+  ensureCurrentLease(lease);
+  if (
+    current.credentialGeneration !== exportedGeneration ||
+    (exported.status === 'downloaded' && !current.configured)
+  ) {
+    throw new GlookoSyncSupersededError();
+  }
+}
 
 function insertedRecords(result: ImportWriteResult) {
   return (
@@ -101,32 +271,33 @@ function releasedPrepared(
 }
 
 async function markFailure(
-  state: GlookoSyncState,
   now: number,
   code: string,
   message: string,
   sessionRequired: boolean,
 ) {
-  const failures = state.consecutiveFailures + 1;
-  const next: GlookoSyncState = {
-    ...state,
-    sessionStatus: sessionRequired ? 'needs-sign-in' : state.sessionStatus,
-    lastAttemptAt: now,
-    consecutiveFailures: failures,
-    nextEligibleAt: sessionRequired
-      ? undefined
-      : now + glookoFailureBackoffMs(failures),
-    lastErrorCode: code,
-    lastErrorMessage: message.slice(0, 240),
-  };
-  await saveGlookoSyncState(next);
-  return next;
+  return updateGlookoSyncState((current) => {
+    const failures = current.consecutiveFailures + 1;
+    const actionRequired =
+      sessionRequired || glookoFailureDisposition(code) === 'action-required';
+    return {
+      ...current,
+      automaticEnabled: actionRequired ? false : current.automaticEnabled,
+      sessionStatus: sessionRequired ? 'needs-sign-in' : current.sessionStatus,
+      lastAttemptAt: now,
+      consecutiveFailures: failures,
+      nextEligibleAt: actionRequired
+        ? undefined
+        : now + glookoFailureBackoffMs(failures),
+      lastErrorCode: code,
+      lastErrorMessage: message.slice(0, 240),
+    };
+  });
 }
 
-async function readPreparedExport(exported: Extract<
-  GlookoExportResult,
-  { status: 'downloaded' }
->) {
+async function readPreparedExport(
+  exported: Extract<GlookoExportResult, { status: 'downloaded' }>,
+) {
   const cachedFile = new File(exported.uri);
   let bytes: Uint8Array | undefined;
   try {
@@ -136,8 +307,14 @@ async function readPreparedExport(exported: Extract<
     bytes?.fill(0);
     throw error;
   } finally {
+    const released =
+      typeof DaymarkGlookoExport.releaseDownloadAsync === 'function'
+        ? await DaymarkGlookoExport.releaseDownloadAsync(exported.uri).catch(
+            () => false,
+          )
+        : false;
     try {
-      if (cachedFile.exists) cachedFile.delete();
+      if (!released && cachedFile.exists) cachedFile.delete();
     } catch {
       // The native connector may already have released its private cache file.
     }
@@ -148,15 +325,22 @@ async function executeSync(
   origin: GlookoSyncOrigin,
   days: number,
   interactive: boolean,
+  lease: GlookoSingleFlightLease,
   historicalRange?: { startDate: DateKey; endDate: DateKey },
+  expectedCredentialGeneration?: number,
+  allowInitialCredentialBinding = false,
+  legacyCredentialContinuity = false,
 ): Promise<GlookoSyncOutcome> {
+  if (!lease.isCurrent()) return supersededOutcome(origin);
   const startedAt = Date.now();
   const previous = await loadGlookoSyncState();
+  if (!lease.isCurrent()) return supersededOutcome(origin);
   const requestedEndDate = historicalRange?.endDate ?? toDateKey(startedAt);
   const requestedStartDate =
     historicalRange?.startDate ?? addDays(requestedEndDate, -(days - 1));
-  const attemptState: GlookoSyncState = {
-    ...previous,
+  ensureCurrentLease(lease);
+  await updateGlookoSyncState((current) => ({
+    ...current,
     lastAttemptAt: startedAt,
     lastRangeDays: days,
     ...(historicalRange
@@ -165,10 +349,13 @@ async function executeSync(
           lastRequestedStartDate: requestedStartDate,
           lastRequestedEndDate: requestedEndDate,
         }),
-  };
+  }));
   let preparedToRelease: PreparedGlookoImport | undefined;
+  let downloadedExport:
+    Extract<GlookoExportResult, { status: 'downloaded' }> | undefined;
+  let credentialCommitToken: string | undefined;
   let downloadedAt: number | undefined;
-  await saveGlookoSyncState(attemptState);
+  ensureCurrentLease(lease);
 
   try {
     const exported = historicalRange
@@ -184,6 +371,12 @@ async function executeSync(
       : interactive
         ? await DaymarkGlookoExport.startExportAsync(days)
         : await DaymarkGlookoExport.startSilentExportAsync(days);
+    if (exported.status === 'downloaded') downloadedExport = exported;
+    await assertCredentialGeneration(
+      exported,
+      lease,
+      expectedCredentialGeneration,
+    );
     if (exported.status !== 'downloaded') {
       if (isBusyGlookoExportResult(exported)) {
         const next = await updateGlookoSyncState((current) =>
@@ -197,17 +390,15 @@ async function executeSync(
           diagnostic: exported.diagnostic,
         };
       }
-      const sessionRequired =
-        exported.status === 'session-required';
+      const sessionRequired = exported.status === 'session-required';
       const message =
         exported.message ??
         (sessionRequired
           ? 'Open T1 Arc and sign into Glooko again.'
           : 'Glooko did not provide an export.');
       const next = await markFailure(
-        attemptState,
         startedAt,
-        sessionRequired ? 'session-required' : exported.reason ?? 'cancelled',
+        exported.reason ?? (sessionRequired ? 'session-required' : 'cancelled'),
         message,
         sessionRequired,
       );
@@ -217,7 +408,11 @@ async function executeSync(
         );
       }
       return {
-        status: sessionRequired ? 'session-required' : 'cancelled',
+        status: sessionRequired
+          ? 'session-required'
+          : exported.status === 'failed'
+            ? 'failed'
+            : 'cancelled',
         origin,
         days,
         message,
@@ -227,19 +422,94 @@ async function executeSync(
       };
     }
 
+    // Reject a known different account immediately after native
+    // authentication and before parsing or writing any personal records.
+    await assertKnownAccountFingerprint(exported.accountFingerprint, lease);
     downloadedAt = Date.now();
-    await saveGlookoSyncState({
-      ...attemptState,
+    ensureCurrentLease(lease);
+    await updateGlookoSyncState((current) => ({
+      ...current,
       lastDownloadedAt: downloadedAt,
-    });
+    }));
     const prepared = await readPreparedExport(exported);
     preparedToRelease = prepared;
+    const parsedCount = parsedRecords(prepared);
+    if (prepared.preview.unsafeTimestampLocale) {
+      throw new GlookoVerificationError(
+        'unsafe-timestamp-locale',
+        'At least one Glooko CSV contains a timestamp T1 Arc cannot safely map to a Europe/London instant (month/day/year dates, a skipped spring time, or an unresolved repeated autumn hour). Nothing was imported.',
+      );
+    }
+    const insulinIssue = automaticGlookoInsulinTableHealthIssue(
+      prepared.preview,
+    );
+    if (insulinIssue) {
+      throw new GlookoVerificationError(
+        insulinIssue.code,
+        insulinIssue.message,
+      );
+    }
+    const cgmIssue = automaticGlookoCgmTableHealthIssue(prepared.preview);
+    if (cgmIssue) {
+      throw new GlookoVerificationError(cgmIssue.code, cgmIssue.message);
+    }
+    if (prepared.preview.recognisedFiles.length === 0) {
+      throw new GlookoVerificationError(
+        'unsupported-archive',
+        'The ZIP was valid, but it did not contain a supported Glooko CSV table. Automatic refresh remains off; use manual import to inspect the archive.',
+      );
+    }
+    const rejectedRecognisedRows = prepared.preview.recognisedFiles.reduce(
+      (total, file) => total + file.skippedRows,
+      0,
+    );
+    if (parsedCount === 0 && rejectedRecognisedRows > 0) {
+      throw new GlookoVerificationError(
+        'rejected-archive-rows',
+        'Glooko returned supported CSV headers, but every data row was rejected. Automatic refresh remains off because the date or data format may have changed.',
+      );
+    }
     const store = new SqliteHealthRecordStore();
     // Daily 30-day and weekly/manual 90-day archives are retained in full.
     // Hourly two-week snapshots are normalised but not retained as repeated
     // archive copies; the daily archive preserves every source file and field.
     const retainSource =
       interactive || days >= 30 || historicalRange !== undefined;
+    // This native generation read is intentionally adjacent to the first
+    // health-data write. A credential saved while the export or parsing was
+    // in flight invalidates the old account before its archive can commit.
+    await assertCredentialGeneration(
+      exported,
+      lease,
+      expectedCredentialGeneration,
+    );
+    await assertDirectAccountBinding(
+      exported.accountFingerprint,
+      exported.credentialGeneration,
+      lease,
+      allowInitialCredentialBinding,
+      legacyCredentialContinuity,
+    );
+    const commitLease = await DaymarkGlookoExport.beginCredentialCommitAsync(
+      exported.credentialGeneration,
+    );
+    if (commitLease.acquired) {
+      // Record ownership before any lease assertion can throw; otherwise an
+      // invalidation in the native-await gap would leak the process gate.
+      credentialCommitToken = commitLease.token;
+    }
+    ensureCurrentLease(lease);
+    if (!commitLease.acquired) {
+      throw new GlookoSyncSupersededError();
+    }
+    await updateGlookoSyncState((current) => ({
+      ...current,
+      lastDownloadedAt: downloadedAt,
+      verifiedCredentialGeneration: undefined,
+      verifiedAccountFingerprint: exported.accountFingerprint,
+      pendingLegacyCredentialContinuity: undefined,
+    }));
+    ensureCurrentLease(lease);
     const healthResult = await store.writeImport(
       prepared.batch,
       prepared.preview.basal,
@@ -248,6 +518,11 @@ async function executeSync(
       retainSource ? prepared.sourcePayload : undefined,
       prepared.preview.dailyInsulinTotals,
       prepared.preview.rawRecords,
+    );
+    await assertCredentialGeneration(
+      exported,
+      lease,
+      expectedCredentialGeneration,
     );
     const insertedGlucose = await writeGlookoGlucoseHistory(
       new SqliteGlucoseHistoryStore(),
@@ -262,7 +537,6 @@ async function executeSync(
     };
     const completedAt = Date.now();
     const insertedCount = insertedRecords(result);
-    const parsedCount = parsedRecords(prepared);
     const sourceAdvanced =
       prepared.preview.dataThrough !== undefined &&
       (previous.dataThrough === undefined ||
@@ -271,40 +545,46 @@ async function executeSync(
       !historicalRange && (sourceAdvanced || insertedCount > 0);
     const checkOutcome =
       parsedCount === 0
-        ? 'empty-range' as const
+        ? ('empty-range' as const)
         : recentDataChanged
-          ? 'new-data' as const
-          : 'no-new-data' as const;
-    const next: GlookoSyncState = {
-      ...attemptState,
-      automaticEnabled: true,
+          ? ('new-data' as const)
+          : ('no-new-data' as const);
+    await assertCredentialGeneration(
+      exported,
+      lease,
+      expectedCredentialGeneration,
+    );
+    const next = await updateGlookoSyncState((current) => ({
+      ...current,
+      automaticEnabled: allowInitialCredentialBinding
+        ? true
+        : current.automaticEnabled,
       sessionStatus: 'ready',
+      verifiedCredentialGeneration: undefined,
+      verifiedAccountFingerprint: exported.accountFingerprint,
+      pendingLegacyCredentialContinuity: undefined,
       lastAttemptAt: startedAt,
-      lastCheckedAt: historicalRange
-        ? previous.lastCheckedAt
-        : completedAt,
+      lastCheckedAt: historicalRange ? current.lastCheckedAt : completedAt,
       lastDownloadedAt: downloadedAt ?? completedAt,
       lastDataChangedAt: recentDataChanged
         ? completedAt
-        : previous.lastDataChangedAt,
-      lastSuccessAt: historicalRange
-        ? previous.lastSuccessAt
-        : completedAt,
-      lastAutomaticAt: interactive ? previous.lastAutomaticAt : completedAt,
+        : current.lastDataChangedAt,
+      lastSuccessAt: historicalRange ? current.lastSuccessAt : completedAt,
+      lastAutomaticAt: interactive ? current.lastAutomaticAt : completedAt,
       lastFullSuccessAt:
         days >= 30 && !historicalRange
           ? completedAt
-          : previous.lastFullSuccessAt,
+          : current.lastFullSuccessAt,
       lastExtendedSuccessAt:
         days >= 90 && !historicalRange
           ? completedAt
-          : previous.lastExtendedSuccessAt,
+          : current.lastExtendedSuccessAt,
       dataThrough:
         prepared.preview.dataThrough === undefined
-          ? previous.dataThrough
-          : previous.dataThrough === undefined
+          ? current.dataThrough
+          : current.dataThrough === undefined
             ? prepared.preview.dataThrough
-            : Math.max(previous.dataThrough, prepared.preview.dataThrough),
+            : Math.max(current.dataThrough, prepared.preview.dataThrough),
       nextEligibleAt: completedAt + GLOOKO_INCREMENTAL_INTERVAL_MS,
       consecutiveFailures: 0,
       lastErrorCode: undefined,
@@ -312,23 +592,21 @@ async function executeSync(
       lastRangeDays: days,
       lastInsertedRecords: insertedCount,
       lastParsedRecords: historicalRange
-        ? previous.lastParsedRecords
+        ? current.lastParsedRecords
         : parsedCount,
       lastCheckOutcome: historicalRange
-        ? previous.lastCheckOutcome
+        ? current.lastCheckOutcome
         : checkOutcome,
       historyBackfillBeforeDate: historicalRange
-        ? previous.historyBackfillBeforeDate === undefined ||
-          historicalRange.startDate <
-            previous.historyBackfillBeforeDate
+        ? current.historyBackfillBeforeDate === undefined ||
+          historicalRange.startDate < current.historyBackfillBeforeDate
           ? historicalRange.startDate
-          : previous.historyBackfillBeforeDate
-        : previous.historyBackfillBeforeDate,
+          : current.historyBackfillBeforeDate
+        : current.historyBackfillBeforeDate,
       lastHistoryBackfillAt: historicalRange
         ? completedAt
-        : previous.lastHistoryBackfillAt,
-    };
-    await saveGlookoSyncState(next);
+        : current.lastHistoryBackfillAt,
+    }));
     await DaymarkGlucoseDisplay.cancelGlookoSignInRequiredAsync().catch(
       () => false,
     );
@@ -342,16 +620,18 @@ async function executeSync(
       diagnostic: exported.diagnostic,
     };
   } catch (error) {
+    if (error instanceof GlookoSyncSupersededError) {
+      return supersededOutcome(origin, downloadedExport?.diagnostic);
+    }
     const message =
       error instanceof Error
         ? error.message
         : 'Glooko could not be refreshed on this device.';
+    const reason =
+      error instanceof GlookoVerificationError ? error.code : 'unexpected';
     const next = await markFailure(
-      downloadedAt
-        ? { ...attemptState, lastDownloadedAt: downloadedAt }
-        : attemptState,
       startedAt,
-      'unexpected',
+      reason,
       message,
       false,
     );
@@ -360,17 +640,37 @@ async function executeSync(
       origin,
       days,
       message,
-      reason: 'unexpected',
+      reason,
       syncState: next,
     };
   } finally {
+    if (credentialCommitToken) {
+      await DaymarkGlookoExport.endCredentialCommitAsync(
+        credentialCommitToken,
+      ).catch(() => false);
+    }
     preparedToRelease?.sourcePayload?.bytes.fill(0);
+    if (downloadedExport) {
+      try {
+        const released =
+          typeof DaymarkGlookoExport.releaseDownloadAsync === 'function'
+            ? await DaymarkGlookoExport.releaseDownloadAsync(
+                downloadedExport.uri,
+              ).catch(() => false)
+            : false;
+        const cachedFile = new File(downloadedExport.uri);
+        if (!released && cachedFile.exists) cachedFile.delete();
+      } catch {
+        // The parser normally deletes this file; this also covers an export
+        // superseded before parsing started.
+      }
+    }
   }
 }
 
 export async function syncGlookoManually(days = 90) {
-  return syncSingleFlight.runInteractive(() =>
-    executeSync('manual', days, true),
+  return syncSingleFlight.runInteractive((lease) =>
+    executeSync('manual', days, true, lease),
   );
 }
 
@@ -382,9 +682,94 @@ export async function syncGlookoSilentlyNow(days = 1) {
   if (!Number.isInteger(days) || days < 1 || days > GLOOKO_MAX_EXPORT_DAYS) {
     throw new Error('A quiet Glooko refresh must contain 1 to 90 days.');
   }
-  return syncSingleFlight.run(() =>
-    executeSync('app-open', days, false),
+  return syncSingleFlight.run((lease) =>
+    executeSync('app-open', days, false, lease),
   );
+}
+
+export interface GlookoCredentialChangeBarrier {
+  ready: Promise<void>;
+  release(): void;
+}
+
+function beginGlookoExclusiveChange(): GlookoCredentialChangeBarrier {
+  let markReady!: () => void;
+  let rejectReady!: (reason?: unknown) => void;
+  let releaseGate!: () => void;
+  let released = false;
+  const ready = new Promise<void>((resolve, reject) => {
+    markReady = resolve;
+    rejectReady = reject;
+  });
+  const held = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const completion = syncSingleFlight.runFresh(async () => {
+    markReady();
+    await held;
+    return supersededOutcome('app-open');
+  });
+  void completion.catch(rejectReady);
+  return {
+    ready,
+    release() {
+      if (released) return;
+      released = true;
+      releaseGate();
+    },
+  };
+}
+
+/**
+ * Invalidates current work immediately, then holds the single-flight owner
+ * after all older commit work has settled. The credential Activity must not
+ * open until `ready`; keeping the barrier held prevents another refresh from
+ * starting while the user edits or saves the account.
+ */
+export function beginGlookoCredentialChange(): GlookoCredentialChangeBarrier {
+  return beginGlookoExclusiveChange();
+}
+
+/** Holds direct sync while imported rows are manually written or removed. */
+export function beginGlookoDataChange(): GlookoCredentialChangeBarrier {
+  return beginGlookoExclusiveChange();
+}
+
+/**
+ * Reserves a new generation synchronously, before any state update can yield.
+ * Verification therefore cannot join an export that authenticated before the
+ * credential Activity saved the account represented by credentialGeneration.
+ */
+export function verifyGlookoCredentials(
+  credentialGeneration: number,
+  beforeSync: () => Promise<void>,
+  days = 14,
+  legacyCredentialContinuity = false,
+) {
+  if (
+    !isCredentialGeneration(credentialGeneration) ||
+    credentialGeneration < 1
+  ) {
+    throw new Error('The saved Glooko credential generation is invalid.');
+  }
+  if (!Number.isInteger(days) || days < 1 || days > GLOOKO_MAX_EXPORT_DAYS) {
+    throw new Error('A Glooko verification must contain 1 to 90 days.');
+  }
+  return syncSingleFlight.runFresh(async (lease) => {
+    if (!lease.isCurrent()) return supersededOutcome('app-open');
+    await beforeSync();
+    if (!lease.isCurrent()) return supersededOutcome('app-open');
+    return executeSync(
+      'app-open',
+      days,
+      false,
+      lease,
+      undefined,
+      credentialGeneration,
+      true,
+      legacyCredentialContinuity,
+    );
+  });
 }
 
 export async function syncGlookoHistoryRange(
@@ -398,8 +783,8 @@ export async function syncGlookoHistoryRange(
   if (days < 1 || days > GLOOKO_MAX_EXPORT_DAYS) {
     throw new Error('A Glooko history range must contain 1 to 90 days.');
   }
-  return syncSingleFlight.runInteractive(() =>
-    executeSync('manual', days, true, {
+  return syncSingleFlight.runInteractive((lease) =>
+    executeSync('manual', days, true, lease, {
       startDate,
       endDate,
     }),
@@ -409,7 +794,7 @@ export async function syncGlookoHistoryRange(
 export async function syncGlookoIfDue(
   origin: Exclude<GlookoSyncOrigin, 'manual'>,
 ) {
-  return syncSingleFlight.run(async () => {
+  return syncSingleFlight.run(async (lease) => {
     const state = await loadGlookoSyncState();
     const plan = planAutomaticGlookoSync(state);
     if (!plan.due) {
@@ -424,9 +809,8 @@ export async function syncGlookoIfDue(
       origin,
       plan.days,
       false,
-      plan.reason === 'history-backfill'
-        ? plan.historicalRange
-        : undefined,
+      lease,
+      plan.reason === 'history-backfill' ? plan.historicalRange : undefined,
     );
   });
 }

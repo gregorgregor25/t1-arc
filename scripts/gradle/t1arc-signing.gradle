@@ -1,10 +1,10 @@
 /*
  * Shared phone/Wear release signing policy.
  *
- * Ordinary assembleRelease builds remain install-compatible with the private
- * sideload certificate. Supplying all four T1ARC_RELEASE_* environment
+ * A private sideload must be requested explicitly with
+ * T1ARC_PRIVATE_TEST_BUILD=1. Supplying all four T1ARC_RELEASE_* environment
  * variables switches every Android module to the same production certificate.
- * A store bundle is refused unless that production configuration is complete.
+ * Store bundles always require that production configuration.
  */
 def signingEnvironment = [
   storeFile: System.getenv('T1ARC_RELEASE_STORE_FILE'),
@@ -23,6 +23,9 @@ if (suppliedSigningValues > 0 && suppliedSigningValues < signingEnvironment.size
 
 def productionSigningConfigured =
   suppliedSigningValues == signingEnvironment.size()
+def privateTestBuildRequested =
+  System.getenv('T1ARC_PRIVATE_TEST_BUILD') == '1' ||
+  project.findProperty('t1ArcPrivateTestBuild')?.toString()?.toBoolean() == true
 def productionStore = productionSigningConfigured
   ? rootProject.file(signingEnvironment.storeFile)
   : null
@@ -37,15 +40,34 @@ ext.t1ArcProductionStoreFile = productionStore
 ext.t1ArcProductionStorePassword = signingEnvironment.storePassword
 ext.t1ArcProductionKeyAlias = signingEnvironment.keyAlias
 ext.t1ArcProductionKeyPassword = signingEnvironment.keyPassword
+ext.t1ArcPrivateTestBuildRequested = privateTestBuildRequested
 
 gradle.taskGraph.whenReady { graph ->
-  def storePublicationRequested = graph.allTasks.any { task ->
+  def releaseArtifactRequested = graph.allTasks.any { task ->
     task.project == project &&
-      (task.name == 'bundleRelease' || task.name == 'publishReleaseBundle')
+      task.name ==~ /(?i)(assemble|package|install|bundle|publish|sign).*release.*/
+  }
+  def storePublicationRequested = graph.allTasks.any { task ->
+    def lowerName = task.name.toLowerCase()
+    task.project == project &&
+      lowerName.contains('release') &&
+      lowerName.contains('bundle') &&
+      (lowerName.startsWith('bundle') ||
+        lowerName.startsWith('publish') ||
+        lowerName.startsWith('sign'))
   }
   if (storePublicationRequested && !project.ext.t1ArcProductionSigningConfigured) {
     throw new GradleException(
       'T1 Arc refuses to create a store bundle with the private test certificate. Configure the T1ARC_RELEASE_* environment variables first.'
+    )
+  }
+  if (
+    releaseArtifactRequested &&
+    !project.ext.t1ArcProductionSigningConfigured &&
+    !project.ext.t1ArcPrivateTestBuildRequested
+  ) {
+    throw new GradleException(
+      'T1 Arc refuses an implicitly debug-signed release APK. Set T1ARC_PRIVATE_TEST_BUILD=1 only for an intentional private sideload, or configure the T1ARC_RELEASE_* production key.'
     )
   }
 }

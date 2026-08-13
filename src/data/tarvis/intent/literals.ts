@@ -496,7 +496,7 @@ function clockTime(minuteOfDay: number) {
 
 function extractClockWindows(question: string): TarvisClockWindowLiteral[] {
   const pattern = new RegExp(
-    `\\b(?:between\\s+|from\\s+)(${CLOCK_TOKEN})\\s+(?:and|to|until|till|through|-)\\s+(${CLOCK_TOKEN})`,
+    `\\b(?:(?:between\\s+|from\\s+)(${CLOCK_TOKEN})\\s+(?:and|to|until|till|through|-)\\s+(${CLOCK_TOKEN})|(${CLOCK_TOKEN})\\s+(?:to|until|till|through|-)\\s+(${CLOCK_TOKEN}))`,
     'gi',
   );
   const windows: TarvisClockWindowLiteral[] = [];
@@ -512,8 +512,8 @@ function extractClockWindows(question: string): TarvisClockWindowLiteral[] {
       ) ||
       /\b(?:glucose\s+)?readings?\s+(?:was|were)\s*$/i.test(before);
     if (looksLikeGlucoseBand) continue;
-    const startRaw = match[1];
-    const endRaw = match[2];
+    const startRaw = match[1] ?? match[3];
+    const endRaw = match[2] ?? match[4];
     if (!startRaw || !endRaw) continue;
     const startRelative = raw.indexOf(startRaw);
     const endRelative = raw.lastIndexOf(endRaw);
@@ -654,7 +654,7 @@ function extractThresholds(
     const context = question.slice(beforeStart, upper.end).toLowerCase();
     if (
       !adjacentUnit &&
-      !/\b(?:range|glucose|readings?|levels?|blood sugar)\b/.test(context)
+      !/\b(?:range|glucose|readings?|levels?|blood sugar|percentage|percent)\b/.test(context)
     ) {
       continue;
     }
@@ -711,6 +711,7 @@ function extractComparisons(question: string): TarvisComparisonLiteral[] {
     [/\bcompar(?:e|ed|ing)(?:\s+(?:to|with|against))?\b/gi, 'compare'],
     [/\b(?:versus|vs\.?)\b/gi, 'versus'],
     [/\bprevious\s+(?:equal\s+)?(?:period|window|week|month|days?)\b/gi, 'previous_period'],
+    [/\b(?:the\s+)?(?:same\s+)?(?:number\s+of\s+days\s+)?before\s+that\b/gi, 'previous_period'],
     [/\bbefore\s+and\s+after\b/gi, 'before_after'],
     [/\b(?:higher|lower|more|less|better|worse)\s+than\b/gi, 'relative_difference'],
   ];

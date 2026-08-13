@@ -1,9 +1,5 @@
 import { evidenceIds } from './evidencePacket';
-import {
-  TarvisAnswer,
-  TarvisEvidencePacket,
-  TarvisUsage,
-} from './types';
+import { TarvisAnswer, TarvisEvidencePacket, TarvisUsage } from './types';
 
 export const MAX_TARVIS_REQUESTS_PER_HOUR = 10;
 export const MAX_TARVIS_REQUESTS_PER_DAY = 30;
@@ -26,10 +22,7 @@ function cleanModelText(value: unknown, validEvidenceIds: Set<string>) {
     .trim();
 }
 
-export function checkTarvisRateLimit(
-  usage: TarvisUsage,
-  now = Date.now(),
-) {
+export function checkTarvisRateLimit(usage: TarvisUsage, now = Date.now()) {
   const recent = usage.requestTimestamps.filter(
     (timestamp) => now - timestamp < DAY_MS,
   );
@@ -49,7 +42,7 @@ export function checkTarvisRateLimit(
 
 export function parseTarvisAnswer(
   value: string,
-  packet: TarvisEvidencePacket,
+  packet?: TarvisEvidencePacket,
 ): TarvisAnswer {
   let parsed: Partial<TarvisAnswer>;
   try {
@@ -57,7 +50,7 @@ export function parseTarvisAnswer(
   } catch {
     throw new Error('TARV1S returned an unreadable answer. Please try again.');
   }
-  const validEvidenceIds = evidenceIds(packet);
+  const validEvidenceIds = packet ? evidenceIds(packet) : new Set<string>();
   const confidence =
     parsed.confidence === 'high' ||
     parsed.confidence === 'moderate' ||
@@ -69,17 +62,18 @@ export function parseTarvisAnswer(
     throw new Error('TARV1S returned an empty answer. Please try again.');
   }
   return {
-    headline:
-      cleanModelText(parsed.headline, validEvidenceIds)
-        ? cleanModelText(parsed.headline, validEvidenceIds)
-        : 'Evidence review',
+    headline: cleanModelText(parsed.headline, validEvidenceIds)
+      ? cleanModelText(parsed.headline, validEvidenceIds)
+      : 'Evidence review',
     answer,
     confidence,
     evidenceIds: Array.isArray(parsed.evidenceIds)
-        ? [...new Set(parsed.evidenceIds)].filter(
-          (id): id is string =>
-            typeof id === 'string' && validEvidenceIds.has(id),
-        ).slice(0, MAX_EVIDENCE_REFERENCES)
+      ? [...new Set(parsed.evidenceIds)]
+          .filter(
+            (id): id is string =>
+              typeof id === 'string' && validEvidenceIds.has(id),
+          )
+          .slice(0, MAX_EVIDENCE_REFERENCES)
       : [],
     limitations: Array.isArray(parsed.limitations)
       ? parsed.limitations

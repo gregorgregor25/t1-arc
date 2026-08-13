@@ -122,7 +122,7 @@ export function HealthConnectSourceRecordList({
             HEALTH CONNECT
           </Text>
           <Text style={[styles.title, { color: colors.text }]}>
-            Complete source records
+            Imported details
           </Text>
         </View>
         <View style={styles.countCopy}>
@@ -135,9 +135,9 @@ export function HealthConnectSourceRecordList({
         </View>
       </View>
       <Text style={[styles.description, { color: colors.textSecondary }]}>
-        Every source row for this day is available here—including workouts,
-        sleep, nutrition, cycle context and measurements. Open a row to inspect
-        its identifiers, provenance and retained source payload.
+        Every item imported for this day is available here, including
+        workouts, sleep, nutrition, cycle information and measurements. Open
+        an item to see the original details saved by its provider.
       </Text>
       <Pressable
         accessibilityRole="button"
@@ -159,7 +159,7 @@ export function HealthConnectSourceRecordList({
           size={18}
         />
         <Text style={[styles.toggleText, { color: colors.primary }]}>
-          {expanded ? 'Hide source records' : 'Inspect source records'}
+          {expanded ? 'Hide imported details' : 'Show imported details'}
         </Text>
       </Pressable>
       {expanded ? (
@@ -183,7 +183,7 @@ export function HealthConnectSourceRecordList({
                   accessibilityState={{ expanded: rowExpanded }}
                   accessibilityLabel={`${item.title}, ${record.sourceLabel}. ${
                     rowExpanded ? 'Hide' : 'Show'
-                  } exact source details.`}
+                  } imported details.`}
                   onPress={() => toggleRecord(record.id)}
                   style={({ pressed }) => [
                     styles.rowButton,
@@ -277,7 +277,7 @@ export function HealthConnectSourceRecordList({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      RETAINED SOURCE PAYLOAD
+                      ORIGINAL DETAILS
                     </Text>
                     <Text
                       selectable

@@ -3,11 +3,6 @@
 
   <application>
     <activity
-      android:name=".GlookoExportActivity"
-      android:excludeFromRecents="true"
-      android:exported="false"
-      android:screenOrientation="portrait" />
-    <activity
       android:name=".GlookoCredentialActivity"
       android:excludeFromRecents="true"
       android:exported="false"

@@ -2,6 +2,11 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
 
+import {
+  ensureGlucoseReadingDeviceIdentity,
+  GLUCOSE_READINGS_CREATE_SQL,
+} from './glucoseReadingIdentitySchema';
+
 const DATABASE_NAME = 'daymark-health-v2.db';
 const LEGACY_DATABASE_NAME = 'daymark-health.db';
 const DATABASE_KEY = 'daymark.database.key.v1';
@@ -332,23 +337,7 @@ async function openAndMigrate() {
       value TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS glucose_readings (
-      id TEXT NOT NULL PRIMARY KEY,
-      source_id TEXT NOT NULL,
-      timestamp_ms INTEGER NOT NULL,
-      received_at_ms INTEGER NOT NULL,
-      mmol_l REAL NOT NULL CHECK (mmol_l > 0),
-      trend TEXT NOT NULL,
-      quality TEXT NOT NULL,
-      source_factory_timestamp TEXT,
-      source_local_timestamp TEXT,
-      timestamp_discrepancy_minutes REAL,
-      imported_at_ms INTEGER,
-      source_file TEXT,
-      source_row INTEGER,
-      source_device_id TEXT,
-      UNIQUE (source_id, timestamp_ms)
-    );
+    ${GLUCOSE_READINGS_CREATE_SQL}
 
     CREATE INDEX IF NOT EXISTS idx_glucose_timestamp
       ON glucose_readings(timestamp_ms);
@@ -850,6 +839,7 @@ async function openAndMigrate() {
   await ensureColumn(database, 'glucose_readings', 'source_file', 'TEXT');
   await ensureColumn(database, 'glucose_readings', 'source_row', 'INTEGER');
   await ensureColumn(database, 'glucose_readings', 'source_device_id', 'TEXT');
+  await ensureGlucoseReadingDeviceIdentity(database);
   await ensureColumn(
     database,
     'food_catalog_cache',

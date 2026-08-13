@@ -31,8 +31,18 @@ import {
 import { compactTarvisEvidence } from '@/data/tarvis/evidenceCompaction';
 import { buildLocalGlucoseAnswer } from '@/data/tarvis/localGlucoseAnswer';
 import { buildLocalGlucoseRangeAnswer } from '@/data/tarvis/localGlucoseRangeAnswer';
+import {
+  buildLocalPersonalDataAnswer,
+  rangesForLocalPersonalDataIntent,
+} from '@/data/tarvis/localPersonalDataAnswer';
 import { isReadyTarvisIntent, resolveTarvisIntent } from '@/data/tarvis/intent';
-import type { GlucoseReading } from '@/domain/models';
+import { toDateKey } from '@/domain/time';
+import type {
+  DataSourceStatus,
+  GlucoseReading,
+  TimelineData,
+  TimeRange,
+} from '@/domain/models';
 
 const AS_OF = Date.parse('2026-08-07T20:00:00+01:00');
 
@@ -55,6 +65,55 @@ function reading(id: string, timestamp: string, mmolL: number): GlucoseReading {
     trend: 'unknown',
     quality: 'measured',
     sourceId: 'test-cgm',
+  };
+}
+
+function source(id: string, label: string): DataSourceStatus {
+  return {
+    id,
+    label,
+    detail: 'Conversation replay test source',
+    freshness: 'current',
+    origin: 'imported',
+    isLive: true,
+  };
+}
+
+function timeline(
+  range: TimeRange,
+  overrides: Partial<TimelineData> = {},
+): TimelineData {
+  return {
+    range: { ...range },
+    glucose: [],
+    basal: [],
+    boluses: [],
+    dailyInsulinTotals: [],
+    context: [],
+    sources: [],
+    ...overrides,
+  };
+}
+
+function personalExchange(
+  id: string,
+  question: string,
+  data: (range: TimeRange) => TimelineData,
+): StoredTarvisExchange {
+  const intent = ready(question);
+  const ranges = rangesForLocalPersonalDataIntent(intent, AS_OF);
+  const result = buildLocalPersonalDataAnswer({
+    asOf: AS_OF,
+    intent,
+    current: data(ranges.current),
+  });
+  return {
+    id,
+    question,
+    answer: result.answer,
+    evidence: result.evidence,
+    intent,
+    presentation: result.presentation,
   };
 }
 
@@ -170,6 +229,164 @@ describe('Tarv1s schema-v3 conversation integrity', () => {
     );
     expect(Object.isFrozen(restored?.answerBundle)).toBe(true);
     expect(Object.isFrozen(restored?.answerBundle?.scope.windows[0])).toBe(true);
+  });
+
+  it('round-trips every deterministic personal-data answer type with in-range evidence', async () => {
+    const dailyTotalTimeline = (range: TimeRange) =>
+      timeline(range, {
+        dailyInsulinTotals: [{
+          id: `daily-${toDateKey(range.start)}`,
+          timestamp: range.end - 1,
+          dateKey: toDateKey(range.start),
+          basalUnits: 14,
+          bolusUnits: 9,
+          totalUnits: 23,
+          sourceId: 'insulin-source',
+          importedAt: range.end + 1_000,
+        }],
+        sources: [source('insulin-source', 'Insulin')],
+      });
+    const exchanges = [
+      personalExchange('personal-current', "what's my sugar now?", (range) =>
+        timeline(range, {
+          glucose: [reading(
+            'current-reading',
+            new Date(AS_OF - 5 * 60_000).toISOString(),
+            7.2,
+          )],
+          sources: [source('test-cgm', 'Glucose')],
+        }),
+      ),
+      personalExchange(
+        'personal-total-insulin',
+        'how much insulin yesterday?',
+        dailyTotalTimeline,
+      ),
+      personalExchange(
+        'personal-basal-insulin',
+        'how much basal insulin yesterday?',
+        (range) => timeline(range, {
+          basal: [{
+            id: 'basal-crossing-start',
+            start: range.start - 60 * 60_000,
+            end: range.end,
+            rateUnitsPerHour: 1,
+            units: 25,
+            sourceId: 'insulin-source',
+          }],
+          sources: [source('insulin-source', 'Insulin')],
+        }),
+      ),
+      personalExchange(
+        'personal-bolus-insulin',
+        'how much bolus insulin yesterday?',
+        dailyTotalTimeline,
+      ),
+      personalExchange(
+        'personal-carbs',
+        'how many carbs did i eat yesterday?',
+        (range) => timeline(range, {
+          context: [{
+            id: 'meal',
+            kind: 'meal',
+            title: 'Recorded meal',
+            mealType: 'dinner',
+            carbsGrams: 45,
+            start: range.start + 18 * 60 * 60_000,
+            sourceId: 'context-source',
+            origin: 'manual',
+          }],
+        }),
+      ),
+      personalExchange(
+        'personal-activity',
+        'how long did i exercise yesterday?',
+        (range) => timeline(range, {
+          context: [{
+            id: 'activity-crossing-start',
+            kind: 'activity',
+            title: 'Recorded walk',
+            activityType: 'walk',
+            intensity: 'moderate',
+            durationMinutes: 60,
+            start: range.start - 30 * 60_000,
+            end: range.start + 30 * 60_000,
+            sourceId: 'context-source',
+            origin: 'imported',
+          }],
+        }),
+      ),
+      personalExchange(
+        'personal-sleep',
+        'how long did i sleep yesterday?',
+        (range) => timeline(range, {
+          context: [{
+            id: 'sleep-crossing-start',
+            kind: 'sleep',
+            title: 'Recorded sleep',
+            durationMinutes: 8 * 60,
+            start: range.start - 2 * 60 * 60_000,
+            end: range.start + 6 * 60 * 60_000,
+            sourceId: 'context-source',
+            origin: 'imported',
+          }],
+        }),
+      ),
+      personalExchange(
+        'personal-coverage',
+        'what was my sensor coverage yesterday?',
+        (range) => timeline(range, {
+          glucose: [reading(
+            'coverage-reading',
+            new Date(range.start + 60 * 60_000).toISOString(),
+            6.8,
+          )],
+          sources: [source('test-cgm', 'Glucose')],
+        }),
+      ),
+      personalExchange(
+        'personal-gaps',
+        'any sensor gaps yesterday?',
+        (range) => timeline(range, {
+          glucose: [reading(
+            'gap-reading',
+            new Date(range.start + 60 * 60_000).toISOString(),
+            6.8,
+          )],
+          sources: [source('test-cgm', 'Glucose')],
+        }),
+      ),
+    ];
+
+    exchanges.forEach((exchange) => {
+      expect(validStoredTarvisExchange(exchange), exchange.id).toBe(true);
+      exchange.evidence.forEach((reference) => {
+        reference.examples.forEach((example) => {
+          expect(example.timestamp, `${exchange.id}:${example.id}`).toBeGreaterThanOrEqual(
+            reference.range.start,
+          );
+          expect(example.timestamp, `${exchange.id}:${example.id}`).toBeLessThan(
+            reference.range.end,
+          );
+        });
+      });
+    });
+
+    await saveTarvisConversation(exchanges);
+    const restored = await loadTarvisConversation();
+
+    expect(restored.map(({ id }) => id)).toEqual(
+      exchanges.map(({ id }) => id),
+    );
+    expect(restored.map(({ answer }) => answer)).toEqual(
+      exchanges.map(({ answer }) => answer),
+    );
+    expect(restored.map(({ evidence }) => evidence)).toEqual(
+      exchanges.map(({ evidence }) => evidence),
+    );
+    expect(restored.map(({ presentation }) => presentation)).toEqual(
+      exchanges.map(({ presentation }) => presentation),
+    );
   });
 
   it('persists recurring event context in V2 provenance without exposing it as calculation evidence', async () => {

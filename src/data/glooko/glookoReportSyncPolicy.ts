@@ -1,7 +1,5 @@
 import { GlookoSyncState } from './glookoSyncPolicy';
 
-export const GLOOKO_REPORT_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
 export interface GlookoReportSyncState {
   lastAttemptAt?: number;
   lastSuccessAt?: number;
@@ -23,42 +21,21 @@ export type GlookoReportAutomaticPlan =
   | { due: true; days: 7; reason: 'initial' | 'daily' }
   | {
       due: false;
-      reason: 'disabled' | 'sign-in-required' | 'fresh' | 'backoff';
+      reason:
+        | 'disabled'
+        | 'unsupported'
+        | 'sign-in-required'
+        | 'fresh'
+        | 'backoff';
       nextEligibleAt?: number;
     };
 
 export function planAutomaticGlookoReportSync(
-  reportState: GlookoReportSyncState,
-  glookoState: GlookoSyncState,
-  now = Date.now(),
+  _reportState: GlookoReportSyncState,
+  _glookoState: GlookoSyncState,
+  _now = Date.now(),
 ): GlookoReportAutomaticPlan {
-  if (!glookoState.automaticEnabled) {
-    return { due: false, reason: 'disabled' };
-  }
-  if (glookoState.sessionStatus === 'needs-sign-in') {
-    return { due: false, reason: 'sign-in-required' };
-  }
-  if (
-    reportState.nextEligibleAt !== undefined &&
-    reportState.nextEligibleAt > now
-  ) {
-    return {
-      due: false,
-      reason:
-        reportState.lastErrorCode === undefined ? 'fresh' : 'backoff',
-      nextEligibleAt: reportState.nextEligibleAt,
-    };
-  }
-  if (reportState.lastSuccessAt === undefined) {
-    return { due: true, days: 7, reason: 'initial' };
-  }
-  if (now - reportState.lastSuccessAt >= GLOOKO_REPORT_INTERVAL_MS) {
-    return { due: true, days: 7, reason: 'daily' };
-  }
-  return {
-    due: false,
-    reason: 'fresh',
-    nextEligibleAt:
-      reportState.lastSuccessAt + GLOOKO_REPORT_INTERVAL_MS,
-  };
+  // The legacy PDF path still depends on regional WebView automation. Keep it
+  // manual until it has the same explicit account/region guarantees as CSV.
+  return { due: false, reason: 'unsupported' };
 }

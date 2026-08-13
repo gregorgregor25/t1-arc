@@ -7,12 +7,7 @@ import {
   TimeRange,
 } from './models';
 import { calculateInsulinStats } from './stats';
-import {
-  addDays,
-  DateKey,
-  toDateKey,
-  zonedDateTimeToTimestamp,
-} from './time';
+import { addDays, DateKey, toDateKey, zonedDateTimeToTimestamp } from './time';
 
 export interface DailyInsulinSummary {
   dateKey: DateKey;
@@ -73,17 +68,12 @@ function compareDailyTotalProvenance(
   right: InsulinDailyTotal,
 ) {
   return (
-    (left.importedAt ?? left.timestamp) -
-      (right.importedAt ?? right.timestamp) ||
     left.timestamp - right.timestamp ||
     dailyTotalCompleteness(left) - dailyTotalCompleteness(right) ||
+    (left.importedAt ?? left.timestamp) -
+      (right.importedAt ?? right.timestamp) ||
     (left.sourceRow ?? -1) - (right.sourceRow ?? -1) ||
-    [
-      left.sourceId,
-      left.sourceFile ?? '',
-      left.sourceDeviceId ?? '',
-      left.id,
-    ]
+    [left.sourceId, left.sourceFile ?? '', left.sourceDeviceId ?? '', left.id]
       .join('\u0000')
       .localeCompare(
         [
@@ -165,7 +155,9 @@ export function describeInsulinTimelineFidelity(
   const hasDetailedEvents = data.basal.length > 0 || data.boluses.length > 0;
   const hasDailyTotals = (data.dailyInsulinTotals?.length ?? 0) > 0;
   const hasReportEvents = (data.pumpStates?.length ?? 0) > 0;
-  const insulinSource = data.sources.find((source) => source.label === 'Insulin');
+  const insulinSource = data.sources.find(
+    (source) => source.label === 'Insulin',
+  );
 
   if (hasDetailedEvents) {
     return {
@@ -202,13 +194,15 @@ export function describeInsulinTimelineFidelity(
     return {
       kind: 'no-records',
       label: 'No insulin records in this range',
-      detail: 'An insulin source is connected, but it supplied no records for these dates.',
+      detail:
+        'An insulin source is connected, but it supplied no records for these dates.',
     };
   }
   return {
     kind: 'not-connected',
     label: 'Insulin not connected',
-    detail: 'Connect or import a supported insulin source to add delivery data.',
+    detail:
+      'Connect or import a supported insulin source to add delivery data.',
   };
 }
 
@@ -278,10 +272,8 @@ export function summarizeInsulinByDay(
         start,
         end,
       });
-      const basalUnits =
-        reported?.basalUnits ?? calculated.basalUnits;
-      const bolusUnits =
-        reported?.bolusUnits ?? calculated.bolusUnits;
+      const basalUnits = reported?.basalUnits ?? calculated.basalUnits;
+      const bolusUnits = reported?.bolusUnits ?? calculated.bolusUnits;
       const totalUnits = reported?.totalUnits ?? basalUnits + bolusUnits;
       summaries.push({
         dateKey,
@@ -348,11 +340,11 @@ export function summarizeInsulinRange(
     sourceCoversEveryDay:
       days.length > 0 && days.every((day) => day.sourceTotal !== undefined),
     sourceProvidesBasalEveryDay:
-      sourceTotals.length > 0 &&
-      sourceTotals.every((total) => total.basalUnits !== undefined),
+      days.length > 0 &&
+      days.every((day) => day.sourceTotal?.basalUnits !== undefined),
     sourceProvidesBolusEveryDay:
-      sourceTotals.length > 0 &&
-      sourceTotals.every((total) => total.bolusUnits !== undefined),
+      days.length > 0 &&
+      days.every((day) => day.sourceTotal?.bolusUnits !== undefined),
     sourceConflictCount: days.reduce(
       (count, day) => count + day.sourceAlternatives.length,
       0,

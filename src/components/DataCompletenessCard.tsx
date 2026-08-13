@@ -26,7 +26,7 @@ function sourceLabel(sourceId: string) {
   if (sourceId.startsWith('demo-')) return 'Demo fixture';
   if (sourceId === 'glooko-cgm') return 'Glooko history';
   if (sourceId === 'nightscout') return 'Nightscout';
-  if (sourceId === 'xdrip-local') return 'xDrip endpoint';
+  if (sourceId === 'xdrip-local') return 'xDrip';
   if (sourceId.includes('notification')) return 'Phone notification';
   if (sourceId.includes('libre')) return 'LibreLinkUp';
   return sourceId;

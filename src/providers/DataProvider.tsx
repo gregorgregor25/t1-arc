@@ -22,19 +22,28 @@ import { updateGlookoBackgroundSyncRegistration } from '@/data/background/glooko
 import { updateHealthConnectBackgroundSyncRegistration } from '@/data/background/healthConnectSyncTask';
 import { updateInsightReviewBackgroundRegistration } from '@/data/background/insightReviewTask';
 import {
+  beginGlookoCredentialChange,
+  beginGlookoDataChange,
   GlookoSyncOutcome,
   syncGlookoHistoryRange,
   syncGlookoIfDue,
   syncGlookoManually,
   syncGlookoSilentlyNow,
+  verifyGlookoCredentials,
 } from '@/data/glooko/glookoSync';
 import {
   DEFAULT_GLOOKO_SYNC_STATE,
   GLOOKO_FOREGROUND_CHECK_INTERVAL_MS,
   GlookoSyncState,
+  glookoFailureDisposition,
   planAutomaticGlookoSync,
 } from '@/data/glooko/glookoSyncPolicy';
 import {
+  assertManualGlookoImportIntegrity,
+  GlookoManualImportAttestation,
+} from '@/data/glooko/glookoImportIntegrity';
+import {
+  hasImportedGlookoData,
   loadGlookoSyncState,
   updateGlookoSyncState,
 } from '@/data/glooko/glookoSyncState';
@@ -182,7 +191,10 @@ interface DataContextValue {
   setNightscoutHistoryTarget(
     targetDate: DateKey | undefined,
   ): Promise<NightscoutHistoryState>;
-  importGlookoData(prepared: PreparedGlookoImport): Promise<ImportWriteResult>;
+  importGlookoData(
+    prepared: PreparedGlookoImport,
+    attestation?: GlookoManualImportAttestation,
+  ): Promise<ImportWriteResult>;
   importGlookoReport(
     fileName: string,
     bytes: Uint8Array,
@@ -207,7 +219,11 @@ interface DataContextValue {
     targetDate: DateKey | undefined,
     startBeforeDate?: DateKey,
   ): Promise<GlookoSyncState>;
-  markGlookoCredentialsReady(): Promise<GlookoSyncState>;
+  markGlookoCredentialsReady(
+    credentialGeneration: number,
+    legacyCredentialContinuity?: boolean,
+  ): Promise<GlookoSyncOutcome>;
+  beginGlookoCredentialSetup(): Promise<() => void>;
   markGlookoSessionForgotten(): Promise<GlookoSyncState>;
   hasSavedGlookoExport(): Promise<boolean>;
   getGlookoArchiveSummary(): Promise<StoredImportSourceSummary>;
@@ -236,6 +252,29 @@ export interface GlookoReprocessAllResult {
   insertedContext: number;
   insertedDailyTotals: number;
   duplicateCount: number;
+}
+
+async function withGlookoDataCommit<T>(work: () => Promise<T>) {
+  const barrier = beginGlookoDataChange();
+  let commitToken: string | undefined;
+  try {
+    await barrier.ready;
+    const commitLease = await DaymarkGlookoExport.beginDataCommitAsync();
+    if (!commitLease.acquired) {
+      throw new Error(
+        'Glooko data is being removed. Wait a moment, then try the import again.',
+      );
+    }
+    commitToken = commitLease.token;
+    return await work();
+  } finally {
+    if (commitToken) {
+      await DaymarkGlookoExport.endDataCommitAsync(commitToken).catch(
+        () => false,
+      );
+    }
+    barrier.release();
+  }
 }
 
 interface RepositoryState {
@@ -668,38 +707,65 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
 
   const importGlookoData = useCallback(
-    async (prepared: PreparedGlookoImport) => {
-      const healthResult = await healthRecordStore.current.writeImport(
-        prepared.batch,
-        prepared.preview.basal,
-        prepared.preview.boluses,
-        prepared.preview.context,
-        prepared.sourcePayload,
-        prepared.preview.dailyInsulinTotals,
-        prepared.preview.rawRecords,
-      );
-      const insertedGlucose = await writeGlookoGlucoseHistory(
-        glucoseHistoryStore.current,
-        prepared.preview.glucose,
-      );
-      const result = {
-        ...healthResult,
-        insertedGlucose,
-        duplicateCount:
-          healthResult.duplicateCount +
-          Math.max(0, prepared.preview.glucose.length - insertedGlucose),
-      };
-      await generateInsightReviewIfDue(Date.now(), 0).catch(
-        () => undefined,
-      );
-      await refreshEarliestLiveDate();
-      if (repositoryState.mode === 'demo') {
-        await changeDataMode('live');
-      } else {
-        setNow(Date.now());
-        setRevision((value) => value + 1);
-      }
-      return result;
+    async (
+      prepared: PreparedGlookoImport,
+      attestation?: GlookoManualImportAttestation,
+    ) => {
+      assertManualGlookoImportIntegrity(prepared, attestation);
+
+      return withGlookoDataCommit(async () => {
+        const before = await loadGlookoSyncState();
+        const healthResult = await healthRecordStore.current.writeImport(
+          prepared.batch,
+          prepared.preview.basal,
+          prepared.preview.boluses,
+          prepared.preview.context,
+          prepared.sourcePayload,
+          prepared.preview.dailyInsulinTotals,
+          prepared.preview.rawRecords,
+        );
+        const insertedGlucose = await writeGlookoGlucoseHistory(
+          glucoseHistoryStore.current,
+          prepared.preview.glucose,
+        );
+        const result = {
+          ...healthResult,
+          insertedGlucose,
+          duplicateCount:
+            healthResult.duplicateCount +
+            Math.max(0, prepared.preview.glucose.length - insertedGlucose),
+        };
+        if (
+          before.verifiedAccountFingerprint === undefined &&
+          (await hasImportedGlookoData())
+        ) {
+          const unbound = await updateGlookoSyncState((current) => ({
+            ...current,
+            automaticEnabled: false,
+            nextEligibleAt: undefined,
+            lastErrorCode: 'unbound-existing-data',
+            lastErrorMessage:
+              'Manual Glooko data is not bound to a verified automatic sign-in. Remove it before connecting another account.',
+          }));
+          setGlookoSyncState(unbound);
+          const available =
+            await updateGlookoBackgroundSyncRegistration().catch(
+              () => false,
+            );
+          setGlookoBackgroundSyncAvailable(available);
+        }
+        await generateInsightReviewIfDue(Date.now(), 0).catch(
+          () => undefined,
+        );
+        await refreshEarliestLiveDate();
+        if (repositoryState.mode === 'demo') {
+          await changeDataMode('live');
+        } else {
+          setNow(Date.now());
+          setRevision((value) => value + 1);
+        }
+        return result;
+      });
     },
     [changeDataMode, refreshEarliestLiveDate, repositoryState.mode],
   );
@@ -915,16 +981,21 @@ export function DataProvider({ children }: PropsWithChildren) {
   }, [repositoryState.ready, runAutomaticGlookoSync]);
 
   const setGlookoAutomaticEnabled = useCallback(async (enabled: boolean) => {
-    const next = await updateGlookoSyncState((current) => ({
-      ...current,
-      automaticEnabled: enabled,
-      nextEligibleAt: enabled ? undefined : current.nextEligibleAt,
-    }));
+    const next = await updateGlookoSyncState((current) => {
+      const canEnable =
+        glookoFailureDisposition(current.lastErrorCode) !== 'action-required';
+      const automaticEnabled = enabled && canEnable;
+      return {
+        ...current,
+        automaticEnabled,
+        nextEligibleAt: automaticEnabled ? undefined : current.nextEligibleAt,
+      };
+    });
     setGlookoSyncState(next);
     const available =
       await updateGlookoBackgroundSyncRegistration().catch(() => false);
     setGlookoBackgroundSyncAvailable(available);
-    if (enabled) {
+    if (next.automaticEnabled) {
       void runAutomaticGlookoSync();
     } else {
       await DaymarkGlucoseDisplay.cancelGlookoSignInRequiredAsync().catch(
@@ -942,7 +1013,10 @@ export function DataProvider({ children }: PropsWithChildren) {
       const next = await updateGlookoSyncState((current) => ({
         ...current,
         automaticEnabled:
-          targetDate === undefined ? current.automaticEnabled : true,
+          targetDate === undefined
+            ? current.automaticEnabled
+            : glookoFailureDisposition(current.lastErrorCode) !==
+              'action-required',
         historyBackfillTargetDate: targetDate,
         historyBackfillBeforeDate:
           current.historyBackfillBeforeDate ?? startBeforeDate,
@@ -958,7 +1032,9 @@ export function DataProvider({ children }: PropsWithChildren) {
       const available =
         await updateGlookoBackgroundSyncRegistration().catch(() => false);
       setGlookoBackgroundSyncAvailable(available);
-      if (targetDate !== undefined) void runAutomaticGlookoSync();
+      if (targetDate !== undefined && next.automaticEnabled) {
+        void runAutomaticGlookoSync();
+      }
       return next;
     },
     [runAutomaticGlookoSync],
@@ -967,7 +1043,9 @@ export function DataProvider({ children }: PropsWithChildren) {
   const markGlookoSessionForgotten = useCallback(async () => {
     const next = await updateGlookoSyncState((current) => ({
       ...current,
+      automaticEnabled: false,
       sessionStatus: 'needs-sign-in',
+      pendingLegacyCredentialContinuity: undefined,
       nextEligibleAt: undefined,
       lastErrorCode: 'session-required',
       lastErrorMessage: 'Sign into Glooko again to resume automatic refresh.',
@@ -976,41 +1054,79 @@ export function DataProvider({ children }: PropsWithChildren) {
       () => false,
     );
     setGlookoSyncState(next);
+    const available = await updateGlookoBackgroundSyncRegistration().catch(
+      () => false,
+    );
+    setGlookoBackgroundSyncAvailable(available);
     return next;
   }, []);
 
-  const markGlookoCredentialsReady = useCallback(async () => {
-    const next = await updateGlookoSyncState((current) => ({
-      ...current,
-      automaticEnabled: true,
-      sessionStatus: 'ready',
-      nextEligibleAt: undefined,
-      lastErrorCode: undefined,
-      lastErrorMessage: undefined,
-    }));
-    await DaymarkGlucoseDisplay.cancelGlookoSignInRequiredAsync().catch(
-      () => false,
-    );
-    setGlookoSyncState(next);
-    const reportNext = await loadGlookoReportSyncState();
-    await saveGlookoReportSyncState({
-      ...reportNext,
-      nextEligibleAt: undefined,
-      lastErrorCode: undefined,
-      lastErrorMessage: undefined,
-    });
-    setGlookoReportSyncState({
-      ...reportNext,
-      nextEligibleAt: undefined,
-      lastErrorCode: undefined,
-      lastErrorMessage: undefined,
-    });
-    const available =
-      await updateGlookoBackgroundSyncRegistration().catch(() => false);
-    setGlookoBackgroundSyncAvailable(available);
-    void runAutomaticGlookoSync();
-    return next;
-  }, [runAutomaticGlookoSync]);
+  const beginGlookoCredentialSetup = useCallback(async () => {
+    const barrier = beginGlookoCredentialChange();
+    await barrier.ready;
+    return barrier.release;
+  }, []);
+
+  const markGlookoCredentialsReady = useCallback(
+    async (
+      credentialGeneration: number,
+      legacyCredentialContinuity = false,
+    ) => {
+      const verification = verifyGlookoCredentials(
+        credentialGeneration,
+        async () => {
+          const pending = await updateGlookoSyncState((current) => ({
+            ...current,
+            automaticEnabled: false,
+            sessionStatus: 'pending-verification',
+            pendingLegacyCredentialContinuity:
+              legacyCredentialContinuity,
+            nextEligibleAt: undefined,
+            lastErrorCode: undefined,
+            lastErrorMessage: undefined,
+          }));
+          setGlookoSyncState(pending);
+        },
+        14,
+        legacyCredentialContinuity,
+      );
+      // The fresh reservation above happens synchronously. This optimistic
+      // state is UI-only while the queued verifier persists the same state.
+      setGlookoSyncState((current) => ({
+        ...current,
+        automaticEnabled: false,
+        sessionStatus: 'pending-verification',
+        pendingLegacyCredentialContinuity: legacyCredentialContinuity,
+        nextEligibleAt: undefined,
+        lastErrorCode: undefined,
+        lastErrorMessage: undefined,
+      }));
+
+      setGlookoSyncing(true);
+      let outcome: GlookoSyncOutcome;
+      try {
+        outcome = await completeGlookoOutcome(await verification, true);
+      } finally {
+        setGlookoSyncing(false);
+      }
+      if (outcome.status === 'success') {
+        await DaymarkGlucoseDisplay.cancelGlookoSignInRequiredAsync().catch(
+          () => false,
+        );
+        const reportNext = await loadGlookoReportSyncState();
+        const reportReady = {
+          ...reportNext,
+          nextEligibleAt: undefined,
+          lastErrorCode: undefined,
+          lastErrorMessage: undefined,
+        };
+        await saveGlookoReportSyncState(reportReady);
+        setGlookoReportSyncState(reportReady);
+      }
+      return outcome;
+    },
+    [completeGlookoOutcome],
+  );
 
   const hasSavedGlookoExport = useCallback(
     () =>
@@ -1025,84 +1141,89 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
 
   const reprocessAllGlookoData = useCallback(async () => {
-    const references =
-      await healthRecordStore.current.getImportSourcePayloadReferences(
-        'glooko-export',
-      );
-    if (!references.length) {
-      throw new Error('There is no saved Glooko export to reprocess yet.');
-    }
-    const result: GlookoReprocessAllResult = {
-      archivesProcessed: 0,
-      archivesFailed: 0,
-      insertedGlucose: 0,
-      insertedBasal: 0,
-      insertedBoluses: 0,
-      insertedContext: 0,
-      insertedDailyTotals: 0,
-      duplicateCount: 0,
-    };
-    for (const reference of references) {
-      const retained =
-        await healthRecordStore.current.getImportSourcePayload(
-          reference.batchId,
+    return withGlookoDataCommit(async () => {
+      const references =
+        await healthRecordStore.current.getImportSourcePayloadReferences(
+          'glooko-export',
         );
-      if (!retained) {
-        result.archivesFailed += 1;
-        continue;
+      if (!references.length) {
+        throw new Error('There is no saved Glooko export to reprocess yet.');
       }
-      try {
-        const next = await prepareGlookoImport(
-          retained.batch.fileName,
-          retained.payload.bytes,
-          retained.batch.importedAt,
-        );
-        const healthResult = await healthRecordStore.current.writeImport(
-          next.batch,
-          next.preview.basal,
-          next.preview.boluses,
-          next.preview.context,
-          undefined,
-          next.preview.dailyInsulinTotals,
-          next.preview.rawRecords,
-        );
-        const insertedGlucose = await writeGlookoGlucoseHistory(
-          glucoseHistoryStore.current,
-          next.preview.glucose,
-        );
-        result.archivesProcessed += 1;
-        result.insertedGlucose += insertedGlucose;
-        result.insertedBasal += healthResult.insertedBasal;
-        result.insertedBoluses += healthResult.insertedBoluses;
-        result.insertedContext += healthResult.insertedContext;
-        result.insertedDailyTotals += healthResult.insertedDailyTotals;
-        result.duplicateCount +=
-          healthResult.duplicateCount +
-          Math.max(0, next.preview.glucose.length - insertedGlucose);
-      } catch {
-        // One damaged or obsolete snapshot must not prevent later snapshots
-        // from being re-read. The exact encrypted bytes remain untouched.
-        result.archivesFailed += 1;
-      } finally {
-        retained.payload.bytes.fill(0);
+      const result: GlookoReprocessAllResult = {
+        archivesProcessed: 0,
+        archivesFailed: 0,
+        insertedGlucose: 0,
+        insertedBasal: 0,
+        insertedBoluses: 0,
+        insertedContext: 0,
+        insertedDailyTotals: 0,
+        duplicateCount: 0,
+      };
+      for (const reference of references) {
+        const retained =
+          await healthRecordStore.current.getImportSourcePayload(
+            reference.batchId,
+          );
+        if (!retained) {
+          result.archivesFailed += 1;
+          continue;
+        }
+        try {
+          const next = await prepareGlookoImport(
+            retained.batch.fileName,
+            retained.payload.bytes,
+            retained.batch.importedAt,
+          );
+          if (next.preview.unsafeTimestampLocale) {
+            throw new Error('Unsafe Glooko timestamp locale.');
+          }
+          const healthResult = await healthRecordStore.current.writeImport(
+            next.batch,
+            next.preview.basal,
+            next.preview.boluses,
+            next.preview.context,
+            undefined,
+            next.preview.dailyInsulinTotals,
+            next.preview.rawRecords,
+          );
+          const insertedGlucose = await writeGlookoGlucoseHistory(
+            glucoseHistoryStore.current,
+            next.preview.glucose,
+          );
+          result.archivesProcessed += 1;
+          result.insertedGlucose += insertedGlucose;
+          result.insertedBasal += healthResult.insertedBasal;
+          result.insertedBoluses += healthResult.insertedBoluses;
+          result.insertedContext += healthResult.insertedContext;
+          result.insertedDailyTotals += healthResult.insertedDailyTotals;
+          result.duplicateCount +=
+            healthResult.duplicateCount +
+            Math.max(0, next.preview.glucose.length - insertedGlucose);
+        } catch {
+          // One damaged or obsolete snapshot must not prevent later snapshots
+          // from being re-read. The exact encrypted bytes remain untouched.
+          result.archivesFailed += 1;
+        } finally {
+          retained.payload.bytes.fill(0);
+        }
       }
-    }
-    if (!result.archivesProcessed) {
-      throw new Error(
-        'Saved Glooko exports could not be reprocessed. Their encrypted source copies were kept unchanged.',
+      if (!result.archivesProcessed) {
+        throw new Error(
+          'Saved Glooko exports could not be reprocessed. Their encrypted source copies were kept unchanged.',
+        );
+      }
+      await generateInsightReviewIfDue(Date.now(), 0).catch(
+        () => undefined,
       );
-    }
-    await generateInsightReviewIfDue(Date.now(), 0).catch(
-      () => undefined,
-    );
-    await refreshEarliestLiveDate();
-    if (repositoryState.mode === 'demo') {
-      await changeDataMode('live');
-    } else {
-      setNow(Date.now());
-      setRevision((value) => value + 1);
-    }
-    return result;
+      await refreshEarliestLiveDate();
+      if (repositoryState.mode === 'demo') {
+        await changeDataMode('live');
+      } else {
+        setNow(Date.now());
+        setRevision((value) => value + 1);
+      }
+      return result;
+    });
   }, [changeDataMode, refreshEarliestLiveDate, repositoryState.mode]);
 
   const saveManualContext = useCallback(
@@ -1181,33 +1302,81 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
 
   const clearImportedGlookoData = useCallback(async () => {
-    const [healthResult, glucose] = await Promise.all([
-      healthRecordStore.current.clearImportedSource('glooko-export'),
-      clearGlookoGlucoseHistory(glucoseHistoryStore.current),
-    ]);
-    const result = { ...healthResult, glucose };
-    await clearSavedInsightReports();
-    await generateInsightReviewIfDue(Date.now(), 0).catch(
-      () => undefined,
-    );
-    const next = await updateGlookoSyncState((current) => ({
-      ...DEFAULT_GLOOKO_SYNC_STATE,
-      sessionStatus: current.sessionStatus,
-    }));
-    setGlookoSyncState(next);
-    await saveGlookoReportSyncState({
-      ...DEFAULT_GLOOKO_REPORT_SYNC_STATE,
-    });
-    setGlookoReportSyncState({
-      ...DEFAULT_GLOOKO_REPORT_SYNC_STATE,
-    });
-    const available =
-      await updateGlookoBackgroundSyncRegistration().catch(() => false);
-    setGlookoBackgroundSyncAvailable(available);
-    await refreshEarliestLiveDate();
-    setNow(Date.now());
-    setRevision((value) => value + 1);
-    return result;
+    const barrier = beginGlookoDataChange();
+    let resetToken: string | undefined;
+    try {
+      // Stop future worker launches before waiting for any current work.
+      let disabled = await updateGlookoSyncState((current) => ({
+        ...current,
+        automaticEnabled: false,
+        nextEligibleAt: undefined,
+      }));
+      setGlookoSyncState(disabled);
+      let available =
+        await updateGlookoBackgroundSyncRegistration().catch(() => false);
+      setGlookoBackgroundSyncAvailable(available);
+
+      await barrier.ready;
+      // An invalidated predecessor may have completed a state write while it
+      // was draining, so assert the disabled state once more before deletion.
+      disabled = await updateGlookoSyncState((current) => ({
+        ...current,
+        automaticEnabled: false,
+        nextEligibleAt: undefined,
+      }));
+      setGlookoSyncState(disabled);
+      available =
+        await updateGlookoBackgroundSyncRegistration().catch(() => false);
+      setGlookoBackgroundSyncAvailable(available);
+
+      const resetLease = await DaymarkGlookoExport.beginDataResetAsync();
+      if (!resetLease.acquired) {
+        throw new Error(
+          'A Glooko import is still finishing. Wait a moment, then remove the imported data again.',
+        );
+      }
+      resetToken = resetLease.token;
+
+      const [healthResult, glucose] = await Promise.all([
+        healthRecordStore.current.clearImportedSource('glooko-export'),
+        clearGlookoGlucoseHistory(glucoseHistoryStore.current),
+      ]);
+      const result = { ...healthResult, glucose };
+      const next = await updateGlookoSyncState((current) => ({
+        ...DEFAULT_GLOOKO_SYNC_STATE,
+        sessionStatus: current.sessionStatus,
+      }));
+      setGlookoSyncState(next);
+      await saveGlookoReportSyncState({
+        ...DEFAULT_GLOOKO_REPORT_SYNC_STATE,
+      });
+      setGlookoReportSyncState({
+        ...DEFAULT_GLOOKO_REPORT_SYNC_STATE,
+      });
+
+      const resetEnded = await DaymarkGlookoExport.endDataResetAsync(
+        resetToken,
+      );
+      if (!resetEnded) {
+        throw new Error('The protected Glooko data reset did not finish.');
+      }
+      resetToken = undefined;
+      await clearSavedInsightReports();
+      await generateInsightReviewIfDue(Date.now(), 0).catch(
+        () => undefined,
+      );
+      await refreshEarliestLiveDate();
+      setNow(Date.now());
+      setRevision((value) => value + 1);
+      return result;
+    } finally {
+      if (resetToken) {
+        await DaymarkGlookoExport.endDataResetAsync(resetToken).catch(
+          () => false,
+        );
+      }
+      barrier.release();
+    }
   }, [refreshEarliestLiveDate]);
 
   const clearImportedDexcomData = useCallback(async () => {
@@ -1238,8 +1407,30 @@ export function DataProvider({ children }: PropsWithChildren) {
         'Wait for the current source refresh to finish before erasing this device.',
       );
     }
+    const barrier = beginGlookoDataChange();
+    let resetToken: string | undefined;
     setSyncing(true);
     try {
+      let disabled = await updateGlookoSyncState((current) => ({
+        ...current,
+        automaticEnabled: false,
+        nextEligibleAt: undefined,
+      }));
+      setGlookoSyncState(disabled);
+      let available =
+        await updateGlookoBackgroundSyncRegistration().catch(() => false);
+      setGlookoBackgroundSyncAvailable(available);
+      await barrier.ready;
+      disabled = await updateGlookoSyncState((current) => ({
+        ...current,
+        automaticEnabled: false,
+        nextEligibleAt: undefined,
+      }));
+      setGlookoSyncState(disabled);
+      available =
+        await updateGlookoBackgroundSyncRegistration().catch(() => false);
+      setGlookoBackgroundSyncAvailable(available);
+
       const alerts = await loadGlucoseAlertPreferences();
       await Promise.all([
         clearLibreLinkUpCredentials(),
@@ -1260,7 +1451,22 @@ export function DataProvider({ children }: PropsWithChildren) {
         resetGlucoseAlertState(),
         setWeeklyReviewNotificationEnabled(false),
       ]);
+
+      const resetLease = await DaymarkGlookoExport.beginDataResetAsync();
+      if (!resetLease.acquired) {
+        throw new Error(
+          'A Glooko import is still finishing. Wait a moment, then erase this device again.',
+        );
+      }
+      resetToken = resetLease.token;
       const removed = await eraseLocalHealthData();
+      const resetEnded = await DaymarkGlookoExport.endDataResetAsync(
+        resetToken,
+      );
+      if (!resetEnded) {
+        throw new Error('The protected local-data erase did not finish.');
+      }
+      resetToken = undefined;
       setGlookoSyncState({ ...DEFAULT_GLOOKO_SYNC_STATE });
       setGlookoReportSyncState({
         ...DEFAULT_GLOOKO_REPORT_SYNC_STATE,
@@ -1272,6 +1478,12 @@ export function DataProvider({ children }: PropsWithChildren) {
       await changeDataMode('demo');
       return removed;
     } finally {
+      if (resetToken) {
+        await DaymarkGlookoExport.endDataResetAsync(resetToken).catch(
+          () => false,
+        );
+      }
+      barrier.release();
       setSyncing(false);
     }
   }, [changeDataMode, glookoReportSyncing, glookoSyncing]);
@@ -1333,6 +1545,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       syncGlookoRange,
       setGlookoAutomaticEnabled,
       setGlookoHistoryBackfillTarget,
+      beginGlookoCredentialSetup,
       markGlookoCredentialsReady,
       markGlookoSessionForgotten,
       hasSavedGlookoExport,
@@ -1383,6 +1596,7 @@ export function DataProvider({ children }: PropsWithChildren) {
     saveManualContext,
     setGlookoAutomaticEnabled,
     setGlookoHistoryBackfillTarget,
+    beginGlookoCredentialSetup,
     markGlookoCredentialsReady,
     markGlookoSessionForgotten,
     syncGlooko,

@@ -85,7 +85,7 @@ export function CurrentGlucoseCard({
           : reading?.sourceId === NIGHTSCOUT_SOURCE_ID
             ? 'Nightscout'
           : reading?.sourceId === XDRIP_SOURCE_ID
-            ? 'xDrip-compatible endpoint'
+            ? 'xDrip connection'
           : source?.origin === 'synthetic'
             ? 'Synthetic T1 Arc feed'
             : source?.detail ?? 'No glucose source connected';

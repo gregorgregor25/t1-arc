@@ -45,9 +45,21 @@ describe('Glooko sync outcome classification', () => {
       nextEligibleAt: 500,
     };
     const attempted = { ...previous, lastAttemptAt: 200 };
-    expect(stateAfterBusyGlookoAttempt(previous, attempted, 200)).toBe(
+    expect(stateAfterBusyGlookoAttempt(previous, attempted, 200)).toEqual(
       previous,
     );
+
+    const resetCurrent = {
+      ...attempted,
+      automaticEnabled: false,
+      verifiedCredentialGeneration: undefined,
+    };
+    expect(
+      stateAfterBusyGlookoAttempt(previous, resetCurrent, 200),
+    ).toEqual({
+      ...resetCurrent,
+      lastAttemptAt: previous.lastAttemptAt,
+    });
 
     const concurrentSuccess = {
       lastAttemptAt: 250,

@@ -1,7 +1,10 @@
 import type { AutomationDataEvidence } from './automationEvidence';
 import type { AutomationOutcome } from './automationRunLog';
 import type { GlookoReportSyncState } from '@/data/glooko/glookoReportSyncPolicy';
-import type { GlookoSyncState } from '@/data/glooko/glookoSyncPolicy';
+import {
+  type GlookoSyncState,
+  glookoFailureDisposition,
+} from '@/data/glooko/glookoSyncPolicy';
 import { relativeAge } from '@/domain/time';
 
 export interface AutomationConnectorIssue {
@@ -14,34 +17,23 @@ export interface AutomationConnectorIssue {
 
 export function buildGlookoAutomationIssue(
   csv: GlookoSyncState,
-  report: GlookoReportSyncState,
+  _report: GlookoReportSyncState,
 ): AutomationConnectorIssue | undefined {
   const candidates: AutomationConnectorIssue[] = [];
   if (csv.lastErrorCode) {
     candidates.push({
       kind:
         csv.sessionStatus === 'needs-sign-in' ||
-        csv.lastErrorCode === 'session-required'
+        glookoFailureDisposition(csv.lastErrorCode) === 'action-required'
           ? 'needs-attention'
           : 'failed',
-      scope: 'CSV export',
+      scope: 'Glooko update',
       attemptedAt: csv.lastAttemptAt,
       lastSuccessfulAt: csv.lastCheckedAt ?? csv.lastSuccessAt,
       message:
-        csv.lastErrorMessage ?? 'The latest Glooko CSV export did not finish.',
-    });
-  }
-  if (report.lastErrorCode) {
-    candidates.push({
-      kind:
-        report.lastErrorCode === 'session-required'
-          ? 'needs-attention'
-          : 'failed',
-      scope: 'PDF report',
-      attemptedAt: report.lastAttemptAt,
-      lastSuccessfulAt: report.lastSuccessAt,
-      message:
-        report.lastErrorMessage ?? 'The latest Glooko PDF report did not finish.',
+        glookoFailureDisposition(csv.lastErrorCode) === 'action-required'
+          ? 'Open Glooko in Sources to fix the connection.'
+          : 'T1 Arc will try again automatically.',
     });
   }
   const latest = candidates.sort(
@@ -69,8 +61,8 @@ export function automationIssueForOutcome(
 export function automationIssueDetail(issue: AutomationConnectorIssue) {
   const prefix =
     issue.kind === 'needs-attention'
-      ? `${issue.scope} latest attempt needs attention.`
-      : `${issue.scope} latest attempt failed.`;
+      ? `${issue.scope} needs attention.`
+      : `${issue.scope} did not finish.`;
   const safeMessage =
     !/Call to function|java\.|SQLite|Exception|stack|rejected/i.test(
       issue.message,
@@ -108,15 +100,5 @@ export function automationIssueMeta(
       `Data through ${relativeAge(evidence.dataThrough, now).toLowerCase()}`,
     );
   }
-  if (evidence.lastStoredAt !== undefined) {
-    parts.push(
-      `Stored ${relativeAge(evidence.lastStoredAt, now).toLowerCase()}`,
-    );
-  }
-  parts.push(
-    evidence.recordCount
-      ? `${evidence.recordCount.toLocaleString('en-GB')} stored`
-      : 'No records stored',
-  );
   return parts.join(' · ');
 }
