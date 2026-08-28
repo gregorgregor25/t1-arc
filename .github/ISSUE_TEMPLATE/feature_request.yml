@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a change that would make T1 Arc more useful.
+title: "[Idea]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Tell us about the real situation before describing a particular solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like T1 Arc to do?
+      description: A sketch, example or rough workflow is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today?
+      description: Optional. Explain any workaround or another app you currently use.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Project boundaries
+      options:
+        - label: This request does not ask T1 Arc to recommend insulin doses or provide medical advice.
+          required: true
+        - label: I searched existing issues for a similar request.
+          required: true

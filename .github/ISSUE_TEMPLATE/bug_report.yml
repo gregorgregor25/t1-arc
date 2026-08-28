@@ -1,0 +1,71 @@
+name: Bug report
+description: Tell us about something that is not working as expected.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Please remove screenshots, logs and exports that contain personal health information before attaching them.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Give us the shortest sequence that reliably shows the problem.
+      placeholder: |
+        1. Open...
+        2. Tap...
+        3. See...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: T1 Arc version
+      placeholder: 1.6.9
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: Pixel 9 Pro, Android 16
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Related data source
+      options:
+        - Not source-specific
+        - LibreLinkUp
+        - Nightscout
+        - xDrip+
+        - Glooko
+        - Health Connect
+        - Food logging
+        - Tarv1s
+        - Wear OS
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitised logs or screenshots
+      description: Optional. Remove glucose values, names, email addresses, tokens, API keys and other private data first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed personal health information and credentials from anything attached.
+          required: true
