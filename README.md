@@ -4,7 +4,12 @@
   <img src="assets/icon.png" width="112" alt="T1 Arc app icon">
 </p>
 
-<p align="center"><strong>Your diabetes data, brought together and made easier to understand.</strong></p>
+<p align="center"><strong>See the whole picture. Ask Tarv1s.</strong></p>
+
+<p align="center">
+  T1 Arc brings glucose, insulin, food, activity and wider health data together,<br>
+  then lets you ask Tarv1s questions about patterns in your own records.
+</p>
 
 <p align="center">
   <img alt="Platform: Android" src="https://img.shields.io/badge/platform-Android-3DDC84">
@@ -20,12 +25,35 @@
   <a href="docs/SCREENSHOTS.md">Screenshots</a>
 </p>
 
-T1 Arc is a local-first Android app for Type 1 diabetes. It brings glucose,
-insulin, food, activity and wider health context into one place, while keeping
-the records behind every chart and observation available for inspection.
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="docs/screenshots/tarvis.png" alt="Tarv1s question screen with suggested questions based on T1 Arc records"><br><strong>Ask Tarv1s</strong><br>Explore patterns across the records you already keep</td>
+    <td align="center" width="50%"><img src="docs/screenshots/today.png" alt="T1 Arc Today screen using synthetic demo data"><br><strong>See today clearly</strong><br>Glucose and daily context in one place</td>
+  </tr>
+</table>
+
+T1 Arc is a local-first Android app for Type 1 diabetes. It keeps the records
+behind every chart, observation and Tarv1s answer available for inspection.
 
 T1 Arc does not calculate insulin doses, recommend treatment or replace the
 official display for a medical device.
+
+## Meet Tarv1s
+
+Tarv1s lets you ask useful questions about the records already stored in T1
+Arc. It can help you review recent lows, compare one week with another, or see
+how meals, insulin and activity lined up with glucose.
+
+Tarv1s keeps supporting dates and records attached to its answers. It should
+say when the available evidence is incomplete instead of filling in the gaps.
+Supported exact questions are answered on the phone. Broader questions can use
+an optional direct OpenAI connection with your own API key, and nothing is sent
+until you choose to submit one of those questions.
+
+Tarv1s is not an insulin-dose calculator, medical device or emergency service.
+
+**[See how Tarv1s works](docs/USING_T1_ARC.md#tarv1s)** ·
+[Set it up with your own OpenAI key](docs/TARV1S_BYOK.md)
 
 > [!IMPORTANT]
 > Install T1 Arc only from this repository's official
@@ -70,18 +98,19 @@ state. No personal health data or real provider account is shown.
 
 <table>
   <tr>
-    <td align="center" width="25%"><img src="docs/screenshots/today.png" alt="T1 Arc Today screen using synthetic demo data"><br><strong>Today</strong><br>What is happening now</td>
     <td align="center" width="25%"><img src="docs/screenshots/history.png" alt="T1 Arc seven-day glucose and insulin history"><br><strong>History</strong><br>Exact records on one timeline</td>
     <td align="center" width="25%"><img src="docs/screenshots/insights.png" alt="T1 Arc Insights weekly comparison"><br><strong>Insights</strong><br>Changes worth reviewing</td>
-    <td align="center" width="25%"><img src="docs/screenshots/tarvis.png" alt="Tarv1s question screen"><br><strong>Tarv1s</strong><br>Questions linked to evidence</td>
+    <td align="center" width="25%"><img src="docs/screenshots/food-logging.png" alt="T1 Arc food logging screen"><br><strong>Food logging</strong><br>Meals, recipes and quick carb entry</td>
+    <td align="center" width="25%"><img src="docs/screenshots/health.png" alt="T1 Arc health records screen"><br><strong>Health</strong><br>Health Connect and manual records</td>
   </tr>
 </table>
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="docs/screenshots/food-logging.png" alt="T1 Arc food logging screen"><br><strong>Food logging</strong></td>
-    <td align="center" width="33%"><img src="docs/screenshots/sources.png" alt="T1 Arc source connection shortcuts"><br><strong>Data sources</strong></td>
-    <td align="center" width="33%"><img src="docs/screenshots/regional-settings.png" alt="T1 Arc regional settings"><br><strong>Regional settings</strong></td>
+    <td align="center" width="25%"><img src="docs/screenshots/sources.png" alt="T1 Arc source connection shortcuts"><br><strong>Data sources</strong><br>Connection status and setup</td>
+    <td align="center" width="25%"><img src="docs/screenshots/regional-settings.png" alt="T1 Arc regional settings"><br><strong>Regional settings</strong><br>Units, formats and services</td>
+    <td align="center" width="25%"><img src="docs/screenshots/backup-privacy.png" alt="T1 Arc backup and privacy settings"><br><strong>Backup and privacy</strong><br>Encrypted portable backups</td>
+    <td align="center" width="25%"><img src="docs/screenshots/display-settings.png" alt="T1 Arc glucose display settings"><br><strong>Glucose display</strong><br>Notification, widget and glance options</td>
   </tr>
 </table>
 
@@ -155,12 +184,11 @@ T1 Arc labels those boundaries instead of treating a fixture as field proof.
 Read the [regional capability matrix](docs/REGIONAL_CAPABILITY_MATRIX.md) for
 the exact status.
 
-## Tarv1s and your OpenAI key
+## How Tarv1s uses your OpenAI key
 
-Tarv1s is the optional question interface inside T1 Arc. Supported exact
-questions are answered on the phone. Broader questions can send a bounded
-evidence packet directly to OpenAI and keep the supporting dates and records
-attached to the answer.
+Tarv1s works without OpenAI for supported exact questions. Broader questions
+can send a bounded evidence packet directly to OpenAI and keep the supporting
+dates and records attached to the answer.
 
 Every user follows the same bring-your-own-key route:
 
