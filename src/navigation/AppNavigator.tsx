@@ -32,7 +32,7 @@ import { SourcesScreen } from "@/screens/SourcesScreen";
 import { TodayScreen } from "@/screens/TodayScreen";
 import { useAppTheme } from "@/theme/theme";
 
-import { APP_LINK_PREFIXES } from "./appLinks";
+import { APP_LINK_PREFIXES, isSafeNavigationLink } from "./appLinks";
 import { resolveAppEntry } from "./appEntry";
 import type { SourceJump } from "./sourceNavigation";
 
@@ -48,6 +48,7 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 
 const linking: LinkingOptions<RootTabParamList> = {
   prefixes: APP_LINK_PREFIXES,
+  filter: isSafeNavigationLink,
   config: {
     screens: {
       Today: "today/:action?",

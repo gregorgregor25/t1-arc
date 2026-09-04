@@ -5,7 +5,11 @@ param(
   [Alias('MappingFile')]
   [string]$MappingPath,
 
-  [string]$ExpectedApplicationId
+  [string]$ExpectedApplicationId,
+
+  [string]$ExpectedSourceCommit,
+
+  [switch]$RequireCleanSource
 )
 
 $ErrorActionPreference = 'Stop'
@@ -212,6 +216,20 @@ try {
   }
   if (-not $archive.GetEntry('lib/arm64-v8a/libreactnative.so')) {
     throw 'APK has no ARM64 React Native runtime for the Pixel.'
+  }
+  if ($ExpectedSourceCommit -or $RequireCleanSource) {
+    $configEntry = $archive.GetEntry('assets/app.config')
+    if (-not $configEntry) { throw 'APK has no embedded source metadata.' }
+    $configReader = [System.IO.StreamReader]::new($configEntry.Open())
+    try { $embeddedConfig = $configReader.ReadToEnd() | ConvertFrom-Json }
+    finally { $configReader.Dispose() }
+    $buildSource = $embeddedConfig.extra.t1arcBuild
+    if ($ExpectedSourceCommit -and $buildSource.commit -cne $ExpectedSourceCommit) {
+      throw 'Embedded APK source commit does not match the expected release source.'
+    }
+    if ($RequireCleanSource -and $buildSource.modified -ne $false) {
+      throw 'APK source is modified or unknown.'
+    }
   }
 } finally {
   $archive.Dispose()

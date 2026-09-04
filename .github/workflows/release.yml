@@ -141,7 +141,9 @@ jobs:
           New-Item -ItemType Directory -Force release | Out-Null
           ./scripts/verify-android-apk.ps1 `
             -ApkPath ./android/app/build/outputs/apk/release/app-release.apk `
-            -ExpectedApplicationId io.github.gregorgregor25.t1arc
+            -ExpectedApplicationId io.github.gregorgregor25.t1arc `
+            -ExpectedSourceCommit $env:GITHUB_SHA `
+            -RequireCleanSource
           Copy-Item ./android/app/build/outputs/apk/release/app-release.apk "./release/$env:APK_NAME"
           $hash = (Get-FileHash "./release/$env:APK_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $env:APK_NAME" | Set-Content -NoNewline "./release/$env:APK_NAME.sha256"

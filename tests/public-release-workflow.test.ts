@@ -46,6 +46,8 @@ describe("public GitHub APK release", () => {
     expect(workflow).toContain('"release/$APK_NAME.build.json"');
     expect(workflow).toContain('$source.commit -cne $env:GITHUB_SHA');
     expect(workflow).toContain('$source.modified -ne $false');
+    expect(workflow).toContain('-ExpectedSourceCommit $env:GITHUB_SHA');
+    expect(workflow).toContain('-RequireCleanSource');
     expect(workflow).not.toContain("T1ARC_PRIVATE_TEST_BUILD");
     expect(workflow).not.toContain(".sideload");
   });
