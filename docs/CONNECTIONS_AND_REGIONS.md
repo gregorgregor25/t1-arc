@@ -29,10 +29,12 @@ at the boundary, so a unit change does not repeatedly convert old data.
 | Dexcom Share | International, US and Japan account routes | Routes and fixtures are tested; not every region has a maintainer-owned real account |
 | Nightscout | User URL plus token or legacy secret, read-only | Server versions and custom deployments vary |
 | Medtrum EasyFollow | Supported server-region and unit choices | Contract and fixture coverage does not equal every real account |
-| xDrip | Same-phone local endpoint | Requires xDrip configuration on that phone |
+| xDrip | Same-phone local endpoint or a configured remote HTTPS endpoint | Requires a working xDrip web service; an app region does not choose its host |
 | Compatible notifications | Parses supported notification formats on the same phone | Android permissions and vendor text can vary |
 | Glooko | Local import of the account export and background refresh where supported | UK has real regression evidence; US automatic import remains experimental |
 | Health Connect | Permission-controlled Android health records | Record types depend on installed source apps and Android permissions |
+| Hevy | Direct API-key connection for strength workouts, exercises and sets | Requires API access on the user's Hevy account |
+| Strava | Activities written by the Strava Android app to Health Connect | No direct Strava account sign-in or full Strava history download in T1 Arc |
 
 The detailed provider-by-provider evidence is in the
 [regional connection test matrix](REGIONAL_CONNECTION_TEST_MATRIX.md).
@@ -49,6 +51,19 @@ The detailed provider-by-provider evidence is in the
 Credentials and provider sessions are stored through Android secure storage.
 Imported supported records are copied into the encrypted local database with
 their source and timestamp.
+
+## Add activity from Strava or Hevy
+
+For Strava, first enable its Health Connect connection in the Strava Android
+app. In T1 Arc, open **Settings > Strava**, then **Open Health Connect settings**
+and allow the relevant exercise records. The status changes after a Strava
+activity reaches Health Connect. It does not prove that every past activity
+has been copied.
+
+For Hevy, open **Settings > Hevy** and enter your own Hevy API key. T1 Arc imports
+strength-workout detail directly. Matching Health Connect and Hevy workouts
+are reconciled so a workout can keep the health context and the exercise detail
+without being counted twice. No Hevy key is needed for the separate Strava route.
 
 ## Large Glooko imports
 

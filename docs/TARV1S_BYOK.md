@@ -14,9 +14,16 @@ require the user to choose whether to send them.
 
 1. Sign in to the [OpenAI API platform](https://platform.openai.com/).
 2. Create a separate project for T1 Arc.
-3. Set a project budget and limits that you are comfortable with.
+3. Set spend alerts and, if you want requests to stop at a budget, enable an
+   enforced hard spend limit. Alerts alone do not stop requests, and hard-limit
+   enforcement can lag slightly. See [OpenAI spend controls](https://developers.openai.com/api/docs/guides/spend-limits).
 4. Create a standard project API key. Do not use an organization admin key.
-5. In T1 Arc, open Tarv1s setup, paste the key and verify it.
+5. In T1 Arc, open **Tarv1s**, open conversation history at the top left, then
+   choose **Tarv1s settings**. Paste the key and select **Save key on this phone**.
+
+Saving stores the key locally. It does not verify billing or model access with
+OpenAI. The first broader question checks those when it is sent. No health
+records are sent by the save button.
 
 OpenAI API usage and a ChatGPT subscription are separate. Billing, model access
 and service limits belong to the API project that issued the key and can change
@@ -64,7 +71,7 @@ the device or a modified build may be able to extract or misuse it.
 Reduce that risk:
 
 - use a dedicated T1 Arc project, not a key shared with other work;
-- set conservative project budgets and limits;
+- set spend alerts and an enforced hard limit if you need a spending cap;
 - never paste the key into an issue, screenshot, backup or chat;
 - install only builds you trust;
 - revoke and replace the key if the phone, build or key may be compromised.

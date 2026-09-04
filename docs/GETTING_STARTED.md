@@ -69,6 +69,17 @@ If Android says the package conflicts with an existing app or the signature is
 invalid, stop. Do not remove the working app to force the installation. Open a
 bug report with the T1 Arc versions involved and no personal health data.
 
+## Check which build is installed
+
+Open the settings menu and choose **About T1 Arc**. This shows the version,
+Android package and source revision. **Share build details** copies those
+details into Android's share sheet without including health records or keys.
+
+If two icons have the same name, open each app and compare its package. Keep
+both until you know where your records are. A private test package and an
+official package have separate storage; installing one does not move data from
+the other. Older test builds may not have an About page.
+
 ## Verify a download
 
 Each release includes a file named `T1-Arc-vX.Y.Z.apk.sha256`. It contains the
@@ -88,6 +99,11 @@ sha256sum T1-Arc-vX.Y.Z.apk
 ```
 
 The value must exactly match the checksum file from the same release.
+
+The release also includes `T1-Arc-vX.Y.Z.apk.build.json`, a small text record
+linking that checksum to the source commit, package and version. You do not
+need it to install the app. It helps maintainers identify the exact build in
+a bug report. The checksum checks file identity, not whether the app is safe.
 
 ## Backups and changing phones
 

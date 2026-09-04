@@ -141,6 +141,9 @@ backup, privacy and Health Connect screens.
 ### Add the rest of the day
 
 - Read selected records from Android Health Connect.
+- Import Hevy strength-workout detail using your own Hevy API key.
+- Bring in Strava activities through the Strava Android app's Health Connect
+  connection, without a second Strava sign-in inside T1 Arc.
 - Keep the original source app attached to imported records.
 - Log activity, sleep, weight, medication, insulin, ketones and notes manually.
 - Compare glucose with meals, exercise, sleep and other recorded context.

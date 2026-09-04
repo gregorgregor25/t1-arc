@@ -45,18 +45,20 @@ The Health screen shows the chosen source, freshness and import status by data
 type. Older-history permission is optional because recent records can work
 without it.
 
-## Insights
-
-Insights compares recent periods and shows coverage beside each observation.
-An association is a pattern worth reviewing, not proof that one event caused
-another. The app should withhold a claim when coverage is too weak.
-
 ## Tarv1s
 
-Tarv1s is the question interface. Some exact questions are answered locally.
+Open **Tarv1s** from the bottom navigation. It is the question interface.
+Some exact questions are answered locally.
 Broader questions require the user's own OpenAI API key and send a bounded
 evidence packet only after the user submits the question. Read the
 [Tarv1s BYOK guide](TARV1S_BYOK.md) before enabling it.
+
+## Insights
+
+In the Tarv1s tab, choose **Insights** at the top to review recent periods.
+Coverage appears beside each observation. An association is a pattern worth
+reviewing, not proof that one event caused another. The app should withhold a
+claim when coverage is too weak. Choose **Tarv1s** to return to questions.
 
 ## Settings
 
@@ -67,7 +69,12 @@ Settings contains:
 - glucose display, alerts, notification, widget and lock-screen choices;
 - Health Connect and activity sources;
 - encrypted backup, restore and local-data controls;
-- app information, licences and diagnostic details.
+- **About T1 Arc**, with build details and links to source code and licences.
+
+The overview starts with connection shortcuts. Open **Region and services**
+for country and unit preferences. The close button stays at the top while you
+scroll. Android Back returns from a detail page to all settings, then to the
+previous app screen.
 
 Android keeps final control over notification, accessibility, lock-screen and
 Health Connect permissions. T1 Arc opens the relevant system page where Android
