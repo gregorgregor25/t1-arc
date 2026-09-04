@@ -2,7 +2,7 @@
 
 Every image on this page was captured on Android 17 with temporary synthetic
 demo data or an empty app state. No personal health records or real provider
-accounts are shown.
+accounts are shown. The examples show both light and dark themes.
 
 ## First run
 
@@ -21,7 +21,9 @@ Today brings the current glucose reading, daily range, insulin, food and health
 context together. History lets you move between day, 3-day, 7-day and 30-day
 views and inspect the underlying records.
 
-## Insights and Tarv1s
+## Tarv1s and Insights
+
+Open Tarv1s from the bottom navigation. The switch at the top opens Insights.
 
 | Insights | Tarv1s |
 | --- | --- |
@@ -57,3 +59,12 @@ connections. Each cloud source can still use its own supported account region.
 The health screenshot deliberately shows the honest empty state. Imported
 records depend on Android Health Connect permissions and data available on the
 device.
+
+## Glucose colours
+
+![Saved green in-range colour with an mg/dL preview](screenshots/glucose-colours.png)
+
+In **Display and alerts**, open **Phone and lock screen**, then **Glucose ranges
+and colours**. Tap a range, choose a colour and press **Save**. The preview uses
+illustrative values within the selected boundaries, in the selected glucose
+unit. Colours are accompanied by range labels, not used on their own.

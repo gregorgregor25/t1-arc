@@ -29,8 +29,10 @@ they are offered as public downloads.
 
 The source gates cover repository contents, secrets, dependency metadata,
 linting, types, automated tests, Expo configuration and native Android tasks.
-Selected phone interface paths have also been exercised on Android 17 and on a
-physical Pixel using synthetic or redacted test data.
+Representative phone interface paths have also been exercised in an Android 17
+emulator using synthetic or empty data. Physical-phone acceptance must use the
+exact draft release APK. Testing an earlier build does not establish that a new
+candidate works on that phone.
 
 That evidence does not prove every undocumented provider contract, Android
 manufacturer policy or account region. The
@@ -41,8 +43,6 @@ and fixture coverage from real-account evidence.
 
 - A large first Glooko export can spend several minutes processing locally with
   limited progress detail.
-- Selecting a food search result can leave the software keyboard visible on
-  some paths. The draft can still be reviewed and saved.
 - Android controls notification, background, lock-screen, Accessibility and
   Health Connect permissions. The exact settings screens vary by phone.
 - US Glooko automatic import is experimental until more real-account reports
@@ -67,6 +67,7 @@ Every release should state:
 
 - the app version and Android version range;
 - the exact APK filename and SHA-256 checksum;
+- the source commit and attached APK build record;
 - important changes and data migrations;
 - known limitations and any experimental provider routes;
 - the result of a clean install and an update over the previous public release.
