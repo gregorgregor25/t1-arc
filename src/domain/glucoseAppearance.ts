@@ -152,6 +152,20 @@ export function glucoseRangeForValue(
   return 'veryHigh';
 }
 
+/** Illustrative values within each valid configured band, always in mmol/L. */
+export function glucoseAppearancePreview(settings: GlucoseAppearanceSettings): {
+  mmolL: number;
+  range: Exclude<GlucoseRange, 'stale'>;
+}[] {
+  return [
+    { mmolL: settings.veryLowMax - 0.1, range: 'veryLow' },
+    { mmolL: (settings.veryLowMax + settings.targetMin) / 2, range: 'low' },
+    { mmolL: (settings.targetMin + settings.targetMax) / 2, range: 'target' },
+    { mmolL: (settings.targetMax + settings.veryHighMin) / 2, range: 'high' },
+    { mmolL: settings.veryHighMin + 0.1, range: 'veryHigh' },
+  ];
+}
+
 export function glucoseTone(
   mmolL: number | undefined,
   freshness: SourceFreshness,

@@ -23,12 +23,14 @@ import {
   GlucoseAppearanceSettings,
   GlucoseColorToken,
   GlucoseRange,
+  glucoseAppearancePreview,
   validateGlucoseAppearance,
 } from '@/domain/glucoseAppearance';
 import { useGlucoseAppearance } from '@/providers/GlucoseAppearanceProvider';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 import {
   formatGlucose,
+  formatGlucoseAccessible,
   glucoseToMmolL,
   glucoseUnitLabel,
   glucoseUnitSpokenLabel,
@@ -120,6 +122,9 @@ export function GlucoseAppearanceSettingsScreen({
   const draft = useMemo(
     () => parseDraft(thresholds, rangeColors, regional),
     [rangeColors, regional, thresholds],
+  );
+  const preview = glucoseAppearancePreview(
+    validateGlucoseAppearance(draft) ? settings : draft,
   );
 
   const descriptions = useMemo<Record<GlucoseRange, string>>(() => {
@@ -533,18 +538,17 @@ export function GlucoseAppearanceSettingsScreen({
                 },
               ]}
             >
-              <Text style={styles.previewEyebrow}>ALWAYS-ON PREVIEW</Text>
+              <Text style={styles.previewEyebrow}>
+                COLOUR PREVIEW · {glucoseUnitLabel(regional.glucoseUnit)}
+              </Text>
               <View style={styles.previewValues}>
-                {(
-                  [
-                    ['2.9', 'veryLow'],
-                    ['3.5', 'low'],
-                    ['6.2', 'target'],
-                    ['11.4', 'high'],
-                    ['14.2', 'veryHigh'],
-                  ] as const
-                ).map(([value, range]) => (
-                  <View key={range} style={styles.previewItem}>
+                {preview.map(({ mmolL, range }) => (
+                  <View
+                    accessible
+                    accessibilityLabel={`${GLUCOSE_RANGE_LABELS[range]}, ${formatGlucoseAccessible(mmolL, regional)}, illustrative example`}
+                    key={range}
+                    style={styles.previewItem}
+                  >
                     <Text
                       style={[
                         styles.previewValue,
@@ -554,7 +558,7 @@ export function GlucoseAppearanceSettingsScreen({
                         },
                       ]}
                     >
-                      {value}
+                      {formatGlucose(mmolL, regional, { withUnit: false })}
                     </Text>
                     <Text style={styles.previewLabel}>
                       {GLUCOSE_RANGE_LABELS[range]}
