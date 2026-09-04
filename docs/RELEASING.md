@@ -47,6 +47,12 @@ put a signing secret in release notes, workflow inputs or repository variables.
 Version codes must always increase. Never reuse a public version number for a
 different APK.
 
+The workflow refuses an existing tag. Choose the intended branch or tag in the
+workflow picker and check its commit before starting; a branch name is not an
+APK identity. `app.config.js` records the checkout commit and whether local
+changes exist in the app's About page. A source archive without Git reports
+unknown provenance rather than inventing a commit.
+
 ## Create a draft release
 
 1. Open **Actions** in GitHub.
@@ -64,6 +70,8 @@ The draft contains:
 
 - `T1-Arc-vX.Y.Z.apk`;
 - `T1-Arc-vX.Y.Z.apk.sha256`;
+- `T1-Arc-vX.Y.Z.apk.build.json`, linking the source commit, package, version and
+  APK checksum;
 - generated change notes that must be edited before publication.
 
 The workflow never accepts the development signing identity and never creates a
@@ -83,6 +91,9 @@ At minimum:
 5. restart the phone and confirm a cold launch;
 6. compare the APK checksum with the attached checksum file;
 7. confirm the release notes match the tested asset.
+8. open **Settings > About T1 Arc** and compare the package, version and source
+   revision with the build record. A production release must report a clean
+   source revision, not local changes or an unknown commit.
 
 If the first public version has no previous public APK, record that the upgrade
 check begins with the next release. Keep the first signing identity unchanged.

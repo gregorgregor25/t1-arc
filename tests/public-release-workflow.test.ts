@@ -41,6 +41,11 @@ describe("public GitHub APK release", () => {
     expect(workflow).toContain("$env:APK_NAME.sha256");
     expect(workflow).toContain("gh release create");
     expect(workflow).toContain("--draft");
+    expect(workflow).toContain('git show-ref --verify --quiet "refs/tags/$expectedTag"');
+    expect(workflow).toContain('git/matching-refs/tags/$RELEASE_TAG');
+    expect(workflow).toContain('"release/$APK_NAME.build.json"');
+    expect(workflow).toContain('$source.commit -cne $env:GITHUB_SHA');
+    expect(workflow).toContain('$source.modified -ne $false');
     expect(workflow).not.toContain("T1ARC_PRIVATE_TEST_BUILD");
     expect(workflow).not.toContain(".sideload");
   });

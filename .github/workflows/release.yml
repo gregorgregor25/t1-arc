@@ -66,6 +66,7 @@ jobs:
         run: |
           $app = Get-Content -Raw app.json | ConvertFrom-Json
           $package = Get-Content -Raw package.json | ConvertFrom-Json
+          $lock = Get-Content -Raw package-lock.json | ConvertFrom-Json
           $version = [string]$app.expo.version
           $expectedTag = "v$version"
           if ($env:REQUESTED_TAG -cne $expectedTag) {
@@ -74,9 +75,22 @@ jobs:
           if ([string]$package.version -cne $version) {
             throw "package.json version does not match app.json."
           }
+          if ([string]$lock.version -cne $version -or [string]$lock.packages.''.version -cne $version) {
+            throw "package-lock.json version does not match app.json."
+          }
           if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
             throw "Unsupported release version: $version"
           }
+          $revision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $revision -cne $env:GITHUB_SHA) {
+            throw "Checkout does not match the workflow source commit."
+          }
+          git show-ref --verify --quiet "refs/tags/$expectedTag"
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release tag already exists. Use a new version; do not attach a different APK to an old source tag."
+          }
+          if ($LASTEXITCODE -ne 1) { throw "Could not check release tags." }
+          $global:LASTEXITCODE = 0
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$expectedTag" >> $env:GITHUB_OUTPUT
           "apk=T1-Arc-v$version.apk" >> $env:GITHUB_OUTPUT
@@ -131,6 +145,19 @@ jobs:
           Copy-Item ./android/app/build/outputs/apk/release/app-release.apk "./release/$env:APK_NAME"
           $hash = (Get-FileHash "./release/$env:APK_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $env:APK_NAME" | Set-Content -NoNewline "./release/$env:APK_NAME.sha256"
+          $source = node -e "console.log(JSON.stringify(require('./scripts/build-source.cjs').readBuildSource(process.cwd())))" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $source.commit -cne $env:GITHUB_SHA -or $source.modified -ne $false) {
+            throw "Release source must be a clean, recorded checkout of the workflow commit."
+          }
+          $app = Get-Content -Raw app.json | ConvertFrom-Json
+          @{
+            sourceCommit = $source.commit
+            applicationId = $app.expo.android.package
+            version = $app.expo.version
+            versionCode = $app.expo.android.versionCode
+            apk = $env:APK_NAME
+            sha256 = $hash
+          } | ConvertTo-Json | Set-Content "./release/$env:APK_NAME.build.json"
       - name: Remove the decoded keystore
         if: always()
         shell: bash
@@ -142,9 +169,16 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           APK_NAME: ${{ steps.version.outputs.apk }}
         run: |
+          set -euo pipefail
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq '.[] | select(.ref == "refs/tags/" + env.RELEASE_TAG) | .ref')
+          if [[ -n "$existing" ]]; then
+            echo "Release tag was created during the build. Stop and review it before retrying."
+            exit 1
+          fi
           gh release create "$RELEASE_TAG" \
             "release/$APK_NAME" \
             "release/$APK_NAME.sha256" \
+            "release/$APK_NAME.build.json" \
             --draft \
             --generate-notes \
             --target "$GITHUB_SHA" \
