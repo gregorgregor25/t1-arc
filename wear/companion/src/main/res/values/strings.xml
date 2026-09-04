@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">T1 Arc</string>
+    <string name="glucose_complication_label">T1 Arc glucose</string>
+    <string name="glucose_graph_complication_label">T1 Arc glucose history</string>
+    <string name="glucose_tile_label">T1 Arc glucose</string>
+    <string name="glucose_tile_description">Current glucose, trend, and freshness from your T1 Arc phone app.</string>
+</resources>

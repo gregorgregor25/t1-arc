@@ -1,0 +1,20 @@
+{
+  "name": "@t1arc/tarvis-enrollment",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Content-blind TARV1S Android certificate enrolment proof of concept.",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test",
+    "check": "node --check src/index.js",
+    "create-development-ca": "node scripts/create-development-ca.js"
+  },
+  "dependencies": {
+    "@peculiar/x509": "2.0.0",
+    "reflect-metadata": "0.2.2"
+  }
+}

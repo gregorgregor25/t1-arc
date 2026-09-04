@@ -1,0 +1,23 @@
+<resources>
+  <string name="t1arc_glucose_channel_name">Current glucose — prominent</string>
+  <string name="t1arc_glucose_channel_description">Prominent ongoing glucose, direction and freshness from T1 Arc, without sound or vibration</string>
+  <string name="t1arc_review_channel_name">Weekly review</string>
+  <string name="t1arc_review_channel_description">One quiet notification when a private weekly evidence review is ready</string>
+  <string name="t1arc_connector_channel_name">Data connections</string>
+  <string name="t1arc_connector_channel_description">Quiet notices when a connected source needs your attention</string>
+  <string name="t1arc_alert_channel_name">Glucose alerts</string>
+  <string name="t1arc_alert_channel_description">Optional user-configured low, high and stale-reading alerts from T1 Arc</string>
+  <string name="t1arc_alert_channel_group_name">Glucose alerts</string>
+  <string name="t1arc_low_alert_channel_name">Low glucose</string>
+  <string name="t1arc_low_alert_channel_description">Optional low glucose alerts from T1 Arc</string>
+  <string name="t1arc_high_alert_channel_name">High glucose</string>
+  <string name="t1arc_high_alert_channel_description">Optional high glucose alerts from T1 Arc</string>
+  <string name="t1arc_freshness_alert_channel_name">Data freshness</string>
+  <string name="t1arc_freshness_alert_channel_description">Optional alerts when T1 Arc glucose updates become stale</string>
+  <string name="t1arc_widget_description">Current glucose, direction and freshness from T1 Arc</string>
+  <string name="t1arc_aod_service_name">T1 Arc always-on glucose</string>
+  <string name="t1arc_aod_service_description">Draws the latest T1 Arc glucose value while the phone display is dozing. It does not read screen content or key presses.</string>
+  <string name="t1arc_android_auto_name">T1 Arc</string>
+  <string name="t1arc_android_auto_section_name">Glucose</string>
+  <string name="t1arc_android_auto_section_description">Current reading and recent trend</string>
+</resources>

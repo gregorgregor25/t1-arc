@@ -1,0 +1,71 @@
+/*
+ * Shared application-ID policy for the phone, Wear companion and watch faces.
+ *
+ * Namespaces remain stable so source and serialized class names do not vary by
+ * build. Application IDs vary only to isolate official, debug, private-test and
+ * fork installations on the same device.
+ */
+def officialApplicationIdBase = 'io.github.gregorgregor25.t1arc'
+def debugApplicationIdSuffix = '.dev'
+def privateTestApplicationIdSuffix = '.sideload'
+def forkEnvironmentVariable = 'T1ARC_FORK_APPLICATION_ID_BASE'
+def forkApplicationIdBase = System.getenv(forkEnvironmentVariable)
+
+if (!project.ext.has('t1ArcPrivateTestBuildRequested')) {
+  throw new GradleException(
+    'T1 Arc application identity must be loaded through t1arc-signing.gradle.'
+  )
+}
+
+if (forkApplicationIdBase != null) {
+  forkApplicationIdBase = forkApplicationIdBase.trim()
+  def reverseDnsApplicationId = ~/[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+/
+  if (
+    forkApplicationIdBase.isEmpty() ||
+    !(forkApplicationIdBase ==~ reverseDnsApplicationId)
+  ) {
+    throw new GradleException(
+      "${forkEnvironmentVariable} must be a lowercase reverse-DNS application ID base."
+    )
+  }
+  if (
+    forkApplicationIdBase.endsWith(debugApplicationIdSuffix) ||
+    forkApplicationIdBase.endsWith(privateTestApplicationIdSuffix)
+  ) {
+    throw new GradleException(
+      "${forkEnvironmentVariable} must not include a T1 Arc build-variant suffix."
+    )
+  }
+}
+
+def applicationIdBase = forkApplicationIdBase ?: officialApplicationIdBase
+def releaseApplicationIdSuffix = project.ext.t1ArcPrivateTestBuildRequested
+  ? privateTestApplicationIdSuffix
+  : null
+def watchFaceNames = ['meridian', 'chronograph', 'orbit'] as Set
+
+ext.t1ArcOfficialApplicationIdBase = officialApplicationIdBase
+ext.t1ArcApplicationIdBase = applicationIdBase
+ext.t1ArcPhoneApplicationId = applicationIdBase
+ext.t1ArcWearCompanionApplicationId = applicationIdBase
+ext.t1ArcDebugApplicationIdSuffix = debugApplicationIdSuffix
+ext.t1ArcPrivateTestApplicationIdSuffix = privateTestApplicationIdSuffix
+ext.t1ArcReleaseApplicationIdSuffix = releaseApplicationIdSuffix
+ext.t1ArcWatchFaceApplicationId = { String watchFaceName ->
+  if (!watchFaceNames.contains(watchFaceName)) {
+    throw new GradleException("Unknown T1 Arc watch face: ${watchFaceName}")
+  }
+  return "${applicationIdBase}.watchface.${watchFaceName}"
+}
+ext.t1ArcVariantApplicationId = { String baseId, String buildType ->
+  switch (buildType) {
+    case 'debug':
+      return "${baseId}${debugApplicationIdSuffix}"
+    case 'release':
+      return releaseApplicationIdSuffix == null
+        ? baseId
+        : "${baseId}${releaseApplicationIdSuffix}"
+    default:
+      throw new GradleException("Unknown T1 Arc Android build type: ${buildType}")
+  }
+}

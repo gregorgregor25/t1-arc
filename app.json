@@ -1,0 +1,83 @@
+{
+  "expo": {
+    "name": "T1 Arc",
+    "slug": "t1-arc",
+    "version": "1.6.9",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "t1arc",
+    "userInterfaceStyle": "automatic",
+    "description": "Local-first, evidence-linked Type 1 diabetes data review.",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "io.github.gregorgregor25.t1arc",
+      "versionCode": 26,
+      "softwareKeyboardLayoutMode": "resize",
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#1B1D24",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "./plugins/with-main-activity-lint-workaround",
+      "./plugins/with-glooko-report-inbox",
+      "./plugins/with-optional-camera-hardware",
+      "./plugins/with-t1arc-shortcuts",
+      "./plugins/with-t1arc-release-signing",
+      "./plugins/with-t1arc-application-id",
+      "./plugins/with-t1arc-r8-compat",
+      "./plugins/with-t1arc-windows-native-staging",
+      "./plugins/with-xdrip-local-network",
+      "./plugins/with-health-connect-android",
+      "./plugins/with-t1arc-wear",
+      "expo-secure-store",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true,
+          "android": {
+            "customBuildFlags": "-DOMIT_MEMLOCK"
+          }
+        }
+      ],
+      "expo-background-task",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow T1 Arc to scan food barcodes. Images are not saved.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F1EA",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#111217"
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "./plugins/with-t1arc-splash-api-guard"
+    ]
+  }
+}

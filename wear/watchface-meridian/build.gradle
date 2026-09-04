@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+apply from: rootProject.file('../scripts/gradle/t1arc-signing.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-watchface-provider.gradle')
+
+android {
+    namespace 'io.github.gregorgregor25.t1arc.watchface.meridian'
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        applicationId t1ArcWatchFaceApplicationId('meridian')
+        minSdk 33
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    signingConfigs {
+        privateTest {
+            storeFile rootProject.file('app/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (t1ArcProductionSigningConfigured) {
+            production {
+                storeFile t1ArcProductionStoreFile
+                storePassword t1ArcProductionStorePassword
+                keyAlias t1ArcProductionKeyAlias
+                keyPassword t1ArcProductionKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix t1ArcDebugApplicationIdSuffix
+            minifyEnabled true
+        }
+        release {
+            if (t1ArcReleaseApplicationIdSuffix != null) {
+                applicationIdSuffix t1ArcReleaseApplicationIdSuffix
+            }
+            minifyEnabled true
+            shrinkResources false
+            signingConfig t1ArcProductionSigningConfigured
+                ? signingConfigs.production
+                : t1ArcPrivateTestBuildRequested
+                    ? signingConfigs.privateTest
+                    : null
+        }
+    }
+}

@@ -1,0 +1,81 @@
+name: Regional compatibility report
+description: Report a provider, food catalogue, unit, timezone, language, car, or watch issue in a particular region.
+title: "[Regional] "
+labels:
+  - regional
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping T1 Arc work in more places. Never post passwords, access tokens, email addresses, account identifiers, exact glucose/insulin values, exported health files, or screenshots containing personal health information. A country, provider name, and non-sensitive error code are normally enough to start.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Glucose provider connection
+        - Food text search
+        - Food barcode scan
+        - Units or measurements
+        - Timezone, DST, travel, or schedules
+        - Health Connect, workouts, or manual records
+        - Tarv1s, Insights, or clinical wording
+        - Language or accessibility
+        - Android Auto
+        - Wear OS companion or watch face
+        - Other regional behaviour
+    validations:
+      required: true
+  - type: input
+    id: region
+    attributes:
+      label: Country or region
+      placeholder: Japan (JP)
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider or data source
+      description: Leave blank if this is not a provider/data issue.
+      placeholder: Glooko US, Dexcom Japan, USDA FoodData Central, MEXT, Open Food Facts
+  - type: input
+    id: versions
+    attributes:
+      label: T1 Arc and Android/Wear versions
+      placeholder: T1 Arc x.y.z; Android 17
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Non-sensitive regional settings
+      placeholder: Country JP; language ja-JP; timezone Asia/Tokyo; glucose mg/dL
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Describe the setup and the smallest sequence that shows the problem. Use invented values if a value is needed.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: input
+    id: diagnostic
+    attributes:
+      label: Safe diagnostic/error code
+      description: Copy only a code T1 Arc explicitly labels safe to share. Do not paste raw logs.
+      placeholder: region=us; code=http-404
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed credentials, account identifiers, personal health values/files, and identifying screenshots.
+          required: true

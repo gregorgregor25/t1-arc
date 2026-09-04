@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/t1arc_widget_description"
+  android:initialLayout="@layout/t1arc_glucose_widget"
+  android:minHeight="90dp"
+  android:minResizeHeight="80dp"
+  android:minResizeWidth="150dp"
+  android:minWidth="180dp"
+  android:previewLayout="@layout/t1arc_glucose_widget"
+  android:resizeMode="horizontal|vertical"
+  android:targetCellHeight="2"
+  android:targetCellWidth="3"
+  android:updatePeriodMillis="1800000"
+  android:widgetCategory="home_screen" />

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0b0d10">
+    <title>TARV1S Lab</title>
+    <link rel="stylesheet" href="/app.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#composer-input">Skip to question</a>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand" aria-label="TARV1S Lab">
+          <span class="brand-mark" aria-hidden="true">T1</span>
+          <span>
+            <strong>TARV1S</strong>
+            <small>Private analysis lab</small>
+          </span>
+        </div>
+
+        <div class="topbar-actions">
+          <label class="model-control" for="model-select">
+            <span>Model</span>
+            <select id="model-select" aria-label="Model" disabled>
+              <option>Loading...</option>
+            </select>
+          </label>
+          <button class="button button-quiet" id="clear-button" type="button" disabled>
+            Clear chat
+          </button>
+          <details class="connection" id="connection-settings">
+            <summary>Connection</summary>
+            <div class="connection-panel">
+              <label for="service-token">Service token</label>
+              <input
+                id="service-token"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Needed once on this device"
+              >
+              <label for="openai-key">OpenAI API key</label>
+              <input
+                id="openai-key"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Needed once for this private lab"
+              >
+              <p>
+                After Connect, this browser profile remembers lab access at this address, and
+                The lab host keeps the OpenAI key in its private secret store. Neither credential is
+                saved in browser storage or test-run records.
+              </p>
+              <button class="button button-secondary" id="connect-button" type="button">
+                Connect
+              </button>
+            </div>
+          </details>
+        </div>
+      </header>
+
+      <main class="conversation" id="conversation">
+        <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+          <div class="eyebrow">One snapshot. Read-only analysis.</div>
+          <h1 id="welcome-title">Ask what your data shows.</h1>
+          <p>
+            TARV1S can compare glucose, insulin, meals, activity and health context in the
+            server-loaded snapshot. It shows its SQL evidence and limitations with every answer.
+          </p>
+          <div class="snapshot-card" id="snapshot-card" role="status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="snapshot-summary">Connecting to the private lab...</span>
+          </div>
+          <div class="prompts" aria-label="Example questions">
+            <button type="button" data-question="What patterns can you see in my glucose over the last 14 days?">
+              <span>Glucose patterns</span>
+              <small>Review the last 14 days</small>
+            </button>
+            <button type="button" data-question="How did my glucose respond after meals this week?">
+              <span>After meals</span>
+              <small>Compare recorded responses</small>
+            </button>
+            <button type="button" data-question="Compare my activity and glucose on my most active and least active days.">
+              <span>Activity comparison</span>
+              <small>Look across daily context</small>
+            </button>
+          </div>
+        </section>
+
+        <section
+          class="messages"
+          id="messages"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Conversation"
+        ></section>
+      </main>
+
+      <footer class="composer-shell">
+        <div class="composer-status">
+          <span id="connection-status" role="status">Connecting...</span>
+          <span id="elapsed-status" aria-live="polite"></span>
+        </div>
+        <form class="composer" id="composer-form">
+          <label class="visually-hidden" for="composer-input">Ask TARV1S a question</label>
+          <textarea
+            id="composer-input"
+            rows="1"
+            maxlength="2000"
+            placeholder="Ask about your snapshot..."
+            disabled
+          ></textarea>
+          <button class="send-button" id="send-button" type="submit" disabled>
+            <span>Ask</span>
+            <span aria-hidden="true">&#8593;</span>
+          </button>
+        </form>
+        <p class="safety-note">
+          Experimental analysis only. TARV1S does not give insulin-dose instructions or replace
+          your diabetes team.
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

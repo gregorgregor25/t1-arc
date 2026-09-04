@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen-before-public-release",
+  "repository": {
+    "owner": "gregorgregor25",
+    "name": "t1-arc",
+    "url": "https://github.com/gregorgregor25/t1-arc"
+  },
+  "product": {
+    "displayName": "T1 Arc",
+    "npmName": "t1-arc",
+    "expoSlug": "t1-arc"
+  },
+  "android": {
+    "namespaceRoot": "io.github.gregorgregor25.t1arc",
+    "phoneApplicationId": "io.github.gregorgregor25.t1arc",
+    "wearCompanionApplicationId": "io.github.gregorgregor25.t1arc",
+    "watchFaceApplicationIds": {
+      "meridian": "io.github.gregorgregor25.t1arc.watchface.meridian",
+      "chronograph": "io.github.gregorgregor25.t1arc.watchface.chronograph",
+      "orbit": "io.github.gregorgregor25.t1arc.watchface.orbit"
+    },
+    "variants": {
+      "debugApplicationIdSuffix": ".dev",
+      "privateTestApplicationIdSuffix": ".sideload",
+      "forkApplicationIdBaseEnvironmentVariable": "T1ARC_FORK_APPLICATION_ID_BASE"
+    }
+  },
+  "nativeModules": {
+    "directoryPrefix": "t1arc-",
+    "bridgePrefix": "T1Arc",
+    "bridges": {
+      "backupCrypto": "T1ArcBackupCrypto",
+      "glookoExport": "T1ArcGlookoExport",
+      "glucoseDisplay": "T1ArcGlucoseDisplay",
+      "healthConnect": "T1ArcHealthConnect",
+      "notificationSource": "T1ArcNotificationSource"
+    }
+  },
+  "links": {
+    "scheme": "t1arc",
+    "prefix": "t1arc://"
+  },
+  "backup": {
+    "documentFormat": "t1arc-health-backup",
+    "mimeType": "application/vnd.t1arc.health-backup",
+    "extension": ".t1arc",
+    "encryptedContainerMagic": "T1ARCBK1",
+    "streamedContainerMagic": "T1ARCCN1"
+  },
+  "maintainerMigration": {
+    "documentFormat": "t1arc-maintainer-migration",
+    "mimeType": "application/vnd.t1arc.maintainer-migration",
+    "extension": ".t1arc-migration",
+    "encryptedContainerMagic": "T1ARCMG1",
+    "recordFingerprintMagic": "T1ARCRF1"
+  },
+  "wear": {
+    "routePrefix": "/t1arc/v1",
+    "currentGlucosePath": "/t1arc/v1/glucose/current",
+    "glucoseHistoryPath": "/t1arc/v1/glucose/history",
+    "glucoseRequestPath": "/t1arc/v1/glucose/request",
+    "capability": "t1arc_glucose_companion_v1"
+  },
+  "persistence": {
+    "databaseFile": "t1arc-health-v1.db",
+    "databaseKey": "t1arc.database.key.v1",
+    "secureStorePrefix": "t1arc.",
+    "nativePreferencesPrefix": "t1arc_",
+    "keystoreAliasPrefix": "t1arc."
+  },
+  "background": {
+    "taskPrefix": "t1arc.background."
+  },
+  "notifications": {
+    "channelPrefix": "t1arc_",
+    "intentActionPrefix": "io.github.gregorgregor25.t1arc.action."
+  },
+  "records": {
+    "sourcePrefix": "t1arc-",
+    "canonicalFingerprintAlgorithm": "t1arc-canonical-cyrb128-v1"
+  }
+}

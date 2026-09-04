@@ -1,0 +1,151 @@
+name: Prepare signed Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag matching app.json, for example v1.7.0
+        required: true
+        type: string
+      confirmation:
+        description: Type PREPARE SIGNED RELEASE
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: t1arc-production-release
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Build and draft the signed phone APK
+    if: inputs.confirmation == 'PREPARE SIGNED RELEASE'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Confirm protected signing secrets are configured
+        shell: bash
+        env:
+          T1ARC_RELEASE_KEYSTORE_BASE64: ${{ secrets.T1ARC_RELEASE_KEYSTORE_BASE64 }}
+          T1ARC_RELEASE_STORE_PASSWORD: ${{ secrets.T1ARC_RELEASE_STORE_PASSWORD }}
+          T1ARC_RELEASE_KEY_ALIAS: ${{ secrets.T1ARC_RELEASE_KEY_ALIAS }}
+          T1ARC_RELEASE_KEY_PASSWORD: ${{ secrets.T1ARC_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$T1ARC_RELEASE_KEYSTORE_BASE64" ]] || missing+=(T1ARC_RELEASE_KEYSTORE_BASE64)
+          [[ -n "$T1ARC_RELEASE_STORE_PASSWORD" ]] || missing+=(T1ARC_RELEASE_STORE_PASSWORD)
+          [[ -n "$T1ARC_RELEASE_KEY_ALIAS" ]] || missing+=(T1ARC_RELEASE_KEY_ALIAS)
+          [[ -n "$T1ARC_RELEASE_KEY_PASSWORD" ]] || missing+=(T1ARC_RELEASE_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            printf 'Missing production environment secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+      - name: Validate version and release inputs
+        id: version
+        shell: pwsh
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          $app = Get-Content -Raw app.json | ConvertFrom-Json
+          $package = Get-Content -Raw package.json | ConvertFrom-Json
+          $version = [string]$app.expo.version
+          $expectedTag = "v$version"
+          if ($env:REQUESTED_TAG -cne $expectedTag) {
+            throw "Requested tag $($env:REQUESTED_TAG) does not match app.json $expectedTag."
+          }
+          if ([string]$package.version -cne $version) {
+            throw "package.json version does not match app.json."
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Unsupported release version: $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$expectedTag" >> $env:GITHUB_OUTPUT
+          "apk=T1-Arc-v$version.apk" >> $env:GITHUB_OUTPUT
+      - run: npm ci
+      - name: Check public source
+        run: npm run verify:public-source
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo project
+        run: |
+          npx expo install --check
+          npx --no-install expo-doctor
+      - name: Run application quality suite
+        run: npm run quality
+      - name: Generate the native Android project
+        env:
+          NODE_ENV: production
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Decode the protected production keystore
+        shell: bash
+        env:
+          T1ARC_RELEASE_KEYSTORE_BASE64: ${{ secrets.T1ARC_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$T1ARC_RELEASE_KEYSTORE_BASE64" ]]; then
+            echo "The production keystore secret is missing."
+            exit 1
+          fi
+          printf '%s' "$T1ARC_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/t1arc-release.jks"
+          chmod 600 "$RUNNER_TEMP/t1arc-release.jks"
+          test -s "$RUNNER_TEMP/t1arc-release.jks"
+      - name: Build the production-signed phone APK
+        working-directory: android
+        env:
+          T1ARC_RELEASE_STORE_FILE: ${{ runner.temp }}/t1arc-release.jks
+          T1ARC_RELEASE_STORE_PASSWORD: ${{ secrets.T1ARC_RELEASE_STORE_PASSWORD }}
+          T1ARC_RELEASE_KEY_ALIAS: ${{ secrets.T1ARC_RELEASE_KEY_ALIAS }}
+          T1ARC_RELEASE_KEY_PASSWORD: ${{ secrets.T1ARC_RELEASE_KEY_PASSWORD }}
+          NODE_ENV: production
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon
+      - name: Verify and name the public APK
+        shell: pwsh
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          ./scripts/verify-android-apk.ps1 `
+            -ApkPath ./android/app/build/outputs/apk/release/app-release.apk `
+            -ExpectedApplicationId io.github.gregorgregor25.t1arc
+          Copy-Item ./android/app/build/outputs/apk/release/app-release.apk "./release/$env:APK_NAME"
+          $hash = (Get-FileHash "./release/$env:APK_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:APK_NAME" | Set-Content -NoNewline "./release/$env:APK_NAME.sha256"
+      - name: Remove the decoded keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/t1arc-release.jks"
+      - name: Create a draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "release/$APK_NAME" \
+            "release/$APK_NAME.sha256" \
+            --draft \
+            --generate-notes \
+            --target "$GITHUB_SHA" \
+            --title "T1 Arc $RELEASE_VERSION"

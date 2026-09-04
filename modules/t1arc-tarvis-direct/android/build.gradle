@@ -1,0 +1,32 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.gregorgregor25.t1arc.tarvisdirect'
+version = '0.1.0'
+
+android {
+  namespace "io.github.gregorgregor25.t1arc.tarvisdirect"
+  buildFeatures {
+    buildConfig true
+  }
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    // Archived proof-of-concept sources remain buildable for regression tests,
+    // but no T1 Arc app build may activate this non-BYOK authentication route.
+    buildConfigField "boolean", "TARVIS_MTLS_POC_ENABLED", "false"
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+  lintOptions {
+    abortOnError true
+  }
+}
+
+dependencies {
+  implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'com.squareup.okhttp3:mockwebserver:4.9.2'
+  testImplementation 'org.json:json:20250517'
+}

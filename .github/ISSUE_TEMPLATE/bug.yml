@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible T1 Arc problem without sharing private health or account data.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never post credentials, tokens, email addresses, account identifiers, provider responses, databases, backups, exports, exact health readings, or identifying screenshots. Use invented values. Report security/privacy vulnerabilities privately under SECURITY.md.
+  - type: input
+    id: versions
+    attributes:
+      label: T1 Arc and platform versions
+      description: Find the T1 Arc version in the app information screen or GitHub Release.
+      placeholder: T1 Arc x.y.z; Pixel 10 Pro XL; Android 17
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: How was T1 Arc installed?
+      options:
+        - Official GitHub Release APK
+        - Built from source by the reporter
+        - I am not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Area
+      options:
+        - Phone app
+        - Provider connection or import
+        - Backup or restore
+        - Notification, widget, AOD, or Android Auto
+        - Wear companion, tile, complication, or watch face
+        - Health Connect or workout data
+        - Tarv1s or Insights
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Give the smallest exact sequence, using synthetic values.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Non-sensitive evidence
+      description: A screenshot with invented data can help. Developer logs are not required. Include only diagnostics explicitly marked safe to share.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed personal health data, credentials, account identifiers, private files and identifying screenshots.
+          required: true
+        - label: This is not a security vulnerability requiring private reporting.
+          required: true

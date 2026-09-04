@@ -1,0 +1,8 @@
+.env
+secrets/
+*.log
+*.jsonl
+*.sqlite
+*.sqlite3
+*.t1arc
+*.container

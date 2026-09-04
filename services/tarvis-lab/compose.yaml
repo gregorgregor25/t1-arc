@@ -1,0 +1,58 @@
+services:
+  tarvis-lab:
+    build:
+      context: .
+    image: t1arc/tarvis-lab:dev
+    restart: unless-stopped
+    init: true
+    network_mode: bridge
+    ports:
+      - "${TARVIS_LAB_BIND_IP:-127.0.0.1}:${TARVIS_LAB_PORT:-7313}:7313"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 7313
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      OPENAI_ALLOWED_MODELS: ${OPENAI_ALLOWED_MODELS:-gpt-5.6-luna,gpt-5.6-terra}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_KEY_FILE: ${OPENAI_API_KEY_FILE:-}
+      REMEMBERED_OPENAI_API_KEY_FILE: /run/tarvis-secrets/openai-api-key
+      ALLOW_CLIENT_OPENAI_KEY: ${ALLOW_CLIENT_OPENAI_KEY:-0}
+      LFM_PHONE_CHAT_COMPLETIONS_URL: ${LFM_PHONE_CHAT_COMPLETIONS_URL:-}
+      LFM_PHONE_API_KEY_FILE: ${LFM_PHONE_API_KEY_FILE:-}
+      LFM_PHONE_TIMEOUT_MS: ${LFM_PHONE_TIMEOUT_MS:-360000}
+      TARVIS_LAB_BEARER_TOKEN: ${TARVIS_LAB_BEARER_TOKEN:-}
+      RAW_SQLITE_PATH: /run/tarvis-data/raw.sqlite
+      RESULT_JOURNAL_PATH: /run/tarvis-results/luna-runs.jsonl
+      SESSION_TTL_MS: ${SESSION_TTL_MS:-1800000}
+      MAX_SNAPSHOT_BYTES: ${MAX_SNAPSHOT_BYTES:-33554432}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-60000}
+      MAX_TOOL_ROUNDS: ${MAX_TOOL_ROUNDS:-6}
+    volumes:
+      - "${RAW_SQLITE_HOST_PATH:?RAW_SQLITE_HOST_PATH must point to the private RAM-backed snapshot}:/run/tarvis-data/raw.sqlite:ro"
+      - "${RESULT_JOURNAL_HOST_DIR:?RESULT_JOURNAL_HOST_DIR must point to private RAM-backed storage}:/run/tarvis-results:rw"
+      - "${TARVIS_SECRET_HOST_DIR:?TARVIS_SECRET_HOST_DIR must point to private persistent storage}:/run/tarvis-secrets:rw"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 1g
+    memswap_limit: 1g
+    mem_swappiness: 0
+    cpus: 1.5
+    ulimits:
+      core: 0
+    stop_grace_period: 10s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7313/dev/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

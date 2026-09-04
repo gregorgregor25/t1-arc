@@ -1,0 +1,127 @@
+name: T1 Arc quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t1arc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Check public-source artifacts, secrets and licence metadata
+        run: npm run verify:public-source
+      - name: Audit production dependencies for high-severity advisories
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo dependency parity
+        run: npx expo install --check
+      - name: Check Expo project health
+        run: npx --no-install expo-doctor
+      - name: Generate the native Android project for identity checks
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Link generated Android resources
+        working-directory: android
+        env:
+          NODE_ENV: production
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :app:processDebugResources \
+            :app:processDebugOptimizedResources \
+            :app:processReleaseResources \
+            --no-daemon
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --run
+      - name: Test and lint native Android modules
+        working-directory: android
+        env:
+          NODE_ENV: production
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :app:testDebugUnitTest \
+            :t1arc-backup-crypto:testDebugUnitTest \
+            :t1arc-glooko-export:testDebugUnitTest \
+            :t1arc-glucose-display:testDebugUnitTest \
+            :t1arc-health-connect:testDebugUnitTest \
+            :t1arc-notification-source:testDebugUnitTest \
+            :wear:testDebugUnitTest \
+            :watchface-meridian:testDebugUnitTest \
+            :watchface-chronograph:testDebugUnitTest \
+            :watchface-orbit:testDebugUnitTest \
+            :app:lintRelease \
+            :t1arc-backup-crypto:lintRelease \
+            :t1arc-glooko-export:lintRelease \
+            :t1arc-glucose-display:lintRelease \
+            :t1arc-health-connect:lintRelease \
+            :t1arc-notification-source:lintRelease \
+            :wear:lintRelease \
+            :watchface-meridian:lintRelease \
+            :watchface-chronograph:lintRelease \
+            :watchface-orbit:lintRelease \
+            --no-daemon
+      - name: Verify release packaging fails closed without an explicit signer
+        working-directory: android
+        env:
+          NODE_ENV: production
+        run: |
+          if ./gradlew :app:packageRelease --dry-run --no-daemon > signing-policy.log 2>&1; then
+            cat signing-policy.log
+            echo "Release packaging unexpectedly accepted implicit signing."
+            exit 1
+          fi
+          grep -q "refuses an implicitly debug-signed release APK" signing-policy.log
+
+  archived-node-services:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/tarvis-enrollment/package-lock.json
+      - name: Check Tarv1s lab service syntax
+        working-directory: services/tarvis-lab
+        run: npm run check
+      - name: Test Tarv1s lab service
+        working-directory: services/tarvis-lab
+        run: npm test
+      - name: Install enrollment service dependencies
+        working-directory: services/tarvis-enrollment
+        run: npm ci
+      - name: Test enrollment service
+        working-directory: services/tarvis-enrollment
+        run: npm test
+      - name: Check enrollment service syntax
+        working-directory: services/tarvis-enrollment
+        run: npm run check
+      - name: Audit enrollment production dependencies
+        working-directory: services/tarvis-enrollment
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo prebuild plugin syntax
+        run: |
+          for plugin in plugins/*.js; do
+            node --check "$plugin"
+          done

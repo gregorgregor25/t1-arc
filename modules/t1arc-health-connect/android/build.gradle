@@ -1,0 +1,22 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.gregorgregor25.t1arc.healthconnect'
+version = '0.1.0'
+
+android {
+  namespace "io.github.gregorgregor25.t1arc.healthconnect"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation "androidx.health.connect:connect-client:1.2.0-alpha03"
+}

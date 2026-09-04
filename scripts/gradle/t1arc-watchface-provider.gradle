@@ -1,0 +1,69 @@
+/*
+ * Watch Face Format stores default complication providers in raw XML rather
+ * than the Android manifest, so manifest placeholders do not apply. Generate a
+ * build-type override without mutating the reviewed main template.
+ */
+def officialCompanionApplicationId = 'io.github.gregorgregor25.t1arc'
+def templateFile = project.file('src/main/res/raw/watchface.xml')
+def providerPattern = java.util.regex.Pattern.compile(
+  'primaryProvider="([^"]+)/([^"]+)"'
+)
+
+['debug', 'release'].each { buildType ->
+  def capitalizedBuildType = buildType.capitalize()
+  def generatedResDirectory = new File(
+    project.layout.buildDirectory.get().asFile,
+    "generated/t1arc-watchface-provider/${buildType}/res"
+  )
+  def generatedWatchFace = new File(generatedResDirectory, 'raw/watchface.xml')
+  def providerApplicationId = project.ext.t1ArcVariantApplicationId(
+    project.ext.t1ArcWearCompanionApplicationId,
+    buildType
+  )
+
+  android.sourceSets.getByName(buildType).res.srcDir(generatedResDirectory)
+
+  def generationTask = tasks.register(
+    "generateT1Arc${capitalizedBuildType}WatchFaceProvider"
+  ) {
+    inputs.file(templateFile)
+    inputs.property('providerApplicationId', providerApplicationId)
+    outputs.file(generatedWatchFace)
+
+    doLast {
+      def source = templateFile.getText('UTF-8')
+      def matcher = providerPattern.matcher(source)
+      def generated = new StringBuffer()
+      def providerCount = 0
+
+      while (matcher.find()) {
+        providerCount += 1
+        if (matcher.group(1) != officialCompanionApplicationId) {
+          throw new GradleException(
+            "Unexpected watch-face provider package ${matcher.group(1)} in ${templateFile}."
+          )
+        }
+        def replacement =
+          "primaryProvider=\"${providerApplicationId}/${matcher.group(2)}\""
+        matcher.appendReplacement(
+          generated,
+          java.util.regex.Matcher.quoteReplacement(replacement)
+        )
+      }
+      matcher.appendTail(generated)
+
+      if (providerCount == 0) {
+        throw new GradleException(
+          "No T1 Arc complication providers were found in ${templateFile}."
+        )
+      }
+
+      generatedWatchFace.parentFile.mkdirs()
+      generatedWatchFace.setText(generated.toString(), 'UTF-8')
+    }
+  }
+
+  tasks.matching { it.name == "pre${capitalizedBuildType}Build" }.configureEach {
+    dependsOn(generationTask)
+  }
+}

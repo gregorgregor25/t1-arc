@@ -1,0 +1,15 @@
+{
+  "name": "@t1arc/tarvis-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ephemeral, developer-only TARV1S backend experiment.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test",
+    "check": "node --disable-warning=ExperimentalWarning --check src/index.js"
+  }
+}
