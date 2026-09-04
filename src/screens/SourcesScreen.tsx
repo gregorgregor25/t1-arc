@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
+import { AppInfoCard } from "@/components/AppInfoCard";
 import { AutomationStatusCard } from "@/components/AutomationStatusCard";
 import { DexcomClarityImportCard } from "@/components/DexcomClarityImportCard";
 import { DexcomShareSourceCard } from "@/components/DexcomShareSourceCard";
@@ -446,6 +447,7 @@ export function SourcesScreen({
   return (
     <AppScreen
       title="Settings"
+      fixedHeader
       refreshing={syncing}
       onRefresh={() => void refreshData()}
       scrollViewRef={scrollViewRef}
@@ -483,7 +485,7 @@ export function SourcesScreen({
         />
       ) : !activeSource ? (
         <View style={styles.overviewSections}>
-          <RegionalSettingsCard />
+          <SourceJumpGrid active={activeSource} onSelect={showSource} />
           <SettingsDisclosure
             detail="Add the insulin-to-carb ratios already agreed in your care plan."
             expanded={expandedSetting === "overview-diabetes-profile"}
@@ -493,7 +495,6 @@ export function SourcesScreen({
           >
             <TarvisTreatmentProfileCard />
           </SettingsDisclosure>
-          <SourceJumpGrid active={activeSource} onSelect={showSource} />
           <TourReplayCard onPress={() => setTourOpen(true)} />
           <SettingsDisclosure
             detail="Runs quietly in the background. Open only if something needs attention."
@@ -1022,6 +1023,18 @@ export function SourcesScreen({
         </View>
       ) : null}
 
+      {activeSource === "region" ? (
+        <View style={styles.settingsSections}>
+          <RegionalSettingsCard />
+        </View>
+      ) : null}
+
+      {activeSource === "about" ? (
+        <View style={styles.settingsSections}>
+          <AppInfoCard />
+        </View>
+      ) : null}
+
       {activeSource === "profile" ? (
         <View style={styles.settingsSections}>
           <TarvisTreatmentProfileCard />
@@ -1461,7 +1474,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   overviewSections: {
-    marginTop: 18,
     gap: 22,
   },
   body: {

@@ -69,7 +69,7 @@ const ICONS: Record<
   Today: { active: "pulse", inactive: "pulse-outline" },
   History: { active: "calendar", inactive: "calendar-outline" },
   Health: { active: "fitness", inactive: "fitness-outline" },
-  Insights: { active: "compass", inactive: "compass-outline" },
+  Insights: { active: "chatbubble-ellipses", inactive: "chatbubble-ellipses-outline" },
   Sources: { active: "server", inactive: "server-outline" },
 };
 
@@ -305,7 +305,11 @@ export function AppNavigator() {
         <Tab.Screen name="Today" component={TodayScreen} />
         <Tab.Screen name="History" component={HistoryScreen} />
         <Tab.Screen name="Health" component={HealthScreen} />
-        <Tab.Screen name="Insights" component={InsightsScreen} />
+        <Tab.Screen
+          name="Insights"
+          component={InsightsScreen}
+          options={{ title: "Tarv1s" }}
+        />
         <Tab.Screen
           name="Sources"
           component={SourcesScreen}

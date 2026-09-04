@@ -3375,7 +3375,7 @@ export function TarvisScreen({
                   <Text
                     style={[styles.recordsReadyText, { color: colors.text }]}
                   >
-                    Your T1 Arc records are ready
+                    Answers use records saved in T1 Arc
                   </Text>
                 </View>
               </View>

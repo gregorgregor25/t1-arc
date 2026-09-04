@@ -13,6 +13,8 @@ export type SourceJump =
   | "hevy"
   | "strava"
   | "display"
+  | "region"
+  | "about"
   | "privacy";
 
 export interface SourceMenuItem {
@@ -118,8 +120,14 @@ export const SOURCE_MENU_SECTIONS: {
   },
   {
     id: "app",
-    title: "Display and privacy",
+    title: "App and privacy",
     items: [
+      {
+        source: "region",
+        label: "Region and services",
+        detail: "Country, number formats and units",
+        icon: "globe-outline",
+      },
       {
         source: "display",
         label: "Display and alerts",
@@ -131,6 +139,12 @@ export const SOURCE_MENU_SECTIONS: {
         label: "Backup and privacy",
         detail: "Your local data",
         icon: "shield-checkmark-outline",
+      },
+      {
+        source: "about",
+        label: "About T1 Arc",
+        detail: "Version, build details and source code",
+        icon: "information-circle-outline",
       },
     ],
   },

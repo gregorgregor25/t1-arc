@@ -27,6 +27,7 @@ interface AppScreenProps extends PropsWithChildren {
   edges?: Edge[];
   scrollViewRef?: RefObject<ScrollView | null>;
   quietHeader?: boolean;
+  fixedHeader?: boolean;
 }
 
 export function AppScreen({
@@ -40,6 +41,7 @@ export function AppScreen({
   edges = ['top'],
   scrollViewRef,
   quietHeader = false,
+  fixedHeader = false,
 }: AppScreenProps) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -50,6 +52,24 @@ export function AppScreen({
         Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
       )
     : 0;
+  const screenHeader = header ?? (
+    <View style={[styles.header, quietHeader && styles.quietHeader]}>
+      <View style={styles.headerCopy}>
+        <Text
+          accessibilityRole="header"
+          style={[
+            styles.title,
+            quietHeader && styles.quietTitle,
+            { color: colors.text },
+          ]}
+        >
+          {title}
+          <Text style={{ color: colors.primary }}>.</Text>
+        </Text>
+      </View>
+      {trailing}
+    </View>
+  );
   return (
     <SafeAreaView
       edges={edges.filter((edge) => edge !== 'top')}
@@ -69,6 +89,9 @@ export function AppScreen({
         start={{ x: 0.02, y: 0 }}
         style={StyleSheet.absoluteFill}
       />
+      {fixedHeader ? (
+        <View style={styles.fixedHeader}>{screenHeader}</View>
+      ) : null}
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={styles.content}
@@ -86,24 +109,7 @@ export function AppScreen({
         }
         showsVerticalScrollIndicator={false}
       >
-        {header ?? (
-          <View style={[styles.header, quietHeader && styles.quietHeader]}>
-            <View style={styles.headerCopy}>
-              <Text
-                accessibilityRole="header"
-                style={[
-                  styles.title,
-                  quietHeader && styles.quietTitle,
-                  { color: colors.text },
-                ]}
-              >
-                {title}
-                <Text style={{ color: colors.primary }}>.</Text>
-              </Text>
-            </View>
-            {trailing}
-          </View>
-        )}
+        {fixedHeader ? null : screenHeader}
         {children}
       </ScrollView>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
@@ -147,6 +153,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   footer: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
+  },
+  fixedHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',

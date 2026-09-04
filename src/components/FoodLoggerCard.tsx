@@ -952,6 +952,7 @@ export function FoodLoggerCard({
     });
     setQuery("");
     setSearchMessage(undefined);
+    Keyboard.dismiss();
   }
 
   function isResultFavorite(result: RankedFoodSearchResult) {

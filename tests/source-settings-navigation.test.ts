@@ -24,8 +24,10 @@ const EXPECTED_SOURCE_JUMPS = [
   "glooko",
   "hevy",
   "strava",
+  "region",
   "display",
   "privacy",
+  "about",
 ] as const satisfies readonly SourceJump[];
 
 const appMenuSource = readFileSync(
