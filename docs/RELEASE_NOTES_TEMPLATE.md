@@ -24,7 +24,7 @@ encrypted backup before updating.
 - Phone app for Android 8.0 and newer.
 - Local encrypted health storage and encrypted portable backups.
 - The provider, food, regional and Health Connect routes listed in the
-  [release status](https://github.com/gregorgregor25/t1-arc/blob/master/docs/RELEASE_STATUS.md).
+  [release status](https://github.com/gregorgregor25/t1-arc/blob/HEAD/docs/RELEASE_STATUS.md).
 - Direct bring-your-own-key Tarv1s access for users who choose to enable it.
 
 Wear OS projects and watch faces are present in the source but are not included
