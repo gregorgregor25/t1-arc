@@ -1,10 +1,10 @@
-import { PropsWithChildren } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { PropsWithChildren } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import { StyleProp, StyleSheet, ViewStyle } from "react-native";
 
-import { useAppTheme } from '@/theme/theme';
+import { useAppTheme } from "@/theme/theme";
 
-import { SurfaceSheen } from './SurfaceSheen';
+import { SurfaceSheen } from "./SurfaceSheen";
 
 interface SectionCardProps extends PropsWithChildren {
   style?: StyleProp<ViewStyle>;
@@ -48,9 +48,9 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: StyleSheet.hairlineWidth,
     padding: 20,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
   },
 });

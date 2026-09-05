@@ -51,11 +51,7 @@ import {
   ImportWriteResult,
   StoredImportSourceSummary,
 } from "@/data/persistence/HealthRecordStore";
-import {
-  addDays,
-  formatDate,
-  toDateKey,
-} from "@/domain/time";
+import { addDays, formatDate, toDateKey } from "@/domain/time";
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import { isIanaTimeZone } from "@/domain/regionalProfile";
 import { useDataContext } from "@/providers/DataProvider";
@@ -65,9 +61,11 @@ import {
   acquireLocalDataWriteLease,
   isLocalDataWriteSupersededError,
   type LocalDataWriteLease,
-} from '@/data/privacy/localDataWriteEpoch';
+} from "@/data/privacy/localDataWriteEpoch";
 
 import { SectionCard } from "./SectionCard";
+import { ImportProgressNotice } from "./ImportProgressNotice";
+import type { ImportProgressStage } from "./importProgress";
 import { GlookoPumpReportPanel } from "./GlookoPumpReportPanel";
 import {
   dateKeyFromPickerDate,
@@ -76,7 +74,7 @@ import {
 
 type ImportState =
   | { kind: "idle" }
-  | { kind: "preparing" }
+  | { kind: "preparing"; stage?: ImportProgressStage }
   | {
       kind: "preview";
       prepared: PreparedGlookoImport;
@@ -127,15 +125,23 @@ function dateRange(prepared: PreparedGlookoImport) {
   const range = previewDateRange(prepared.preview);
   if (!range) return "No data range";
   const timeZone = prepared.preview.regionalSettings.timeZone;
-  return `${formatDate(range.start, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }, timeZone)} – ${formatDate(range.end, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }, timeZone)}`;
+  return `${formatDate(
+    range.start,
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    },
+    timeZone,
+  )} – ${formatDate(
+    range.end,
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    },
+    timeZone,
+  )}`;
 }
 
 function showSyncNotice(message: string) {
@@ -210,7 +216,7 @@ export function GlookoImportCard() {
   const displayedManualDateOrder =
     manualFilePrepared?.preview.regionalSettings.dateOrder ?? manualDateOrder;
   const preparedWriteLease =
-    state.kind === 'preview' || state.kind === 'importing'
+    state.kind === "preview" || state.kind === "importing"
       ? state.writeLease
       : undefined;
   const count = prepared ? totalRecords(prepared) : 0;
@@ -461,6 +467,7 @@ export function GlookoImportCard() {
       // One user action checks both supported Glooko histories. A report
       // failure must not discard a successful glucose/insulin update; the
       // pump-history card will continue to show its last valid report.
+      setState({ kind: "preparing", stage: "report" });
       await syncGlookoReport().catch(() => undefined);
       setState({
         kind: "success",
@@ -632,6 +639,7 @@ export function GlookoImportCard() {
       }
       const asset = selected.assets[0];
       if (!asset) throw new Error("No export file was selected.");
+      setState({ kind: "preparing", stage: "read" });
       const next = await readPreparedExport(asset.name, asset.uri, settings);
       setState({ kind: "preview", prepared: next, writeLease });
     } catch {
@@ -681,10 +689,14 @@ export function GlookoImportCard() {
       writeLease: preparedWriteLease,
     });
     try {
-      const result = await importGlookoData(prepared, {
-        samePersonOrFirstGlookoDataConfirmed: true,
-        regionalTimestampFormatConfirmed: true,
-      }, preparedWriteLease);
+      const result = await importGlookoData(
+        prepared,
+        {
+          samePersonOrFirstGlookoDataConfirmed: true,
+          regionalTimestampFormatConfirmed: true,
+        },
+        preparedWriteLease,
+      );
       setState({
         kind: "success",
         prepared: releasePreparedGlookoImportSource(prepared),
@@ -693,7 +705,7 @@ export function GlookoImportCard() {
       });
     } catch (error) {
       if (isLocalDataWriteSupersededError(error)) {
-        setState({ kind: 'idle' });
+        setState({ kind: "idle" });
         return;
       }
       setState({
@@ -1083,16 +1095,18 @@ export function GlookoImportCard() {
         ) : null}
       </View>
 
-      {state.kind === "preparing" ? (
-        <View
-          accessibilityLiveRegion="polite"
-          style={[styles.loading, { backgroundColor: colors.surfaceMuted }]}
-        >
-          <ActivityIndicator color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            Reading and organising your export locally…
-          </Text>
-        </View>
+      {state.kind === "preparing" ||
+      state.kind === "importing" ||
+      glookoSyncing ? (
+        <ImportProgressNotice
+          stage={
+            state.kind === "importing"
+              ? "save"
+              : state.kind === "preparing"
+                ? (state.stage ?? "sync")
+                : "sync"
+          }
+        />
       ) : null}
 
       {prepared && state.kind !== "success" ? (
@@ -1622,64 +1636,58 @@ export function GlookoImportCard() {
                   Numeric dates in the file
                 </Text>
                 <View style={styles.manualDateOrderRow}>
-                  {(["day-first", "month-first"] as const).map(
-                    (dateOrder) => {
-                      const selected =
-                        displayedManualDateOrder === dateOrder;
-                      return (
-                        <Pressable
-                          accessibilityLabel={glookoDateOrderLabel(dateOrder)}
-                          accessibilityRole="radio"
-                          accessibilityState={{
-                            checked: selected,
-                            disabled: manualSettingsLocked,
-                          }}
-                          disabled={manualSettingsLocked}
-                          key={dateOrder}
-                          onPress={() => setManualDateOrder(dateOrder)}
-                          style={({ pressed }) => [
-                            styles.manualDateOrderOption,
+                  {(["day-first", "month-first"] as const).map((dateOrder) => {
+                    const selected = displayedManualDateOrder === dateOrder;
+                    return (
+                      <Pressable
+                        accessibilityLabel={glookoDateOrderLabel(dateOrder)}
+                        accessibilityRole="radio"
+                        accessibilityState={{
+                          checked: selected,
+                          disabled: manualSettingsLocked,
+                        }}
+                        disabled={manualSettingsLocked}
+                        key={dateOrder}
+                        onPress={() => setManualDateOrder(dateOrder)}
+                        style={({ pressed }) => [
+                          styles.manualDateOrderOption,
+                          {
+                            backgroundColor: selected
+                              ? `${colors.primary}16`
+                              : colors.surface,
+                            borderColor: selected
+                              ? colors.primary
+                              : colors.border,
+                            borderRadius: radius.sm,
+                            opacity: manualSettingsLocked || pressed ? 0.72 : 1,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          accessibilityElementsHidden
+                          color={
+                            selected ? colors.primary : colors.textTertiary
+                          }
+                          name={
+                            selected ? "radio-button-on" : "radio-button-off"
+                          }
+                          size={17}
+                        />
+                        <Text
+                          style={[
+                            styles.manualDateOrderText,
                             {
-                              backgroundColor: selected
-                                ? `${colors.primary}16`
-                                : colors.surface,
-                              borderColor: selected
+                              color: selected
                                 ? colors.primary
-                                : colors.border,
-                              borderRadius: radius.sm,
-                              opacity:
-                                manualSettingsLocked || pressed ? 0.72 : 1,
+                                : colors.textSecondary,
                             },
                           ]}
                         >
-                          <Ionicons
-                            accessibilityElementsHidden
-                            color={
-                              selected ? colors.primary : colors.textTertiary
-                            }
-                            name={
-                              selected
-                                ? "radio-button-on"
-                                : "radio-button-off"
-                            }
-                            size={17}
-                          />
-                          <Text
-                            style={[
-                              styles.manualDateOrderText,
-                              {
-                                color: selected
-                                  ? colors.primary
-                                  : colors.textSecondary,
-                              },
-                            ]}
-                          >
-                            {glookoDateOrderLabel(dateOrder)}
-                          </Text>
-                        </Pressable>
-                      );
-                    },
-                  )}
+                          {glookoDateOrderLabel(dateOrder)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
                 <Pressable
                   accessibilityLabel="Use current T1 Arc regional defaults for this Glooko file"

@@ -1,28 +1,33 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
-import { DailyHealthMetrics } from '@/domain/dailyHealthMetrics';
+import { DailyHealthMetrics } from "@/domain/dailyHealthMetrics";
 import {
   GlucoseStats,
   HealthContextEvent,
   InsulinStats,
   TimeRange,
-} from '@/domain/models';
+} from "@/domain/models";
 import {
   nutritionCoverageNeedsReview,
   summarizeHealthTrendContext,
-} from '@/domain/healthTrendContext';
+} from "@/domain/healthTrendContext";
 import {
   formatEnergy,
   formatRegionalFixedNumber,
   formatRegionalNumber,
   formatWeight,
-} from '@/domain/regionalFormat';
-import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
-import { useAppTheme } from '@/theme/theme';
+} from "@/domain/regionalFormat";
+import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
+import { useAppTheme } from "@/theme/theme";
 
-import { SurfaceSheen } from './SurfaceSheen';
+import { SectionCard } from "./SectionCard";
 
 interface GlanceMetric {
   id: string;
@@ -60,6 +65,8 @@ function formatDuration(value: number, locale: string) {
 
 function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
   const { colors, radius } = useAppTheme();
+  const { fontScale } = useWindowDimensions();
+  const stackedValue = fontScale > 1.3;
   const segmentTotal =
     metric.segments?.reduce((total, segment) => total + segment.value, 0) ?? 0;
 
@@ -67,36 +74,23 @@ function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
     <Pressable
       accessible
       accessibilityLabel={`${metric.label}, ${metric.value}${
-        metric.detail ? `, ${metric.detail}` : ''
+        metric.detail ? `, ${metric.detail}` : ""
       }`}
-      accessibilityHint={metric.onPress ? `Opens ${metric.label} history` : undefined}
-      accessibilityRole={metric.onPress ? 'button' : undefined}
+      accessibilityHint={
+        metric.onPress ? `Opens ${metric.label} history` : undefined
+      }
+      accessibilityRole={metric.onPress ? "button" : undefined}
       disabled={!metric.onPress}
       onPress={metric.onPress}
       style={({ pressed }) => [
-        !last && styles.metricSpacing,
+        !last && {
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.divider,
+        },
         pressed && { opacity: 0.7 },
       ]}
     >
-      <LinearGradient
-        colors={[
-          colors.surfaceGradientStart,
-          colors.surfaceGradientMiddle,
-          colors.surfaceGradientEnd,
-        ]}
-        end={{ x: 0.94, y: 1 }}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.02, y: 0 }}
-        style={[
-          styles.metric,
-          {
-            borderColor: colors.surfaceBorder,
-            borderRadius: radius.lg,
-            shadowColor: colors.surfaceShadow,
-          },
-        ]}
-      >
-        <SurfaceSheen radius={radius.lg} />
+      <View style={styles.metric}>
         <View
           accessibilityElementsHidden
           style={[
@@ -114,11 +108,19 @@ function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
           <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
             {metric.label}
           </Text>
-          {metric.detail ? (
+          {stackedValue ? (
             <Text
-              numberOfLines={1}
-              style={[styles.metricDetail, { color: colors.textTertiary }]}
+              style={[
+                styles.metricValue,
+                styles.stackedValue,
+                { color: colors.text },
+              ]}
             >
+              {metric.value}
+            </Text>
+          ) : null}
+          {metric.detail ? (
+            <Text style={[styles.metricDetail, { color: colors.textTertiary }]}>
               {metric.detail}
             </Text>
           ) : null}
@@ -127,7 +129,10 @@ function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
               accessibilityElementsHidden
               style={[
                 styles.track,
-                { backgroundColor: colors.surfaceMuted, borderRadius: radius.pill },
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderRadius: radius.pill,
+                },
               ]}
             >
               {metric.segments!.map((segment, index) => (
@@ -143,12 +148,11 @@ function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
             </View>
           ) : null}
         </View>
-        <Text
-          maxFontSizeMultiplier={1.35}
-          style={[styles.metricValue, { color: colors.text }]}
-        >
-          {metric.value}
-        </Text>
+        {!stackedValue ? (
+          <Text style={[styles.metricValue, { color: colors.text }]}>
+            {metric.value}
+          </Text>
+        ) : null}
         {metric.onPress ? (
           <Ionicons
             accessibilityElementsHidden
@@ -157,7 +161,7 @@ function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
             size={17}
           />
         ) : null}
-      </LinearGradient>
+      </View>
     </Pressable>
   );
 }
@@ -187,7 +191,7 @@ export function TodayGlanceCard({
   const { defaults: regional } = useRegionalProfile();
   const meals = events.filter(
     (event) =>
-      event.kind === 'meal' &&
+      event.kind === "meal" &&
       event.start >= range.start &&
       event.start < range.end,
   );
@@ -196,7 +200,7 @@ export function TodayGlanceCard({
   const nutritionEnergy = nutrition.mealEnergyKcal;
   const carbohydrateCoverage = nutrition.mealNutrientCoverage.carbsGrams;
   const sleepMinutes = events
-    .filter((event) => event.kind === 'sleep')
+    .filter((event) => event.kind === "sleep")
     .reduce(
       (total, event) =>
         total +
@@ -204,13 +208,13 @@ export function TodayGlanceCard({
           event.start,
           event.end ??
             event.start +
-              (event.kind === 'sleep' ? event.durationMinutes : 0) * 60_000,
+              (event.kind === "sleep" ? event.durationMinutes : 0) * 60_000,
           range,
         ),
       0,
     );
   const activityMinutes = events
-    .filter((event) => event.kind === 'activity')
+    .filter((event) => event.kind === "activity")
     .reduce(
       (total, event) =>
         total +
@@ -218,7 +222,7 @@ export function TodayGlanceCard({
           event.start,
           event.end ??
             event.start +
-              (event.kind === 'activity' ? event.durationMinutes : 0) * 60_000,
+              (event.kind === "activity" ? event.durationMinutes : 0) * 60_000,
           range,
         ),
       0,
@@ -226,7 +230,7 @@ export function TodayGlanceCard({
   const latestWeight = [...events]
     .filter(
       (event) =>
-        event.kind === 'weight' &&
+        event.kind === "weight" &&
         event.start >= range.start &&
         event.start < range.end,
     )
@@ -236,11 +240,11 @@ export function TodayGlanceCard({
   const metrics: GlanceMetric[] = [];
   if (glucose && glucose.observedMinutes > 0) {
     metrics.push({
-      id: 'time-in-range',
-      label: 'Time in range',
+      id: "time-in-range",
+      label: "Time in range",
       value: `${formatRegionalNumber(glucose.timeInRangePercent, regional.locale)}%`,
       detail: glucoseLabel,
-      icon: 'analytics-outline',
+      icon: "analytics-outline",
       tone: colors.glucose,
       segments: [
         { color: colors.low, value: glucose.timeBelowPercent },
@@ -252,11 +256,11 @@ export function TodayGlanceCard({
   }
   if (insulinAvailable && insulin) {
     metrics.push({
-      id: 'insulin',
-      label: 'Insulin',
+      id: "insulin",
+      label: "Insulin",
       value: `${formatRegionalFixedNumber(insulin.totalUnits, regional.locale, 1)} U`,
       detail: `${formatRegionalFixedNumber(insulin.basalUnits, regional.locale, 1)} basal · ${formatRegionalFixedNumber(insulin.bolusUnits, regional.locale, 1)} bolus`,
-      icon: 'water-outline',
+      icon: "water-outline",
       tone: colors.insulin,
       segments: [
         { color: colors.insulin, value: insulin.basalUnits },
@@ -267,15 +271,15 @@ export function TodayGlanceCard({
   }
   if (meals.length > 0) {
     metrics.push({
-      id: 'nutrition',
-      label: 'Nutrition',
+      id: "nutrition",
+      label: "Nutrition",
       value:
         carbohydrates !== undefined
           ? `${formatRegionalNumber(Math.round(carbohydrates), regional.locale, { maximumFractionDigits: 0 })} g${
               nutritionCoverageNeedsReview(carbohydrateCoverage) ||
               nutrition.nutritionPossibleDuplicatePairs > 0
-                ? ' known'
-                : ''
+                ? " known"
+                : ""
             }`
           : nutritionEnergy !== undefined
             ? formatEnergy(nutritionEnergy, regional)
@@ -283,9 +287,9 @@ export function TodayGlanceCard({
                 maximumFractionDigits: 0,
               }),
       detail: [
-        `${formatRegionalNumber(meals.length, regional.locale, { maximumFractionDigits: 0 })} ${meals.length === 1 ? 'meal' : 'meals'} logged`,
+        `${formatRegionalNumber(meals.length, regional.locale, { maximumFractionDigits: 0 })} ${meals.length === 1 ? "meal" : "meals"} logged`,
         carbohydrates === undefined
-          ? 'carbohydrate not supplied'
+          ? "carbohydrate not supplied"
           : carbohydrateCoverage.knownCount < carbohydrateCoverage.recordCount
             ? `carbs known for ${formatRegionalNumber(carbohydrateCoverage.knownCount, regional.locale, { maximumFractionDigits: 0 })} of ${formatRegionalNumber(carbohydrateCoverage.recordCount, regional.locale, { maximumFractionDigits: 0 })}`
             : undefined,
@@ -293,21 +297,21 @@ export function TodayGlanceCard({
           ? `${formatRegionalNumber(carbohydrateCoverage.partialCount ?? 0, regional.locale, { maximumFractionDigits: 0 })} meal nutrient subtotal`
           : undefined,
         nutrition.nutritionPossibleDuplicatePairs > 0
-          ? 'possible cross-source overlap'
+          ? "possible cross-source overlap"
           : undefined,
       ]
         .filter(Boolean)
-        .join(' · '),
-      icon: 'restaurant-outline',
+        .join(" · "),
+      icon: "restaurant-outline",
       tone: colors.high,
     });
   }
   if (sleepMinutes > 0) {
     metrics.push({
-      id: 'sleep',
-      label: 'Sleep',
+      id: "sleep",
+      label: "Sleep",
       value: formatDuration(sleepMinutes, regional.locale),
-      icon: 'moon-outline',
+      icon: "moon-outline",
       tone: colors.insulin,
     });
   }
@@ -316,11 +320,11 @@ export function TodayGlanceCard({
     health.bloodPressureDiastolic !== undefined
   ) {
     metrics.push({
-      id: 'blood-pressure',
-      label: 'Blood pressure',
+      id: "blood-pressure",
+      label: "Blood pressure",
       value: `${formatRegionalNumber(Math.round(health.bloodPressureSystolic), regional.locale, { maximumFractionDigits: 0 })}/${formatRegionalNumber(Math.round(health.bloodPressureDiastolic), regional.locale, { maximumFractionDigits: 0 })}`,
-      detail: 'mmHg',
-      icon: 'heart-circle-outline',
+      detail: "mmHg",
+      icon: "heart-circle-outline",
       tone: colors.low,
     });
   } else if (
@@ -330,39 +334,45 @@ export function TodayGlanceCard({
     const heartRate =
       health.restingHeartRateBpm ?? health.averageHeartRateBpm ?? 0;
     metrics.push({
-      id: 'heart-rate',
-      label: health.restingHeartRateBpm !== undefined ? 'Resting heart rate' : 'Heart rate',
+      id: "heart-rate",
+      label:
+        health.restingHeartRateBpm !== undefined
+          ? "Resting heart rate"
+          : "Heart rate",
       value: `${formatRegionalNumber(Math.round(heartRate), regional.locale, { maximumFractionDigits: 0 })} bpm`,
-      icon: 'heart-outline',
+      icon: "heart-outline",
       tone: colors.low,
     });
   } else if (health?.steps !== undefined) {
     metrics.push({
-      id: 'steps',
-      label: 'Steps',
+      id: "steps",
+      label: "Steps",
       value: formatRegionalNumber(health.steps, regional.locale),
-      icon: 'footsteps-outline',
+      icon: "footsteps-outline",
       tone: colors.accent,
     });
   } else if (activityMinutes > 0) {
     metrics.push({
-      id: 'activity',
-      label: 'Activity',
+      id: "activity",
+      label: "Activity",
       value: formatDuration(activityMinutes, regional.locale),
-      icon: 'walk-outline',
+      icon: "walk-outline",
       tone: colors.accent,
     });
   }
-  if (health?.weightKilograms !== undefined || latestWeight?.kind === 'weight') {
+  if (
+    health?.weightKilograms !== undefined ||
+    latestWeight?.kind === "weight"
+  ) {
     const weight =
       health?.weightKilograms ??
-      (latestWeight?.kind === 'weight' ? latestWeight.kilograms : undefined);
+      (latestWeight?.kind === "weight" ? latestWeight.kilograms : undefined);
     if (weight !== undefined) {
       metrics.push({
-        id: 'weight',
-        label: 'Weight',
+        id: "weight",
+        label: "Weight",
         value: formatWeight(weight, regional),
-        icon: 'scale-outline',
+        icon: "scale-outline",
         tone: colors.primary,
       });
     }
@@ -378,7 +388,7 @@ export function TodayGlanceCard({
       >
         At a glance
       </Text>
-      <View style={styles.metrics}>
+      <SectionCard style={styles.metrics}>
         {metrics.slice(0, 3).map((metric, index, visible) => (
           <MetricRow
             key={metric.id}
@@ -386,7 +396,7 @@ export function TodayGlanceCard({
             metric={metric}
           />
         ))}
-      </View>
+      </SectionCard>
     </View>
   );
 }
@@ -398,34 +408,28 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: '600',
+    fontWeight: "600",
     letterSpacing: -0.2,
   },
   metrics: {
     marginTop: 11,
+    padding: 0,
+    overflow: "hidden",
   },
   metric: {
     minHeight: 70,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 11,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  metricSpacing: {
-    marginBottom: 8,
   },
   icon: {
     width: 42,
     height: 42,
     borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   metricCopy: {
     flex: 1,
@@ -434,26 +438,27 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   metricDetail: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   metricValue: {
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
     letterSpacing: -0.35,
-    textAlign: 'right',
+    textAlign: "right",
   },
+  stackedValue: { textAlign: "left", marginTop: 4 },
   track: {
     height: 4,
     maxWidth: 112,
     marginTop: 6,
-    flexDirection: 'row',
-    overflow: 'hidden',
+    flexDirection: "row",
+    overflow: "hidden",
   },
 });

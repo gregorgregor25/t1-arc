@@ -123,7 +123,7 @@ export function AppMenuButton() {
         <Ionicons
           accessibilityElementsHidden
           color={colors.textSecondary}
-          name="menu"
+          name="settings-outline"
           size={22}
         />
       </Pressable>
@@ -188,6 +188,11 @@ export function AppMenuButton() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.section}>
+              <SectionCard style={styles.group}>
+                {menuRow(SETTINGS_OVERVIEW_MENU_ITEM)}
+              </SectionCard>
+            </View>
+            <View style={styles.section}>
               <Text
                 style={[styles.sectionTitle, { color: colors.textSecondary }]}
               >
@@ -209,11 +214,6 @@ export function AppMenuButton() {
                 </SectionCard>
               </View>
             ))}
-            <View style={styles.section}>
-              <SectionCard style={styles.group}>
-                {menuRow(SETTINGS_OVERVIEW_MENU_ITEM)}
-              </SectionCard>
-            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -223,8 +223,8 @@ export function AppMenuButton() {
 
 const styles = StyleSheet.create({
   menuButton: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   },
   rowDetail: {
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

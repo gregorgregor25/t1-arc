@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { StyleSheet, View } from "react-native";
 
 import { AppScreen, SectionHeading } from "@/components/AppScreen";
@@ -14,12 +15,15 @@ import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
 import { useHealthTrend } from "@/hooks/useHealthTrend";
 import { useDataContext } from "@/providers/DataProvider";
 import { useAppTheme } from "@/theme/theme";
+import type { RootTabParamList } from "@/navigation/AppNavigator";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import {
   healthDateAfterTodayChange,
   presentHealthEmptyState,
 } from "./healthDateSelection";
 
 export function HealthScreen() {
+  const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const { colors, radius } = useAppTheme();
   const { dataMode, earliestDate, now, refreshData, syncing, today } =
     useDataContext();
@@ -73,12 +77,17 @@ export function HealthScreen() {
           onDateChange={setSelectedDate}
           earliestDate={earliestDate}
           latestDate={today}
+          todayDate={today}
           isToday={selectedDate === today}
         />
 
         <SectionHeading
           title="Health at a glance"
-          detail="Tap any card for selected-day and seven-day detail."
+          detail={
+            hasHealthCards
+              ? "Tap a card to explore the day and its seven-day trend."
+              : undefined
+          }
         />
         {dailyError ? (
           <ErrorCard message={dailyError} />
@@ -107,6 +116,17 @@ export function HealthScreen() {
                 <EmptyState
                   title={healthEmptyState.title}
                   detail={healthEmptyState.detail}
+                  icon="fitness-outline"
+                  action={{
+                    label: needsSourceChoice
+                      ? "Choose health sources"
+                      : "Open Health Connect",
+                    onPress: () =>
+                      navigation.navigate(
+                        "Sources",
+                        sourceSettingsRouteParams("health"),
+                      ),
+                  }}
                 />
               </View>
             ) : null}

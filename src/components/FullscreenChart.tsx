@@ -1,6 +1,6 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import * as ScreenOrientation from 'expo-screen-orientation';
-import { ReactNode, useCallback, useEffect } from 'react';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { ReactNode, useCallback, useEffect } from "react";
 import {
   Modal,
   Pressable,
@@ -8,10 +8,12 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAppTheme } from '@/theme/theme';
+import { useAppTheme } from "@/theme/theme";
+import { useDataContext } from "@/providers/DataProvider";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 export function ChartExpandButton({
   label,
@@ -63,6 +65,8 @@ export function FullscreenChartModal({
   visible: boolean;
 }) {
   const { colors, radius } = useAppTheme();
+  const { demoMode } = useDataContext();
+  const reduceMotion = useReducedMotion();
   const restorePortrait = useCallback(
     () =>
       ScreenOrientation.lockAsync(
@@ -86,13 +90,13 @@ export function FullscreenChartModal({
 
   return (
     <Modal
-      animationType="slide"
+      animationType={reduceMotion ? "none" : "slide"}
       onRequestClose={close}
       presentationStyle="fullScreen"
       visible={visible}
     >
       <SafeAreaView
-        edges={['top', 'right', 'bottom', 'left']}
+        edges={["top", "right", "bottom", "left"]}
         style={[styles.safeArea, { backgroundColor: colors.background }]}
       >
         <View
@@ -106,7 +110,7 @@ export function FullscreenChartModal({
         >
           <View style={styles.headerCopy}>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>
-              LANDSCAPE GRAPH
+              {demoMode ? "DEMO · EXAMPLE DATA" : "LANDSCAPE GRAPH"}
             </Text>
             <Text
               numberOfLines={1}
@@ -131,9 +135,7 @@ export function FullscreenChartModal({
             style={({ pressed }) => [
               styles.closeButton,
               {
-                backgroundColor: pressed
-                  ? colors.surfaceMuted
-                  : 'transparent',
+                backgroundColor: pressed ? colors.surfaceMuted : "transparent",
                 borderRadius: radius.pill,
               },
             ]}
@@ -166,8 +168,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 18,
     paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
   headerCopy: {
@@ -177,13 +179,13 @@ const styles = StyleSheet.create({
   eyebrow: {
     fontSize: 9,
     lineHeight: 13,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 1,
   },
   title: {
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: '800',
+    fontWeight: "800",
     marginTop: 1,
   },
   detail: {
@@ -194,8 +196,8 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 48,
     height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   content: {
     flexGrow: 1,
@@ -206,7 +208,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

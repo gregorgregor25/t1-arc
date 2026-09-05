@@ -1,7 +1,6 @@
-import { StyleSheet, Text, View , Pressable } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-
-import { useAppTheme } from '@/theme/theme';
+import { useAppTheme } from "@/theme/theme";
 
 export interface SegmentOption<T extends string> {
   value: T;
@@ -40,7 +39,9 @@ export function SegmentedControl<T extends string>({
             style={({ pressed }) => [
               styles.segment,
               {
-                backgroundColor: selected ? colors.surfaceElevated : 'transparent',
+                backgroundColor: selected
+                  ? colors.surfaceElevated
+                  : "transparent",
                 borderRadius: radius.sm,
                 opacity: pressed ? 0.7 : 1,
                 shadowColor: colors.shadow,
@@ -68,14 +69,15 @@ const styles = StyleSheet.create({
   container: {
     minHeight: 48,
     padding: 4,
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   segment: {
     flex: 1,
-    minHeight: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 8,
+    paddingVertical: 8,
   },
   selectedSegment: {
     shadowOffset: { width: 0, height: 1 },
@@ -85,9 +87,10 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
+    textAlign: "center",
   },
   selectedLabel: {
-    fontWeight: '700',
+    fontWeight: "700",
   },
 });

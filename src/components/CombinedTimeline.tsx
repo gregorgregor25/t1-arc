@@ -732,8 +732,11 @@ export function CombinedTimeline({
                 <Text
                   style={[styles.subtitle, { color: colors.textSecondary }]}
                 >
-                  Target band {formatGlucose(appearance.targetMin, regional, { withUnit: false })}–
-                  {formatGlucose(appearance.targetMax, regional)}
+                  Target band{" "}
+                  {formatGlucose(appearance.targetMin, regional, {
+                    withUnit: false,
+                  })}
+                  –{formatGlucose(appearance.targetMax, regional)}
                 </Text>
               ) : null}
             </View>
@@ -826,29 +829,6 @@ export function CombinedTimeline({
           </View>
         ) : null}
 
-        {(!quiet || expanded) &&
-        (visibleLayers.basal || visibleLayers.bolus) ? (
-          <View
-            accessibilityLabel={`Insulin data detail: ${insulinFidelity.label}. ${insulinFidelityDetail}`}
-            style={[
-              styles.fidelityNotice,
-              {
-                backgroundColor: colors.surfaceMuted,
-                borderColor: colors.divider,
-              },
-            ]}
-          >
-            <Text style={[styles.fidelityLabel, { color: colors.text }]}>
-              {insulinFidelity.label}
-            </Text>
-            <Text
-              style={[styles.fidelityDetail, { color: colors.textSecondary }]}
-            >
-              {insulinFidelityDetail}
-            </Text>
-          </View>
-        ) : null}
-
         {data.glucose.length === 0 &&
         data.basal.length === 0 &&
         data.boluses.length === 0 &&
@@ -860,22 +840,8 @@ export function CombinedTimeline({
           />
         ) : (
           <>
-            {!quiet || expanded || inspectedTimestamp !== undefined ? (
-              <Inspector
-                timestamp={inspectedTimestamp}
-                glucose={selectedGlucose}
-                basal={selectedBasal}
-                bolus={selectedBolus}
-                dailyTotal={selectedDailyTotal}
-                pumpStates={selectedPumpStates}
-                insulinAvailable={insulinAvailable}
-                showBasal={visibleLayers.basal}
-                showBolus={visibleLayers.bolus}
-                showGlucose={visibleLayers.glucose}
-              />
-            ) : null}
             <View
-              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses and ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals. A tabular alternative is available in Records.`}
+              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses and ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals. Use Inspect timeline for the selected point's values.`}
               onLayout={onLayout}
               style={[styles.chart, { height: chartHeight }]}
               {...scrubber.panHandlers}
@@ -983,7 +949,7 @@ export function CombinedTimeline({
                               regional.locale,
                               {
                                 maximumFractionDigits:
-                                  regional.glucoseUnit === 'mgDl' ? 0 : 1,
+                                  regional.glucoseUnit === "mgDl" ? 0 : 1,
                               },
                             )}
                           </SvgText>
@@ -1189,8 +1155,8 @@ export function CombinedTimeline({
                                         total.basalUnits ?? 0,
                                         regional.locale,
                                         1,
-                                      )} U
-                                      basal
+                                      )}{" "}
+                                      U basal
                                     </SvgText>
                                   ) : null}
                                 </G>
@@ -1301,6 +1267,20 @@ export function CombinedTimeline({
                 </>
               ) : null}
             </View>
+            {!quiet || expanded || inspectedTimestamp !== undefined ? (
+              <Inspector
+                timestamp={inspectedTimestamp}
+                glucose={selectedGlucose}
+                basal={selectedBasal}
+                bolus={selectedBolus}
+                dailyTotal={selectedDailyTotal}
+                pumpStates={selectedPumpStates}
+                insulinAvailable={insulinAvailable}
+                showBasal={visibleLayers.basal}
+                showBolus={visibleLayers.bolus}
+                showGlucose={visibleLayers.glucose}
+              />
+            ) : null}
             {!expanded && !quiet ? (
               <Text style={[styles.footnote, { color: colors.textTertiary }]}>
                 {insulinAvailable
@@ -1316,6 +1296,28 @@ export function CombinedTimeline({
             ) : null}
           </>
         )}
+        {(!quiet || expanded) &&
+        (visibleLayers.basal || visibleLayers.bolus) ? (
+          <View
+            accessibilityLabel={`Insulin data detail: ${insulinFidelity.label}. ${insulinFidelityDetail}`}
+            style={[
+              styles.fidelityNotice,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.divider,
+              },
+            ]}
+          >
+            <Text style={[styles.fidelityLabel, { color: colors.text }]}>
+              {insulinFidelity.label}
+            </Text>
+            <Text
+              style={[styles.fidelityDetail, { color: colors.textSecondary }]}
+            >
+              {insulinFidelityDetail}
+            </Text>
+          </View>
+        ) : null}
       </SectionCard>
       {!expanded ? (
         <FullscreenChartModal
@@ -1399,7 +1401,7 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   layerControl: {
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 999,
@@ -1407,10 +1409,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
+    paddingVertical: 8,
   },
   layerControlPressed: {
     opacity: 0.7,
-    transform: [{ scale: 0.98 }],
   },
   layerControlText: {
     fontSize: 12,
@@ -1462,13 +1464,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   fidelityLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: "800",
   },
   fidelityDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 1,
   },
   inspector: {

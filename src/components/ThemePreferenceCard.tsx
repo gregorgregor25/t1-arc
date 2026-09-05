@@ -85,20 +85,21 @@ export function ThemePreferenceCard() {
                 name={copy.icon}
                 size={22}
               />
-              <Text
-                style={[
-                  styles.optionLabel,
-                  { color: selected ? colors.primary : colors.text },
-                ]}
-              >
-                {copy.label}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={[styles.optionDetail, { color: colors.textSecondary }]}
-              >
-                {copy.detail}
-              </Text>
+              <View style={styles.optionCopy}>
+                <Text
+                  style={[
+                    styles.optionLabel,
+                    { color: selected ? colors.primary : colors.text },
+                  ]}
+                >
+                  {copy.label}
+                </Text>
+                <Text
+                  style={[styles.optionDetail, { color: colors.textSecondary }]}
+                >
+                  {copy.detail}
+                </Text>
+              </View>
               <Ionicons
                 accessibilityElementsHidden
                 color={selected ? colors.primary : colors.textTertiary}
@@ -137,14 +138,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  optionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   optionLabel: {
-    width: 54,
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '700',
   },
   optionDetail: {
-    flex: 1,
     fontSize: 12,
     lineHeight: 18,
   },

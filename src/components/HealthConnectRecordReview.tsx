@@ -46,6 +46,7 @@ export function HealthConnectRecordReview() {
         onDateChange={setSelectedDate}
         earliestDate={earliestDate}
         latestDate={today}
+        todayDate={today}
         isToday={selectedDate === today}
         caption="Choose a day"
       />

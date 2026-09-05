@@ -13,6 +13,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,13 +71,17 @@ const ICONS: Record<
   Today: { active: "pulse", inactive: "pulse-outline" },
   History: { active: "calendar", inactive: "calendar-outline" },
   Health: { active: "fitness", inactive: "fitness-outline" },
-  Insights: { active: "chatbubble-ellipses", inactive: "chatbubble-ellipses-outline" },
+  Insights: {
+    active: "chatbubble-ellipses",
+    inactive: "chatbubble-ellipses-outline",
+  },
   Sources: { active: "server", inactive: "server-outline" },
 };
 
 export function AppNavigator() {
   const { colors, dark } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
   const [entry, setEntry] = useState<
     "loading" | "error" | "onboarding" | "app"
   >("loading");
@@ -273,7 +278,7 @@ export function AppNavigator() {
           tabBarInactiveTintColor: colors.textTertiary,
           tabBarHideOnKeyboard: true,
           tabBarLabelStyle: {
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: "700",
             marginTop: 1,
           },
@@ -281,7 +286,11 @@ export function AppNavigator() {
             backgroundColor: colors.tabBar,
             borderTopColor: colors.border,
             borderTopWidth: 1,
-            height: Platform.OS === "android" ? 64 + insets.bottom : undefined,
+            height:
+              Platform.OS === "android"
+                ? Math.ceil(64 + 20 * Math.max(0, fontScale - 1)) +
+                  insets.bottom
+                : undefined,
             paddingTop: 8,
             paddingBottom:
               Platform.OS === "android"

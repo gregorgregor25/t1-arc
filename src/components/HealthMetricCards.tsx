@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -162,8 +163,8 @@ function metricRecordValue(record: DailyMetricRecord) {
       ? `${formatRegionalNumber(Math.round(record.value), regional.locale, { maximumFractionDigits: 0 })} steps`
       : record.kind === "distance"
         ? formatDistance(record.value, regional)
-      : record.kind === "height"
-          ? regional.measurementSystem === 'imperial'
+        : record.kind === "height"
+          ? regional.measurementSystem === "imperial"
             ? `${formatRegionalNumber(record.value * 39.37007874, regional.locale, { maximumFractionDigits: 2 })} in`
             : `${formatRegionalNumber(record.value * 100, regional.locale, { maximumFractionDigits: 2 })} cm`
           : record.kind === "workout_speed"
@@ -174,11 +175,17 @@ function metricRecordValue(record: DailyMetricRecord) {
                 ? formatGlucose(record.value, regional)
                 : record.kind === "body_temperature"
                   ? formatTemperature(record.value, regional)
-            : `${Number.isInteger(record.value)
-                ? formatRegionalNumber(record.value, regional.locale, {
-                    maximumFractionDigits: 0,
-                  })
-                : formatRegionalFixedNumber(record.value, regional.locale, 1)} ${record.unit}`;
+                  : `${
+                      Number.isInteger(record.value)
+                        ? formatRegionalNumber(record.value, regional.locale, {
+                            maximumFractionDigits: 0,
+                          })
+                        : formatRegionalFixedNumber(
+                            record.value,
+                            regional.locale,
+                            1,
+                          )
+                    } ${record.unit}`;
   return `${labels[record.kind] ?? "Measurement"} · ${value}`;
 }
 
@@ -416,7 +423,8 @@ function StrengthWorkoutTimelineRow({
                       Math.round(heartRate.averageBpm),
                       getRuntimeRegionalDefaults().locale,
                       { maximumFractionDigits: 0 },
-                    )} bpm
+                    )}{" "}
+                    bpm
                   </Text>
                   <Text
                     style={[
@@ -438,12 +446,14 @@ function StrengthWorkoutTimelineRow({
                       Math.round(heartRate.minimumBpm),
                       getRuntimeRegionalDefaults().locale,
                       { maximumFractionDigits: 0 },
-                    )}–
+                    )}
+                    –
                     {formatRegionalNumber(
                       Math.round(heartRate.maximumBpm),
                       getRuntimeRegionalDefaults().locale,
                       { maximumFractionDigits: 0 },
-                    )} bpm
+                    )}{" "}
+                    bpm
                   </Text>
                   <Text
                     style={[
@@ -641,7 +651,10 @@ function available(...values: (number | undefined)[]) {
 function compactNumber(value?: number) {
   return value === undefined
     ? "—"
-    : formatRegionalNumber(Math.round(value), getRuntimeRegionalDefaults().locale);
+    : formatRegionalNumber(
+        Math.round(value),
+        getRuntimeRegionalDefaults().locale,
+      );
 }
 
 function MetricChart({
@@ -835,6 +848,8 @@ function MetricCard({
   trend: HealthTrendDay[];
 }) {
   const { colors, radius } = useAppTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const stackChart = width < 360 || fontScale > 1.3;
   return (
     <SectionCard style={styles.cardShell}>
       <Pressable
@@ -842,7 +857,11 @@ function MetricCard({
         accessibilityLabel={`${definition.label}, ${definition.primary}, ${definition.status}`}
         accessibilityRole="button"
         onPress={onPress}
-        style={({ pressed }) => [styles.card, pressed && { opacity: 0.68 }]}
+        style={({ pressed }) => [
+          styles.card,
+          stackChart && styles.cardStacked,
+          pressed && { opacity: 0.68 },
+        ]}
       >
         <View style={styles.cardCopy}>
           <View style={styles.labelRow}>
@@ -873,7 +892,7 @@ function MetricCard({
             {definition.status}
           </Text>
         </View>
-        <View style={styles.cardTrend}>
+        <View style={[styles.cardTrend, stackChart && styles.cardTrendStacked]}>
           <Ionicons
             accessibilityElementsHidden
             color={colors.textTertiary}
@@ -1857,7 +1876,8 @@ export function HealthMetricCards({
             : "The latest blood-pressure reading supplied for this day.",
         chart: "line",
         summary: "latest",
-        format: (value) => `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} mmHg`,
+        format: (value) =>
+          `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} mmHg`,
         secondary:
           displayedDiastolic === undefined
             ? []
@@ -1895,7 +1915,8 @@ export function HealthMetricCards({
           "Resting heart rate is preferred when available; otherwise the daily average is shown.",
         chart: "line",
         summary: "average",
-        format: (value) => `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} bpm`,
+        format: (value) =>
+          `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} bpm`,
         secondary: [
           ...(current?.minimumHeartRateBpm === undefined
             ? []
@@ -1939,7 +1960,8 @@ export function HealthMetricCards({
             : "The total duration of sleep sessions overlapping this day.",
         chart: "bar",
         summary: "average",
-        format: (value) => `${formatRegionalFixedNumber(value, regional.locale, 1)} h`,
+        format: (value) =>
+          `${formatRegionalFixedNumber(value, regional.locale, 1)} h`,
         secondary: [],
       },
       {
@@ -2061,7 +2083,12 @@ export function HealthMetricCards({
         summary: "average",
         format: (value) => `${compactNumber(value)} steps`,
         secondary: stepGoal
-          ? [{ label: "Daily goal", value: formatRegionalNumber(stepGoal, regional.locale) }]
+          ? [
+              {
+                label: "Daily goal",
+                value: formatRegionalNumber(stepGoal, regional.locale),
+              },
+            ]
           : [],
       },
       {
@@ -2125,7 +2152,10 @@ export function HealthMetricCards({
             : [
                 {
                   label: "Elevation",
-                  value: formatElevation(current.elevationGainedMetres, regional),
+                  value: formatElevation(
+                    current.elevationGainedMetres,
+                    regional,
+                  ),
                 },
               ]),
           ...(current?.floorsClimbed === undefined
@@ -2206,7 +2236,8 @@ export function HealthMetricCards({
             : "Workout duration and available performance measurements for this day.",
         chart: "bar",
         summary: "total",
-        format: (value) => `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} min`,
+        format: (value) =>
+          `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} min`,
         secondary: [
           ...(current?.averageWorkoutPowerWatts === undefined
             ? []
@@ -2221,7 +2252,10 @@ export function HealthMetricCards({
             : [
                 {
                   label: "Speed",
-                  value: formatSpeed(current.averageWorkoutSpeedMetresPerSecond, regional),
+                  value: formatSpeed(
+                    current.averageWorkoutSpeedMetresPerSecond,
+                    regional,
+                  ),
                 },
               ]),
           ...(current?.averageWalkingCadencePerMinute === undefined
@@ -2273,7 +2307,8 @@ export function HealthMetricCards({
             : "Selected-source body composition measurements for this day.",
         chart: "line",
         summary: "latest",
-        format: (value) => `${formatRegionalFixedNumber(value, regional.locale, 1)}%`,
+        format: (value) =>
+          `${formatRegionalFixedNumber(value, regional.locale, 1)}%`,
         secondary: [
           ...(current?.leanBodyMassKilograms === undefined
             ? []
@@ -2366,7 +2401,8 @@ export function HealthMetricCards({
             : "The latest oxygen-saturation measurement supplied for this day.",
         chart: "line",
         summary: "latest",
-        format: (value) => `${formatRegionalFixedNumber(value, regional.locale, 1)}%`,
+        format: (value) =>
+          `${formatRegionalFixedNumber(value, regional.locale, 1)}%`,
         secondary: [],
       },
       {
@@ -2395,7 +2431,8 @@ export function HealthMetricCards({
             : "The latest recorded breathing rate for this day.",
         chart: "line",
         summary: "average",
-        format: (value) => `${formatRegionalFixedNumber(value, regional.locale, 1)}/min`,
+        format: (value) =>
+          `${formatRegionalFixedNumber(value, regional.locale, 1)}/min`,
         secondary: [],
       },
       {
@@ -2424,7 +2461,8 @@ export function HealthMetricCards({
             : "The latest RMSSD heart-rate variability measurement for this day.",
         chart: "line",
         summary: "average",
-        format: (value) => `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} ms`,
+        format: (value) =>
+          `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} ms`,
         secondary: [],
       },
       {
@@ -2453,7 +2491,8 @@ export function HealthMetricCards({
             : "The latest VO₂ max estimate supplied for this day.",
         chart: "line",
         summary: "latest",
-        format: (value) => `${formatRegionalFixedNumber(value, regional.locale, 1)} ml/kg/min`,
+        format: (value) =>
+          `${formatRegionalFixedNumber(value, regional.locale, 1)} ml/kg/min`,
         secondary: [],
       },
       {
@@ -2505,7 +2544,8 @@ export function HealthMetricCards({
           : "No menstrual or hormone context is available for the selected day. Earlier records remain in the seven-day chart.",
         chart: "bar",
         summary: "total",
-        format: (value) => `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} records`,
+        format: (value) =>
+          `${formatRegionalNumber(Math.round(value), regional.locale, { maximumFractionDigits: 0 })} records`,
         secondary: [],
       },
     ];
@@ -2551,6 +2591,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardCopy: { flex: 1, minWidth: 0 },
+  cardStacked: { flexDirection: "column", alignItems: "stretch" },
+  cardTrendStacked: { width: "100%" },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   icon: {
     width: 28,
@@ -2558,7 +2600,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  label: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  label: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: "700" },
   primary: {
     marginTop: 8,
     fontSize: 22,
@@ -2566,7 +2608,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: -0.35,
   },
-  status: { marginTop: 2, fontSize: 10, lineHeight: 15 },
+  status: { marginTop: 2, fontSize: 12, lineHeight: 18 },
   cardTrend: { width: 116, paddingTop: 15 },
   chevron: { position: "absolute", right: 0, top: 0 },
   chart: { width: "100%" },

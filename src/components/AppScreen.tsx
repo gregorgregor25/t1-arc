@@ -1,5 +1,5 @@
-import { PropsWithChildren, ReactNode, RefObject } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
+import { PropsWithChildren, ReactNode, RefObject } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   RefreshControl,
   Platform,
@@ -8,14 +8,16 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
+} from "react-native";
 import {
   Edge,
   SafeAreaView,
   useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+} from "react-native-safe-area-context";
 
-import { useAppTheme } from '@/theme/theme';
+import { useAppTheme } from "@/theme/theme";
+
+import { DemoModeNotice } from "./DemoModeNotice";
 
 interface AppScreenProps extends PropsWithChildren {
   title: string;
@@ -38,18 +40,18 @@ export function AppScreen({
   refreshing = false,
   onRefresh,
   children,
-  edges = ['top'],
+  edges = ["top"],
   scrollViewRef,
   quietHeader = false,
   fixedHeader = false,
 }: AppScreenProps) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const includesTopEdge = edges.includes('top');
+  const includesTopEdge = edges.includes("top");
   const topInset = includesTopEdge
     ? Math.max(
         insets.top,
-        Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+        Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0,
       )
     : 0;
   const screenHeader = header ?? (
@@ -72,7 +74,7 @@ export function AppScreen({
   );
   return (
     <SafeAreaView
-      edges={edges.filter((edge) => edge !== 'top')}
+      edges={edges.filter((edge) => edge !== "top")}
       style={[
         styles.safeArea,
         {
@@ -89,6 +91,7 @@ export function AppScreen({
         start={{ x: 0.02, y: 0 }}
         style={StyleSheet.absoluteFill}
       />
+      <DemoModeNotice />
       {fixedHeader ? (
         <View style={styles.fixedHeader}>{screenHeader}</View>
       ) : null}
@@ -127,7 +130,12 @@ export function SectionHeading({
   const { colors } = useAppTheme();
   return (
     <View style={styles.sectionHeading}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      <Text
+        accessibilityRole="header"
+        style={[styles.sectionTitle, { color: colors.text }]}
+      >
+        {title}
+      </Text>
       {detail ? (
         <Text style={[styles.sectionDetail, { color: colors.textSecondary }]}>
           {detail}
@@ -148,27 +156,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 116,
-    width: '100%',
+    width: "100%",
     maxWidth: 760,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   footer: {
-    width: '100%',
+    width: "100%",
     maxWidth: 760,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   fixedHeader: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    width: '100%',
+    width: "100%",
     maxWidth: 760,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   header: {
     minHeight: 68,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 18,
   },
   headerCopy: {
@@ -181,13 +189,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     lineHeight: 39,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: -1,
   },
   quietTitle: {
     fontSize: 31,
     lineHeight: 37,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: -0.9,
   },
   sectionHeading: {
@@ -197,7 +205,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: '600',
+    fontWeight: "600",
     letterSpacing: -0.15,
   },
   sectionDetail: {

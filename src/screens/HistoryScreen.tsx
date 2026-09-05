@@ -5,17 +5,10 @@ import {
   useNavigation,
   useRoute,
 } from "@react-navigation/native";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { AppScreen, SectionHeading } from "@/components/AppScreen";
+import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import {
   CombinedTimeline,
@@ -62,6 +55,7 @@ import { FoodLog } from "@/data/food/types";
 import { useDataContext } from "@/providers/DataProvider";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { useAppTheme } from "@/theme/theme";
 import { healthDateAfterTodayChange } from "./healthDateSelection";
 
@@ -318,6 +312,7 @@ export function HistoryScreen() {
           onDateChange={setSelectedDate}
           earliestDate={earliestDate}
           latestDate={today}
+          todayDate={today}
           isToday={selectedDate === today}
         />
         <SegmentedControl
@@ -380,14 +375,13 @@ export function HistoryScreen() {
           </View>
         ) : null}
 
-        <SectionHeading
-          title="Combined timeline"
-          detail={`${
-            days === 1
-              ? "Selected day"
-              : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending on the selected date`
-          }.`}
-        />
+        <Text style={[styles.rangeCaption, { color: colors.textSecondary }]}>
+          {days === 1
+            ? selectedDate === today
+              ? "Today so far"
+              : "Selected day"
+            : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`}
+        </Text>
         {timeline.error ? (
           <ErrorCard message={timeline.error} />
         ) : timeline.loading || !timeline.data ? (
@@ -395,8 +389,14 @@ export function HistoryScreen() {
         ) : timelineIsEmpty ? (
           <SectionCard>
             <EmptyState
-              title="No personal history yet"
-              detail="Connect a source or add food and health context. T1 Arc will keep the records on this phone as your history grows."
+              title="No records in this range"
+              detail="Choose another date, connect a source or add a record from Today. Your saved history stays on this phone."
+              icon="calendar-outline"
+              action={{
+                label: "Connect a source",
+                onPress: () =>
+                  navigation.navigate("Sources", sourceSettingsRouteParams()),
+              }}
             />
           </SectionCard>
         ) : (
@@ -444,6 +444,12 @@ export function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  rangeCaption: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
+    marginBottom: 14,
+  },
   coverageNotice: {
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
