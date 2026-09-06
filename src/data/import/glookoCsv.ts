@@ -648,16 +648,17 @@ function monotonicTimestampSolution(
   candidates: number[][],
   direction: 'ascending' | 'descending',
 ) {
-  type State = { count: number; path: number[] };
+  type PathNode = { value: number; previous?: PathNode };
+  type State = { count: number; path?: PathNode };
   let states = candidates[0]!.map<State>((candidate) => ({
     count: 1,
-    path: [candidate],
+    path: { value: candidate },
   }));
   for (let index = 1; index < candidates.length; index += 1) {
     const previousCandidates = candidates[index - 1]!;
     states = candidates[index]!.map((candidate) => {
       let count = 0;
-      let path: number[] = [];
+      let path: PathNode | undefined;
       states.forEach((state, previousIndex) => {
         const previous = previousCandidates[previousIndex]!;
         const ordered =
@@ -665,7 +666,7 @@ function monotonicTimestampSolution(
             ? candidate >= previous
             : candidate <= previous;
         if (!ordered || state.count === 0) return;
-        if (count === 0) path = [...state.path, candidate];
+        if (count === 0) path = { value: candidate, previous: state.path };
         count = Math.min(2, count + state.count);
       });
       return { count, path };
@@ -676,7 +677,16 @@ function monotonicTimestampSolution(
     2,
     possible.reduce((total, state) => total + state.count, 0),
   );
-  return { count, path: count === 1 ? possible[0]!.path : undefined };
+  // Keep shared prefixes instead of copying the entire history for every row.
+  // The candidate counts still decide ambiguity; reconstruct only a unique path.
+  const path: number[] = [];
+  if (count === 1) {
+    for (let node = possible[0]!.path; node; node = node.previous) {
+      path.push(node.value);
+    }
+    path.reverse();
+  }
+  return { count, path: count === 1 ? path : undefined };
 }
 
 /**

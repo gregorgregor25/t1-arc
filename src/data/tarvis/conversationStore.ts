@@ -353,6 +353,7 @@ function validAnswer(value: unknown): value is TarvisAnswer {
   return (
     nonEmptyString(value.headline) &&
     nonEmptyString(value.answer) &&
+    (value.responseKind === undefined || value.responseKind === 'safety-boundary') &&
     (value.confidence === "high" ||
       value.confidence === "moderate" ||
       value.confidence === "limited") &&

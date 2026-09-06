@@ -116,15 +116,33 @@ function timeZoneOffsetMs(timestamp: number, timeZone: string) {
   return representedAsUtc - Math.floor(timestamp / 1000) * 1000;
 }
 
+// Adjacent five-minute readings share almost all of the 73 hourly probes.
+// Cache each exact probe, not a guessed offset for a day or region. This keeps
+// historical transitions, half-hour changes and gap/fold validation identical.
+// Weak formatter keys and a fixed entry cap bound memory during large imports.
+const offsetProbeCaches = new WeakMap<Intl.DateTimeFormat, Map<number, number>>();
+const MAX_OFFSET_PROBES = 4096;
+
 function offsetsAroundWallClock(
   representedAsUtc: number,
   formatter: Intl.DateTimeFormat,
 ) {
   const offsets = new Set<number>();
+  let cache = offsetProbeCaches.get(formatter);
+  if (!cache) {
+    cache = new Map();
+    offsetProbeCaches.set(formatter, cache);
+  }
   for (let deltaHours = -36; deltaHours <= 36; deltaHours += 1) {
     const sample = representedAsUtc + deltaHours * 3_600_000;
+    const sampleSecond = Math.floor(sample / 1_000);
+    const cached = cache.get(sampleSecond);
+    if (cached !== undefined) {
+      offsets.add(cached);
+      continue;
+    }
     const parts = partsFromFormatter(sample, formatter);
-    offsets.add(
+    const offset =
       Date.UTC(
         parts.year,
         parts.month - 1,
@@ -132,8 +150,10 @@ function offsetsAroundWallClock(
         parts.hour,
         parts.minute,
         parts.second,
-      ) - Math.floor(sample / 1_000) * 1_000,
-    );
+      ) - sampleSecond * 1_000;
+    if (cache.size >= MAX_OFFSET_PROBES) cache.delete(cache.keys().next().value!);
+    cache.set(sampleSecond, offset);
+    offsets.add(offset);
   }
   return [...offsets];
 }

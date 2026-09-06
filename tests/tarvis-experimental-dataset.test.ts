@@ -531,6 +531,7 @@ describe("Tarv1s Analyst Lab experimental dataset", () => {
     const start = Date.parse("2026-08-26T09:00:00+01:00");
     const end = Date.parse("2026-08-26T10:00:00+01:00");
     vi.mocked(getDailyHealthMetricSnapshot).mockResolvedValue({
+      context: [],
       metrics: {
         sourceLabels: [],
         needsSource: [],
@@ -586,6 +587,7 @@ describe("Tarv1s Analyst Lab experimental dataset", () => {
       "America/New_York",
     );
     vi.mocked(getDailyHealthMetricSnapshot).mockResolvedValue({
+      context: [],
       metrics: {
         sourceLabels: [],
         needsSource: [],

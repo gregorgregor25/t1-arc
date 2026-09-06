@@ -1377,74 +1377,80 @@ export function DataProvider({ children }: PropsWithChildren) {
       attestation?: GlookoManualImportAttestation,
       operationLease?: LocalDataWriteLease,
     ) => {
-      const writeLease = operationLease ?? (await acquireLocalDataWriteLease());
+      const trace = createSavePipelineTrace("glooko-import");
+      const writeLease =
+        operationLease ??
+        (await trace.measure("write-lease", acquireLocalDataWriteLease));
       assertManualGlookoImportIntegrity(prepared, attestation);
 
-      return withGlookoDataCommit(async () => {
-        const before = await loadGlookoSyncState(writeLease);
-        const healthResult = await healthRecordStore.current
-          .withWriteLease(writeLease)
-          .writeImport(
-            prepared.batch,
-            prepared.preview.basal,
-            prepared.preview.boluses,
-            prepared.preview.context,
-            prepared.sourcePayload,
-            prepared.preview.dailyInsulinTotals,
-            prepared.preview.rawRecords,
+      return trace.run(() =>
+        withGlookoDataCommit(async () => {
+          const before = await loadGlookoSyncState(writeLease);
+          const healthResult = await trace.measure("primary-write", () =>
+            healthRecordStore.current
+              .withWriteLease(writeLease)
+              .writeImport(
+                prepared.batch,
+                prepared.preview.basal,
+                prepared.preview.boluses,
+                prepared.preview.context,
+                prepared.sourcePayload,
+                prepared.preview.dailyInsulinTotals,
+                prepared.preview.rawRecords,
+              ),
           );
-        const insertedGlucose = await writeGlookoGlucoseHistory(
-          glucoseHistoryStore.current.withWriteLease(writeLease),
-          prepared.preview.glucose,
-        );
-        const result = {
-          ...healthResult,
-          insertedGlucose,
-          duplicateCount:
-            healthResult.duplicateCount +
-            Math.max(0, prepared.preview.glucose.length - insertedGlucose),
-        };
-        if (
-          before.verifiedAccountFingerprint === undefined &&
-          (await hasImportedGlookoData())
-        ) {
-          const unbound = await updateGlookoSyncState(
-            (current) => ({
-              ...current,
-              automaticEnabled: false,
-              nextEligibleAt: undefined,
-              lastErrorCode: "unbound-existing-data",
-              lastErrorMessage:
-                "Manual Glooko data is not bound to a verified automatic sign-in. Remove it before connecting another account.",
-            }),
-            writeLease,
+          const insertedGlucose = await trace.measure("glucose-write", () =>
+            writeGlookoGlucoseHistory(
+              glucoseHistoryStore.current.withWriteLease(writeLease),
+              prepared.preview.glucose,
+            ),
           );
-          setGlookoSyncState(unbound);
-          const available = await updateGlookoBackgroundSyncRegistration(
-            writeLease,
-          ).catch((error) => {
-            if (isLocalDataWriteSupersededError(error)) throw error;
-            return false;
-          });
-          setGlookoBackgroundSyncAvailable(available);
-        }
-        await generateInsightReviewIfDue(Date.now(), 0, writeLease).catch(
-          (error) => {
-            if (isLocalDataWriteSupersededError(error)) throw error;
-            return undefined;
-          },
-        );
-        await refreshEarliestLiveDate(() => true, writeLease);
-        if (repositoryState.mode === "demo") {
-          await changeDataMode("live", writeLease);
-        } else {
-          await withLocalDataWriteLeaseTransaction(writeLease, async () => {
-            setNow(Date.now());
-            setRevision((value) => value + 1);
-          });
-        }
-        return result;
-      });
+          const result = {
+            ...healthResult,
+            insertedGlucose,
+            duplicateCount:
+              healthResult.duplicateCount +
+              Math.max(0, prepared.preview.glucose.length - insertedGlucose),
+          };
+          if (
+            before.verifiedAccountFingerprint === undefined &&
+            (await hasImportedGlookoData())
+          ) {
+            const unbound = await updateGlookoSyncState(
+              (current) => ({
+                ...current,
+                automaticEnabled: false,
+                nextEligibleAt: undefined,
+                lastErrorCode: "unbound-existing-data",
+                lastErrorMessage:
+                  "Manual Glooko data is not bound to a verified automatic sign-in. Remove it before connecting another account.",
+              }),
+              writeLease,
+            );
+            setGlookoSyncState(unbound);
+            const available = await updateGlookoBackgroundSyncRegistration(
+              writeLease,
+            ).catch((error) => {
+              if (isLocalDataWriteSupersededError(error)) throw error;
+              return false;
+            });
+            setGlookoBackgroundSyncAvailable(available);
+          }
+          await trace.measure("insight-invalidation", () =>
+            requestPostCommitInsightRefresh(writeLease),
+          );
+          await refreshEarliestLiveDate(() => true, writeLease);
+          if (repositoryState.mode === "demo") {
+            await changeDataMode("live", writeLease);
+          } else {
+            await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+              setNow(Date.now());
+              setRevision((value) => value + 1);
+            });
+          }
+          return result;
+        }),
+      );
     },
     [changeDataMode, refreshEarliestLiveDate, repositoryState.mode],
   );
@@ -1508,12 +1514,9 @@ export function DataProvider({ children }: PropsWithChildren) {
       await saveGlookoReportSyncState(nextReportState, writeLease);
       setGlookoReportSyncState(nextReportState);
       await clearSavedInsightReports(writeLease);
-      await generateInsightReviewIfDue(Date.now(), 0, writeLease).catch(
-        (error) => {
-          if (isLocalDataWriteSupersededError(error)) throw error;
-          return undefined;
-        },
-      );
+      await requestPostCommitInsightRefresh(writeLease, {
+        inputAlreadyInvalidated: true,
+      });
       await withLocalDataWriteLeaseTransaction(writeLease, async () => {
         setNow(Date.now());
         setRevision((value) => value + 1);
@@ -1543,12 +1546,9 @@ export function DataProvider({ children }: PropsWithChildren) {
           Math.max(0, prepared.preview.glucose.length - insertedGlucose),
       };
       await clearSavedInsightReports(writeLease);
-      await generateInsightReviewIfDue(Date.now(), 0, writeLease).catch(
-        (error) => {
-          if (isLocalDataWriteSupersededError(error)) throw error;
-          return undefined;
-        },
-      );
+      await requestPostCommitInsightRefresh(writeLease, {
+        inputAlreadyInvalidated: true,
+      });
       await refreshEarliestLiveDate(() => true, writeLease);
       if (repositoryState.mode === "demo") {
         await changeDataMode("live", writeLease);
@@ -1956,12 +1956,7 @@ export function DataProvider({ children }: PropsWithChildren) {
           "Saved Glooko exports could not be reprocessed. Their encrypted source copies were kept unchanged.",
         );
       }
-      await generateInsightReviewIfDue(Date.now(), 0, writeLease).catch(
-        (error) => {
-          if (isLocalDataWriteSupersededError(error)) throw error;
-          return undefined;
-        },
-      );
+      await requestPostCommitInsightRefresh(writeLease);
       await refreshEarliestLiveDate(() => true, writeLease);
       if (repositoryState.mode === "demo") {
         await changeDataMode("live", writeLease);

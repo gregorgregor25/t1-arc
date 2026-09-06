@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { getDailyHealthMetricSnapshot } from "@/data/healthConnect/dailyHealthMetrics";
+import { readHealthMetricSnapshot } from "@/data/healthMetricReader";
 import {
   DailyHealthMetrics,
   DailyMetricRecord,
@@ -19,12 +19,12 @@ interface DailyHealthSnapshot {
 
 export function useDailyHealthMetrics(range: TimeRange) {
   const { dataMode, revision } = useDataContext();
-  const requestKey = range.start;
+  const requestKey = `${dataMode}:${range.start}`;
+  const refreshBucket = Math.floor(range.end / 300_000);
   const latestRange = useRef(range);
   const [snapshot, setSnapshot] =
-    useState<KeyedAsyncSnapshot<number, DailyHealthSnapshot>>();
-  const visibleSnapshot =
-    dataMode === "live" ? snapshotValueForKey(snapshot, requestKey) : undefined;
+    useState<KeyedAsyncSnapshot<string, DailyHealthSnapshot>>();
+  const visibleSnapshot = snapshotValueForKey(snapshot, requestKey);
 
   useEffect(() => {
     latestRange.current = range;
@@ -32,13 +32,8 @@ export function useDailyHealthMetrics(range: TimeRange) {
 
   useEffect(() => {
     let active = true;
-    if (dataMode !== "live") {
-      return () => {
-        active = false;
-      };
-    }
     const requestedRange = latestRange.current;
-    getDailyHealthMetricSnapshot({
+    readHealthMetricSnapshot(dataMode, {
       start: requestedRange.start,
       end: requestedRange.end,
     })
@@ -67,7 +62,7 @@ export function useDailyHealthMetrics(range: TimeRange) {
     return () => {
       active = false;
     };
-  }, [dataMode, requestKey, revision]);
+  }, [dataMode, requestKey, refreshBucket, revision]);
 
   return {
     metrics: visibleSnapshot?.metrics,

@@ -3575,14 +3575,16 @@ export function TarvisScreen({
                                 >
                                   {exchange.answer.headline}
                                 </Text>
-                                <Text
-                                  style={[
-                                    styles.confidence,
-                                    { color: colors.textTertiary },
-                                  ]}
-                                >
-                                  {confidenceLabel(exchange.answer.confidence)}
-                                </Text>
+                                {exchange.answer.responseKind !== 'safety-boundary' ? (
+                                  <Text
+                                    style={[
+                                      styles.confidence,
+                                      { color: colors.textTertiary },
+                                    ]}
+                                  >
+                                    {confidenceLabel(exchange.answer.confidence)}
+                                  </Text>
+                                ) : null}
                               </View>
                             </View>
                             {exchange.intent ? (

@@ -51,7 +51,8 @@ describe('History render performance contract', () => {
       '}, [dataMode, range.end, range.start, requestKey, revision]);',
     );
     expect(healthHook).toContain('const latestRange = useRef(range);');
-    expect(healthHook).toContain('}, [dataMode, requestKey, revision]);');
+    expect(healthHook).toContain('}, [dataMode, requestKey, refreshBucket, revision]);');
+    expect(healthHook).toContain('Math.floor(range.end / 300_000)');
     expect(healthHook).not.toContain(
       '}, [dataMode, range.end, range.start, requestKey, revision]);',
     );

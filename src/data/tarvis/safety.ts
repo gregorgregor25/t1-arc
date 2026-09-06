@@ -385,6 +385,7 @@ function answer(
   limitations: string[] = [],
 ): TarvisAnswer {
   return {
+    responseKind: 'safety-boundary',
     headline,
     answer: copy,
     confidence: "high",

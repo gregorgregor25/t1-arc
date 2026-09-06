@@ -89,8 +89,10 @@ const LANGUAGE_OPTIONS = [
 
 export function RegionalSettingsCard({
   onChange,
+  showHeading = true,
 }: {
   onChange?(profile: T1ArcRegionalProfile): void;
+  showHeading?: boolean;
 }) {
   const { colors, radius } = useAppTheme();
   const [profile, setProfile] = useState<T1ArcRegionalProfile>();
@@ -179,7 +181,7 @@ export function RegionalSettingsCard({
           <Ionicons accessibilityElementsHidden color={colors.primary} name="globe-outline" size={22} />
         </View>
         <View style={styles.copy}>
-          <Text style={[styles.title, { color: colors.text }]}>Region and services</Text>
+          {showHeading ? <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Region and services</Text> : null}
           <Text style={[styles.detail, { color: colors.textSecondary }]}>
             Sets safe defaults for new cloud connections. Every source can still use its own account region.
           </Text>

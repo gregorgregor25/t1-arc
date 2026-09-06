@@ -619,7 +619,7 @@ export function GlookoImportCard() {
       timeZone: manualTimeZoneValue,
       dateOrder: manualDateOrder,
     });
-    setState({ kind: "preparing" });
+    setState({ kind: "preparing", stage: "read" });
     try {
       const writeLease = await acquireLocalDataWriteLease();
       const selected = await DocumentPicker.getDocumentAsync({
@@ -1160,7 +1160,7 @@ export function GlookoImportCard() {
             <Metric label="Basal" value={prepared.preview.basal.length} />
             <Metric label="Bolus" value={prepared.preview.boluses.length} />
             <Metric
-              label="Pump notes"
+              label="Context records"
               value={prepared.preview.context.length}
             />
           </View>
@@ -1239,7 +1239,7 @@ export function GlookoImportCard() {
                   : "Glooko is up to date. Your existing history was left unchanged."
                 : totalRecords(state.prepared) === 0
                   ? "The download worked, but T1 Arc could not find glucose or insulin data it understands."
-                  : `${formatRegionalNumber(state.result.insertedGlucose, regionalDefaults.locale, { maximumFractionDigits: 0 })} glucose, ${formatRegionalNumber(state.result.insertedBasal, regionalDefaults.locale, { maximumFractionDigits: 0 })} basal, ${formatRegionalNumber(state.result.insertedBoluses, regionalDefaults.locale, { maximumFractionDigits: 0 })} bolus, ${formatRegionalNumber(state.result.insertedDailyTotals, regionalDefaults.locale, { maximumFractionDigits: 0 })} daily insulin total and ${formatRegionalNumber(state.result.insertedContext, regionalDefaults.locale, { maximumFractionDigits: 0 })} pump notes added${
+                  : `${formatRegionalNumber(state.result.insertedGlucose, regionalDefaults.locale, { maximumFractionDigits: 0 })} glucose, ${formatRegionalNumber(state.result.insertedBasal, regionalDefaults.locale, { maximumFractionDigits: 0 })} basal, ${formatRegionalNumber(state.result.insertedBoluses, regionalDefaults.locale, { maximumFractionDigits: 0 })} bolus, ${formatRegionalNumber(state.result.insertedDailyTotals, regionalDefaults.locale, { maximumFractionDigits: 0 })} daily insulin total and ${formatRegionalNumber(state.result.insertedContext, regionalDefaults.locale, { maximumFractionDigits: 0 })} context records added${
                       state.result.duplicateCount
                         ? ` · ${formatRegionalNumber(state.result.duplicateCount, regionalDefaults.locale, { maximumFractionDigits: 0 })} duplicates skipped`
                         : ""

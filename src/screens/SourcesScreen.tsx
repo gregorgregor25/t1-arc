@@ -1025,7 +1025,7 @@ export function SourcesScreen({
 
       {activeSource === "region" ? (
         <View style={styles.settingsSections}>
-          <RegionalSettingsCard />
+          <RegionalSettingsCard showHeading={false} />
         </View>
       ) : null}
 

@@ -1,4 +1,5 @@
 export type SavePipelineOperation =
+  | 'glooko-import'
   | 'bounds-refresh'
   | 'manual-context-create'
   | 'manual-context-update'
@@ -11,6 +12,7 @@ export type SavePipelineOperation =
   | 'manual-insulin-delete';
 
 export type SavePipelinePhase =
+  | 'glucose-write'
   | 'write-lease'
   | 'primary-write'
   | 'insight-invalidation'

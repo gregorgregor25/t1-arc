@@ -37,10 +37,11 @@ export function HealthScreen() {
     );
     previousToday.current = today;
   }, [today]);
-  const healthTimeBucket = Math.floor(now / (5 * 60_000)) * 5 * 60_000;
   const range = useMemo(
-    () => dayRange(selectedDate, healthTimeBucket),
-    [healthTimeBucket, selectedDate],
+    // Throttle reads in the hook, not the data boundary. Rounding this down
+    // would hide entries saved during the current five-minute interval.
+    () => dayRange(selectedDate, now),
+    [now, selectedDate],
   );
   const dailyHealth = useDailyHealthMetrics(range);
   const healthTrend = useHealthTrend(selectedDate);
@@ -91,12 +92,12 @@ export function HealthScreen() {
         />
         {dailyError ? (
           <ErrorCard message={dailyError} />
-        ) : dataMode === "live" &&
-          (!dailyHealth.metrics || healthTrend.loading) ? (
+        ) : !dailyHealth.metrics || healthTrend.loading ? (
           <LoadingCard label="Loading health data…" />
         ) : (
           <View style={styles.stack}>
             <HealthMetricCards
+              key={dataMode}
               isToday={selectedDate === today}
               metrics={dailyHealth.metrics}
               now={now}

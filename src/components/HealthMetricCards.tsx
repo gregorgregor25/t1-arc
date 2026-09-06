@@ -16,11 +16,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
 
 import { observeStepGoal, saveStepGoal } from "@/data/healthGoals";
-import {
-  getDailyHealthMetricSnapshot,
-  type HealthTrendDay,
-} from "@/data/healthConnect/dailyHealthMetrics";
-import { SqliteHealthRecordStore } from "@/data/persistence/SqliteHealthRecordStore";
+import type { HealthTrendDay } from "@/data/healthConnect/dailyHealthMetrics";
+import { readHealthMetricSnapshot } from "@/data/healthMetricReader";
+import { useDataContext } from "@/providers/DataProvider";
+import { DemoModeNotice } from "./DemoModeNotice";
 import type {
   DailyHealthMetrics,
   DailyMetricRecord,
@@ -1021,6 +1020,7 @@ function MetricDetailModal({
 }) {
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
+  const { dataMode, revision } = useDataContext();
   const [selectedDayIndex, setSelectedDayIndex] = useState(() =>
     selectedTrendIndex(trend.length),
   );
@@ -1037,7 +1037,7 @@ function MetricDetailModal({
   const selectedDay = trend[selectedDayIndex];
   const intradayKey =
     definition && selectedDay
-      ? `${definition.id}:${selectedDay.date}`
+      ? `${dataMode}:${revision}:${definition.id}:${selectedDay.date}`
       : undefined;
   const intradayResultIsCurrent =
     intradayKey !== undefined && intradayResult?.key === intradayKey;
@@ -1054,13 +1054,10 @@ function MetricDetailModal({
   useEffect(() => {
     if (!definition || !selectedDay) return;
     let active = true;
-    const requestKey = `${definition.id}:${selectedDay.date}`;
+    const requestKey = `${dataMode}:${revision}:${definition.id}:${selectedDay.date}`;
     const range = dayRange(selectedDay.date, now);
-    void Promise.all([
-      getDailyHealthMetricSnapshot(range),
-      new SqliteHealthRecordStore().getContextEvents(range),
-    ])
-      .then(([snapshot, events]) => {
+    void readHealthMetricSnapshot(dataMode, range, now)
+      .then((snapshot) => {
         if (!active) return;
         const selectedIds = new Set(snapshot.metrics.selectedRecordIds);
         const kinds = new Set(METRIC_RECORD_KINDS[definition.id] ?? []);
@@ -1069,7 +1066,7 @@ function MetricDetailModal({
           records: snapshot.records.filter(
             (record) => selectedIds.has(record.id) && kinds.has(record.kind),
           ),
-          context: events.filter((event) =>
+          context: snapshot.context.filter((event) =>
             contextForMetric(definition.id, event),
           ),
         });
@@ -1090,7 +1087,7 @@ function MetricDetailModal({
     return () => {
       active = false;
     };
-  }, [definition, now, selectedDay]);
+  }, [dataMode, definition, now, revision, selectedDay]);
   if (!definition || !selectedDay) return null;
   const recorded = present(definition.values);
   const selectedDayValue = definition.values[selectedDayIndex];
@@ -1160,6 +1157,7 @@ function MetricDetailModal({
             <Ionicons color={colors.textSecondary} name="close" size={24} />
           </Pressable>
         </View>
+        <DemoModeNotice />
         <ScrollView
           contentContainerStyle={styles.modalContent}
           showsVerticalScrollIndicator={false}
@@ -1655,7 +1653,7 @@ function MetricDetailModal({
             )}
           </SectionCard>
 
-          {definition.id === "steps" ? (
+          {definition.id === "steps" && dataMode === "live" ? (
             <StepGoalEditor
               goal={goal}
               key={`${goal ?? "unset"}:${regional.locale}`}
@@ -1681,9 +1679,12 @@ export function HealthMetricCards({
 }) {
   const { colors } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
+  const { dataMode } = useDataContext();
   const [selectedId, setSelectedId] = useState<string>();
   const [stepGoal, setStepGoal] = useState<number>();
-  useEffect(() => observeStepGoal(setStepGoal), []);
+  useEffect(() => {
+    if (dataMode === "live") return observeStepGoal(setStepGoal);
+  }, [dataMode]);
   const current = metrics ?? trend[trend.length - 1]?.metrics;
   const latestDay = trend[trend.length - 1];
   const definitions = useMemo<MetricDefinition[]>(() => {
@@ -1843,7 +1844,7 @@ export function HealthMetricCards({
         detail:
           displayedWeight === undefined
             ? "No weight measurement is available for the selected day. Earlier measurements remain in the seven-day chart."
-            : "The latest selected-source weight measurement recorded on this day.",
+            : "The latest weight from your selected connected source, or your latest manual log when no selected-source weight is available that day.",
         chart: "line",
         summary: "latest",
         format: (value) => formatWeight(value, regional),

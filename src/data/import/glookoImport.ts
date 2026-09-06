@@ -53,6 +53,8 @@ export async function prepareGlookoImport(
   ).finally(() => digestInput.fill(0));
   const fileSha256 = toHex(digest);
   const unpacked = await unpackGlookoExport(name, bytes);
+  // Let the caller publish the local-read stage before CPU-bound normalisation.
+  await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
   const preview = (() => {
     try {
       return parseGlookoTextFiles(unpacked.files, importedAt, importSettings);

@@ -42,6 +42,7 @@ import {
   StoredRecordBounds,
 } from './HealthRecordStore';
 import { openT1ArcDatabase, withT1ArcTransaction } from './t1arcDatabase';
+import { createBoundedInsert } from './boundedInsert';
 import {
   HealthConnectContextPreference,
   selectHealthConnectContext,
@@ -1294,7 +1295,35 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       let insertedContext = 0;
       let insertedDailyTotals = 0;
 
+      const basalInsert = `INSERT OR IGNORE INTO insulin_basal (
+        id, source_id, start_ms, end_ms, rate_units_per_hour, units,
+        delivery_type, percentage, units_estimated, imported_at_ms,
+        source_file, source_row, source_device_id)`;
+      const basalRows = createBoundedInsert(transaction, basalInsert, 13);
+
       for (const delivery of basal) {
+        const values = [
+          delivery.id,
+          delivery.sourceId,
+          delivery.start,
+          delivery.end,
+          delivery.rateUnitsPerHour,
+          delivery.units,
+          delivery.deliveryType ?? null,
+          delivery.percentage ?? null,
+          delivery.unitsEstimated ? 1 : 0,
+          delivery.importedAt ?? batch.importedAt,
+          delivery.sourceFile ?? null,
+          delivery.sourceRow ?? null,
+          delivery.sourceDeviceId ?? null,
+        ];
+        // Corrections and legacy-ID migrations retain their ordered single-row
+        // path. Flush first so they see every preceding row in this transaction.
+        if (!retainedSource && !delivery.legacyId) {
+          insertedBasal += await basalRows.add(values);
+          continue;
+        }
+        insertedBasal += await basalRows.flush();
         if (
           retainedSource &&
           delivery.sourceId === batch.sourceId &&
@@ -1335,48 +1364,20 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
               )
             : { changes: 0 };
         const write = await transaction.runAsync(
-          `INSERT OR IGNORE INTO insulin_basal (
-             id, source_id, start_ms, end_ms, rate_units_per_hour, units,
-             delivery_type, percentage, units_estimated, imported_at_ms,
-             source_file, source_row, source_device_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          delivery.id,
-          delivery.sourceId,
-          delivery.start,
-          delivery.end,
-          delivery.rateUnitsPerHour,
-          delivery.units,
-          delivery.deliveryType ?? null,
-          delivery.percentage ?? null,
-          delivery.unitsEstimated ? 1 : 0,
-          delivery.importedAt ?? batch.importedAt,
-          delivery.sourceFile ?? null,
-          delivery.sourceRow ?? null,
-          delivery.sourceDeviceId ?? null,
+          `${basalInsert} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ...values,
         );
         insertedBasal += Math.max(0, write.changes - migratedLegacyId.changes);
       }
 
+      insertedBasal += await basalRows.flush();
+      const bolusInsert = `INSERT OR IGNORE INTO insulin_bolus (
+        id, source_id, timestamp_ms, units, delivery_type,
+        blood_glucose_input_mmol_l, carbs_input_grams, carb_ratio_grams_per_unit,
+        initial_units, extended_units, imported_at_ms, source_file, source_row, source_device_id)`;
+      const bolusRows = createBoundedInsert(transaction, bolusInsert, 14);
       for (const delivery of boluses) {
-        const migratedLegacyId =
-          delivery.legacyId && delivery.legacyId !== delivery.id
-            ? await transaction.runAsync(
-                `DELETE FROM insulin_bolus
-                 WHERE id = ?
-                   AND source_id = ?
-                   AND COALESCE(source_device_id, '') = ?`,
-                delivery.legacyId,
-                delivery.sourceId,
-                delivery.sourceDeviceId ?? '',
-              )
-            : { changes: 0 };
-        const write = await transaction.runAsync(
-          `INSERT OR IGNORE INTO insulin_bolus (
-             id, source_id, timestamp_ms, units, delivery_type,
-             blood_glucose_input_mmol_l, carbs_input_grams,
-             carb_ratio_grams_per_unit, initial_units, extended_units,
-             imported_at_ms, source_file, source_row, source_device_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        const values = [
           delivery.id,
           delivery.sourceId,
           delivery.timestamp,
@@ -1391,6 +1392,27 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           delivery.sourceFile ?? null,
           delivery.sourceRow ?? null,
           delivery.sourceDeviceId ?? null,
+        ];
+        if (!delivery.legacyId) {
+          insertedBoluses += await bolusRows.add(values);
+          continue;
+        }
+        insertedBoluses += await bolusRows.flush();
+        const migratedLegacyId =
+          delivery.legacyId && delivery.legacyId !== delivery.id
+            ? await transaction.runAsync(
+                `DELETE FROM insulin_bolus
+                 WHERE id = ?
+                   AND source_id = ?
+                   AND COALESCE(source_device_id, '') = ?`,
+                delivery.legacyId,
+                delivery.sourceId,
+                delivery.sourceDeviceId ?? '',
+              )
+            : { changes: 0 };
+        const write = await transaction.runAsync(
+          `${bolusInsert} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ...values,
         );
         insertedBoluses += Math.max(
           0,
@@ -1398,13 +1420,27 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         );
       }
 
+      insertedBoluses += await bolusRows.flush();
+      const noteRows = createBoundedInsert(
+        transaction,
+        `INSERT OR IGNORE INTO context_notes (
+        id, source_id, origin, start_ms, end_ms, title, category, detail,
+        glucose_mmol_l, recorded_at_ms, source_file, source_row)`,
+        12,
+      );
+      const contextRows = createBoundedInsert(
+        transaction,
+        `INSERT OR IGNORE INTO context_events (
+        id, source_id, origin, kind, start_ms, end_ms, title, meal_type,
+        carbs_grams, energy_kcal, protein_grams, fat_grams, fibre_grams, sugars_grams,
+        saturated_fat_grams, serving_quantity, serving_count, activity_type, duration_minutes,
+        intensity, calories_burned, quality_percent, kilograms, amount, unit, medication_type,
+        recorded_at_ms, source_file, source_row)`,
+        29,
+      );
       for (const event of context) {
         if (event.kind === 'note') {
-          const write = await transaction.runAsync(
-            `INSERT OR IGNORE INTO context_notes (
-               id, source_id, origin, start_ms, end_ms, title, category, detail,
-               glucose_mmol_l, recorded_at_ms, source_file, source_row
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          insertedContext += await noteRows.add([
             event.id,
             event.sourceId,
             event.origin,
@@ -1417,20 +1453,11 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
             event.recordedAt ?? batch.importedAt,
             event.sourceFile ?? null,
             event.sourceRow ?? null,
-          );
-          insertedContext += write.changes;
+          ]);
           continue;
         }
         const values = contextColumns(event);
-        const write = await transaction.runAsync(
-          `INSERT OR IGNORE INTO context_events (
-             id, source_id, origin, kind, start_ms, end_ms, title, meal_type,
-             carbs_grams, energy_kcal, protein_grams, fat_grams,
-             fibre_grams, sugars_grams, saturated_fat_grams,
-             serving_quantity, serving_count, activity_type, duration_minutes,
-             intensity, calories_burned, quality_percent, kilograms, amount,
-             unit, medication_type, recorded_at_ms, source_file, source_row
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        insertedContext += await contextRows.add([
           event.id,
           event.sourceId,
           event.origin,
@@ -1460,9 +1487,10 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           event.recordedAt ?? batch.importedAt,
           event.sourceFile ?? null,
           event.sourceRow ?? null,
-        );
-        insertedContext += write.changes;
+        ]);
       }
+      insertedContext += await noteRows.flush();
+      insertedContext += await contextRows.flush();
 
       for (const total of dailyTotals) {
         const migratedLegacyId =

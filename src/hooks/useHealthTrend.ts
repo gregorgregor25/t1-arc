@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 
-import {
-  getHealthTrendSnapshot,
-  HealthTrendDay,
-} from "@/data/healthConnect/dailyHealthMetrics";
+import type { HealthTrendDay } from "@/data/healthConnect/dailyHealthMetrics";
+import { readHealthTrendSnapshot } from "@/data/healthMetricReader";
 import { DateKey } from "@/domain/time";
 import { useDataContext } from "@/providers/DataProvider";
 import { KeyedAsyncSnapshot, snapshotValueForKey } from "./keyedAsyncSnapshot";
@@ -16,33 +14,28 @@ interface HealthTrendSnapshot {
 }
 
 export function useHealthTrend(endDate: DateKey, days = 7) {
-  const { dataMode, revision } = useDataContext();
+  const { dataMode, revision, now } = useDataContext();
+  const requestKey = `${dataMode}:${endDate}:${days}`;
+  const refreshBucket = Math.floor(now / 300_000);
   const [snapshot, setSnapshot] =
-    useState<KeyedAsyncSnapshot<DateKey, HealthTrendSnapshot>>();
-  const visibleSnapshot =
-    dataMode === "live" ? snapshotValueForKey(snapshot, endDate) : undefined;
+    useState<KeyedAsyncSnapshot<string, HealthTrendSnapshot>>();
+  const visibleSnapshot = snapshotValueForKey(snapshot, requestKey);
 
   useEffect(() => {
     let active = true;
-    if (dataMode !== "live") {
-      return () => {
-        active = false;
-      };
-    }
-
     const loadedAt = Date.now();
-    getHealthTrendSnapshot(endDate, days, loadedAt)
+    readHealthTrendSnapshot(dataMode, endDate, days, loadedAt)
       .then((next) => {
         if (!active) return;
         setSnapshot({
-          key: endDate,
+          key: requestKey,
           value: { data: next, error: undefined },
         });
       })
       .catch((cause: unknown) => {
         if (!active) return;
         setSnapshot({
-          key: endDate,
+          key: requestKey,
           value: {
             data: [],
             error:
@@ -56,11 +49,11 @@ export function useHealthTrend(endDate: DateKey, days = 7) {
     return () => {
       active = false;
     };
-  }, [dataMode, days, endDate, revision]);
+  }, [dataMode, days, endDate, requestKey, refreshBucket, revision]);
 
   return {
     data: visibleSnapshot?.data ?? [],
     error: visibleSnapshot?.error,
-    loading: dataMode === "live" && visibleSnapshot === undefined,
+    loading: visibleSnapshot === undefined,
   };
 }

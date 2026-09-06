@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
-import type { GlucoseReading } from '@/domain/models';
+import type { GlucoseReading, BasalDelivery, MealEvent } from '@/domain/models';
 
 const { database, transaction, openT1ArcDatabase, withT1ArcTransaction } =
   vi.hoisted(() => {
@@ -34,6 +34,26 @@ describe('large Glooko SQLite writes', () => {
     transaction.getFirstAsync.mockResolvedValue(undefined);
     transaction.getAllAsync.mockResolvedValue([]);
     transaction.runAsync.mockResolvedValue({ changes: 0 });
+  });
+
+  it('measures native statement count for a representative 90-day history', async () => {
+    const start = Date.parse('2026-06-01T00:00:00Z');
+    const basal: BasalDelivery[] = Array.from({ length: 4320 }, (_, index) => ({
+      id: `basal-${index}`, sourceId: 'glooko-export', start: start + index * 1_800_000,
+      end: start + (index + 1) * 1_800_000, rateUnitsPerHour: 0.8, units: 0.4,
+    }));
+    const context: MealEvent[] = Array.from({ length: 270 }, (_, index) => ({
+      id: `meal-${index}`, sourceId: 'glooko-export', origin: 'imported', kind: 'meal',
+      start: start + index * 28_800_000, title: 'Fixture meal', mealType: 'lunch', carbsGrams: 45,
+    }));
+    await new SqliteHealthRecordStore().writeImport({ id: 'perf', sourceId: 'glooko-export',
+      fileName: 'synthetic-90-day.zip', fileSha256: 'perf', importedAt: start,
+      skippedCount: 0, warnings: [] }, basal, [], context);
+    const writes = transaction.runAsync.mock.calls.filter(([sql]) => /INSERT OR IGNORE INTO (insulin_basal|context_events)/.test(String(sql)));
+    console.info(`T1ArcImportStatementCount records=4590 statements=${writes.length}`);
+    expect(writes).toHaveLength(117);
+    expect(writes.every((call) => call.length <= 901)).toBe(true);
+    expect(writes.flatMap((call) => call.slice(1)).length).toBe(4320 * 13 + 270 * 29);
   });
 
   it('writes exact raw rows in bounded multi-row statements', async () => {

@@ -2981,7 +2981,7 @@ export function FoodLoggerCard({
                         value={customFood.brand}
                       />
                       <View style={styles.customServingRow}>
-                        <View style={styles.customField}>
+                        <View style={styles.customServingField}>
                           <Text
                             style={[
                               styles.customLabel,
@@ -3009,7 +3009,19 @@ export function FoodLoggerCard({
                             value={customFood.serving}
                           />
                         </View>
-                        <View style={styles.unitSelector}>
+                        <Text
+                          style={[
+                            styles.customLabel,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          Unit
+                        </Text>
+                        <View
+                          accessibilityRole="radiogroup"
+                          accessibilityLabel="Custom food serving unit"
+                          style={styles.unitSelector}
+                        >
                           {[
                             ...foodInputUnits("g"),
                             ...foodInputUnits("ml"),
@@ -5519,9 +5531,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   customServingRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
     gap: 10,
+  },
+  customServingField: {
+    gap: 5,
   },
   customField: {
     flex: 1,

@@ -483,6 +483,7 @@ describe("TarvisDirectLocalToolExecutor", () => {
         "America/New_York",
       );
       vi.mocked(getDailyHealthMetricSnapshot).mockResolvedValueOnce({
+        context: [],
         metrics: {
           sourceLabels: [],
           needsSource: [],
