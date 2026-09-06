@@ -3,6 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { classifyTarvisSafety } from '@/data/tarvis/safety';
 
 describe('review follow-up UI contracts', () => {
+  it('allows custom-food labels to grow with Android accessibility text sizes', () => {
+    const food = readFileSync('src/components/FoodLoggerCard.tsx', 'utf8');
+    for (const style of [
+      'customToggleTitle',
+      'customToggleDetail',
+      'customLabel',
+      'customHint',
+    ]) {
+      const definition = food.match(new RegExp(`${style}: \\{([^}]+)\\}`))?.[1];
+      expect(definition).toBeDefined();
+      expect(definition).not.toContain('lineHeight:');
+    }
+  });
   it('gives custom serving amounts their own row above the wrapping unit choices', () => {
     const food = readFileSync('src/components/FoodLoggerCard.tsx', 'utf8');
     expect(food).toContain('<View style={styles.customServingField}>');

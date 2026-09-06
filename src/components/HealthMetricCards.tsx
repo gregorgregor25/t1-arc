@@ -2073,13 +2073,18 @@ export function HealthMetricCards({
           currentSteps === undefined
             ? "No record"
             : compactNumber(currentSteps),
-        status: stepStatus,
+        status:
+          dataMode === "demo" && currentSteps !== undefined
+            ? "Example data"
+            : stepStatus,
         detail:
           currentSteps === undefined
             ? "No step record is available for the selected day."
-            : stepGoal
-              ? `${compactNumber(currentSteps)} of ${formatRegionalNumber(stepGoal, regional.locale)} steps.`
-              : "Set an optional private goal to see progress at a glance.",
+            : dataMode === "demo"
+              ? "Example step records for the selected day."
+              : stepGoal
+                ? `${compactNumber(currentSteps)} of ${formatRegionalNumber(stepGoal, regional.locale)} steps.`
+                : "Set an optional private goal to see progress at a glance.",
         chart: "bar",
         summary: "average",
         format: (value) => `${compactNumber(value)} steps`,
@@ -2550,7 +2555,7 @@ export function HealthMetricCards({
         secondary: [],
       },
     ];
-  }, [colors, current, isToday, latestDay, now, regional, stepGoal, trend]);
+  }, [colors, current, dataMode, isToday, latestDay, now, regional, stepGoal, trend]);
 
   const visible = definitions.filter((definition) => definition.available);
   const selected = visible.find((definition) => definition.id === selectedId);

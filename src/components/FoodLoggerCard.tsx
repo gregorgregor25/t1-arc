@@ -5473,12 +5473,10 @@ const styles = StyleSheet.create({
   },
   customToggleTitle: {
     fontSize: 13,
-    lineHeight: 18,
     fontWeight: "800",
   },
   customToggleDetail: {
     fontSize: 11,
-    lineHeight: 16,
   },
   quickCarbForm: {
     borderWidth: 1,
@@ -5542,7 +5540,6 @@ const styles = StyleSheet.create({
   },
   customLabel: {
     fontSize: 10,
-    lineHeight: 14,
     fontWeight: "700",
   },
   customNumberInput: {
@@ -5569,7 +5566,6 @@ const styles = StyleSheet.create({
   },
   customHint: {
     fontSize: 11,
-    lineHeight: 16,
     marginTop: 2,
   },
   customBarcodeLink: {
