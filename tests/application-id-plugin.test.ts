@@ -143,4 +143,23 @@ describe('T1 Arc Android application identity policy', () => {
       );
     }
   });
+
+  it('checks the actual phone package before accepting a signed Wear APK set', () => {
+    const verifier = readFileSync('scripts/verify-wear-apks.ps1', 'utf8');
+    expect(verifier).toContain('manifest application-id $phone');
+    expect(verifier).toContain('$phonePackage -cne $expectedPhonePackage');
+    expect(verifier).toContain('$companion.Package -cne $phonePackage');
+    expect(verifier).toContain('$companion.Certificate -ne $phoneCertificate');
+    expect(verifier.indexOf('$phonePackage -cne $expectedPhonePackage')).toBeLessThan(
+      verifier.indexOf('$phoneCertificate = CertificateDigest $phone'),
+    );
+  });
+
+  it('explains separate watch connections without promising delivery from a queued reading', () => {
+    const card = readFileSync('src/components/WearCompanionCard.tsx', 'utf8');
+    expect(card).toContain('companion from the same release as this phone app');
+    expect(card.replace(/\s+/g, ' ')).toContain('package and signing certificate');
+    expect(card).toContain('recent graph history and display preferences');
+    expect(card).toContain('The latest glucose was queued securely for the watch.');
+  });
 });

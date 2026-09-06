@@ -13,6 +13,36 @@ certificate. Wear OS Data Layer enforces both before it allows them to exchange
 data. Each watch face has its own package because Watch Face Format bundles
 cannot contain application logic.
 
+### Moving between phone installations
+
+Two phone apps can both be labelled T1 Arc without sharing their watch
+connection. The official, `.sideload` private-test and `.dev` debug packages are
+separate installations. An older personal package is separate too. A matching
+certificate is not enough if the package names differ.
+
+Use the phone and companion APKs from the same release. The shared Gradle
+identity and signing policy keeps them aligned. Watch-face builds also target
+the companion for that variant. An existing face's selected complication can
+still point to an older companion and may need to be selected again.
+
+Before retiring another phone installation:
+
+1. Back up the intended phone app. Compare its package and signer with the
+   update APK, then update that installation without clearing its data.
+2. Inspect the installed watch companion's package and signer. Update it in
+   place only when both match; a different package is a separate installation.
+   Do not rename packages or remove data just to bypass an install error.
+3. Open the matching companion and use **Check watch connection** under Wear
+   OS in the new phone app. A queued reading is not proof the watch displayed it.
+4. With the older phone app stopped, verify new measurement timestamps reach
+   the companion, tile and selected complication. Check phone-screen-off
+   operation, disconnect/reconnect and the delayed/stale indication.
+5. Remove the old installation only after confirming the independent connection
+   and preserving any records that exist only in that app.
+
+The APK verifier checks the actual phone/companion application IDs and signing
+certificates. That is a compatibility check, not a physical-device sync test.
+
 ## Data path
 
 ```text

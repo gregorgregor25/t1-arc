@@ -137,6 +137,14 @@ function VerifyWearApk(
 }
 
 $phone = (Resolve-Path -LiteralPath $PhoneApkPath).Path
+$phonePackage = (& $analyzer manifest application-id $phone).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $phonePackage) {
+  throw 'Could not read the phone APK application ID.'
+}
+$expectedPhonePackage = "$ApplicationIdBase$ApplicationIdSuffix"
+if ($phonePackage -cne $expectedPhonePackage) {
+  throw "Unexpected phone package $phonePackage; expected $expectedPhonePackage. Matching certificates alone do not enable Wear Data Layer sync."
+}
 $phoneCertificate = CertificateDigest $phone
 $companion = VerifyWearApk $CompanionApkPath "$ApplicationIdBase$ApplicationIdSuffix" 30 $false
 $faces = @(
@@ -145,6 +153,9 @@ $faces = @(
   VerifyWearApk $OrbitApkPath "$ApplicationIdBase.watchface.orbit$ApplicationIdSuffix" 33 $true
 )
 
+if ($companion.Package -cne $phonePackage) {
+  throw 'Phone and Wear companion application IDs differ, so Data Layer sync would fail.'
+}
 if ($companion.Certificate -ne $phoneCertificate) {
   throw 'Phone and Wear companion certificates differ, so Data Layer sync would fail.'
 }
@@ -171,4 +182,5 @@ Write-Output "Verified Wear companion $($companion.Version) ($($companion.Versio
 foreach ($face in $faces) {
   Write-Output "Verified $($face.Package) $($face.Version) ($($face.VersionCode))"
 }
+Write-Output "Phone and companion share application ID $phonePackage and signing certificate $phoneCertificate."
 Write-Output 'All Wear APKs are signed, non-debuggable, watch-only and certificate-compatible with the phone.'

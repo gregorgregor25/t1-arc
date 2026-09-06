@@ -121,7 +121,8 @@ export function WearCompanionCard() {
       return {
         label: 'INSTALL NEEDED',
         title: 'Wear OS watch found',
-        detail: 'Install the T1 Arc companion on the watch to finish setup.',
+        detail:
+          'Install the watch companion from the same release as this phone app. A companion for another T1 Arc installation cannot use this connection.',
         tone: colors.warning,
         icon: 'watch-outline' as const,
       };
@@ -215,7 +216,7 @@ export function WearCompanionCard() {
 
       <View style={styles.features}>
         <Feature
-          detail="Only the current reading, trend, source label and timestamp cross to the watch."
+          detail="Glucose readings, recent graph history and display preferences sync to the watch. Account passwords and API keys stay on the phone."
           icon="lock-closed-outline"
           title="Private transport"
         />
@@ -250,6 +251,11 @@ export function WearCompanionCard() {
         </Text>
       </Pressable>
 
+      <Text style={[styles.footnote, { color: colors.textTertiary }]}>
+        If you have two T1 Arc phone apps, check the watch with the older app
+        stopped before removing it. The companion must match the Android package
+        and signing certificate of this app, even when both apps have the same name.
+      </Text>
       <Text style={[styles.footnote, { color: colors.textTertiary }]}>
         The watch never recommends insulin doses. If the phone or source stops
         updating, the face clearly ages and marks the reading stale.
