@@ -16,6 +16,7 @@ type RegionalProfileListener = (profile: T1ArcRegionalProfile) => void;
 type RegionalProfileErrorListener = (error: unknown) => void;
 const listeners = new Set<RegionalProfileListener>();
 let runtimeHydration: Promise<T1ArcRegionalProfile> | undefined;
+let successfulSaveRevision = 0;
 
 async function readStoredProfile(key: string) {
   const saved = await SecureStore.getItemAsync(key);
@@ -32,7 +33,10 @@ export function getCachedRegionalProfile() {
 }
 
 export async function loadRegionalProfile() {
+  const readRevision = successfulSaveRevision;
   const current = await readStoredProfile(REGIONAL_PROFILE_KEY);
+  // A slow cold-start read must not undo a preference saved while it was pending.
+  if (readRevision !== successfulSaveRevision) return getRuntimeRegionalProfile();
   if (current) {
     setRuntimeRegionalProfile(current);
     return current;
@@ -55,7 +59,9 @@ export function ensureRegionalProfileRuntimeHydrated() {
       throw error;
     });
   }
-  return runtimeHydration;
+  // The promise is a hydration fence, not a permanent snapshot. A screen can
+  // subscribe again after a save or activity recreation within this runtime.
+  return runtimeHydration.then(() => getRuntimeRegionalProfile());
 }
 
 export async function saveRegionalProfile(profile: T1ArcRegionalProfile) {
@@ -63,6 +69,7 @@ export async function saveRegionalProfile(profile: T1ArcRegionalProfile) {
     throw new Error('The regional profile is invalid.');
   }
   await SecureStore.setItemAsync(REGIONAL_PROFILE_KEY, JSON.stringify(profile));
+  successfulSaveRevision += 1;
   setRuntimeRegionalProfile(profile);
   for (const listener of listeners) {
     try {
@@ -101,4 +108,5 @@ export function observeRegionalProfile(
 
 export function resetRegionalProfileRuntimeHydrationForTests() {
   runtimeHydration = undefined;
+  successfulSaveRevision = 0;
 }

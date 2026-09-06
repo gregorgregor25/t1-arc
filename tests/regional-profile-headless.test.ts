@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ensureRegionalProfileRuntimeHydrated,
+  observeRegionalProfile,
   resetRegionalProfileRuntimeHydrationForTests,
+  saveRegionalProfile,
 } from '@/data/regionalProfile';
 import { DEFAULT_REGIONAL_PROFILE } from '@/domain/regionalProfile';
 import {
@@ -42,6 +44,59 @@ describe('headless regional runtime hydration', () => {
         ? JSON.stringify(STORED_US_PROFILE)
         : null,
     );
+    secureStore.setItemAsync.mockResolvedValue(undefined);
+  });
+
+  it('gives remounted consumers the latest saved profile, not the cold-start snapshot', async () => {
+    await ensureRegionalProfileRuntimeHydrated();
+    const updated = {
+      ...STORED_US_PROFILE,
+      countryCode: 'GB',
+      languageTag: 'en-GB',
+      glucoseUnit: 'mmolL' as const,
+      measurementSystem: 'metric' as const,
+    };
+    await saveRegionalProfile(updated);
+    await expect(ensureRegionalProfileRuntimeHydrated()).resolves.toEqual(
+      updated,
+    );
+    const listener = vi.fn();
+    const unsubscribe = observeRegionalProfile(listener);
+    try {
+      await vi.waitFor(() => expect(listener).toHaveBeenCalledWith(updated));
+      expect(secureStore.getItemAsync).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not let an older pending storage read replace a newly saved profile', async () => {
+    let finishRead!: (value: string) => void;
+    secureStore.getItemAsync.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const hydration = ensureRegionalProfileRuntimeHydrated();
+    const updated = { ...STORED_US_PROFILE, glucoseUnit: 'mmolL' as const };
+    await saveRegionalProfile(updated);
+    finishRead(JSON.stringify(STORED_US_PROFILE));
+    await expect(hydration).resolves.toEqual(updated);
+    expect(getRuntimeRegionalDefaults().glucoseUnit).toBe('mmolL');
+  });
+
+  it('does not publish a profile whose durable save failed', async () => {
+    await ensureRegionalProfileRuntimeHydrated();
+    secureStore.setItemAsync.mockRejectedValueOnce(
+      new Error('vault unavailable'),
+    );
+    await expect(
+      saveRegionalProfile({ ...STORED_US_PROFILE, glucoseUnit: 'mmolL' }),
+    ).rejects.toThrow('vault unavailable');
+    await expect(ensureRegionalProfileRuntimeHydrated()).resolves.toEqual(
+      STORED_US_PROFILE,
+    );
   });
 
   it('loads the saved profile once before a cold headless runtime schedules work', async () => {
@@ -74,7 +129,9 @@ describe('headless regional runtime hydration', () => {
   });
 
   it('fails closed and permits a later retry when secure storage cannot be read', async () => {
-    secureStore.getItemAsync.mockRejectedValueOnce(new Error('vault unavailable'));
+    secureStore.getItemAsync.mockRejectedValueOnce(
+      new Error('vault unavailable'),
+    );
 
     await expect(ensureRegionalProfileRuntimeHydrated()).rejects.toThrow(
       'vault unavailable',
