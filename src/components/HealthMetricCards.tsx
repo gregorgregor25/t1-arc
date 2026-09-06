@@ -235,6 +235,8 @@ function StrengthWorkoutTimelineRow({
 }) {
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.4;
   const workout = event.strengthWorkout;
   if (!workout) return null;
   const end = event.end ?? event.start + event.durationMinutes * 60_000;
@@ -273,10 +275,13 @@ function StrengthWorkoutTimelineRow({
         onPress={onToggle}
         style={({ pressed }) => [
           styles.intradayWorkoutTrigger,
+          largeText && styles.stackedDetailRow,
           pressed && { backgroundColor: `${color}0A` },
         ]}
       >
-        <View style={styles.intradayTimeBlock}>
+        <View
+          style={[styles.intradayTimeBlock, largeText && styles.fullWidthTime]}
+        >
           <Text style={[styles.intradayTime, { color }]}>
             {interval.startLabel}
           </Text>
@@ -292,7 +297,9 @@ function StrengthWorkoutTimelineRow({
             </Text>
           ) : null}
         </View>
-        <View style={styles.intradayCopy}>
+        <View
+          style={[styles.intradayCopy, largeText && styles.stackedDetailCopy]}
+        >
           <Text style={[styles.intradayLabel, { color: colors.text }]}>
             {contextEventTitle(event)}
           </Text>
@@ -1532,10 +1539,16 @@ function MetricDetailModal({
                       key={event.id}
                       style={[
                         styles.intradayRow,
+                        largeText && styles.stackedDetailRow,
                         { borderBottomColor: colors.divider },
                       ]}
                     >
-                      <View style={styles.intradayTimeBlock}>
+                      <View
+                        style={[
+                          styles.intradayTimeBlock,
+                          largeText && styles.fullWidthTime,
+                        ]}
+                      >
                         <Text
                           style={[
                             styles.intradayTime,
@@ -1555,7 +1568,12 @@ function MetricDetailModal({
                           </Text>
                         ) : null}
                       </View>
-                      <View style={styles.intradayCopy}>
+                      <View
+                        style={[
+                          styles.intradayCopy,
+                          largeText && styles.stackedDetailCopy,
+                        ]}
+                      >
                         <Text
                           style={[styles.intradayLabel, { color: colors.text }]}
                         >
@@ -1600,10 +1618,16 @@ function MetricDetailModal({
                         key={record.id}
                         style={[
                           styles.intradayRow,
+                          largeText && styles.stackedDetailRow,
                           { borderBottomColor: colors.divider },
                         ]}
                       >
-                        <View style={styles.intradayTimeBlock}>
+                        <View
+                          style={[
+                            styles.intradayTimeBlock,
+                            largeText && styles.fullWidthTime,
+                          ]}
+                        >
                           <Text
                             style={[
                               styles.intradayTime,
@@ -1623,7 +1647,12 @@ function MetricDetailModal({
                             </Text>
                           ) : null}
                         </View>
-                        <View style={styles.intradayCopy}>
+                        <View
+                          style={[
+                            styles.intradayCopy,
+                            largeText && styles.stackedDetailCopy,
+                          ]}
+                        >
                           <Text
                             style={[
                               styles.intradayLabel,
@@ -2729,6 +2758,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   stackedDetailCopy: { flex: 0 },
+  fullWidthTime: { width: "100%" },
   leftAlignedReading: { textAlign: "left" },
   weekLabel: { fontSize: 11, lineHeight: 16, textTransform: "capitalize" },
   weekValue: { marginTop: 3, fontSize: 25, lineHeight: 31, fontWeight: "800" },
