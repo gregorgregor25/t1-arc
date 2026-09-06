@@ -1021,6 +1021,8 @@ function MetricDetailModal({
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
   const { dataMode, revision } = useDataContext();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.4;
   const [selectedDayIndex, setSelectedDayIndex] = useState(() =>
     selectedTrendIndex(trend.length),
   );
@@ -1278,7 +1280,7 @@ function MetricDetailModal({
           </SectionCard>
 
           <SectionCard>
-            <View style={styles.weekHeader}>
+            <View style={[styles.weekHeader, largeText && styles.stackedDetailRow]}>
               <View>
                 <Text
                   style={[styles.weekLabel, { color: colors.textSecondary }]}
@@ -1318,6 +1320,7 @@ function MetricDetailModal({
               accessibilityLiveRegion="polite"
               style={[
                 styles.selectedDay,
+                largeText && styles.stackedDetailRow,
                 {
                   backgroundColor: `${definition.color}12`,
                   borderColor: `${definition.color}38`,
@@ -1325,7 +1328,7 @@ function MetricDetailModal({
                 },
               ]}
             >
-              <View style={styles.selectedDayCopy}>
+              <View style={[styles.selectedDayCopy, largeText && styles.stackedDetailCopy]}>
                 <Text
                   style={[
                     styles.selectedDayDate,
@@ -1350,7 +1353,11 @@ function MetricDetailModal({
                 </Text>
               </View>
               <Text
-                style={[styles.selectedDayValue, { color: definition.color }]}
+                style={[
+                  styles.selectedDayValue,
+                  largeText && styles.leftAlignedReading,
+                  { color: definition.color },
+                ]}
               >
                 {selectedDayValue === undefined
                   ? "No record"
@@ -1381,6 +1388,7 @@ function MetricDetailModal({
                     onPress={() => setSelectedDayIndex(index)}
                     style={({ pressed }) => [
                       styles.exactRow,
+                      largeText && styles.stackedDetailRow,
                       index > 0 && {
                         borderTopColor: colors.divider,
                         borderTopWidth: StyleSheet.hairlineWidth,
@@ -1389,7 +1397,7 @@ function MetricDetailModal({
                       pressed && { opacity: 0.66 },
                     ]}
                   >
-                    <View style={styles.exactDateRow}>
+                    <View style={[styles.exactDateRow, largeText && styles.stackedDetailCopy]}>
                       <View
                         style={[
                           styles.exactMarker,
@@ -1416,6 +1424,7 @@ function MetricDetailModal({
                     <Text
                       style={[
                         styles.exactValue,
+                        largeText && styles.leftAlignedReading,
                         {
                           color:
                             value === undefined
@@ -2713,6 +2722,14 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 22,
   },
+  stackedDetailRow: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    paddingVertical: 8,
+    gap: 6,
+  },
+  stackedDetailCopy: { flex: 0 },
+  leftAlignedReading: { textAlign: "left" },
   weekLabel: { fontSize: 11, lineHeight: 16, textTransform: "capitalize" },
   weekValue: { marginTop: 3, fontSize: 25, lineHeight: 31, fontWeight: "800" },
   weekSummaryKind: { marginTop: 1, fontSize: 9, lineHeight: 13 },

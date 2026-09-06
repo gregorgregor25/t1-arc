@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { classifyTarvisSafety } from '@/data/tarvis/safety';
 
 describe('review follow-up UI contracts', () => {
+  it('stacks dense Health detail rows when Android text size is large', () => {
+    const health = readFileSync('src/components/HealthMetricCards.tsx', 'utf8');
+    expect(health).toContain('const largeText = fontScale >= 1.4');
+    expect(health.match(/largeText && styles\.stackedDetailRow/g)).toHaveLength(3);
+    expect(health.match(/largeText && styles\.stackedDetailCopy/g)).toHaveLength(2);
+  });
   it('allows custom-food labels to grow with Android accessibility text sizes', () => {
     const food = readFileSync('src/components/FoodLoggerCard.tsx', 'utf8');
     for (const style of [
