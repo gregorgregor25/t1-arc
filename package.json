@@ -18,7 +18,7 @@
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-navigation/bottom-tabs": "^7.18.14",
     "@react-navigation/native": "^7.3.14",
-    "expo": "~57.0.20",
+    "expo": "~57.0.21",
     "expo-application": "~57.0.2",
     "expo-background-task": "~57.0.16",
     "expo-camera": "~57.0.4",
