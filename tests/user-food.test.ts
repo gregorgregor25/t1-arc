@@ -77,8 +77,8 @@ describe('user food candidate', () => {
       },
     });
 
-    expect(food.nutritionQuality.carbohydrate).toBe('trace');
-    expect(food.nutritionQuality.energy).toBe('trace');
+    expect(food.nutritionQuality.carbohydrate).toBe('reported');
+    expect(food.nutritionQuality.energy).toBe('reported');
     expect(food.nutritionQuality.protein).toBe('missing');
   });
 

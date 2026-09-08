@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -26,8 +27,24 @@ import {
 } from "@/domain/regionalFormat";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
+import { DEFAULT_DISPLAY_PREFERENCES, GLANCE_METRIC_IDS, prioritiseGlanceMetrics } from "@/domain/displayPreferences";
+import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
+import { presentGlanceGlucose } from '@/domain/glanceGlucosePresentation';
 
 import { SectionCard } from "./SectionCard";
+import { MetricPreferencesSheet } from "./MetricPreferencesSheet";
+
+const GLANCE_OPTIONS = [
+  { id: "time-in-range", label: "Time in range" },
+  { id: "insulin", label: "Insulin" },
+  { id: "nutrition", label: "Nutrition" },
+  { id: "sleep", label: "Sleep" },
+  { id: "blood-pressure", label: "Blood pressure" },
+  { id: "heart-rate", label: "Heart rate" },
+  { id: "steps", label: "Steps" },
+  { id: "activity", label: "Activity" },
+  { id: "weight", label: "Weight" },
+];
 
 interface GlanceMetric {
   id: string;
@@ -37,6 +54,7 @@ interface GlanceMetric {
   icon: keyof typeof Ionicons.glyphMap;
   tone: string;
   segments?: { color: string; value: number }[];
+  stackValue?: boolean;
   onPress?(): void;
 }
 
@@ -66,7 +84,7 @@ function formatDuration(value: number, locale: string) {
 function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
   const { colors, radius } = useAppTheme();
   const { fontScale } = useWindowDimensions();
-  const stackedValue = fontScale > 1.3;
+  const stackedValue = fontScale > 1.3 || metric.stackValue;
   const segmentTotal =
     metric.segments?.reduce((total, segment) => total + segment.value, 0) ?? 0;
 
@@ -189,6 +207,9 @@ export function TodayGlanceCard({
 }) {
   const { colors } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
+  const display = useDisplayPreferences();
+  const [editingPriorities, setEditingPriorities] = useState(false);
+  const [draftOrder, setDraftOrder] = useState<string[]>([]);
   const meals = events.filter(
     (event) =>
       event.kind === "meal" &&
@@ -239,14 +260,16 @@ export function TodayGlanceCard({
 
   const metrics: GlanceMetric[] = [];
   if (glucose && glucose.observedMinutes > 0) {
+    const glucosePresentation = presentGlanceGlucose(glucose, glucoseLabel, regional.locale);
     metrics.push({
       id: "time-in-range",
       label: "Time in range",
-      value: `${formatRegionalNumber(glucose.timeInRangePercent, regional.locale)}%`,
-      detail: glucoseLabel,
+      value: glucosePresentation.value,
+      detail: glucosePresentation.detail,
+      stackValue: glucosePresentation.limited,
       icon: "analytics-outline",
       tone: colors.glucose,
-      segments: [
+      segments: glucosePresentation.limited ? undefined : [
         { color: colors.low, value: glucose.timeBelowPercent },
         { color: colors.accent, value: glucose.timeInRangePercent },
         { color: colors.high, value: glucose.timeAbovePercent },
@@ -327,7 +350,8 @@ export function TodayGlanceCard({
       icon: "heart-circle-outline",
       tone: colors.low,
     });
-  } else if (
+  }
+  if (
     health?.restingHeartRateBpm !== undefined ||
     health?.averageHeartRateBpm !== undefined
   ) {
@@ -343,7 +367,8 @@ export function TodayGlanceCard({
       icon: "heart-outline",
       tone: colors.low,
     });
-  } else if (health?.steps !== undefined) {
+  }
+  if (health?.steps !== undefined) {
     metrics.push({
       id: "steps",
       label: "Steps",
@@ -351,7 +376,8 @@ export function TodayGlanceCard({
       icon: "footsteps-outline",
       tone: colors.accent,
     });
-  } else if (activityMinutes > 0) {
+  }
+  if (activityMinutes > 0) {
     metrics.push({
       id: "activity",
       label: "Activity",
@@ -382,14 +408,29 @@ export function TodayGlanceCard({
 
   return (
     <View style={styles.container}>
-      <Text
-        accessibilityRole="header"
-        style={[styles.title, { color: colors.text }]}
-      >
-        At a glance
-      </Text>
+      <View style={styles.header}>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>At a glance</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Edit your at a glance priorities"
+          accessibilityState={{ disabled: display.loading }}
+          disabled={display.loading}
+          onPress={() => {
+            setDraftOrder([...new Set([...display.preferences.glanceOrder, ...GLANCE_METRIC_IDS])]);
+            setEditingPriorities(true);
+          }}
+          style={({ pressed }) => [styles.edit, { opacity: pressed || display.loading ? 0.5 : 1 }]}
+        >
+          <Text style={[styles.editText, { color: colors.primary }]}>Edit</Text>
+        </Pressable>
+      </View>
+      {display.error && !editingPriorities ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Retry loading display choices" onPress={() => void display.retry()} style={styles.retry}>
+          <Text style={[styles.metricDetail, { color: colors.warning }]}>{display.error} Tap to retry.</Text>
+        </Pressable>
+      ) : null}
       <SectionCard style={styles.metrics}>
-        {metrics.slice(0, 3).map((metric, index, visible) => (
+        {prioritiseGlanceMetrics(metrics, display.preferences.glanceOrder).map((metric, index, visible) => (
           <MetricRow
             key={metric.id}
             last={index === visible.length - 1}
@@ -397,6 +438,18 @@ export function TodayGlanceCard({
           />
         ))}
       </SectionCard>
+      <MetricPreferencesSheet
+        visible={editingPriorities}
+        mode="priorities"
+        options={GLANCE_OPTIONS}
+        selected={draftOrder}
+        onChange={setDraftOrder}
+        onClose={() => setEditingPriorities(false)}
+        onReset={() => setDraftOrder([...DEFAULT_DISPLAY_PREFERENCES.glanceOrder])}
+        onSave={() => { void display.save({ glanceOrder: draftOrder }).then(saved => { if (saved) setEditingPriorities(false); }); }}
+        saving={display.saving}
+        error={display.error}
+      />
     </View>
   );
 }
@@ -406,11 +459,16 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   title: {
+    flex: 1,
     fontSize: 18,
     lineHeight: 24,
     fontWeight: "600",
     letterSpacing: -0.2,
   },
+  header: { flexDirection: "row", alignItems: "center", gap: 12 },
+  edit: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
+  editText: { fontSize: 14, lineHeight: 21, fontWeight: "600" },
+  retry: { minHeight: 48, justifyContent: "center" },
   metrics: {
     marginTop: 11,
     padding: 0,

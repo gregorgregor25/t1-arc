@@ -156,9 +156,12 @@ export function selectTarvisEvidencePacket(
     (finding) =>
       categories.has(finding.category) || finding.category === "data-quality",
   );
-  const findings = (
-    relevantFindings.length ? relevantFindings : packet.findings
-  ).slice(0, broadQuestion ? MAX_FINDINGS : 10);
+  const requiredIds = new Set(packet.requiredFindingIds ?? []);
+  const candidates = relevantFindings.length ? relevantFindings : packet.findings;
+  const findings = [
+    ...packet.findings.filter(({ id }) => requiredIds.has(id)),
+    ...candidates.filter(({ id }) => !requiredIds.has(id)),
+  ].slice(0, broadQuestion ? MAX_FINDINGS : 10);
   const selectedEvidenceIds = new Set(
     findings.flatMap((finding) => finding.evidenceIds),
   );

@@ -14,6 +14,7 @@ import {
 import {
   calculateGlucoseStatistics,
   canonicalGlucoseSamples,
+  GLUCOSE_MEAN_METRIC_VERSION,
 } from "./query/glucoseStatistics";
 import {
   type GlucoseReading,
@@ -294,20 +295,42 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => canonicalize(item));
+const CANONICAL_KEY_ORDER_CACHE_LIMIT = 64;
+
+function canonicalize(
+  value: unknown,
+  keyOrders: Map<string, readonly string[]>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalize(item, keyOrders));
+  }
   if (isRecord(value)) {
+    const keys = Object.keys(value);
+    // Retain the established locale-sensitive identity order exactly. A full
+    // record snapshot repeats a few shapes thousands of times; sorting every
+    // copy invokes Android collation millions of times on Hermes. The exact
+    // input-key sequence also preserves stable-sort ties between distinct keys.
+    const signature = JSON.stringify(keys);
+    let orderedKeys = keyOrders.get(signature);
+    if (!orderedKeys) {
+      orderedKeys = keys.sort((left, right) => left.localeCompare(right));
+      if (keyOrders.size >= CANONICAL_KEY_ORDER_CACHE_LIMIT) {
+        const oldest = keyOrders.keys().next().value;
+        if (oldest !== undefined) keyOrders.delete(oldest);
+      }
+      keyOrders.set(signature, orderedKeys);
+    }
     return Object.fromEntries(
-      Object.keys(value)
-        .sort((left, right) => left.localeCompare(right))
-        .map((key) => [key, canonicalize(value[key])]),
+      orderedKeys.map((key) => [key, canonicalize(value[key], keyOrders)]),
     );
   }
   return value;
 }
 
 function canonicalString(value: unknown) {
-  return JSON.stringify(canonicalize(value));
+  // Per operation, never a global cache that could outlive a locale change or
+  // retain arbitrary property names from imported evidence indefinitely.
+  return JSON.stringify(canonicalize(value, new Map()));
 }
 
 /** Deterministic 128-bit content identity; this is an integrity checksum, not a MAC. */
@@ -621,7 +644,11 @@ function recomputeClaim(
   });
   switch (claim.metric) {
     case "glucose.mean":
-      return round(statistics.arithmeticMeanMmolL!, 2);
+      // Old conversations retain their original two-decimal claim and hash.
+      // New claims retain calculation precision until regional presentation.
+      return bundle.algorithms.metricVersions.find(({ metric }) => metric === claim.metric)?.version === GLUCOSE_MEAN_METRIC_VERSION
+        ? statistics.arithmeticMeanMmolL
+        : round(statistics.arithmeticMeanMmolL!, 2);
     case "glucose.median":
       return round(statistics.medianMmolL!, 2);
     case "glucose.minimum":

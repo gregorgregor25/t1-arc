@@ -136,16 +136,35 @@ const CHILD_SICK_DAY_SCOPE =
   /(?=[\s\S]*\b(?:child|children|schoolchild(?:ren)?|young[- ](?:person|people)|teen(?:ager)?s?|paediatric|pediatric|under[- ]?18|(?:[0-9]|1[0-7])(?:[- ]year[- ]old| years? old))\b)(?=[\s\S]*\b(?:ill|illness|unwell|poorly|sick|flu|stomach bug|tummy bug|sick[- ]?days?)\b)(?=[\s\S]*\b(?:what should|how should|what do (?:i|we|they) need to know|advice|rules?|guidance|guidelines?)\b)/i;
 
 const CLEARLY_OFF_TOPIC =
-  /\b(capital of|country|geography|weather|football (?:score|result|news|table|fixture)|sports? score|celebrity|stock price|share price|cryptocurrency|write (?:me )?(?:a )?(?:poem|essay|story|code)|translate|homework|tell (?:me )?(?:a )?joke|trivia)\b/i;
+  /\b(capital of|geography|weather forecast|football (?:score|result|news|table|fixture)|sports? score|celebrity|stock price|share price|cryptocurrency|mortgages?|boiler|write (?:me )?(?:a )?(?:poem|essay|story|code)|translate|homework|tell (?:me )?(?:a )?joke|trivia)\b|\b(?:what(?:'?s| is)|tell me|show me)\s+(?:the\s+)?weather\b/i;
 
 export function isClearlyOffTopicTarvisQuestion(question: string) {
   return CLEARLY_OFF_TOPIC.test(question);
+}
+
+/** Recognises a request for an explanation, not a personal record lookup.
+ * Topic recognition is deliberately separate: unfamiliar health vocabulary
+ * can reach education mode without exposing a personal evidence packet.
+ */
+export function isTarvisGeneralExplanation(question: string) {
+  const prompt = question.trim();
+  if (
+    /\b(?:records?|readings?|history|data|today|yesterday|last|past|previous|recent|calculate|compute|count|compare|how (?:many|much|long))\b/i.test(prompt)
+  ) return false;
+  const mechanismQuestion = /^(?:why|how) (?:does|do|can)\b/i.test(prompt);
+  if (/\b(?:my|mine|our|ours)\b/i.test(prompt) && !mechanismQuestion) {
+    return false;
+  }
+  return mechanismQuestion ||
+    /^(?:(?:can|could) you\s+)?(?:what (?:is|are|does)|what's|explain|tell me about|help me understand|define|describe)\b/i.test(prompt);
 }
 
 const CREDENTIAL_EXTRACTION =
   /\b(show|tell|reveal|display|retrieve|give|what(?:'s| is))\b[\s\S]{0,80}\b(password|passcode|api[ -]?key|secret|credential|token)\b/i;
 
 const FOLLOW_UP = [
+  /^(?:(?:can|could|would) you\s+|please\s+)?(?:explain|describe|rephrase|summarise|summarize)\s+(?:that|this|it|the previous answer)\s+(?:more simply|in (?:simpler terms|simple terms|plain English|more detail|less detail)|again|briefly)[?.! ]*$/i,
+  /^(?:make (?:that|this|it) (?:simpler|shorter|clearer)|simplify (?:that|this|it)|(?:can|could) you simplify (?:that|this|it))[?.! ]*$/i,
   /^(?:why|how|how so|why is (?:that|this|it)|why does (?:that|this|it) matter|how does (?:that|this|it) work)[?.! ]*$/i,
   /^(?:(?:can|could) you\s+|please\s+)?explain(?:\s+(?:that|this|it))?[?.! ]*$/i,
   /^(?:(?:can|could) you\s+)?tell me more(?:\s+about\s+(?:that|this|it))?[?.! ]*$/i,

@@ -12,6 +12,9 @@ import {
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
   WearCompanionStatus,
+  WatchFaceDeviceStatus,
+  WatchFaceId,
+  WatchFaceResult,
 } from './T1ArcGlucoseDisplay.types';
 
 declare class T1ArcGlucoseDisplayModule extends NativeModule<
@@ -20,6 +23,9 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<
   getStatusAsync(): Promise<GlucoseDisplayStatus>;
   getPrivateGlucoseWriteEpochAsync(): Promise<number>;
   getWearStatusAsync(): Promise<WearCompanionStatus>;
+  getWatchFaceStatusAsync(): Promise<WatchFaceDeviceStatus[]>;
+  installBundledWatchFaceAsync(nodeId: string, faceId: WatchFaceId): Promise<WatchFaceResult>;
+  openWatchFaceActivationAsync(nodeId: string): Promise<boolean>;
   getHomeWidgetStatusAsync(): Promise<HomeWidgetStatus>;
   requestPinHomeWidgetAsync(): Promise<boolean>;
   enableAsync(): Promise<GlucoseDisplayStatus>;

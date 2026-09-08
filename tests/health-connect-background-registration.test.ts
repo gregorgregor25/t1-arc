@@ -129,6 +129,34 @@ describe('Health Connect background registration', () => {
     expect(
       registration.reconcileBackgroundTaskRegistration,
     ).toHaveBeenCalledWith(HEALTH_CONNECT_BACKGROUND_TASK, false);
+    expect(healthConnect.getHealthConnectStatus).not.toHaveBeenCalled();
+    expect(registration.backgroundTaskSchedulerAvailable).not.toHaveBeenCalled();
+  });
+
+  it('settles no-category cleanup without waiting for a stalled native permission query', async () => {
+    const nativeStatus = deferred<ReturnType<typeof status>>();
+    healthConnect.getHealthConnectStatus.mockReturnValue(nativeStatus.promise);
+    healthConnect.loadHealthConnectPreferences.mockResolvedValue([]);
+
+    const operation = updateHealthConnectBackgroundSyncRegistration();
+    let settled = false;
+    void operation.then(() => { settled = true; });
+    try {
+      // The native promise deliberately never settles during this assertion.
+      await vi.waitFor(() => expect(settled).toBe(true));
+      await expect(operation).resolves.toBe(false);
+      expect(healthConnect.getHealthConnectStatus).not.toHaveBeenCalled();
+      expect(registration.backgroundTaskSchedulerAvailable).not.toHaveBeenCalled();
+      expect(registration.reconcileBackgroundTaskRegistration).toHaveBeenCalledWith(
+        HEALTH_CONNECT_BACKGROUND_TASK,
+        false,
+      );
+    } finally {
+      // Drain a regressed implementation too, so one failure cannot poison the
+      // module's serialized registration queue for subsequent tests.
+      nativeStatus.resolve(status([]));
+      await operation;
+    }
   });
 
   it('does not register for a granted category the user disabled', async () => {
@@ -157,6 +185,35 @@ describe('Health Connect background registration', () => {
     expect(
       registration.reconcileBackgroundTaskRegistration,
     ).toHaveBeenCalledWith(HEALTH_CONNECT_BACKGROUND_TASK, true);
+    expect(healthConnect.getHealthConnectStatus).toHaveBeenCalledOnce();
+    expect(registration.backgroundTaskSchedulerAvailable).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['scheduler unavailable', true, 'available', true, false],
+    ['provider unavailable', true, 'unavailable', true, true],
+    ['background permission denied', true, 'available', false, true],
+    ['category permission denied', false, 'available', true, true],
+  ])('does not register enabled categories when %s', async (
+    _label, categoryGranted, availability, backgroundGranted, schedulerAvailable,
+  ) => {
+    healthConnect.loadHealthConnectPreferences.mockResolvedValue([
+      { category: 'steps', enabled: true, updatedAt: 10 },
+    ]);
+    healthConnect.getHealthConnectStatus.mockResolvedValue({
+      ...status(categoryGranted ? ['steps'] : []),
+      availability,
+      backgroundGranted,
+    });
+    registration.backgroundTaskSchedulerAvailable.mockResolvedValue(schedulerAvailable);
+
+    await expect(updateHealthConnectBackgroundSyncRegistration()).resolves.toBe(false);
+    expect(healthConnect.getHealthConnectStatus).toHaveBeenCalledOnce();
+    expect(registration.backgroundTaskSchedulerAvailable).toHaveBeenCalledOnce();
+    expect(registration.reconcileBackgroundTaskRegistration).toHaveBeenCalledWith(
+      HEALTH_CONNECT_BACKGROUND_TASK,
+      false,
+    );
   });
 
   it('preserves updater invocation order when an older enable snapshot is delayed', async () => {
@@ -188,6 +245,8 @@ describe('Health Connect background registration', () => {
         ([, enabled]) => enabled,
       ),
     ).toEqual([true, false]);
+    expect(healthConnect.loadHealthConnectPreferences).toHaveBeenCalledTimes(2);
+    expect(healthConnect.getHealthConnectStatus).toHaveBeenCalledOnce();
   });
 
   it('threads one erase lease through a successful background run', async () => {

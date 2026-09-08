@@ -241,6 +241,12 @@ const PERSISTED_BINDINGS: readonly StringBindingContract[] = [
     value: 't1arc.health-goals.steps.v1',
   },
   {
+    category: 'device backup status',
+    file: 'src/data/backup/backupStatus.ts',
+    name: 'BACKUP_STATUS_KEY',
+    value: 't1arc.backup-status.v1',
+  },
+  {
     category: 'theme preference',
     file: 'src/data/themePreference.ts',
     name: 'THEME_PREFERENCE_KEY',
@@ -938,7 +944,7 @@ const WATCH_FACE_PROVIDERS = [
   {
     file: 'wear/watchface-meridian/src/main/res/raw/watchface.xml',
     providers: [
-      'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcGlucoseComplicationService',
+      'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService',
       'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcGraphComplicationService',
     ],
   },
@@ -946,7 +952,7 @@ const WATCH_FACE_PROVIDERS = [
     file: 'wear/watchface-chronograph/src/main/res/raw/watchface.xml',
     providers: [
       'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcChronographGraphComplicationService',
-      'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcOpticalGlucoseComplicationService',
+      'io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService',
     ],
   },
   {
@@ -1089,6 +1095,9 @@ describe('T1 Arc runtime technical identity', () => {
         'watchface-chronograph',
         "applicationId t1ArcWatchFaceApplicationId('chronograph')",
       ],
+      ['watchface-atelier', "applicationId t1ArcWatchFaceApplicationId('atelier')"],
+      ['watchface-pace', "applicationId t1ArcWatchFaceApplicationId('pace')"],
+      ['watchface-summit', "applicationId t1ArcWatchFaceApplicationId('summit')"],
       [
         'watchface-orbit',
         "applicationId t1ArcWatchFaceApplicationId('orbit')",

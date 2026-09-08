@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   createBackupPreviewArtifactCleaner,
@@ -38,6 +39,10 @@ vi.mock("@/data/backup/healthBackup", () => ({
   mergePreparedHealthBackup: vi.fn(),
   readHealthBackupFile: vi.fn(),
 }));
+vi.mock("@/data/backup/backupStatus", () => ({
+  recordSuccessfulBackupExport: vi.fn(),
+}));
+vi.mock("@/components/BackupCarePanel", () => ({ BackupCarePanel: () => null }));
 vi.mock("@/domain/time", () => ({
   formatDate: vi.fn(),
   formatTime: vi.fn(),
@@ -95,6 +100,18 @@ function preferencePayload(version: 1 | 2 | 3 | 4) {
 }
 
 describe("encrypted backup preview cleanup", () => {
+  it("does not offer provider sign-in passwords as backup passphrases", () => {
+    const source = readFileSync("src/components/EncryptedBackupCard.tsx", "utf8");
+    const inputs = source.match(/<TextInput[\s\S]*?\/>/g) ?? [];
+    const passphrases = inputs.filter((input) => /accessibilityLabel="(?:Confirm b|B)ackup passphrase"/.test(input));
+    expect(passphrases).toHaveLength(2);
+    for (const input of passphrases) {
+      expect(input).toContain('autoComplete="off"');
+      expect(input).toContain('importantForAutofill="no"');
+      expect(input).toContain('secureTextEntry={!passphraseVisible}');
+    }
+  });
+
   it("releases each retained decrypted artifact at most once", async () => {
     const remove = vi.fn(async () => true);
     const cleaner = createBackupPreviewArtifactCleaner(remove);

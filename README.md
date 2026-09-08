@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://github.com/gregorgregor25/t1-arc/releases/latest">Download the latest Android APK</a></strong>
+  <strong><a href="docs/RELEASE_STATUS.md">Check public APK availability</a></strong>
   &nbsp;|&nbsp;
   <a href="docs/GETTING_STARTED.md">Installation guide</a>
   &nbsp;|&nbsp;
@@ -55,6 +55,17 @@ Tarv1s is not an insulin-dose calculator, medical device or emergency service.
 **[See how Tarv1s works](docs/USING_T1_ARC.md#tarv1s)** ·
 [Set it up with your own OpenAI key](docs/TARV1S_BYOK.md)
 
+### T1 Arc demo | AI narration: elevenlabs.io
+
+[![Watch the 90-second T1 Arc demo](docs/media/t1-arc-demo-poster.png)](docs/media/t1-arc-demo.mp4)
+
+[Watch the film](docs/media/t1-arc-demo.mp4) ·
+[Subtitles](docs/media/t1-arc-demo.vtt) ·
+[Credits and media use](docs/media/README.md)
+
+Music: *Signal Drift*, created with Suno. An edited walkthrough of the app,
+including the creator's own records, shared with permission.
+
 > [!IMPORTANT]
 > Install T1 Arc only from this repository's official
 > [Releases page](https://github.com/gregorgregor25/t1-arc/releases). The phone
@@ -63,6 +74,8 @@ Tarv1s is not an insulin-dose calculator, medical device or emergency service.
 > there is no public build available yet.
 
 ## Install T1 Arc
+
+Once a public APK is available:
 
 1. Open the [latest release](https://github.com/gregorgregor25/t1-arc/releases/latest)
    on the Android phone.
@@ -135,6 +148,9 @@ backup, privacy and Health Connect screens.
 - Search bundled regional food catalogues while typing.
 - Search packaged products and scan barcodes through Open Food Facts.
 - Create personal foods, favourites, saved meals and recipes.
+- Browse the full saved library, remember portions and choose how many recipe
+  servings to add. Android label capture helps fill an editable food form;
+  nothing is saved until you review it.
 - Copy a whole meal or selected items from another day.
 - Log a quick carbohydrate total without inventing other nutrition values.
 
@@ -162,10 +178,13 @@ backup, privacy and Health Connect screens.
 - Optional always-on display service.
 - Experimental, opt-in Android Auto glance.
 
-Wear OS code exists in the project, but the first GitHub phone APK does not
-automatically install a watch companion or watch faces. The
-[release status](docs/RELEASE_STATUS.md) explains what is included in the
-current public download.
+The Wear OS companion brings glucose to your wrist. On supported Wear OS 6
+watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
+Browse the [watch collection](docs/design/WATCH_FACE_COLLECTION.md#the-collection).
+The companion
+needs a separate, one-time installation from the same GitHub Release.
+See [Watch setup](docs/WATCH_SETUP.md) and check the
+[release status](docs/RELEASE_STATUS.md) for the assets actually available.
 
 ## Regional support
 
@@ -173,14 +192,23 @@ T1 Arc stores health values in canonical units. Region and locale settings
 change display, input and provider choices without rewriting the underlying
 record.
 
+The food coverage below describes the current source. Check a downloaded
+APK's release notes for the catalogues and label-capture features it includes.
+
 | Area | UK | US | Japan | Other regions |
 | --- | --- | --- | --- | --- |
 | Glucose and measurements | Regional display | Regional display | Regional display | Regional display where supported |
-| Offline reference food search | CoFID | 5,742 USDA Foundation/FNDDS foods | 2,538 MEXT foods | Personal and saved foods |
-| Packaged food and barcode search | Open Food Facts | Open Food Facts, then a low-rate USDA exact barcode fallback after a miss | Open Food Facts | Open Food Facts |
+| Offline reference food search | CoFID | 5,742 USDA Foundation/FNDDS foods | 2,538 MEXT foods | Canada: 5,993 CNF foods; France: 3,483 Ciqual foods; Germany: 7,140 BLS foods; personal and saved foods elsewhere |
+| Packaged food and barcode search | Saved products, then Open Food Facts | Saved products and an optional 409,329-food offline USDA branded catalogue, then Open Food Facts; low-rate USDA exact barcode fallback after a miss | Saved products, then Open Food Facts | Saved products, then Open Food Facts |
 | Provider routes | UK is the main regression baseline | Implemented routes, with Glooko US marked experimental | Dexcom Japan and international routes where offered | Only supported service regions are selectable |
 | Clinical content | Reviewed GB/NICE boundary plus general safety | General safety only | General safety only | General safety unless a reviewed pack exists |
 | Interface language | English | English with US formats | English with Japanese formats and food names | English with selected locale formatting |
+
+Canada, France and Germany's reference catalogues are prepared locally on
+first use. The larger US branded catalogue is optional under **More options >
+Offline food catalogue**. It needs about 151 MB of additional phone storage; its compressed
+asset adds about 41 MB to builds that include it. No paid food API or personal
+API key is needed. Removing the optional catalogue keeps saved foods and meals.
 
 Not every provider route has been tested with a real account in every country.
 T1 Arc labels those boundaries instead of treating a fixture as field proof.
@@ -233,13 +261,25 @@ Read the detailed [privacy model](PRIVACY.md) before connecting personal data.
 
 ## Contributing
 
-You do not need to build the app to report a problem. Use the issue forms for a
-bug, feature request or regional compatibility report. Bug reports, device
-checks, documentation fixes and code contributions are welcome.
+You do not need to build the app to help. A clear usability report, a guide
+correction or a device check with invented data can be useful.
+
+- [Report a bug](https://github.com/gregorgregor25/t1-arc/issues/new?template=bug.yml)
+- [Suggest an improvement](https://github.com/gregorgregor25/t1-arc/issues/new?template=feature.yml)
+- [Report regional compatibility](https://github.com/gregorgregor25/t1-arc/issues/new?template=regional-compatibility.yml)
+- [Make a first small pull request](CONTRIBUTING.md#your-first-small-pull-request)
+
+Good small changes include a synthetic regression test, an accessible control
+label, a verified regional food alias or an example that makes a guide clearer.
+Check an existing issue or describe your proposed scope before starting a larger
+change. These are invitations, not a claim that a task is already assigned.
 
 Developers should start with [CONTRIBUTING.md](CONTRIBUTING.md) and the separate
 [development guide](docs/DEVELOPMENT.md). Build tools are contributor
 requirements, not user installation requirements.
+
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Issues and pull requests
+are the current collaboration routes; no separate wiki or chat account is needed.
 
 Never upload an unedited health export, database, API key, password, session
 token or screenshot containing private information. Use synthetic data and the

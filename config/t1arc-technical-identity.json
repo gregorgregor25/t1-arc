@@ -18,7 +18,9 @@
     "watchFaceApplicationIds": {
       "meridian": "io.github.gregorgregor25.t1arc.watchface.meridian",
       "chronograph": "io.github.gregorgregor25.t1arc.watchface.chronograph",
-      "orbit": "io.github.gregorgregor25.t1arc.watchface.orbit"
+      "atelier": "io.github.gregorgregor25.t1arc.watchface.atelier",
+      "pace": "io.github.gregorgregor25.t1arc.watchface.pace",
+      "summit": "io.github.gregorgregor25.t1arc.watchface.summit"
     },
     "variants": {
       "debugApplicationIdSuffix": ".dev",

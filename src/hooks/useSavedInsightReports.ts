@@ -13,7 +13,7 @@ import {
   type SavedInsightReportsState,
 } from './savedInsightReportsState';
 
-export function useSavedInsightReports() {
+export function useSavedInsightReports(enabled = true) {
   const { dataMode, revision } = useDataContext();
   const [state, setState] = useState<SavedInsightReportsState>({
     reports: [],
@@ -24,7 +24,7 @@ export function useSavedInsightReports() {
 
   const reload = useCallback(async () => {
     const currentRequest = ++requestId.current;
-    if (dataMode !== 'live') {
+    if (!enabled || dataMode !== 'live') {
       setState({ reports: [], loading: false, unavailable: true });
       return;
     }
@@ -40,7 +40,7 @@ export function useSavedInsightReports() {
       }
       throw error;
     }
-  }, [dataMode]);
+  }, [dataMode, enabled]);
 
   useEffect(() => {
     let active = true;

@@ -151,16 +151,25 @@ let healthConnectRegistrationTail: Promise<void> = Promise.resolve();
 
 export function updateHealthConnectBackgroundSyncRegistration() {
   const operation = healthConnectRegistrationTail.then(async () => {
-    const [healthStatus, preferences, schedulerAvailable] = await Promise.all([
-      getHealthConnectStatus(),
-      loadHealthConnectPreferences(),
-      backgroundTaskSchedulerAvailable(),
-    ]);
+    const preferences = await loadHealthConnectPreferences();
     const enabledCategories = new Set(
       preferences
         .filter((preference) => preference.enabled)
         .map((preference) => preference.category),
     );
+    // Do not hold app setup behind a Health Connect provider response when
+    // no enabled category can use the worker.
+    // Still remove an existing registration when the last category is disabled.
+    if (enabledCategories.size === 0) {
+      return reconcileBackgroundTaskRegistration(
+        HEALTH_CONNECT_BACKGROUND_TASK,
+        false,
+      );
+    }
+    const [healthStatus, schedulerAvailable] = await Promise.all([
+      getHealthConnectStatus(),
+      backgroundTaskSchedulerAvailable(),
+    ]);
     const shouldRegister =
       schedulerAvailable &&
       healthStatus.availability === 'available' &&

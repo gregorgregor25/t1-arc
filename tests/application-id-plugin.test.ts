@@ -124,7 +124,7 @@ describe('T1 Arc Android application identity policy', () => {
     expect(providerPolicy).toContain('primaryProvider');
     expect(providerPolicy).toContain('pre${capitalizedBuildType}Build');
 
-    for (const face of ['meridian', 'chronograph', 'orbit']) {
+    for (const face of ['meridian', 'chronograph', 'atelier', 'pace', 'summit']) {
       const gradle = readFileSync(
         path.join(process.cwd(), 'wear', `watchface-${face}`, 'build.gradle'),
         'utf8',

@@ -62,9 +62,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.Serializable
 import java.time.Instant
 import kotlin.reflect.KClass
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val PROVIDER_PACKAGE = "com.google.android.apps.healthdata"
 private const val PAGE_SIZE = 500
+private const val PERMISSION_STATUS_TIMEOUT_MS = 10_000L
 private val KNOWN_SOURCE_LABELS =
   mapOf(
     "com.sec.android.app.shealth" to "Samsung Health",
@@ -476,7 +478,12 @@ private suspend fun statusFor(context: Context): Map<String, Any?> {
   }
 
   val client = HealthConnectClient.getOrCreate(context)
-  val granted = client.permissionController.getGrantedPermissions()
+  // A stalled Health Connect provider must not hold app setup indefinitely.
+  // A timeout is an error, not evidence that permissions were denied. The
+  // permission prompt and health-record reads have their own lifecycles.
+  val granted = withTimeoutOrNull(PERMISSION_STATUS_TIMEOUT_MS) {
+    client.permissionController.getGrantedPermissions()
+  } ?: throw IllegalStateException("Health Connect did not respond. Please try again.")
   val categories =
     categoryRecordTypes.map { (id, recordTypes) ->
       val permissions = recordTypes.map(HealthPermission::getReadPermission)

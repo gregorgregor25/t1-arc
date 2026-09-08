@@ -77,6 +77,8 @@ function createSchema(database: DatabaseSync) {
       category TEXT NOT NULL,
       detail TEXT,
       glucose_mmol_l REAL,
+      sensor_started INTEGER,
+      sensor_glucose_source_id TEXT,
       recorded_at_ms INTEGER NOT NULL,
       source_file TEXT,
       source_row INTEGER
@@ -202,6 +204,10 @@ describe('atomic manual context save insight invalidation', () => {
   beforeEach(() => {
     sqlite = new DatabaseSync(':memory:');
     createSchema(sqlite);
+    sqlite.exec(`CREATE TABLE glucose_readings (
+      id TEXT PRIMARY KEY, source_id TEXT, timestamp_ms INTEGER,
+      received_at_ms INTEGER, mmol_l REAL, imported_at_ms INTEGER, source_file TEXT
+    );`);
     sqlite
       .prepare('INSERT INTO app_metadata (key, value) VALUES (?, ?)')
       .run(LOCAL_DATA_WRITE_EPOCH_KEY, '7');
@@ -224,6 +230,29 @@ describe('atomic manual context save insight invalidation', () => {
     expect(count(sqlite, 'context_notes')).toBe(1);
     expect(count(sqlite, 'insight_reports')).toBe(1);
     expect(generation(sqlite)).toEqual({ value: '1' });
+  });
+
+  it('persists a sensor change and ends waiting only for source-matched timely observations', async () => {
+    const event = note({ sourceId: 't1arc-manual', category: 'sensor', sensorStarted: true,
+      sensorGlucoseSourceId: 'live-cgm', start: 1_000 });
+    await store.saveManualContext(event, { insightInvalidation: 'mark-dirty' });
+    expect(await store.getSensorChangeStatus('live-cgm', 500_000)).toMatchObject({
+      waiting: true, event: { id: event.id, sensorStarted: true, sensorGlucoseSourceId: 'live-cgm' },
+    });
+    expect(await store.getSensorChangeStatus('other-cgm', 500_000)).toBeUndefined();
+    sqlite.prepare('INSERT INTO glucose_readings VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('backfill', 'live-cgm', 2_000, 450_000, 6.5, null, null);
+    sqlite.prepare('INSERT INTO glucose_readings VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('other-source', 'other-cgm', 400_000, 400_100, 6.5, null, null);
+    expect((await store.getSensorChangeStatus('live-cgm', 500_000))?.waiting).toBe(true);
+    sqlite.prepare('INSERT INTO glucose_readings VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('live-returned', 'live-cgm', 400_000, 400_100, 6.5, null, null);
+    expect((await store.getSensorChangeStatus('live-cgm', 500_000))?.waiting).toBe(false);
+    expect((await store.getSensorChangeStatus('live-cgm', 9_000_000))?.waiting).toBe(false);
+    await store.saveManualContext({ ...event, start: 450_000 }, { insightInvalidation: 'mark-dirty' });
+    expect((await store.getSensorChangeStatus('live-cgm', 500_000))?.waiting).toBe(true);
+    await store.deleteManualContext(event.id);
+    expect(await store.getSensorChangeStatus('live-cgm', 500_000)).toBeUndefined();
   });
 
   it('uses the same transaction boundary for structured manual events', async () => {

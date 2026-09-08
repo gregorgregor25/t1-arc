@@ -31,6 +31,20 @@ const food: FoodCandidate = {
 };
 
 describe('food serving helpers', () => {
+  it('converts explicit ounce and kilogram masses, never fluid ounces to grams', () => {
+    expect(servingAmountFromRawPayload({ serving_size: '1 bar (2 oz)' }, 'g')).toBeCloseTo(56.69904625);
+    expect(servingAmountFromRawPayload({ serving_size: '0.25 kg' }, 'g')).toBe(250);
+    expect(servingAmountFromRawPayload({ serving_size: '8 fl oz' }, 'g')).toBeUndefined();
+    expect(servingAmountFromRawPayload({ serving_size: '8 fluid ounces' }, 'g')).toBeUndefined();
+    expect(servingAmountFromRawPayload({ serving_quantity: 2, serving_quantity_unit: 'oz' }, 'g')).toBeCloseTo(56.69904625);
+  });
+
+  it('uses a personal item definition while remembering the last total portion', () => {
+    const personal = { ...food, personalServingAmount: 40, personalServingUnit: 'g' as const, lastPortionAmount: 80, lastPortionUnit: 'g' as const };
+    expect(defaultFoodServingAmount(personal)).toBe(40);
+    expect(initialFoodPortionAmount(personal)).toBe(80);
+    expect(defaultFoodServingAmount({ ...personal, personalServingUnit: 'ml' })).toBe(25);
+  });
   it('recovers an Open Food Facts serving from retained source data', () => {
     expect(
       servingAmountFromRawPayload(

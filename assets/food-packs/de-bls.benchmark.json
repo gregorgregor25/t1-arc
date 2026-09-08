@@ -1,0 +1,16 @@
+{
+  "id": "de-bls",
+  "received": 7140,
+  "rejected": 0,
+  "duplicateBarcodes": 0,
+  "foodCount": 7140,
+  "barcodeCount": 0,
+  "installedBytes": 2387968,
+  "gzipBytes": 676725,
+  "buildSeconds": 12.26,
+  "queryMedianMs": 0.459,
+  "queryP95Ms": 0.615,
+  "benchmarkEnvironment": "Desktop Python SQLite; warm queries, not Android memory/latency evidence",
+  "sha256": "50e24dda91761ef3659d5cc4ec28cbb8b85bbc704399dff1259ea90a6282ae38",
+  "sqliteVersion": "3.53.1"
+}

@@ -10,6 +10,8 @@ import {
 } from './openFoodFacts';
 import { FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY } from './providerRetention';
 import { USDA_REFERENCE_CATALOG_INFO } from './usdaReferenceCatalog';
+import { canonicalFoodBarcode } from './barcodeIdentity';
+import { servingAmountFromRawPayload } from './servings';
 
 const USDA_FDC_SEARCH_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 const USDA_FDC_DEFAULT_API_KEY = 'DEMO_KEY';
@@ -36,6 +38,9 @@ interface FoodDataCentralNutrient {
   nutrientName?: string;
   unitName?: string;
   value?: number;
+  /** Detail/bulk records use the nested nutrient + amount shape. */
+  nutrient?: { id?: number; number?: string };
+  amount?: number;
 }
 
 export interface FoodDataCentralFood {
@@ -49,6 +54,8 @@ export interface FoodDataCentralFood {
   servingSizeUnit?: string;
   householdServingFullText?: string;
   foodNutrients?: FoodDataCentralNutrient[];
+  /** Label amounts are per serving. Branded foodNutrients use 100 source g or ml. */
+  labelNutrients?: Partial<Record<'carbohydrates' | 'calories' | 'protein' | 'fat' | 'fiber' | 'sugars' | 'saturatedFat', { value?: number }>>;
 }
 
 export interface FoodDataCentralSearchResponse {
@@ -67,18 +74,38 @@ function numeric(value: unknown) {
     : undefined;
 }
 
-function nutrientValue(
-  food: FoodDataCentralFood,
-  ids: readonly number[],
-  numbers: readonly string[] = [],
-) {
-  const nutrient = food.foodNutrients?.find(
-    (candidate) =>
-      (candidate.nutrientId !== undefined && ids.includes(candidate.nutrientId)) ||
-      (candidate.nutrientNumber !== undefined &&
-        numbers.includes(candidate.nutrientNumber)),
-  );
-  return numeric(nutrient?.value);
+interface NutrientReading { value?: number; id?: number; conflict?: boolean }
+
+const LEGACY_NUTRIENT_IDS: Record<string, number> = {
+  '203': 1003, '204': 1004, '205': 1005, '208': 1008, '268': 1062,
+  '269': 2000, '291': 1079, '606': 1258, '957': 2047, '958': 2048,
+};
+
+function nutrientId(candidate: FoodDataCentralNutrient) {
+  const id = numeric(candidate.nutrientId ?? candidate.nutrient?.id);
+  if (id !== undefined) return id;
+  const number = candidate.nutrientNumber ?? candidate.nutrient?.number;
+  return number ? LEGACY_NUTRIENT_IDS[number] ?? numeric(Number(number)) : undefined;
+}
+
+/** A conflict is not an absent preferred nutrient: do not fall through to another ID. */
+function nutrientValue(food: FoodDataCentralFood, ids: readonly number[]): NutrientReading {
+  for (const id of ids) {
+    const values = new Set((food.foodNutrients ?? [])
+      .filter((candidate) => nutrientId(candidate) === id)
+      .map((candidate) => numeric(candidate.value ?? candidate.amount))
+      .filter((value): value is number => value !== undefined));
+    if (values.size > 1) return { id, conflict: true };
+    if (values.size === 1) return { id, value: values.values().next().value };
+  }
+  return {};
+}
+
+function normalizedServingUnit(value: string | undefined) {
+  const unit = value?.trim().toLowerCase();
+  if (['g', 'grm', 'gram', 'grams'].includes(unit ?? '')) return 'g';
+  if (['ml', 'mlt', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(unit ?? '')) return 'ml';
+  return undefined;
 }
 
 function quality(value: number | undefined): NutrientQuality {
@@ -97,25 +124,47 @@ export function parseFoodDataCentralFood(
     );
   }
 
-  const carbohydrateGrams = nutrientValue(food, [1005], ['1005']);
+  const servingUnit = normalizedServingUnit(food.servingSizeUnit);
+  const isBranded = food.dataType?.trim().toLowerCase() === 'branded';
+  // USDA GBFPD documentation: branded values use 100 g OR 100 ml according to
+  // the provider's unit. Reference composition records remain per 100 g.
+  if (isBranded && servingUnit === undefined) {
+    throw new FoodLookupError('incomplete', 'FoodData Central has no usable gram or millilitre basis for this product. Check the label.');
+  }
+  const standardBasisUnit = isBranded && servingUnit === 'ml' ? 'ml' : 'g';
+  const carbohydrate = nutrientValue(food, [1005]);
+  const energy = nutrientValue(food, [1008, 2048, 2047]);
+  const kilojoules = nutrientValue(food, [1062]);
+  const energyReading = energy.id !== undefined ? energy : kilojoules;
+  const protein = nutrientValue(food, [1003]);
+  const fat = nutrientValue(food, [1004]);
+  const fibre = nutrientValue(food, [1079]);
+  const sugars = nutrientValue(food, [2000]);
+  const saturatedFat = nutrientValue(food, [1258]);
+  const volumeServing = servingUnit === 'ml' ? numeric(food.servingSize) : undefined;
+  const useVolumeLabel = volumeServing !== undefined && volumeServing > 0 &&
+    numeric(food.labelNutrients?.carbohydrates?.value) !== undefined;
+  const resolved = (reading: NutrientReading, label: keyof NonNullable<FoodDataCentralFood['labelNutrients']>) =>
+    reading.conflict ? undefined : useVolumeLabel ? numeric(food.labelNutrients?.[label]?.value) : reading.value;
+  const carbohydrateGrams = resolved(carbohydrate, 'carbohydrates');
   if (carbohydrateGrams === undefined) {
     throw new FoodLookupError(
       'incomplete',
-      'FoodData Central has no carbohydrate value for this food.',
+      carbohydrate.conflict
+        ? 'FoodData Central reports conflicting carbohydrate values for this food. Check the label.'
+        : 'FoodData Central has no carbohydrate value for this food.',
     );
   }
-  const energyKcal = nutrientValue(food, [1008], ['1008']);
-  const energyKilojoules = nutrientValue(food, [1062], ['1062']);
   const resolvedEnergyKcal =
-    energyKcal ??
-    (energyKilojoules === undefined
+    energyReading.conflict ? undefined : useVolumeLabel ? numeric(food.labelNutrients?.calories?.value) : energy.value ??
+    (kilojoules.conflict || kilojoules.value === undefined
       ? undefined
-      : Math.round((energyKilojoules / 4.184) * 10) / 10);
-  const proteinGrams = nutrientValue(food, [1003], ['1003']);
-  const fatGrams = nutrientValue(food, [1004], ['1004']);
-  const fibreGrams = nutrientValue(food, [1079], ['1079']);
-  const sugarsGrams = nutrientValue(food, [2000], ['2000']);
-  const saturatedFatGrams = nutrientValue(food, [1258], ['1258']);
+      : Math.round((kilojoules.value / 4.184) * 10) / 10);
+  const proteinGrams = resolved(protein, 'protein');
+  const fatGrams = resolved(fat, 'fat');
+  const fibreGrams = resolved(fibre, 'fiber');
+  const sugarsGrams = resolved(sugars, 'sugars');
+  const saturatedFatGrams = resolved(saturatedFat, 'saturatedFat');
   const nutritionQuality: FoodNutritionQuality = {
     carbohydrate: quality(carbohydrateGrams),
     energy: quality(resolvedEnergyKcal),
@@ -127,13 +176,22 @@ export function parseFoodDataCentralFood(
   };
 
   const barcode = food.gtinUpc?.replace(/\D/g, '') || undefined;
-  const servingUnit = food.servingSizeUnit?.trim().toLowerCase();
-  const servingAmount =
-    servingUnit && ['g', 'gm', 'grm'].includes(servingUnit)
-      ? numeric(food.servingSize)
-      : undefined;
+  const sourceServingPayload = {
+    serving_quantity: food.servingSize,
+    serving_quantity_unit: servingUnit,
+    serving_size: food.householdServingFullText,
+  };
+  const servingAmount = useVolumeLabel ? volumeServing : servingAmountFromRawPayload(sourceServingPayload, standardBasisUnit);
+  const servingLabel = servingAmount !== undefined ? food.householdServingFullText?.trim() || undefined : undefined;
   const brand = (food.brandName || food.brandOwner)?.replace(/\s+/g, ' ').trim();
   const id = String(fdcId);
+  const conflicts = Object.entries({ energy: energyReading, protein, fat, fibre, sugars, 'saturated fat': saturatedFat })
+    .filter(([, reading]) => reading.conflict).map(([label]) => label);
+  const notes = [
+    ...(conflicts.length ? [`Conflicting source values for ${conflicts.join(', ')} are left unknown. Check the label.`] : []),
+    ...(volumeServing !== undefined && !useVolumeLabel && standardBasisUnit === 'g' && servingAmount === undefined
+      ? [`The source serving is ${volumeServing} ml. Nutrition is per 100 g; no mass-to-volume conversion is provided.`] : []),
+  ];
 
   return {
     id: `usda-fdc:${id}`,
@@ -142,8 +200,8 @@ export function parseFoodDataCentralFood(
     name,
     brand: brand || undefined,
     barcode,
-    basisAmount: 100,
-    basisUnit: 'g',
+    basisAmount: useVolumeLabel ? volumeServing! : 100,
+    basisUnit: useVolumeLabel ? 'ml' : standardBasisUnit,
     nutritionPerBasis: {
       carbohydrateGrams,
       energyKcal: resolvedEnergyKcal,
@@ -154,13 +212,19 @@ export function parseFoodDataCentralFood(
       saturatedFatGrams,
     },
     nutritionQuality,
+    nutrientDefinitions: {
+      carbohydrate: useVolumeLabel || isBranded ? 'total' : 'by-difference',
+      energy: resolvedEnergyKcal === undefined ? undefined : useVolumeLabel ? 'reported'
+        : energy.id === 2048 ? 'atwater-specific' : energy.id === 2047 ? 'atwater-general' : 'reported',
+      ...(notes.length ? { note: notes.join(' ') } : {}),
+    },
     defaultServingAmount: servingAmount ?? 100,
-    defaultServingUnit: 'g',
-    servingLabel: food.householdServingFullText?.trim() || undefined,
+    defaultServingUnit: useVolumeLabel ? 'ml' : standardBasisUnit,
+    servingLabel,
     sourceLabel: USDA_FDC_CATALOG_INFO.dataset,
     sourceUrl: `https://fdc.nal.usda.gov/food-details/${id}/nutrients`,
     rawPayload: {
-      serving_size: food.householdServingFullText?.trim() || undefined,
+      serving_size: servingLabel,
       [FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY]: {
         countryCode: 'US',
         languageTag: 'en',
@@ -255,7 +319,7 @@ export async function lookupFoodDataCentralBarcode(
     limit: 25,
   });
   const match = (payload.foods ?? []).find(
-    (food) => food.gtinUpc?.replace(/\D/g, '') === barcode,
+    (food) => food.gtinUpc !== undefined && canonicalFoodBarcode(food.gtinUpc) === canonicalFoodBarcode(barcode),
   );
   if (!match) {
     throw new FoodLookupError(

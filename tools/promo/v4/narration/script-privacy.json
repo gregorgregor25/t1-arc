@@ -1,0 +1,14 @@
+{
+  "direction": "One new closing cue only. Same British George and settings as the approved music edition. Natural sentence endings. Earlier cues are reused unchanged, not regenerated.",
+  "durationSeconds": 90,
+  "voiceSettings": { "stability": 0.55, "similarity_boost": 0.75, "style": 0, "use_speaker_boost": true, "speed": 1 },
+  "voices": [{ "name": "George", "id": "JBFqnCBsd6RMkjVDRZzb" }],
+  "cues": [{
+    "id": "closing-privacy", "start": 80.6, "latestEnd": 88,
+    "phrases": [
+      { "text": "T1 Arc is open source.", "spoken": "Tee One Arc is open source." },
+      { "text": "Your health history is stored on your phone." },
+      { "text": "We don’t collect your health data.", "spoken": "We don't collect your health data." }
+    ]
+  }]
+}

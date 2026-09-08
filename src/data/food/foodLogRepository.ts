@@ -25,10 +25,12 @@ import {
   FOOD_PROVIDER_RETENTION_POLICIES,
   assertFoodHistoryRetentionAllowed,
   foodCatalogueRegionalContextFromPayload,
+  foodMetadataFromPayload,
   retainedFoodCatalogData,
   type FoodCatalogueRegionalContext,
 } from './providerRetention';
 import { servingAmountFromRawPayload } from './servings';
+import { equivalentFoodBarcodes } from './barcodeIdentity';
 import {
   openT1ArcDatabase,
   withT1ArcTransaction,
@@ -236,6 +238,9 @@ function candidateFromRow(row: CatalogRow): FoodCandidate {
     row.default_serving_amount ??
     servingAmountFromRawPayload(rawPayload, row.basis_unit) ??
     row.basis_amount;
+  const ttl = FOOD_PROVIDER_RETENTION_POLICIES[row.provider].catalogCacheTtlMs;
+  const observedAt = row.cached_at_ms;
+  const now = Date.now();
   return {
     id: row.id,
     provider: row.provider,
@@ -270,6 +275,9 @@ function candidateFromRow(row: CatalogRow): FoodCandidate {
         ? row.cached_at_ms
         : undefined,
     rawPayload,
+    ...foodMetadataFromPayload(rawPayload),
+    catalogueStatus: ttl === undefined ? undefined :
+      observedAt === undefined || observedAt <= 0 || observedAt > now || now >= observedAt + ttl ? 'stale' : 'fresh',
   };
 }
 
@@ -313,11 +321,13 @@ const FOOD_CATALOGUE_PROVIDER_COLUMNS = [
 ] as const;
 
 const FOOD_CATALOGUE_REFRESH_GUARD_SQL = `(
-  excluded.provider NOT IN ('open-food-facts', 'usda-fdc')
+  food_catalog_cache.provider = excluded.provider
+  AND food_catalog_cache.external_id = excluded.external_id
+  AND (excluded.provider NOT IN ('open-food-facts', 'usda-fdc')
   OR (
     excluded.cached_at_ms > 0
     AND excluded.cached_at_ms >= food_catalog_cache.cached_at_ms
-  )
+  ))
 )`;
 
 /** Provider content changes only with a demonstrably current observation. */
@@ -325,7 +335,13 @@ const FOOD_CATALOGUE_PROVIDER_UPDATE_SQL = FOOD_CATALOGUE_PROVIDER_COLUMNS.map(
   (column) =>
     `${column} = CASE
        WHEN ${FOOD_CATALOGUE_REFRESH_GUARD_SQL}
-       THEN excluded.${column}
+       THEN ${column === 'raw_payload_json' ? `CASE
+         WHEN food_catalog_cache.basis_unit = excluded.basis_unit
+           AND json_type(CASE WHEN json_valid(food_catalog_cache.raw_payload_json)
+             THEN food_catalog_cache.raw_payload_json ELSE '{}' END, '$._t1arcPersonalServing') = 'object'
+         THEN json_set(COALESCE(excluded.raw_payload_json, '{}'), '$._t1arcPersonalServing',
+           json_extract(food_catalog_cache.raw_payload_json, '$._t1arcPersonalServing'))
+         ELSE excluded.raw_payload_json END` : `excluded.${column}`}
        ELSE food_catalog_cache.${column}
      END`,
 ).join(',\n       ');
@@ -739,6 +755,7 @@ export async function getFoodBarcodeCacheEntry(
   regionalContext?: FoodCatalogueRegionalContext,
 ): Promise<FoodBarcodeCacheEntry | undefined> {
   const database = await openT1ArcDatabase();
+  const barcodes = equivalentFoodBarcodes(barcode);
   const row = await database.getFirstAsync<BarcodeCatalogRow>(
     `SELECT id, provider, external_id, barcode, name, brand, image_url,
        basis_amount, basis_unit, carbohydrate_grams, energy_kcal,
@@ -748,11 +765,11 @@ export async function getFoodBarcodeCacheEntry(
        saturated_fat_grams, nutrition_quality_json, source_label,
        source_url, raw_payload_json, cached_at_ms, expires_at_ms
      FROM food_catalog_cache
-     WHERE barcode = ?
+     WHERE barcode IN (${barcodes.map(() => '?').join(', ')})
      ORDER BY CASE provider WHEN 'user' THEN 0 ELSE 1 END,
        last_used_at_ms DESC, cached_at_ms DESC
     LIMIT 1`,
-    barcode,
+    ...barcodes,
   );
   if (!row) return undefined;
   const policyTtl = FOOD_PROVIDER_RETENTION_POLICIES[row.provider].catalogCacheTtlMs;
@@ -868,9 +885,66 @@ export async function getStoredFoodSearchEntries(
   });
 }
 
-export async function getRecentMealPresets(limit = 6) {
+export interface FoodLibraryPageOptions {
+  query?: string;
+  offset?: number;
+  limit?: number;
+  favouritesOnly?: boolean;
+}
+
+export interface FoodLibraryPage<T> { items: T[]; hasMore: boolean }
+
+function libraryPageBounds(options: FoodLibraryPageOptions) {
+  return {
+    limit: Math.max(1, Math.min(100, Math.floor(Number.isFinite(options.limit) ? options.limit! : 30))),
+    offset: Math.max(0, Math.floor(Number.isFinite(options.offset) ? options.offset! : 0)),
+  };
+}
+
+function librarySearchPattern(query = '') {
+  return `%${query.trim().slice(0, 120).replace(/[\\%_]/g, '\\$&')}%`;
+}
+
+/** Independent saved-library lookup; category filtering happens before paging. */
+export async function getFoodLibraryPage(
+  options: FoodLibraryPageOptions & { kind: 'recent' | 'favourites' | 'my-foods' },
+): Promise<FoodLibraryPage<StoredFoodSearchEntry>> {
   const database = await openT1ArcDatabase();
-  const safeLimit = Math.max(0, Math.min(limit, 30));
+  const { limit, offset } = libraryPageBounds(options);
+  const condition = options.kind === 'my-foods' ? "provider = 'user'"
+    : options.kind === 'favourites' ? 'is_favorite = 1' : 'last_used_at_ms IS NOT NULL';
+  const pattern = librarySearchPattern(options.query);
+  const rows = await database.getAllAsync<FoodSearchCatalogRow>(
+    `SELECT * FROM food_catalog_cache WHERE ${condition}
+      AND (name LIKE ? ESCAPE '\\' OR COALESCE(brand, '') LIKE ? ESCAPE '\\')
+     ORDER BY ${options.kind === 'recent' ? 'last_used_at_ms DESC,' : 'is_favorite DESC,'}
+       name COLLATE NOCASE ASC, id ASC LIMIT ? OFFSET ?`,
+    pattern, pattern, limit + 1, offset,
+  );
+  return { hasMore: rows.length > limit, items: rows.slice(0, limit).flatMap((row) => {
+    try {
+      return [{ food: candidateFromRow(row), cachedAt: row.cached_at_ms,
+        isFavourite: row.is_favorite === 1, useCount: Math.max(0, row.use_count),
+        lastUsedAt: row.last_used_at_ms ?? undefined }];
+    } catch { return []; }
+  }) };
+}
+
+export async function getMealPresetPage(options: FoodLibraryPageOptions = {}): Promise<FoodLibraryPage<FoodMealPreset>> {
+  const { limit, offset } = libraryPageBounds(options);
+  const items = await getRecentMealPresets(limit + 1, { ...options, offset });
+  return { items: items.slice(0, limit), hasMore: items.length > limit };
+}
+
+export async function getFoodRecipePage(options: FoodLibraryPageOptions = {}): Promise<FoodLibraryPage<FoodRecipe>> {
+  const { limit, offset } = libraryPageBounds(options);
+  const items = await getFoodRecipes(limit + 1, { ...options, offset });
+  return { items: items.slice(0, limit), hasMore: items.length > limit };
+}
+
+export async function getRecentMealPresets(limit = 6, options: FoodLibraryPageOptions = {}) {
+  const database = await openT1ArcDatabase();
+  const safeLimit = Math.max(0, Math.min(limit, 101));
   const rows = await database.getAllAsync<RecentMealItemRow>(
     `SELECT
        logs.id AS log_id, logs.title, logs.meal_type, logs.timestamp_ms,
@@ -892,11 +966,13 @@ export async function getRecentMealPresets(limit = 6) {
      JOIN food_logs AS logs ON logs.id = items.food_log_id
      WHERE logs.id IN (
        SELECT id FROM food_logs
-       ORDER BY is_favorite DESC, timestamp_ms DESC LIMIT ?
+       WHERE title LIKE ? ESCAPE '\\' AND (? = 0 OR is_favorite = 1)
+       ORDER BY is_favorite DESC, timestamp_ms DESC, id ASC LIMIT ? OFFSET ?
      )
-     ORDER BY logs.is_favorite DESC, logs.timestamp_ms DESC,
+     ORDER BY logs.is_favorite DESC, logs.timestamp_ms DESC, logs.id ASC,
        items.ordinal ASC`,
-    safeLimit,
+    librarySearchPattern(options.query), options.favouritesOnly ? 1 : 0,
+    safeLimit, libraryPageBounds(options).offset,
   );
 
   const presets = new Map<string, FoodMealPreset>();
@@ -1084,7 +1160,7 @@ export async function updateFoodRecipe(
   };
 }
 
-export async function getFoodRecipes(limit = 20): Promise<FoodRecipe[]> {
+export async function getFoodRecipes(limit = 20, options: FoodLibraryPageOptions = {}): Promise<FoodRecipe[]> {
   const database = await openT1ArcDatabase();
   const rows = await database.getAllAsync<RecipeItemRow>(
     `SELECT
@@ -1108,11 +1184,13 @@ export async function getFoodRecipes(limit = 20): Promise<FoodRecipe[]> {
      JOIN food_recipes AS recipes ON recipes.id = items.recipe_id
      WHERE recipes.id IN (
        SELECT id FROM food_recipes
-       ORDER BY is_favorite DESC, updated_at_ms DESC LIMIT ?
+       WHERE name LIKE ? ESCAPE '\\' AND (? = 0 OR is_favorite = 1)
+       ORDER BY is_favorite DESC, updated_at_ms DESC, id ASC LIMIT ? OFFSET ?
      )
-     ORDER BY recipes.is_favorite DESC, recipes.updated_at_ms DESC,
+     ORDER BY recipes.is_favorite DESC, recipes.updated_at_ms DESC, recipes.id ASC,
        items.ordinal ASC`,
-    Math.max(0, Math.min(100, Math.floor(limit))),
+    librarySearchPattern(options.query), options.favouritesOnly ? 1 : 0,
+    Math.max(0, Math.min(101, Math.floor(limit))), libraryPageBounds(options).offset,
   );
   const recipes = new Map<string, FoodRecipe>();
   for (const row of rows) {
@@ -1634,6 +1712,78 @@ function qualityForSnapshot(value: number | undefined) {
   return value === undefined ? 'missing' as const : value === 0
     ? 'trace' as const
     : 'reported' as const;
+}
+
+async function cacheFoodCatalogueCandidateInTransaction(
+  database: SQLiteDatabase,
+  food: FoodCandidate,
+  refresh: boolean,
+) {
+  const cachedAt = catalogueObservedAt(food, Date.now());
+  const retention = retainedFoodCatalogData(food, cachedAt);
+  await database.runAsync(
+    `INSERT INTO food_catalog_cache (
+      id, provider, external_id, barcode, name, brand, image_url,
+      basis_amount, basis_unit, default_serving_amount, default_serving_unit,
+      last_portion_amount, last_portion_unit, carbohydrate_grams, energy_kcal,
+      protein_grams, fat_grams, fibre_grams, sugars_grams, saturated_fat_grams,
+      nutrition_quality_json, source_label, source_url, raw_payload_json,
+      cached_at_ms, expires_at_ms, is_favorite, use_count, last_used_at_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL)
+    ON CONFLICT(id) ${refresh ? `DO UPDATE SET ${FOOD_CATALOGUE_PROVIDER_UPDATE_SQL}` : 'DO NOTHING'}`,
+    food.id, food.provider, food.externalId, food.barcode ?? null, food.name, food.brand ?? null,
+    food.imageUrl ?? null, food.basisAmount, food.basisUnit,
+    food.defaultServingAmount ?? food.basisAmount, food.defaultServingUnit ?? food.basisUnit,
+    food.lastPortionAmount ?? null, food.lastPortionUnit ?? null,
+    ...nutritionColumns(food.nutritionPerBasis), JSON.stringify(food.nutritionQuality),
+    food.sourceLabel, food.sourceUrl ?? null, retention.rawPayloadJson, cachedAt, retention.expiresAt,
+  );
+}
+
+/** Successful lookups are reusable even if the user discards the meal draft.
+ * Pass the lease acquired before the network request to prevent post-erase writes.
+ * Catalogue observation never records a meal, favourite, use count or last portion.
+ */
+export async function cacheFoodBarcodeLookup(food: FoodCandidate, operationLease?: LocalDataWriteLease) {
+  if (!food.barcode || food.provider === 'user') return;
+  const lease = operationLease ?? await acquireLocalDataWriteLease();
+  await withT1ArcTransaction(async (database) => {
+    await assertLocalDataWriteLeaseInTransaction(database, lease);
+    await cacheFoodCatalogueCandidateInTransaction(database, food, true);
+    // Bound only unused provider cache rows. History, favourites and personal
+    // portions are durable and are never removed by catalogue maintenance.
+    await database.runAsync(`DELETE FROM food_catalog_cache
+      WHERE provider IN ('open-food-facts', 'usda-fdc') AND use_count = 0 AND is_favorite = 0
+        AND json_type(CASE WHEN json_valid(raw_payload_json) THEN raw_payload_json ELSE '{}' END, '$._t1arcPersonalServing') IS NOT 'object'
+        AND id IN (SELECT id FROM food_catalog_cache
+          WHERE provider IN ('open-food-facts', 'usda-fdc') AND use_count = 0 AND is_favorite = 0
+            AND json_type(CASE WHEN json_valid(raw_payload_json) THEN raw_payload_json ELSE '{}' END, '$._t1arcPersonalServing') IS NOT 'object'
+            AND NOT EXISTS (SELECT 1 FROM food_log_items WHERE catalog_id = food_catalog_cache.id)
+            AND NOT EXISTS (SELECT 1 FROM food_recipe_items WHERE catalog_id = food_catalog_cache.id)
+          ORDER BY cached_at_ms DESC, id ASC LIMIT -1 OFFSET 2000)`);
+  });
+}
+
+export async function saveFoodPersonalServing(
+  food: FoodCandidate,
+  serving: { amount: number; unit: FoodCandidate['basisUnit']; label?: string },
+  operationLease?: LocalDataWriteLease,
+) {
+  if (!Number.isFinite(serving.amount) || serving.amount <= 0 || serving.amount > 10_000 || serving.unit !== food.basisUnit) {
+    throw new Error('Enter a portion in the food’s weight or volume unit.');
+  }
+  const lease = operationLease ?? await acquireLocalDataWriteLease();
+  const personal = { amount: serving.amount, unit: serving.unit, label: serving.label?.trim().slice(0, 80) };
+  await withT1ArcTransaction(async (database) => {
+    await assertLocalDataWriteLeaseInTransaction(database, lease);
+    await cacheFoodCatalogueCandidateInTransaction(database, food, false);
+    const changed = await database.runAsync(`UPDATE food_catalog_cache
+      SET raw_payload_json = json_set(CASE WHEN json_valid(raw_payload_json) THEN raw_payload_json ELSE '{}' END,
+        '$._t1arcPersonalServing', json(?))
+      WHERE id = ? AND provider = ? AND external_id = ? AND basis_unit = ?`,
+      JSON.stringify(personal), food.id, food.provider, food.externalId, serving.unit);
+    if (changed.changes !== 1) throw new Error('This food changed. Reopen it before saving its portion.');
+  });
 }
 
 export async function setFoodFavorite(

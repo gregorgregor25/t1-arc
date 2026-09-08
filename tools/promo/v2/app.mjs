@@ -1,0 +1,37 @@
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createPhone } from '/models.mjs';
+const params = new URLSearchParams(location.search);
+const portrait = params.get('format') === 'portrait';
+document.body.classList.toggle('portrait', portrait);
+document.body.classList.toggle('capture', params.has('capture'));
+document.body.classList.toggle('background', params.get('layer') === 'background');
+const edit = await (await fetch('/edit.json')).json();
+let index = Math.min(edit.scenes.length - 1, Math.max(0, Number(params.get('scene') ?? 0)));
+const renderer = new THREE.WebGLRenderer({canvas:document.querySelector('#studio'),antialias:true,alpha:true,preserveDrawingBuffer:true});
+renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;
+const world=new THREE.Scene(); const camera=new THREE.PerspectiveCamera(33,innerWidth/innerHeight,.1,100);
+camera.position.set(0,0,portrait?15.8:13.2);camera.lookAt(0,0,0);
+const env=new RoomEnvironment();const pmrem=new THREE.PMREMGenerator(renderer);world.environment=pmrem.fromScene(env,.04).texture;env.dispose();pmrem.dispose();
+world.add(new THREE.HemisphereLight('#dee5ff','#101522',2));const light=new THREE.DirectionalLight('#eef1ff',3);light.position.set(-4,8,8);world.add(light);
+const maps=await Promise.all(edit.scenes.map(async s=>{const map=await new THREE.TextureLoader().loadAsync(`/media/${s.id}-device.png`);map.colorSpace=THREE.SRGBColorSpace;return map;}));
+const phone=createPhone(maps[0]);world.add(phone.group);
+function render(t=1){
+ const s=edit.scenes[index];document.body.classList.toggle('hero',s.kind==='hero');
+ for(const id of ['eyebrow','title','detail','quote','note'])document.getElementById(id).textContent=s[id]??'';
+ document.querySelector('#detail').textContent=portrait?(s.portraitDetail??s.detail??''):(s.detail??'');
+ document.querySelector('#poster').src=`/media/${s.id}.png`;
+ document.querySelector('#chapter').textContent=`${String(index+1).padStart(2,'0')} / ${String(edit.scenes.length).padStart(2,'0')}`;
+ document.querySelector('#footer-note').textContent=portrait?(s.portraitNote??s.note??''):(s.footer??'T1 ARC  /  ANDROID');
+ document.querySelector('#scene-label').textContent=s.id;
+ document.querySelector('#progress').style.transform=`scaleX(${(index+Math.min(1,t/s.duration))/edit.scenes.length})`;
+ phone.screen.material.map=maps[index];phone.nextScreen.material.opacity=0;
+ const ease=Math.min(1,Math.max(0,t/1.6));const e=ease*ease*(3-2*ease);
+ phone.group.position.set(portrait?0:3.45,portrait?-1.02:0,0);phone.group.scale.setScalar(portrait?.84:.96);
+ phone.group.rotation.set(-.035,-.18-(1-e)*.38+Math.sin(t*.35)*.025,-.035);
+ renderer.render(world,camera);
+}
+document.querySelector('#previous').onclick=()=>{index=Math.max(0,index-1);render();};
+document.querySelector('#next').onclick=()=>{index=Math.min(edit.scenes.length-1,index+1);render();};
+await document.fonts.ready;render();
+window.T1ArcV2={ready:true,render,layout(){const rect=document.querySelector('#screen').getBoundingClientRect();const copy=document.querySelector('.copy').getBoundingClientRect();return {screen:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},copy:{x:copy.x,y:copy.y,width:copy.width,height:copy.height},width:innerWidth,height:innerHeight};},mask(){const r=document.querySelector('#screen').getBoundingClientRect();const c=document.createElement('canvas');c.width=r.width;c.height=r.height;const ctx=c.getContext('2d');ctx.fillStyle='black';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='white';ctx.beginPath();ctx.roundRect(0,0,c.width,c.height,portrait?28:23);ctx.fill();return c.toDataURL('image/png');}};

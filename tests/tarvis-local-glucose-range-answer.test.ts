@@ -56,7 +56,10 @@ describe("local Tarv1s exact range glucose answers", () => {
     expect(result.answer.headline).toBe("Observed average glucose: 7.0 mmol/L");
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]!.recordIds).toEqual(["start", "midday"]);
-    expect(result.answer.answer).toContain("periods you asked about");
+    expect(result.answer.answer).toContain("7.0 mmol/L");
+    expect(result.answer.answer).toContain("observed sensor coverage");
+    expect(result.answer.answer).not.toContain("not a treatment recommendation");
+    expect(result.answer.answer).not.toContain("arithmetic mean");
     expect(result.evidence[0]!.visualization).toMatchObject({
       kind: "range-trace-v1",
       metric: "glucose.mean",

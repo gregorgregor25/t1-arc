@@ -7,6 +7,35 @@ export interface TarvisLaunchContext {
   scope: TarvisConversationScope;
 }
 
+/** Live chat is owner-bound, not report-bound. Opening it needs no health scan. */
+export function resolveLiveTarvisLaunchContext({
+  dataMode,
+  isLatestCompletePeriod,
+  now,
+  ownerIdentity,
+  reviewId,
+}: {
+  dataMode: string;
+  isLatestCompletePeriod: boolean;
+  now: number;
+  ownerIdentity: string;
+  reviewId?: string;
+}): TarvisLaunchContext | undefined {
+  if (dataMode !== 'live' || !isLatestCompletePeriod || reviewId !== undefined || !isTarvisDatasetOwnerIdentity(ownerIdentity)) {
+    return undefined;
+  }
+  return {
+    asOf: now,
+    liveData: true,
+    scope: {
+      kind: 'live',
+      identity: `live:${dataMode}:${ownerIdentity}`,
+      dataMode,
+      ownerIdentity,
+    },
+  };
+}
+
 export interface TarvisDatasetOwnerSource {
   sourceId: string;
   identityDigest: string;

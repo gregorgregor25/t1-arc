@@ -7,7 +7,7 @@ use the app should download the APK by following the
 ## Requirements
 
 - Git
-- Node.js 22
+- Node.js 22.13.0 or newer within Node 22
 - JDK 21
 - Android Studio and an Android SDK
 - an Android emulator or a development device
@@ -30,6 +30,16 @@ npx --no-install expo-doctor
 `npm ci` installs the exact dependency graph in `package-lock.json`. Do not use
 an install command that rewrites the lockfile unless dependency changes are
 part of the contribution.
+
+Run project commands from the cloned repository root, where `package.json`
+lives. Check `node --version` and `java -version` if your shell has multiple
+toolchains installed. The locked React Native version does not support early
+Node 22 releases. Set up the Android SDK through Android Studio before running
+a native build; do not copy another developer's machine-specific SDK path.
+
+For a first contribution, see the
+[small PR guide](../CONTRIBUTING.md#your-first-small-pull-request). A docs-only
+fix does not require the Android build tools.
 
 ## Run a development build
 

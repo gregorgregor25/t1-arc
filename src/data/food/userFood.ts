@@ -34,7 +34,7 @@ function validateNutrition(nutrition: FoodNutrition) {
 }
 
 function quality(value: number | undefined): NutrientQuality {
-  return value === undefined ? 'missing' : value === 0 ? 'trace' : 'reported';
+  return value === undefined ? 'missing' : 'reported';
 }
 
 function nutritionQuality(

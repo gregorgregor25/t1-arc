@@ -93,6 +93,10 @@ open class T1ArcGraphComplicationService : SuspendingComplicationDataSourceServi
         snapshot: GlucoseSnapshot?,
         history: List<GlucoseHistoryPoint>,
     ): ComplicationData {
+        // History stores canonical values, not display preferences. Without a
+        // snapshot we cannot label its scale in the user's chosen unit. Show
+        // the face's waiting state instead of silently reverting to mmol/L.
+        if (snapshot == null || history.isEmpty()) return NoDataComplicationData()
         val bitmap =
             when (style) {
                 GraphStyle.MERIDIAN -> renderMeridian(snapshot, history)

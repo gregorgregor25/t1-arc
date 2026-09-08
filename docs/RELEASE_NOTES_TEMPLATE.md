@@ -1,5 +1,9 @@
 # T1 Arc vX.Y.Z
 
+<!-- Draft template only. Replace every X.Y.Z and placeholder, verify links
+against the exact release tag, and remove this comment before publication.
+Do not publish while the production APK release hold remains in effect. -->
+
 T1 Arc is an independent, local-first Android app for reviewing Type 1 diabetes
 data. This is a beta release. It does not calculate doses, provide medical
 advice or replace the official display for a medical device.
@@ -19,16 +23,22 @@ encrypted backup before updating.
 - Add only changes present in this exact release.
 - Call out any migration or action required before updating.
 
-## Included in this APK
+## Included in this release
 
 - Phone app for Android 8.0 and newer.
 - Local encrypted health storage and encrypted portable backups.
 - The provider, food, regional and Health Connect routes listed in the
-  [release status](https://github.com/gregorgregor25/t1-arc/blob/HEAD/docs/RELEASE_STATUS.md).
+  [release status for this version](https://github.com/gregorgregor25/t1-arc/blob/vX.Y.Z/docs/RELEASE_STATUS.md).
 - Direct bring-your-own-key Tarv1s access for users who choose to enable it.
 
-Wear OS projects and watch faces are present in the source but are not included
-as installable assets in this phone-only release.
+The release workflow prepares a separate Wear companion and five standalone
+faces: Meridian, Chronograph, Atelier, Pace and Summit. List only the matching
+APKs that are actually attached and verified for this release. The companion
+contains its own bundled faces for supported Watch Face Push devices; the
+phone APK does not silently install the companion.
+
+- Companion and standalone APKs included: replace with the verified asset list.
+- Watch versions and installation routes tested: replace with exact evidence.
 
 ## Known limitations
 
@@ -45,7 +55,11 @@ as installable assets in this phone-only release.
 - Update over previous public release: pass/fail, or not applicable for the
   first release.
 - Backup and restore with synthetic records: pass/fail.
+- Food catalogue, offline barcode, label review and recipe portions: list the
+  routes exercised on this exact APK, with any untested limits.
+- Manual update check and public release metadata: pass/fail.
 - APK SHA-256: copy the value from `T1-Arc-vX.Y.Z.apk.sha256`.
+- Source commit and build record: copy from `T1-Arc-vX.Y.Z.apk.build.json`.
 - Signing certificate SHA-256: copy the verified production fingerprint.
 
 Report problems through the repository issue forms using invented data. Never

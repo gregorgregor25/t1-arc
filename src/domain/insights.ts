@@ -528,7 +528,20 @@ function regionalEnergy(kcal: number) {
 }
 
 function rangeDays(range: { start: number; end: number }) {
-  return Math.max(1, Math.round((range.end - range.start) / 86_400_000));
+  // Full local days count once across DST; a partial final day must not be
+  // rounded away when normalising recorded daily amounts.
+  let days = 0;
+  let cursor = range.start;
+  while (cursor < range.end) {
+    const date = toDateKey(cursor);
+    const dayStart = zonedDateTimeToTimestamp(date);
+    const dayEnd = zonedDateTimeToTimestamp(addDays(date, 1));
+    if (dayEnd <= cursor) break;
+    const end = Math.min(range.end, dayEnd);
+    days += (end - cursor) / (dayEnd - dayStart);
+    cursor = end;
+  }
+  return Math.max(1, days);
 }
 
 function localHour(timestamp: number) {
@@ -1135,8 +1148,13 @@ function contextEvidence(
   return {
     id,
     label,
-    description: `${regionalNumber(events.length, 0)} normalised context events`,
-    range,
+    description: `${regionalNumber(events.length, 0)} normalised context events overlapping the requested window`,
+    // Interval records such as overnight sleep may begin before the analysis
+    // window. Preserve their real timestamps inside the evidence envelope.
+    range: events.reduce((bounds, event) => ({
+      start: Math.min(bounds.start, event.start),
+      end: Math.max(bounds.end, (event.end ?? event.start) + 1),
+    }), { ...range }),
     recordIds: events.map((event) => event.id),
     examples: events.slice(0, 4).map(contextPreview),
   };
@@ -1406,7 +1424,10 @@ function insulinEvidence(
     id,
     label,
     description: `${regionalNumber(data.basal.length, 0)} basal intervals and ${regionalNumber(data.boluses.length, 0)} boluses`,
-    range: data.range,
+    range: data.basal.reduce((bounds, delivery) => ({
+      start: Math.min(bounds.start, delivery.start),
+      end: Math.max(bounds.end, delivery.end),
+    }), { ...data.range }),
     recordIds: [
       ...data.basal.map((delivery) => delivery.id),
       ...data.boluses.map((delivery) => delivery.id),
@@ -1875,7 +1896,7 @@ export function buildInsightReport(
 ): InsightReport {
   const current = summarize(currentData, health.current);
   const previous = summarize(previousData, health.previous);
-  const comparisonDays = rangeDays(currentData.range);
+  const comparisonDays = Math.ceil(rangeDays(currentData.range));
   const ready =
     current.coveragePercent >= 70 &&
     previous.coveragePercent >= 70 &&
@@ -2562,6 +2583,16 @@ export function buildInsightReport(
           previousData.range,
         ),
       ],
+    });
+  } else if (current.sleepMinutesPerNight !== null && currentSleeps.length > 0) {
+    findings.push({
+      id: "recorded-sleep-current-period",
+      kind: "observation",
+      category: "sleep",
+      title: "Sleep recorded in this period",
+      summary: `${regionalNumber(currentSleeps.length, 0)} recorded sleep ${currentSleeps.length === 1 ? "session averaged" : "sessions averaged"} ${regionalNumber(Math.floor(current.sleepMinutesPerNight / 60), 0)} h ${regionalNumber(current.sleepMinutesPerNight % 60, 0)} min. The preceding comparison period has no sleep record, so a change in sleep cannot be compared.`,
+      caveat: "A sleep record describes its whole session, including any part outside the selected period. This record alone does not establish a relationship with glucose or a cause.",
+      evidence: [contextEvidence("current-sleep", "Sleep records overlapping the selected period", currentSleeps, currentData.range)],
     });
   }
 

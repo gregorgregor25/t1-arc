@@ -16,6 +16,20 @@ credentials, session tokens, browser cookies and replaceable source ZIP/PDF
 downloads. Temporary decrypted material is bounded and owned by the operation
 that created it; cancellation, failure and success paths remove it.
 
+Bundled food catalogues are public reference data stored separately from the
+private health database. Canadian, French and German indexes are prepared
+locally on first use; the larger US branded index is optional and also prepared
+from a bundled asset. Removing that index leaves saved foods and meals intact.
+Successful barcode lookups can be cached locally without logging a meal.
+
+Android label capture processes the photo and recognised text on the phone
+using a bundled text-recognition model, without sending them to a cloud OCR
+service. Temporary photo copies are removed after success, failure or
+cancellation; OS cache cleanup is the fallback if deletion fails. The proposed
+values remain editable and are not saved as a food until the user chooses to
+save. These food additions describe current source behaviour; availability in
+a downloaded APK depends on its release.
+
 ## Network flows chosen by the user
 
 T1 Arc has no maintainer data relay in the normal app path. A connection sends
@@ -27,10 +41,26 @@ data directly from the device to the service the user selected:
 - Tarv1s uses the same bring-your-own-key path for every build. The device sends
   the user's question and the bounded evidence needed to answer it directly to
   OpenAI. The key is not supplied by or routed through the maintainer.
+- **About T1 Arc > Check for updates** makes a manual, unauthenticated request
+  to GitHub for public release and build metadata. It does not send health
+  records, provider credentials or a device identifier. GitHub still receives
+  ordinary network metadata such as the IP address. Opening the release page
+  or downloading an APK uses GitHub and its asset hosts. Nothing downloads or
+  installs automatically; Android asks before an update is installed.
 - Submitted branded-food text or a barcode, plus selected country/language
   context, can be sent to Open Food Facts. A US barcode miss can trigger the
-  documented low-rate USDA exact-GTIN fallback. Bundled CoFID, USDA and MEXT
-  reference search is offline.
+  documented low-rate USDA exact-GTIN fallback. These services also see the
+  phone's network address. Bundled CoFID, USDA, MEXT, CNF, Ciqual and BLS
+  reference search, and the enabled optional US branded index, are offline.
+- Google's ML Kit SDK can send performance and usage diagnostics to Google
+  over HTTPS. For bundled features, Google lists device/app information,
+  per-installation identifiers, latency, image format/resolution, input/output
+  sizes, feature versions and event/error codes. These identifiers are not
+  intended to uniquely identify a person or physical device. The SDK may also
+  contact Google for maintenance information. This is separate from label
+  photos and recognised text, which remain on-device. See Google's
+  [ML Kit privacy terms](https://developers.google.com/ml-kit/terms) and
+  [Android data disclosure](https://developers.google.com/ml-kit/android-data-disclosure).
 
 Provider services and OpenAI apply their own terms and privacy policies. T1 Arc
 must not describe a direct third-party request as purely local processing.

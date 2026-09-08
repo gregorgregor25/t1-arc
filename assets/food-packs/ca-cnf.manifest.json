@@ -1,0 +1,31 @@
+{
+  "id": "ca-cnf",
+  "provider": "cnf",
+  "countryCode": "CA",
+  "version": "2026",
+  "label": "Canadian Nutrient File 2026",
+  "sourceUrl": "https://open.canada.ca/data/dataset/1b6139bd-ed7e-4043-bc28-ff00e10f3109/resource/019f2a90-e3a9-489d-b6e1-f74f4ba1d006/download/cnf_fcen_all-files-data_2026.zip",
+  "licence": "Open Government Licence - Canada",
+  "licenceUrl": "https://open.canada.ca/en/open-government-licence-canada",
+  "attribution": "Contains information licensed under the Open Government Licence – Canada. Canadian Nutrient File, Health Canada, 2026.",
+  "carbohydrateDefinition": "by-difference",
+  "carbohydrateNote": "Total carbohydrate by difference, including dietary fibre (CNF nutrient 205).",
+  "bundled": true,
+  "schemaVersion": 1,
+  "foodCount": 5993,
+  "sourceSha256": "f5faad8977ee6bbdd9d69c8649077cacd87d8658ad200509a4047db1e29edcdd",
+  "sourceFile": "cnf-2026.zip",
+  "basisAmount": 100,
+  "basisUnit": "g",
+  "transformation": "T1 Arc selected nutrients; missing/trace/LOQ and contradictory same-nutrient observations kept non-numeric; no inferred nutrition or density. Source g/GRM and ml/MLT units normalized. Names normalized for whitespace; search removes accents. Stable source IDs retained.",
+  "fileName": "ca-cnf-2026.db",
+  "sizeBytes": 2506752,
+  "sha256": "0a0156167c75f150d3029483b0815a2bd377035728c4188ecf7171bd5171e1e6",
+  "chunkSize": 1048576,
+  "chunkSha256": [
+    "32d9fd990dd8f4bf029f0d63a2b02b623c36090bb614b39d38a34c862446506b",
+    "bd9dae8d4652826e3ba7a44141a617993c2cb0d1d01414965f42d87e3f471a87",
+    "1bae5ce65d7628aa663d1150ad58207a63b12f1cdd5a4c1f7857717f3fc376f1"
+  ],
+  "compressedBytes": 648588
+}

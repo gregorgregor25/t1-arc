@@ -41,7 +41,7 @@ function millilitresPerUnit(unit: FoodInputUnit, countryCode: string) {
     case 'cup':
       return countryCode === 'JP' ? 200 : us ? 236.5882365 : 250;
     case 'tbsp':
-      return us ? 14.78676478125 : 15;
+      return countryCode === 'AU' ? 20 : us ? 14.78676478125 : 15;
     case 'tsp':
       return us ? 4.92892159375 : 5;
     default:

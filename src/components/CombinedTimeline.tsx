@@ -1,4 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { AskTarvisButton } from './AskTarvisButton';
+import { createTarvisPeriodEntry } from '@/domain/tarvisEntry';
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import {
   GestureResponderEvent,
@@ -418,6 +420,7 @@ export function CombinedTimeline({
   headerAccessory,
   layers: controlledLayers,
   onLayersChange,
+  onOpenTarvis,
   quiet = false,
   title = "Glucose + insulin",
 }: {
@@ -426,6 +429,7 @@ export function CombinedTimeline({
   headerAccessory?: ReactNode;
   layers?: TimelineLayerVisibility;
   onLayersChange?(layers: TimelineLayerVisibility): void;
+  onOpenTarvis?(): void;
   quiet?: boolean;
   title?: string;
 }) {
@@ -1281,6 +1285,7 @@ export function CombinedTimeline({
                 showGlucose={visibleLayers.glucose}
               />
             ) : null}
+            {data.glucose.length > 0 && (!quiet || expanded || inspectedTimestamp !== undefined) ? <AskTarvisButton onOpen={onOpenTarvis} entry={() => createTarvisPeriodEntry(inspectedTimestamp === undefined ? data.range : { start: Math.max(data.range.start, inspectedTimestamp - 60 * 60_000), end: Math.min(data.range.end, inspectedTimestamp + 60 * 60_000) }, inspectedTimestamp === undefined ? 'Timeline period' : 'Around the selected time')} label="Ask about this period" /> : null}
             {!expanded && !quiet ? (
               <Text style={[styles.footnote, { color: colors.textTertiary }]}>
                 {insulinAvailable
@@ -1329,6 +1334,7 @@ export function CombinedTimeline({
           <CombinedTimeline
             data={data}
             expanded
+            onOpenTarvis={() => { setShowExpanded(false); onOpenTarvis?.(); }}
             layers={layers}
             onLayersChange={(next) => {
               if (controlledLayers) onLayersChange?.(next);

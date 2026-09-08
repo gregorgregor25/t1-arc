@@ -13,6 +13,13 @@ const PROHIBITED_CAUSAL_OUTPUT =
 const PROHIBITED_DIAGNOSIS_OUTPUT =
   /\byou (?:have|definitely have|are developing|are suffering from)\s+(?:dka|diabetic ketoacidosis|gastroparesis|neuropathy|retinopathy|hypoglyc(?:aemia|emia) unawareness)\b|\b(?:this|that|it)\s+(?:is|looks like|appears to be|could be|may be)\s+(?:dka|diabetic ketoacidosis|gastroparesis|neuropathy|retinopathy|hypoglyc(?:aemia|emia) unawareness)\b/i;
 
+// General physiology uses verbs such as "reduce insulin sensitivity" and
+// "increase glucose absorption" descriptively. In no-record education, detect
+// directives rather than treating every occurrence of those verbs as advice.
+// Personal-evidence parsing retains its stricter, existing output filter.
+const PROHIBITED_EDUCATION_TREATMENT_OUTPUT =
+  /(?:^|[.!?;:\n,]\s*)(?:(?:please|then|for example)\s+)?(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,80}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\b(?:you (?:should|must|need to|can)|(?:i |we )?(?:recommend|suggest|advise)|consider|try|best to|to treat|to correct)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|inject(?:ing)?|us(?:e|ing)|administer(?:ing)?|bolus|giv(?:e|ing)|reduc(?:e|ing)|lower(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|chang(?:e|ing)|doubl(?:e|ing)|halv(?:e|ing)|skip(?:ping)?|stop(?:ping)?|set(?:ting)?|hav(?:e|ing)|eat(?:ing)?|drink(?:ing)?|consum(?:e|ing))\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b/i;
+
 function cleanModelText(value: unknown, validEvidenceIds: Set<string>) {
   if (typeof value !== "string") return "";
   return value
@@ -56,6 +63,7 @@ export function checkTarvisRateLimit(
 export function parseTarvisAnswer(
   value: string,
   packet?: TarvisModelEvidencePacket,
+  options: { generalEducation?: boolean } = {},
 ): TarvisAnswer {
   let parsed: Partial<TarvisAnswer>;
   try {
@@ -87,7 +95,9 @@ export function parseTarvisAnswer(
   let selectedEvidenceIds: string[] = [];
   const visibleCopy = [headline, answer, ...limitations].join("\n");
   if (
-    PROHIBITED_TREATMENT_OUTPUT.test(visibleCopy) ||
+    (options.generalEducation && !packet
+      ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT
+      : PROHIBITED_TREATMENT_OUTPUT).test(visibleCopy) ||
     PROHIBITED_CAUSAL_OUTPUT.test(visibleCopy) ||
     PROHIBITED_DIAGNOSIS_OUTPUT.test(visibleCopy)
   ) {

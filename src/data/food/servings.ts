@@ -10,6 +10,20 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? number : undefined;
 }
 
+function canonicalServingAmount(amount: number, unit: string, basisUnit: FoodBasisUnit) {
+  const normalizedUnit = unit.trim().toLowerCase();
+  if (basisUnit === 'g') {
+    if (['g', 'gm', 'grm', 'gram', 'grams'].includes(normalizedUnit)) return amount;
+    if (['kg', 'kilogram', 'kilograms'].includes(normalizedUnit)) return amount * 1_000;
+    if (['oz', 'ounce', 'ounces'].includes(normalizedUnit)) return amount * 28.349523125;
+  }
+  if (basisUnit === 'ml') {
+    if (['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(normalizedUnit)) return amount;
+    if (['l', 'liter', 'liters', 'litre', 'litres'].includes(normalizedUnit)) return amount * 1_000;
+  }
+  return undefined;
+}
+
 export function servingAmountFromRawPayload(
   payload: unknown,
   basisUnit: FoodBasisUnit,
@@ -22,24 +36,31 @@ export function servingAmountFromRawPayload(
     .trim()
     .toLocaleLowerCase('en-GB');
   const structuredAmount = positiveNumber(source.serving_quantity);
-  if (unit === basisUnit && structuredAmount !== undefined) {
-    return structuredAmount;
+  if (structuredAmount !== undefined) {
+    const converted = canonicalServingAmount(structuredAmount, unit, basisUnit);
+    if (converted !== undefined) return converted;
   }
 
   const servingLabel =
     typeof source.serving_size === 'string' ? source.serving_size : '';
   const matches = [
-    ...servingLabel.matchAll(/(\d+(?:[.,]\d+)?)\s*(ml|g)\b/gi),
+    ...servingLabel.matchAll(/(\d+(?:[.,]\d+)?)\s*(fl\s*oz|fluid\s+ounces?|kg|kilograms?|oz|ounces?|ml|millilit(?:er|re)s?|g|grams?|l|lit(?:er|re)s?)\b/gi),
   ];
   for (const match of matches.reverse()) {
-    if (match[2]?.toLocaleLowerCase('en-GB') !== basisUnit) continue;
     const amount = positiveNumber(match[1]?.replace(',', '.'));
-    if (amount !== undefined) return amount;
+    if (amount === undefined) continue;
+    const converted = canonicalServingAmount(amount, match[2] ?? '', basisUnit);
+    if (converted !== undefined) return converted;
   }
   return undefined;
 }
 
 export function defaultFoodServingAmount(food: FoodCandidate) {
+  if (
+    food.personalServingUnit === food.basisUnit &&
+    food.personalServingAmount !== undefined &&
+    Number.isFinite(food.personalServingAmount) && food.personalServingAmount > 0
+  ) return food.personalServingAmount;
   if (
     food.defaultServingUnit === food.basisUnit &&
     food.defaultServingAmount !== undefined &&

@@ -1,7 +1,10 @@
 {
   "name": "t1-arc",
-  "version": "1.6.9",
+  "version": "1.7.1",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/gregorgregor25/t1-arc.git"

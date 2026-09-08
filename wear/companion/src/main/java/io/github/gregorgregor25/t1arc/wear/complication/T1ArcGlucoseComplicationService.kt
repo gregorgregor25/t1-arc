@@ -155,6 +155,12 @@ open class T1ArcGlucoseComplicationService :
     ): String = GlucoseSemantics.statusTitle(snapshot, freshness)
 }
 
+/** New collection: visible units and freshness without changing existing bindings. */
+class T1ArcWatchFaceGlucoseComplicationService : T1ArcGlucoseComplicationService() {
+    override fun displayTitle(snapshot: GlucoseSnapshot?, freshness: GlucoseFreshness): String =
+        GlucoseSemantics.watchFaceStatusTitle(snapshot, freshness)
+}
+
 class T1ArcOpticalGlucoseComplicationService :
     T1ArcGlucoseComplicationService() {
     override fun displayText(

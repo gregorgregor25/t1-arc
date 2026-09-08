@@ -1,4 +1,4 @@
-export const CURRENT_T1ARC_SCHEMA_VERSION = 30;
+export const CURRENT_T1ARC_SCHEMA_VERSION = 31;
 export const STARTUP_MAINTENANCE_METADATA_KEY =
   'startup_maintenance_completed_version';
 

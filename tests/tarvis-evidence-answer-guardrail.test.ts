@@ -204,19 +204,19 @@ describe("Tarv1s personal evidence selection guardrail", () => {
     expect(result.answer.answer).toContain("compared locally");
   });
 
-  it("rejects a selection whose combined provenance exceeds five references", () => {
+  it("rejects a selection whose combined provenance exceeds twelve references", () => {
     const source = packet();
     source.findings = [
       {
         ...source.findings[0]!,
-        evidenceIds: ["a", "b", "c"],
+        evidenceIds: ["a", "b", "c", "g", "h", "i", "j"],
       },
       {
         ...source.findings[1]!,
-        evidenceIds: ["d", "e", "f"],
+        evidenceIds: ["d", "e", "f", "k", "l", "m"],
       },
     ];
-    source.evidence = ["a", "b", "c", "d", "e", "f"].map((id) => ({
+    source.evidence = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m"].map((id) => ({
       id,
       label: id,
       description: id,
@@ -232,7 +232,7 @@ describe("Tarv1s personal evidence selection guardrail", () => {
       source,
     );
     expect(result.acceptedHostedSelection).toBe(false);
-    expect(result.answer.evidenceIds.length).toBeLessThanOrEqual(5);
+    expect(result.answer.evidenceIds.length).toBeLessThanOrEqual(12);
   });
 
   it("limits confidence when a comparison window has sparse coverage", () => {

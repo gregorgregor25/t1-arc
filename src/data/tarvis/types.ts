@@ -117,7 +117,7 @@ export function isTarvisRetrospectiveEvidencePacket(
 
 export interface TarvisAnswer {
   /** Local safety boundaries are not conclusions supported by personal records. */
-  responseKind?: 'safety-boundary';
+  responseKind?: 'safety-boundary' | 'general-education';
   headline: string;
   answer: string;
   confidence: TarvisConfidence;

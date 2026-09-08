@@ -52,8 +52,16 @@ for itself.
 
 ## Update T1 Arc
 
-GitHub APKs do not update themselves. Watch the repository's Releases or check
-the Releases page periodically, then:
+Open **About T1 Arc > Check for updates** for a manual check against the official
+GitHub repository. If an update is offered, review **What's changed** and open
+its release page. Nothing downloads or installs automatically. You can also
+watch the repository's Releases or check the Releases page yourself.
+
+The check does not offer draft or GitHub prerelease builds. It also explains
+when a private or development package cannot be updated by the public APK.
+An unavailable update check does not change your installation.
+
+When a compatible public APK is available:
 
 1. Create an encrypted T1 Arc backup first.
 2. Download the newer `T1-Arc-vX.Y.Z.apk` from the latest release.

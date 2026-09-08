@@ -44,6 +44,7 @@ export function insightRangeReferenceTime(
 export function useInsights(
   periodDays: InsightPeriodDays,
   comparisonEndDate: DateKey,
+  enabled = true,
 ) {
   const { dataMode, now, repository, revision } = useDataContext();
   // Completed calendar ranges do not change as the 30-second UI clock moves.
@@ -57,7 +58,7 @@ export function useInsights(
 
   useEffect(() => {
     let active = true;
-    if (!repository) {
+    if (!enabled || !repository) {
       return () => {
         active = false;
       };
@@ -95,6 +96,7 @@ export function useInsights(
       active = false;
     };
   }, [
+    enabled,
     comparisonEndDate,
     dataMode,
     periodDays,

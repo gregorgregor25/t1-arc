@@ -7,7 +7,10 @@ function optionsKey(options: object) {
   return JSON.stringify(
     Object.entries(options)
       .filter(([, value]) => value !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right)),
+      // These are option names, not display text. Locale-aware collation on
+      // every cache lookup allocates heavily in Android's Intl implementation.
+      // This key is process-local; the formatter still receives its locale.
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
   );
 }
 

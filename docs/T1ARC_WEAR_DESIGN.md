@@ -23,17 +23,17 @@ how fresh it is?
 - Target: cyan or the user's selected calm target tone.
 - Low: amber; very low: rose.
 - High: orange; very high: rose.
-- Delayed or stale: slate with an explicit `DELAY` or `STALE` label.
+- Delayed or stale: slate with an explicit `DELAY` or `LAST KNOWN` label.
 - Decoration: a single hairline horizon and subtle edge markers. No fake
   gauges, glass effects, animated flourishes, or clinical-dashboard chrome.
 
 ## Ambient mode
 
 Ambient is designed separately rather than produced by dimming the active
-face. It uses a pure black background, thin white time, the glucose value and
-trend, and an explicit freshness label. Decorative surfaces disappear. There
-is no animation, gradient, second hand, or image that forces unnecessary
-pixels to remain lit.
+face. It uses a pure black background, time, the glucose value and trend, and an
+explicit freshness label. Graphs and secondary data disappear. Chronograph keeps
+its slim hands and hour markers; the other four simplify to digital time. The
+new faces remove gradients, panel fills and seconds in this mode.
 
 ## Tile and companion
 
@@ -64,9 +64,17 @@ Primary references:
 - [Samsung complication design](https://developer.samsung.com/sdp/blog/en/2022/08/17/design-complications-using-watch-face-studio)
 - [Samsung watch-face optimisation](https://developer.samsung.com/codelab/watch-face-studio/design-optimization.html)
 
-## Concept collection
+## Current collection
 
-The rendered studies are in `docs/design/watch-concepts`.
+The five implemented faces are Meridian, Chronograph, Atelier, Pace and Summit.
+The [collection guide](design/WATCH_FACE_COLLECTION.md) contains the rationale,
+screenshots and validation boundary. All five display units and live freshness
+from the companion. A fixed label must never imply an old reading is current.
+
+## Earlier concept studies
+
+The rendered studies in `docs/design/watch-concepts` are historical explorations,
+not an additional set of downloadable watch faces. Orbit is now retired.
 
 - **Meridian** - calm digital face with the graph present on the dial.
 - **Contour** - glucose-first ring with a dedicated graph affordance.

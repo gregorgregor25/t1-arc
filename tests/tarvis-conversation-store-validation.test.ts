@@ -44,6 +44,13 @@ function validExchange() {
 }
 
 describe("stored Tarv1s conversation validation", () => {
+  it("preserves general-education provenance when a conversation is reopened", () => {
+    const source = validExchange();
+    const exchange = { ...source, answer: { ...source.answer, responseKind: "general-education" as const, evidenceIds: [] }, evidence: [] };
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+    const restored = JSON.parse(validateSerializedTarvisConversation(serializeTarvisConversation([exchange], 1000)));
+    expect(restored.exchanges[0].answer.responseKind).toBe("general-education");
+  });
   it("accepts a complete backward-compatible exchange", () => {
     expect(validStoredTarvisExchange(validExchange())).toBe(true);
   });

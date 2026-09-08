@@ -53,7 +53,12 @@ store or an unreviewed Git host. Maintainers must review repository settings,
 release credentials and the proposed public history before a tag.
 
 Release packaging fails closed without explicit signing configuration.
-The public release workflow reads the production identity only from a protected
-GitHub environment, verifies the final APK and creates a draft for exact-asset
-testing. A release that cannot update the previous official APK in place must
-not be published.
+The public release workflow requires the app and face signing identities,
+references the `production` environment, verifies the final APK and creates a
+draft for exact-asset testing. An environment name and required signing values
+do not establish that GitHub approval or branch-protection rules are effective.
+Those access-protection gates remain unfulfilled; maintainers must verify them
+before adding signing secrets or starting production preparation. See
+[release status](docs/RELEASE_STATUS.md) and [Releasing](docs/RELEASING.md).
+A release that cannot update the previous official APK in place must not be
+published.

@@ -27,6 +27,8 @@ import {
   readHealthBackupFile,
 } from "@/data/backup/healthBackup";
 import { runBackupPostCommitRefreshes } from "@/data/backup/postCommitRefreshes";
+import { recordSuccessfulBackupExport } from "@/data/backup/backupStatus";
+import { acquireLocalDataWriteLease } from "@/data/privacy/localDataWriteEpoch";
 import {
   getIncludedPortablePreferenceGroups,
   type PortablePreferenceGroup,
@@ -39,6 +41,7 @@ import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useAppTheme } from "@/theme/theme";
 
 import { SectionCard } from "./SectionCard";
+import { BackupCarePanel } from "./BackupCarePanel";
 
 type BusyState = "idle" | "exporting" | "unlocking" | "restoring";
 type PassphraseMode = "export" | "restore";
@@ -171,6 +174,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
   const { reload: reloadGlucoseAppearance } = useGlucoseAppearance();
   const [busy, setBusy] = useState<BusyState>("idle");
   const [workingLabel, setWorkingLabel] = useState("");
+  const [backupStatusRevision, setBackupStatusRevision] = useState(0);
   const [message, setMessage] = useState<
     { tone: "success" | "warning" | "error"; text: string } | undefined
   >();
@@ -259,6 +263,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
     let plaintextUri: string | undefined;
     let encryptedUri: string | undefined;
     try {
+      const backupLease = await acquireLocalDataWriteLease();
       const prepared = await createHealthBackupFile();
       plaintextUri = prepared.file.uri;
       setWorkingLabel("Compressing and encrypting with your passphrase…");
@@ -275,8 +280,13 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
         HEALTH_BACKUP_MIME,
       );
       if (saved.status === "cancelled") return;
+      // Destination save is already complete. A status-write failure must not
+      // turn a successfully saved backup into an export error.
+      let statusRecorded = true;
+      await recordSuccessfulBackupExport(backupLease).catch(() => { statusRecorded = false; });
+      if (mountedRef.current) setBackupStatusRevision((value) => value + 1);
       setMessage({
-        tone: "success",
+        tone: statusRecorded ? "success" : "warning",
         text: `Encrypted backup saved as ${fileName}. It contains ${formatCount(
           prepared.summary.totalRecords,
         )} stored rows${
@@ -287,7 +297,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
           prepared.summary.counts.portable_app_state
             ? " and your saved Tarv1s conversation"
             : ""
-        }.`,
+        }.${statusRecorded ? "" : " The file was saved, but its date could not be recorded in this app."}`,
       });
     } catch (error) {
       if (!isFilePickerCancellation(error)) {
@@ -473,35 +483,13 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
               Your encrypted backup
             </Text>
             <Text style={[styles.body, { color: colors.textSecondary }]}>
-              Move your stored T1 Arc history to another Android phone, or keep
-              a private recovery copy. Health history, saved reviews and your
-              Tarv1s conversation, theme and health goal are protected with your
-              passphrase.
+              Keep a private recovery copy of your history, conversations and
+              preferences, protected with your passphrase.
             </Text>
           </View>
         </View>
 
-        <View
-          style={[
-            styles.privacyNote,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderRadius: radius.md,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.accent}
-            name="shield-checkmark-outline"
-            size={18}
-          />
-          <Text style={[styles.privacyText, { color: colors.textSecondary }]}>
-            On the new phone, choose Restore from backup and use the same
-            passphrase. Source sign-ins and Android permissions are never
-            included and must be connected again.
-          </Text>
-        </View>
+        <BackupCarePanel revision={backupStatusRevision} />
 
         {working ? (
           <View
@@ -860,8 +848,10 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
               <TextInput
                 accessibilityLabel="Backup passphrase"
                 autoCapitalize="none"
+                autoComplete="off"
                 autoCorrect={false}
                 autoFocus
+                importantForAutofill="no"
                 onChangeText={(value) => {
                   setPassphrase(value);
                   setPassphraseError(undefined);
@@ -901,7 +891,9 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                 ref={confirmationInputRef}
                 accessibilityLabel="Confirm backup passphrase"
                 autoCapitalize="none"
+                autoComplete="off"
                 autoCorrect={false}
+                importantForAutofill="no"
                 onChangeText={(value) => {
                   setConfirmation(value);
                   setPassphraseError(undefined);

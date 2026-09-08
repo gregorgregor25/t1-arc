@@ -76,12 +76,13 @@ const firstPartyAndroidProjects = [
     join(root, 'wear'),
     (name) => join(root, 'wear', name, 'build.gradle'),
     (name) => (name === 'companion' ? 'wear' : name),
+    (name) => name !== 'watchface-orbit',
   ),
 ].sort();
 
 function exactNativeCheckTasks() {
   return [...nativeChecksStep.matchAll(
-    /^[ \t]+:([a-z0-9-]+):(testDebugUnitTest|lintRelease)[ \t]+\\\r?$/gm,
+    /^[ \t]+:([a-z0-9-]+):(test(?:Meridian|Chronograph|Atelier|Pace|Summit)?DebugUnitTest|lint(?:Meridian|Chronograph|Atelier|Pace|Summit)?Release)[ \t]+\\\r?$/gm,
   )].map((match) => `${match[1]}:${match[2]}`);
 }
 
@@ -126,6 +127,7 @@ describe('pull-request Android quality workflow', () => {
 
     expect(output).toContain('Public-repository check passed:');
     expect(firstPartyAndroidProjects).toContain('t1arc-backup-crypto');
+    expect(firstPartyAndroidProjects).toContain('t1arc-food-label');
     expect(firstPartyAndroidProjects).toContain('t1arc-glucose-display');
   });
 
@@ -174,9 +176,12 @@ describe('pull-request Android quality workflow', () => {
     }
   });
 
-  it('does not build or upload downloadable APKs from the quality workflow', () => {
+  it('never publishes APKs and scopes ephemeral face signing to native checks', () => {
     expect(workflow).not.toContain('private-android-release');
-    expect(workflow).not.toContain('T1ARC_PRIVATE_TEST_BUILD');
+    expect(nativeChecksStep).toContain("T1ARC_PRIVATE_TEST_BUILD: '1'");
+    expect(nativeChecksStep).toContain('t1arc-ci-faces.p12');
+    expect(qualityJob.replace(nativeChecksStep, '')).not.toContain('T1ARC_PRIVATE_TEST_BUILD');
+    expect(workflow).not.toContain('secrets.T1ARC_RELEASE');
     expect(workflow).not.toContain('actions/upload-artifact');
     expect(workflow).not.toContain(':app:assembleRelease');
   });
@@ -228,10 +233,23 @@ describe('pull-request Android quality workflow', () => {
     expect(nativeChecksStep).toContain('./gradlew');
     expect(nativeChecksStep).toContain('--no-daemon');
 
-    const expectedTasks = firstPartyAndroidProjects.flatMap((project) => [
-      `${project}:testDebugUnitTest`,
-      `${project}:lintRelease`,
-    ]).sort();
+    const expectedTasks = firstPartyAndroidProjects.flatMap((project) =>
+      project === 'watchface-push' ? [
+        `${project}:testMeridianDebugUnitTest`,
+        `${project}:testChronographDebugUnitTest`,
+        `${project}:testAtelierDebugUnitTest`,
+        `${project}:testPaceDebugUnitTest`,
+        `${project}:testSummitDebugUnitTest`,
+        `${project}:lintMeridianRelease`,
+        `${project}:lintChronographRelease`,
+        `${project}:lintAtelierRelease`,
+        `${project}:lintPaceRelease`,
+        `${project}:lintSummitRelease`,
+      ] : [
+        `${project}:testDebugUnitTest`,
+        `${project}:lintRelease`,
+      ],
+    ).sort();
 
     expect(firstPartyAndroidProjects).not.toContain('t1arc-tarvis-direct');
     expect(exactNativeCheckTasks().sort()).toEqual(expectedTasks);

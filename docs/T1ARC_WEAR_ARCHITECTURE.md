@@ -6,7 +6,13 @@
 - `:wear` - the Wear OS companion, complication data source, and Tile.
 - `:watchface-meridian` - the resource-only Watch Face Format package.
 - `:watchface-chronograph` - the resource-only Chronograph package.
-- `:watchface-orbit` - the resource-only Orbit package.
+- `:watchface-atelier` - the resource-only refined analogue face.
+- `:watchface-pace` - the resource-only sports digital face.
+- `:watchface-summit` - the resource-only field-watch hybrid.
+- `:watchface-push` - five variants bundled into the companion's one-slot catalog.
+
+Orbit is retired from active builds. Its source and complication provider are
+kept for compatibility with existing installations, not distributed as a sixth face.
 
 The phone and companion intentionally use the same application ID and signing
 certificate. Wear OS Data Layer enforces both before it allows them to exchange
@@ -54,7 +60,7 @@ LibreLinkUp source
        /t1arc/v1/glucose/history
   -> encrypted watch cache
   -> companion app, graph, Tile, and T1 Arc complication
-  -> Meridian, Chronograph, and Orbit watch faces
+  -> Meridian, Chronograph, Atelier, Pace and Summit watch faces
 ```
 
 Only normalised display data crosses the Data Layer. The current payload

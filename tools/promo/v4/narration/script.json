@@ -1,0 +1,67 @@
+{
+  "direction": "Warm, grounded British male. Conversational confidence, not a trailer announcer. Leave the visual reading pauses intact. Pronounce T1 Arc as Tee One Arc and Tarv1s as Tarvis.",
+  "durationSeconds": 90,
+  "voices": [
+    { "name": "George", "id": "JBFqnCBsd6RMkjVDRZzb" },
+    { "name": "Daniel", "id": "onwK4e9ZLuTAKqWW03F9" }
+  ],
+  "cues": [
+    {
+      "id": "today", "start": 0.8, "latestEnd": 9.4,
+      "phrases": [
+        { "text": "T1 Arc brings your day into focus.", "spoken": "Tee One Arc brings your day into focus." },
+        { "text": "Your glucose now, and where it's heading." }
+      ]
+    },
+    {
+      "id": "health", "start": 10.7, "latestEnd": 18.8,
+      "phrases": [
+        { "text": "Sleep, movement and nutrition." },
+        { "text": "Together, they give your glucose more context." }
+      ]
+    },
+    {
+      "id": "tarvis", "start": 22.3, "latestEnd": 27.8,
+      "phrases": [
+        { "text": "Meet Tarv1s.", "spoken": "Meet Tarvis." },
+        { "text": "Ask about your health." }
+      ]
+    },
+    {
+      "id": "question", "start": 28.8, "latestEnd": 35.6,
+      "phrases": [ { "text": "What was my average glucose yesterday?" } ]
+    },
+    {
+      "id": "answer-mean", "start": 40.6, "latestEnd": 47.2,
+      "phrases": [
+        { "text": "Six point six millimoles per litre." },
+        { "text": "With the records behind it." }
+      ]
+    },
+    {
+      "id": "understanding", "start": 48.2, "latestEnd": 53.6,
+      "phrases": [ { "text": "For understanding your data, not treatment decisions." } ]
+    },
+    {
+      "id": "timeline", "start": 55.2, "latestEnd": 64.4,
+      "phrases": [
+        { "text": "Bring glucose, meals and activity into the same timeline." },
+        { "text": "See what happened together." }
+      ]
+    },
+    {
+      "id": "food", "start": 67.2, "latestEnd": 77.7,
+      "phrases": [
+        { "text": "Find your food. Check the details." },
+        { "text": "Keep everyday logging simple." }
+      ]
+    },
+    {
+      "id": "closing", "start": 81.0, "latestEnd": 89.2,
+      "phrases": [
+        { "text": "T1 Arc. Your data. Your questions.", "spoken": "Tee One Arc. Your data. Your questions." },
+        { "text": "With Tarv1s.", "spoken": "With Tarvis." }
+      ]
+    }
+  ]
+}

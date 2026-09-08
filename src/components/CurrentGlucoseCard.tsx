@@ -43,64 +43,11 @@ import { useAppTheme } from '@/theme/theme';
 import { StatusPill } from './StatusPill';
 import { SurfaceSheen } from './SurfaceSheen';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
-
-const TRACE_WIDTH = 100;
-const TRACE_HEIGHT = 60;
-const TRACE_WINDOW_MS = 4 * 3_600_000;
-
-function glucoseTraceGeometry(
-  readings: GlucoseReading[],
-  endTimestamp: number,
-) {
-  const startTimestamp = endTimestamp - TRACE_WINDOW_MS;
-  const points = [...readings]
-    .filter(
-      (item) =>
-        Number.isFinite(item.mmolL) &&
-        Number.isFinite(item.timestamp) &&
-        item.timestamp >= startTimestamp &&
-        item.timestamp <= endTimestamp,
-    )
-    .sort((left, right) => left.timestamp - right.timestamp);
-  if (points.length < 2) return undefined;
-
-  const firstTimestamp = points[0]!.timestamp;
-  const lastTimestamp = points.at(-1)!.timestamp;
-  const duration = Math.max(lastTimestamp - firstTimestamp, 1);
-  const values = points.map((item) => item.mmolL);
-  const observedMin = Math.min(...values);
-  const observedMax = Math.max(...values);
-  const padding = Math.max((observedMax - observedMin) * 0.2, 0.6);
-  const min = Math.max(0, observedMin - padding);
-  const max = observedMax + padding;
-  const range = Math.max(max - min, 1);
-  const chartPoints = points.map((item) => ({
-    value: item.mmolL,
-    x: ((item.timestamp - firstTimestamp) / duration) * TRACE_WIDTH,
-    y: 5 + ((max - item.mmolL) / range) * (TRACE_HEIGHT - 13),
-  }));
-
-  const first = chartPoints[0]!;
-  let line = `M ${first.x.toFixed(2)} ${first.y.toFixed(2)}`;
-  const segments: { path: string; value: number }[] = [];
-  for (let index = 1; index < chartPoints.length; index += 1) {
-    const previous = chartPoints[index - 1]!;
-    const current = chartPoints[index]!;
-    const middle = (previous.x + current.x) / 2;
-    const curve = `C ${middle.toFixed(2)} ${previous.y.toFixed(2)}, ${middle.toFixed(2)} ${current.y.toFixed(2)}, ${current.x.toFixed(2)} ${current.y.toFixed(2)}`;
-    line += ` ${curve}`;
-    segments.push({
-      path: `M ${previous.x.toFixed(2)} ${previous.y.toFixed(2)} ${curve}`,
-      value: current.value,
-    });
-  }
-  const last = chartPoints.at(-1)!;
-  return {
-    area: `${line} L ${last.x.toFixed(2)} ${TRACE_HEIGHT} L ${first.x.toFixed(2)} ${TRACE_HEIGHT} Z`,
-    duration,
-    segments,
-  };
-}
+import {
+  glucoseTraceGeometry,
+  TRACE_HEIGHT,
+  TRACE_WIDTH,
+} from './currentGlucoseTrace';
 
 function tracePeriod(duration: number) {
   const minutes = Math.max(1, Math.round(duration / 60_000));
@@ -146,7 +93,9 @@ function GlucoseTrace({
             <Stop offset="1" stopColor={fillTone} stopOpacity={0} />
           </SvgLinearGradient>
         </Defs>
-        <Path d={geometry.area} fill="url(#glucoseArea)" />
+        {geometry.areas.map((area, index) => (
+          <Path key={index} d={area} fill="url(#glucoseArea)" />
+        ))}
         {geometry.segments.map((segment, index) => (
           <Path
             key={`${index}:${segment.value}`}
@@ -160,12 +109,26 @@ function GlucoseTrace({
             vectorEffect="non-scaling-stroke"
           />
         ))}
+        {geometry.isolatedPoints.map((point, index) => (
+          <Path
+            key={`point:${index}`}
+            d={`M ${point.x.toFixed(2)} ${point.y.toFixed(2)} h 0.01`}
+            fill="none"
+            opacity={stale ? 0.52 : 0.92}
+            stroke={glucoseTone(point.value, 'current', settings, dark)}
+            strokeLinecap="round"
+            strokeWidth={3}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
       </Svg>
       <Text
         maxFontSizeMultiplier={1.3}
         style={[styles.tracePeriod, { color: colors.textTertiary }]}
       >
-        {tracePeriod(geometry.duration)} {stale ? 'to last reading' : 'history'}
+        {geometry.duration > 0
+          ? `${tracePeriod(geometry.duration)} ${stale ? 'to last reading' : 'history'}`
+          : `${geometry.readingCount} ${geometry.readingCount === 1 ? 'reading' : 'readings'}`}
       </Text>
     </View>
   );

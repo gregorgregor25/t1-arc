@@ -16,6 +16,9 @@ const DIRECT_TREATMENT_REQUEST =
   /\b(?:how much|how many|what (?:dose|bolus|correction))\b[\s\S]{0,60}\b(?:insulin|bolus|correction|dose|units?)\b|\bwhat\s+(?:dose|bolus|correction)\b(?:\s+should\s+i\s+(?:take|give|inject|do|use)|[\s\S]{0,40}\b(?:for|with)\b)|\bdo i need\s+(?:any\s+)?(?:insulin|a\s+bolus|a\s+correction)\b|\b(?:should|shall|do i need to|can i)\s+i?\s*(?:take|give|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|set)\b|\b(?:tell me (?:to|how to|my|the)|recommend|advise)\b[\s\S]{0,60}\b(?:take|give|inject|bolus|correct|correction dose|change|adjust|increase|decrease|raise|lower|set|insulin|dose|basal|ratio|factor|target)\b|\b(?:calculate|work out|give me)\b[\s\S]{0,50}\b(?:dose|bolus|correction|units?)\b|\b(?:change|adjust|increase|decrease|raise|lower|set)\s+(?:my|the)\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b|\b(?:what should|is) my\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)(?:\s+be|\s+too\s+(?:low|high))?\b/i;
 const UNAMBIGUOUS_TREATMENT_ACTION =
   /\b(?:(?:should|shall)\s+i|do i need to|can i)\s+(?:inject|correct)\b|\b(?:tell me (?:to|how to)|recommend|advise)\b[\s\S]{0,40}\b(?:inject|correct)\b/i;
+// A historical clause must not exempt a second clause asking for treatment.
+const PERSONAL_TREATMENT_CHANGE =
+  /\b(?:(?:should|shall|must|can)\s+i|do i need to)\s+(?:take|give|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|set)\b|\b(?:recommend|advise|calculate|work out)\b[\s\S]{0,50}\b(?:dose|correction|units?|pump setting|carb(?:ohydrate)? ratio)\b/i;
 const LOW_GLUCOSE_CONTEXT = /\b(?:low|hypo|hypoglyc(?:aemia|emia|emic))\b/i;
 const DIRECT_LOW_CARB_TREATMENT =
   /\bhow (?:many|much)\b[\s\S]{0,30}\b(?:carbs?|carbohydrates?|glucose (?:tabs?|tablets?)|dextrose (?:tabs?|tablets?)|juice)\b|\b(?:(?:should|shall)\s+i|do i need to|can i)\s+(?:eat|drink|take|have|consume)\b[\s\S]{0,40}\b(?:carbs?|carbohydrates?|glucose (?:tabs?|tablets?)|dextrose (?:tabs?|tablets?)|juice|\d+(?:[.,]\d+)?\s*g(?:rams?)?)\b|\bwhat should i\s+(?:eat|drink|take|have|consume)\b|\b(?:how|what)\s+(?:should|do|can)\s+i\s+(?:treat|handle|manage)\b|\b(?:what (?:should|do|can) i do (?:for|about)|how (?:should|do|can) i (?:treat|handle|manage)|help me (?:treat|handle|manage)|what(?:'s| is) the best way to (?:treat|handle|manage)|what(?:'s| is) best to (?:eat|drink|take|have))\b[\s\S]{0,40}\b(?:low|hypo)\b|\bis\s+\d+(?:[.,]\d+)?\s*g(?:rams?)?\s+enough\b[\s\S]{0,30}\b(?:low|hypo)\b|\bwhat should i do about (?:it|this)\b|\bcan you tell me what to do about (?:this|the|my)\s+(?:low|hypo)\b|\b(?:can|could) you\s+(?:work out|tell me)\b[\s\S]{0,60}\b(?:treat|handle|manage)\s+(?:this|the|my)?\s*(?:low|hypo)\b/i;
@@ -1589,7 +1592,8 @@ export function classifyTarvisSafety(question: string): TarvisSafetyDecision {
       (DIRECT_TREATMENT_REQUEST.test(prompt) && DOSE_OR_SETTING.test(prompt)) ||
       (LOW_GLUCOSE_CONTEXT.test(prompt) &&
         DIRECT_LOW_CARB_TREATMENT.test(prompt))) &&
-    !DESCRIPTIVE_INSULIN_HISTORY.test(prompt)
+    (!DESCRIPTIVE_INSULIN_HISTORY.test(prompt) ||
+      (DOSE_OR_SETTING.test(prompt) && PERSONAL_TREATMENT_CHANGE.test(prompt)))
   ) {
     return {
       kind: "treatment-advice",

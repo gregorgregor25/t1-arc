@@ -6,7 +6,8 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, View } from 'react-native';
+import { AppState } from 'react-native';
+import { AppStartupScreen } from '@/components/AppStartupScreen';
 
 import {
   observeRegionalProfile,
@@ -125,18 +126,7 @@ export function RegionalProfileProvider({ children }: PropsWithChildren) {
 
   return (
     <RegionalProfileContext.Provider value={value}>
-      {ready ? (
-        children
-      ) : (
-        <View
-          accessibilityLabel="Loading regional preferences"
-          accessibilityLiveRegion="polite"
-          accessibilityRole="progressbar"
-          style={styles.loading}
-        >
-          <ActivityIndicator />
-        </View>
-      )}
+      {ready ? children : <AppStartupScreen />}
     </RegionalProfileContext.Provider>
   );
 }
@@ -148,11 +138,3 @@ export function useRegionalProfile() {
   }
   return value;
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-});

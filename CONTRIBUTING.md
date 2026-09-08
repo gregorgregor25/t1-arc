@@ -6,7 +6,9 @@ installations must retain their data.
 
 ## Before opening an issue
 
-Search existing issues. Use the closest issue form and include the smallest
+[Search existing issues](https://github.com/gregorgregor25/t1-arc/issues) and use
+the [closest issue form](https://github.com/gregorgregor25/t1-arc/issues/new/choose).
+Include the smallest
 reproduction, app/Android/Wear versions and non-sensitive diagnostics. Never
 attach credentials, tokens, email addresses, account identifiers, databases,
 backups, provider exports, exact health readings or identifying screenshots.
@@ -15,12 +17,38 @@ Use invented values in examples.
 Security or privacy vulnerabilities do not belong in public issues; follow
 [`SECURITY.md`](SECURITY.md).
 
+Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Maintainer time is limited;
+small, well-explained contributions are easier to review than unrelated changes
+bundled together. A report does not need private logs or access to a real account.
+
+## Your first small pull request
+
+You can help without working on provider credentials or health-data storage:
+
+- fix a confusing guide step and check its links against the current screen;
+- add a synthetic regression fixture for an already reported problem;
+- improve a control's accessible label or large-text behaviour;
+- propose a regional food-name alias with a public source and a matching test.
+
+Start with an existing issue, or open a focused issue describing the change.
+For a larger feature, agree its scope before building it. Fork the repository,
+create a branch for one concern, and link the issue in the pull request. A draft
+PR is welcome when you want feedback before finishing.
+
+For a docs-only change, preview the Markdown, check the affected links and UI
+wording, and say what you checked. You do not need a phone or Android SDK just
+to correct a guide. CI still runs the repository gates. For code, run the
+relevant tests while working and the checks below before requesting review.
+Explain any check you could not run instead of marking it passed.
+
 ## Development
 
 These tools are for source contributors. People using T1 Arc install the signed
 APK from GitHub Releases and do not need a development environment.
 
-Use Node.js 22, JDK 21 and an Android SDK. Install exactly from the lockfile:
+Use Node.js 22.13.0 or newer within Node 22, JDK 21 and an Android SDK.
+Run these commands from the repository root, where `package.json` lives.
+Install exactly from the lockfile:
 
 ```powershell
 npm ci

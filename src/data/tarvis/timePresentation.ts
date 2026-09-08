@@ -1,4 +1,6 @@
 import type { TimeRange } from "@/domain/models";
+import type { ResolvedTarvisIntentRange } from "./intentRange";
+import { formatTarvisNumber } from "./regionalNumberPresentation";
 import {
   formatDate,
   formatTime,
@@ -50,4 +52,38 @@ export function formatTarvisRequestedPeriod(range: TimeRange) {
     return `${formatTarvisLocalDate(range.start)}, ${formatTime(range.start)} to ${formatTime(range.end)}`;
   }
   return `${formatTarvisLocalDateTime(range.start)} to ${formatTarvisLocalDateTime(range.end)}`;
+}
+
+/** Short answer copy; evidence retains the exact resolved boundaries. */
+export function formatTarvisCompactPeriod(range: TimeRange) {
+  const date = (timestamp: number) => formatDate(toDateKey(timestamp), {
+    day: "numeric", month: "short", year: "numeric",
+  });
+  const start = date(range.start);
+  const final = date(range.end - 1);
+  const dates = start === final ? start : `${start} to ${final}`;
+  if (isLocalMidnight(range.start)) {
+    return isLocalMidnight(range.end) ? dates : `${dates}, through ${formatTime(range.end)}`;
+  }
+  return `${start} ${formatTime(range.start)} to ${date(range.end)} ${formatTime(range.end)}`;
+}
+
+/** Duration is observable; unequal durations alone do not establish a DST change. */
+export function tarvisComparisonDurationNote(
+  resolved: Pick<ResolvedTarvisIntentRange, "current" | "previous" | "currentCappedAtAsOf">,
+) {
+  if (!resolved.previous) return null;
+  const currentHours = (resolved.current.end - resolved.current.start) / 3_600_000;
+  const previousHours = (resolved.previous.end - resolved.previous.start) / 3_600_000;
+  if (currentHours === previousHours) return null;
+  const currentDuration = formatTarvisNumber(currentHours, { maximumFractionDigits: 2 });
+  const previousDuration = formatTarvisNumber(previousHours, { maximumFractionDigits: 2 });
+  // A millisecond-short synthetic boundary must not produce "168 versus 168"
+  // as a warning about different durations. Exact ranges remain in evidence.
+  if (currentDuration === previousDuration) return null;
+  const duration = `${currentDuration} versus ${previousDuration} hours`;
+  const reason = resolved.currentCappedAtAsOf
+    ? "The current period ends at the time you asked. These periods have different durations"
+    : "These calendar periods have different elapsed durations";
+  return `${reason} (${duration}). Counts and totals are shown as recorded, not adjusted to equal lengths.`;
 }

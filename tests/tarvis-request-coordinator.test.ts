@@ -456,8 +456,6 @@ describe("Tarv1s production request coordinator", () => {
   );
 
   it.each([
-    "What are the NICE guidelines for depression?",
-    "What NICE guidance applies to hypertension?",
     "Give me guidance on mortgages",
     "Why is my boiler making a nice noise?",
   ])("keeps unrelated guidance outside the Type 1 scope: %s", (question) => {
@@ -465,6 +463,14 @@ describe("Tarv1s production request coordinator", () => {
     expect(result.kind).toBe("answer");
     if (result.kind !== "answer") throw new Error("Expected local answer");
     expect(result.source).toBe("scope");
+  });
+
+  it.each([
+    "What are the NICE guidelines for depression?",
+    "What NICE guidance applies to hypertension?",
+  ])("does not invent an unavailable requested guideline: %s", (question) => {
+    const result = plan(question);
+    expect(result).toMatchObject({ kind: "answer", source: "capability" });
   });
 
   it.each([
@@ -598,9 +604,12 @@ describe("Tarv1s production request coordinator", () => {
     if (result.kind !== "answer") throw new Error("Expected local answer");
     expect(result.source).toBe("evidence-range");
     expect(result.answer.answer).toContain(
-      "won\u2019t substitute the report currently shown",
+      "Which period would you like to look at",
     );
-    expect(result.answer.limitations[0]).toMatch(/no OpenAI request/i);
+    expect(result.answer.answer).not.toContain("supported period");
+    expect(result.answer.limitations[0]).toBe(
+      "I haven’t loaded your health records or sent this question to OpenAI.",
+    );
   });
 
   it("keeps insulin-only personal questions available to the local engine", () => {

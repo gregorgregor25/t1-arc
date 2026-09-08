@@ -20,6 +20,8 @@ import type { HealthTrendDay } from "@/data/healthConnect/dailyHealthMetrics";
 import { readHealthMetricSnapshot } from "@/data/healthMetricReader";
 import { useDataContext } from "@/providers/DataProvider";
 import { DemoModeNotice } from "./DemoModeNotice";
+import { AskTarvisButton } from './AskTarvisButton';
+import { createTarvisEventEntry, createTarvisHealthEntry } from '@/domain/tarvisEntry';
 import type {
   DailyHealthMetrics,
   DailyMetricRecord,
@@ -51,6 +53,8 @@ import {
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
+import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
+import { MetricPreferencesSheet } from "./MetricPreferencesSheet";
 
 import { SectionCard } from "./SectionCard";
 import {
@@ -1211,6 +1215,9 @@ function MetricDetailModal({
                 ? definition.detail
                 : `Showing ${definition.label.toLowerCase()} records for ${selectedDayLabel}.`}
             </Text>
+            {selectedDay && selectedDayValue !== undefined ? (
+              <AskTarvisButton onOpen={onClose} entry={() => createTarvisHealthEntry(dayRange(selectedDay.date, now), definition.label)} />
+            ) : null}
             {definition.id === "steps" &&
             goal &&
             selectedDayValue !== undefined ? (
@@ -1513,12 +1520,12 @@ function MetricDetailModal({
                   });
                   if (event.kind === "activity" && event.strengthWorkout) {
                     return (
+                      <View key={event.id}>
                       <StrengthWorkoutTimelineRow
                         color={definition.color}
                         event={event}
                         expanded={expandedWorkoutId === event.id}
                         heartRateRecords={intradayRecords}
-                        key={event.id}
                         onToggle={() =>
                           setExpandedWorkout((current) =>
                             current &&
@@ -1530,6 +1537,8 @@ function MetricDetailModal({
                         }
                         selectedDate={selectedDay.date}
                       />
+                      {expandedWorkoutId === event.id ? <AskTarvisButton onOpen={onClose} entry={() => createTarvisEventEntry(event)} /> : null}
+                      </View>
                     );
                   }
                   return (
@@ -1719,6 +1728,9 @@ export function HealthMetricCards({
   const { defaults: regional } = useRegionalProfile();
   const { dataMode } = useDataContext();
   const [selectedId, setSelectedId] = useState<string>();
+  const display = useDisplayPreferences();
+  const [editingMetrics, setEditingMetrics] = useState(false);
+  const [draftVisibleIds, setDraftVisibleIds] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState<number>();
   useEffect(() => {
     if (dataMode === "live") return observeStepGoal(setStepGoal);
@@ -2595,11 +2607,34 @@ export function HealthMetricCards({
     ];
   }, [colors, current, dataMode, isToday, latestDay, now, regional, stepGoal, trend]);
 
-  const visible = definitions.filter((definition) => definition.available);
+  const availableDefinitions = definitions.filter((definition) => definition.available);
+  const visible = availableDefinitions.filter((definition) => !display.preferences.hiddenHealthMetrics.includes(definition.id));
   const selected = visible.find((definition) => definition.id === selectedId);
 
   return (
     <>
+      {availableDefinitions.length > 0 || display.preferences.hiddenHealthMetrics.length > 0 ? (
+        <View style={styles.preferencesHeader}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose health sections to show" disabled={display.loading} accessibilityState={{ disabled: display.loading }} onPress={() => {
+            setDraftVisibleIds(definitions.filter(definition => !display.preferences.hiddenHealthMetrics.includes(definition.id)).map(({ id }) => id));
+            setEditingMetrics(true);
+          }} style={({ pressed }) => [styles.preferencesAction, { opacity: pressed || display.loading ? 0.5 : 1 }]}>
+            <Ionicons accessibilityElementsHidden name="options-outline" size={18} color={colors.primary} />
+            <Text style={[styles.preferencesText, { color: colors.primary }]}>Edit view</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {display.error && !editingMetrics ? <Pressable accessibilityRole="button" accessibilityLabel="Retry display choices" onPress={() => void display.retry()} style={styles.preferencesAction}>
+        <Text style={[styles.preferencesText, { color: colors.warning }]}>{display.error} Tap to retry.</Text>
+      </Pressable> : null}
+      {availableDefinitions.length > 0 && visible.length === 0 ? (
+        <SectionCard>
+          <Text style={[styles.preferencesText, { color: colors.textSecondary }]}>Your health sections are hidden. Your records are still here.</Text>
+          <Pressable accessibilityRole="button" disabled={display.saving} accessibilityState={{ disabled: display.saving, busy: display.saving }} onPress={() => void display.save({ hiddenHealthMetrics: [] })} style={styles.preferencesAction}>
+            <Text style={[styles.preferencesText, { color: colors.primary }]}>Show all sections</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
       <View style={styles.cards}>
         {visible.map((definition) => (
           <MetricCard
@@ -2619,11 +2654,29 @@ export function HealthMetricCards({
         onGoalChange={setStepGoal}
         trend={trend}
       />
+      <MetricPreferencesSheet
+        visible={editingMetrics}
+        mode="visibility"
+        options={definitions.map(({ id, label }) => ({ id, label }))}
+        selected={draftVisibleIds}
+        onChange={setDraftVisibleIds}
+        onClose={() => setEditingMetrics(false)}
+        onReset={() => setDraftVisibleIds(definitions.map(({ id }) => id))}
+        onSave={() => { void display.save({ hiddenHealthMetrics: [
+          ...display.preferences.hiddenHealthMetrics.filter(id => !definitions.some(definition => definition.id === id)),
+          ...definitions.filter(definition => !draftVisibleIds.includes(definition.id)).map(({ id }) => id),
+        ] }).then(saved => { if (saved) setEditingMetrics(false); }); }}
+        saving={display.saving}
+        error={display.error}
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  preferencesHeader: { alignItems: "flex-end" },
+  preferencesAction: { minHeight: 48, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8 },
+  preferencesText: { fontSize: 14, lineHeight: 22, flexShrink: 1 },
   cards: { gap: 9 },
   cardShell: { padding: 0, overflow: "hidden" },
   card: {

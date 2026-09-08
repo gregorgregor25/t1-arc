@@ -1,5 +1,6 @@
 import { getRuntimeAnalysisTimeZone } from "@/domain/regionalProfileRuntime";
 import { extractTarvisLiterals } from "./literals";
+import { validateTarvisIntentV1 } from "./schema";
 import {
   IncompleteTarvisIntentResolution,
   ReadyTarvisIntentResolution,
@@ -50,6 +51,28 @@ const UNREPRESENTED_RECORD_FILTER_PATTERN =
   /\b(?:(?:only|just|solely)\s+(?:(?:use|using|include|including)\s+)?(?:the\s+)?(?:calibration|calibrated|uncalibrated|manual|meter|finger(?:stick|[- ]prick)|sensor|cgm|measured|estimated|imported|live|dexcom|libre|glooko|nightscout|pump|device|source)\b|(?:using|from)\s+(?:only\s+)?(?:my\s+)?(?:dexcom|libre|glooko|nightscout|pump|meter|finger(?:stick|[- ]prick)|sensor|cgm|device|source)\b)/;
 const EVENT_RELATIVE_FILTER_PATTERN =
   /\b(?:(?:before|after|around|following|since|upon|during|from|on|at|between)\s+(?:(?:i|my|a|an|the)\s+){0,2}(?:wak(?:e|es|ing)|woke|getting\s+(?:up|out\s+of\s+bed)|bedtime|going\s+to\s+bed|sleep(?:ing)?|meals?|eating|fast(?:ing)?|breakfast|lunch|dinner|exercise|exercising|activity|active|workouts?|training|correction(?:\s+bolus)?|bolus|insulin\s+dose|medication|dose|commut(?:e|ing)|work|shifts?|stress|illness|drinking|alcohol|lows?|highs?|hypos?|hypers?|spikes?)|(?:while|when)\s+(?:(?:i(?:'m|\s+am)?|my)\s+)?(?:[a-z]+ing|asleep|awake|active)|within\s+(?:\w+[ -]?){0,4}(?:of|before|after)\s+(?:(?:a|an|the|my)\s+)?(?:wak(?:e|ing)|meals?|eating|breakfast|lunch|dinner|exercise|workouts?|bolus|dose)|(?:pre|post)[ -]?(?:meal|breakfast|lunch|dinner|exercise|workout|bolus))\b/;
+
+function hasEventRelativeFilter(question: string) {
+  // An episode can be a requested count or a condition on another metric.
+  // Do not broaden "average during periods of low sugar" to a whole day.
+  if (
+    /\b(?:during|within|in|after|before)\s+(?:(?:my|the|those)\s+)?(?:periods?|episodes?|spells?|bouts?)\s+(?:of|with)\s+(?:low|high|hypoglyc(?:aemia|emia)|hyperglyc(?:aemia|emia))\b/.test(question)
+  ) return true;
+  for (const match of question.matchAll(
+    new RegExp(EVENT_RELATIVE_FILTER_PATTERN.source, "g"),
+  )) {
+    // "Look at my meals" selects evidence, not a mealtime clock filter.
+    // Examine every match so a later "after exercise" still constrains time.
+    if (
+      /^at\b/.test(match[0]) &&
+      /\blook(?:ing)?\s+$/.test(question.slice(0, match.index))
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
 
 const SUPPORTED_METRICS = new Set<TarvisMetric>([
   "glucose.current",
@@ -483,7 +506,7 @@ function extractMetricCandidates(
         normalizedQuestion,
         "glucose.low_episodes",
         "count_episodes",
-        /\b(?:(?:how many|number of|count(?: of)?|frequency of)\s+(?:sustained\s+)?(?:low[- ]glucose\s+)?(?:events?|episodes?|hypos?|lows?|dips?|crashes?)|(?:low(?:[- ]glucose)?|hypoglyc(?:aemia|emia|emic)|hypo)\s+(?:events?|episodes?)|(?:lows|hypos|dips|crashes)\s+(?:have|did|during|over|in)\b|(?:lows|hypos|dips|crashes)\b(?=\s*(?:[,;]|\band\b|\bor\b|\bnot\b)))/,
+        /\b(?:(?:how many|number of|count(?: of)?|frequency of)\s+(?:sustained\s+)?(?:hypos?|lows?|dips?|crashes?)|(?:low(?:[- ](?:blood[- ])?(?:glucose|sugar))?|hypoglyc(?:aemia|emia|aemic|emic)|hypo)\s+(?:events?|episodes?|periods?|spells?|bouts?)|(?:events?|episodes?|periods?|spells?|bouts?)\s+(?:of|with)\s+(?:low(?:[- ](?:blood[- ])?(?:glucose|sugar))?|hypoglyc(?:aemia|emia|aemic|emic)|hypos?)|(?:lows|hypos|dips|crashes)\s+(?:have|did|during|over|in)\b|(?:lows|hypos|dips|crashes)\b(?=\s*(?:[,;]|\band\b|\bor\b|\bnot\b)))\b/,
       ),
     );
   }
@@ -495,7 +518,7 @@ function extractMetricCandidates(
         normalizedQuestion,
         "glucose.high_episodes",
         "count_episodes",
-        /\b(?:(?:how many|number of|count(?: of)?|frequency of)\s+(?:sustained\s+)?(?:high[- ]glucose\s+)?(?:events?|episodes?|hypers?|highs?|spikes?)|(?:high(?:[- ]glucose)?|hyperglyc(?:aemia|emia|emic)|hyper)\s+(?:events?|episodes?)|(?:highs|hypers|spikes)\s+(?:have|did|during|over|in)\b|(?:highs|hypers|spikes)\b(?=\s*(?:[,;]|\band\b|\bor\b|\bnot\b)))/,
+        /\b(?:(?:how many|number of|count(?: of)?|frequency of)\s+(?:sustained\s+)?(?:hypers?|highs?|spikes?)|(?:high(?:[- ](?:blood[- ])?(?:glucose|sugar))?|hyperglyc(?:aemia|emia|aemic|emic)|hyper)\s+(?:events?|episodes?|periods?|spells?|bouts?)|(?:events?|episodes?|periods?|spells?|bouts?)\s+(?:of|with)\s+(?:high(?:[- ](?:blood[- ])?(?:glucose|sugar))?|hyperglyc(?:aemia|emia|aemic|emic)|hypers?)|(?:highs|hypers|spikes)\s+(?:have|did|during|over|in)\b|(?:highs|hypers|spikes)\b(?=\s*(?:[,;]|\band\b|\bor\b|\bnot\b)))\b/,
       ),
     );
   }
@@ -701,7 +724,7 @@ function inferDomains(
   );
   const unrepresentedFilter =
     metricDomains.size > 0 &&
-    (EVENT_RELATIVE_FILTER_PATTERN.test(normalizedQuestion) ||
+    (hasEventRelativeFilter(normalizedQuestion) ||
       UNREPRESENTED_EXCLUSION_PATTERN.test(normalizedQuestion) ||
       UNREPRESENTED_RECORD_FILTER_PATTERN.test(normalizedQuestion));
   const canInferMentionedDomain = (domain: TarvisDomain) =>
@@ -945,7 +968,7 @@ function resolveTemporalScope(
       message: "Named weekday and weekend filters are not executable yet.",
     };
   }
-  if (EVENT_RELATIVE_FILTER_PATTERN.test(normalizedQuestion)) {
+  if (hasEventRelativeFilter(normalizedQuestion)) {
     return {
       problem: "ambiguous_time_scope",
       message:
@@ -1049,6 +1072,33 @@ function resolveTemporalScope(
         message: "More than one non-equivalent duration was requested.",
       };
     }
+  }
+
+  if (durations.length > 1 && comparisonToPrevious) {
+    const currentDurations = durations.filter((duration) =>
+      !/\bprevious\s+(?:the\s+)?$/.test(durationContext(offsetStableQuestion, duration)),
+    );
+    const first = currentDurations[0];
+    const firstScope = first && scopeFromDuration(
+      offsetStableQuestion, first, Boolean(clockWindow?.window || productOvernight?.window),
+    ).scope?.value;
+    if (
+      !first || !firstScope ||
+      !durations.every((duration) => duration.value === first.value && duration.unit === first.unit) ||
+      !currentDurations.every((duration) => temporalScopesEqual(
+        scopeFromDuration(offsetStableQuestion, duration, Boolean(clockWindow?.window || productOvernight?.window)).scope?.value,
+        firstScope,
+      ))
+    ) {
+      return {
+        problem: "ambiguous_time_scope",
+        message: "More than one non-equivalent current or comparison duration was requested.",
+      };
+    }
+    // Validate every repeated period before a named-date equivalence can
+    // return early. "Past 7 days" must not absorb another metric's local
+    // "last 7 days", nor can a third unequal duration be silently omitted.
+    durations = [first];
   }
 
   const named = matchedNamed[0];
@@ -1196,26 +1246,6 @@ function resolveTemporalScope(
     };
   }
 
-  if (durations.length > 1) {
-    const [first, second] = durations;
-    if (
-      comparisonToPrevious &&
-      first &&
-      second &&
-      first.value === second.value &&
-      first.unit === second.unit
-    ) {
-      return scopeFromDuration(
-        offsetStableQuestion,
-        first,
-        Boolean(clockWindow?.window || productOvernight?.window),
-      );
-    }
-    return {
-      problem: "ambiguous_time_scope",
-      message: "More than one non-equivalent duration was requested.",
-    };
-  }
   if (durations[0]) {
     return scopeFromDuration(
       offsetStableQuestion,
@@ -1266,12 +1296,36 @@ function comparisonField(
   question: string,
   normalizedQuestion: string,
   literals: ReturnType<typeof extractTarvisLiterals>,
+  candidates: readonly MetricCandidate[],
+  scope: TarvisTemporalScope | undefined,
 ): TarvisIntentField<TarvisComparison> | undefined {
   if (literals.comparisons.length === 0) return undefined;
   const source = literals.comparisons[0]!;
   if (/\bprevious\b|\bbefore\s+that\b/.test(normalizedQuestion)) {
     return explicitField({ kind: "previous_equal_period" }, source);
   }
+  // "Carbs yesterday versus bolus insulin" compares two quantities within
+  // one scope, not yesterday with an unstated second period. Every comparison
+  // marker must connect explicit metrics; a trailing "versus 2 weeks ago"
+  // must still fail closed, even if an earlier "compare" connected metrics.
+  if (
+    scope &&
+    candidates.length > 1 &&
+    literals.comparisons.every((comparison) => {
+      if (comparison.kind !== "compare" && comparison.kind !== "versus") {
+        return false;
+      }
+      const before = candidates.filter(({ span }) => span.end <= comparison.start);
+      const after = candidates.filter(({ span }) => span.start >= comparison.end);
+      if (before.length > 0 && after.length > 0) return true;
+      if (comparison.kind !== "compare" || before.length > 0 || after.length < 2) {
+        return false;
+      }
+      return /\b(?:and|with|to|against)\b/.test(
+        question.slice(after[0]!.span.end, after[1]!.span.start).toLowerCase(),
+      );
+    })
+  ) return undefined;
   if (
     /\b(?:today|yesterday|this week|last week|this month|last month)\b[\s\S]*\b(?:versus|vs\.?|compar)/.test(
       normalizedQuestion,
@@ -1552,14 +1606,28 @@ export function resolveTarvisIntent(
     normalizedQuestion,
     explicitCandidates,
   );
+  // A compound calculation can be unavailable while its time and comparison
+  // are perfectly clear. Preserve those independent constraints for evidence
+  // synthesis instead of returning a draft with the requested dates missing.
+  let compoundProblem:
+    | Extract<TarvisCapabilityOutcome, { status: "unsupported" }>
+    | undefined;
+  if (explicitCandidates.length >= 2 && hasUnrepresentedCompoundRequest(
+    normalizedQuestion,
+    extractMetricCandidates(normalizedQuestion, normalizedQuestion),
+  )) {
+    // This is an explicitly unavailable calculation, not open-ended evidence
+    // synthesis. The existing unsupported_metric route fails closed instead
+    // of sending a partial set of requested statistics to a model.
+    compoundProblem = unsupported(
+      "unsupported_metric",
+      "The question requests an additional nutrient or episode-duration statistic that is not supported by this calculation. Please ask for the supported values separately.",
+    );
+  }
   if (unconsumedMetric) {
-    return incomplete(
-      draft,
-      literals,
-      unsupported(
-        "unsupported_compound_question",
-        `The question also requests ${unconsumedMetric}, but its relationship to the other calculation was not unambiguous.`,
-      ),
+    compoundProblem ??= unsupported(
+      "unsupported_compound_question",
+      `The question also requests ${unconsumedMetric}, but its relationship to the other calculation was not unambiguous.`,
     );
   }
 
@@ -1576,13 +1644,9 @@ export function resolveTarvisIntent(
       domainMetric?.span ?? spanForText(question, normalizedQuestion, domain),
     );
   } else if (domains.length > 1) {
-    return incomplete(
-      draft,
-      literals,
-      unsupported(
-        "unsupported_compound_question",
-        "This foundation does not yet execute a query spanning multiple health-data domains.",
-      ),
+    compoundProblem ??= unsupported(
+      "unsupported_compound_question",
+      "This exact calculation spans several types of health records.",
     );
   }
 
@@ -1595,13 +1659,9 @@ export function resolveTarvisIntent(
     const operation = [...operations][0]!;
     draft.operation = explicitField(operation, explicitCandidates[0]!.span);
   } else if (operations.size > 1) {
-    return incomplete(
-      draft,
-      literals,
-      unsupported(
-        "unsupported_compound_question",
-        "The question combines metrics that need different calculations.",
-      ),
+    compoundProblem ??= unsupported(
+      "unsupported_compound_question",
+      "The question combines metrics that need different calculations.",
     );
   }
 
@@ -1659,13 +1719,21 @@ export function resolveTarvisIntent(
     draft.clockWindow = inheritedField(history.intent.clockWindow, history);
   }
 
-  draft.comparison = comparisonField(question, normalizedQuestion, literals);
+  draft.comparison = comparisonField(
+    question, normalizedQuestion, literals, explicitCandidates, draft.temporalScope?.value,
+  );
   if (!draft.comparison && explicitFollowUp && history?.intent.comparison) {
     draft.comparison = inheritedField(history.intent.comparison, history);
   }
 
   const profile = options.targetProfile ?? DEFAULT_TARGET_PROFILE;
   const explicitMetricThresholds = metricThresholdLiterals(literals);
+  if (compoundProblem) {
+    if (explicitMetricThresholds.length === 0) {
+      draft.thresholds = targetThresholds(draft.metrics, literals, profile);
+    }
+    return incomplete(draft, literals, compoundProblem);
+  }
   if (explicitMetricThresholds.length > 0 && draft.metrics.length > 1) {
     return incomplete(
       draft,
@@ -1822,4 +1890,196 @@ export function isReadyTarvisIntent(
   resolution: TarvisIntentResolution,
 ): resolution is ReadyTarvisIntentResolution {
   return resolution.outcome.status === "ready";
+}
+
+function hasUnrepresentedCompoundRequest(
+  question: string,
+  candidates: readonly MetricCandidate[],
+) {
+  // Recognize requested quantities/list items, not every mention of a nutrient.
+  // "My meals contained protein. Show carbs and bolus" is descriptive context;
+  // "Show carbs, bolus and protein" requests a third, unsupported calculation.
+  const requestPrefix = /(?:^|[,;.!?]\s*|\b(?:show|calculate|compare|report|list|give|tell|include|including|also|and|plus|versus|vs|what(?:\s+(?:was|were|is|are))?|how\s+(?:much|many)))\s*(?:(?:me|my|the|their|its|recorded|logged|total|average|mean|daily|dietary|amount|intake|grams|milligrams|of)\s+)*$/;
+  const requestedAt = (start: number) => {
+    const before = question.slice(0, start);
+    if (!requestPrefix.test(before)) return false;
+    const boundary = [...before.matchAll(/[!?;]|\.(?=\s|$)/g)].at(-1);
+    const clauseStart = boundary ? boundary.index + boundary[0].length : 0;
+    const clause = before.slice(clauseStart);
+    return /^\s*(?:(?:my|the|total|average|mean|dietary|recorded|logged)\s+)*$/.test(clause) ||
+      /\b(?:show|calculate|compare|report|list|give|tell|include|including|plus|what|how)\b/.test(clause) ||
+      candidates.some(({ span }) => span.start >= clauseStart && span.end <= start);
+  };
+  const nutrients = /\b(?:calories?|kilocalories?|kilojoules?|kcal|kj|energy|proteins?|fats?|fib(?:er|re)|sodium|salt|sugars?|cholesterol|potassium|vitamins?|minerals?)\b/g;
+  for (const match of question.matchAll(nutrients)) {
+    const before = question.slice(0, match.index);
+    // Blood sugar is a supported glucose noun, not dietary sugar intake.
+    if (/\b(?:blood|low|high)\s*$/.test(before)) continue;
+    // Food/product descriptions are not requests for their nutrient total.
+    const after = question.slice(match.index + match[0].length);
+    if (/^(?:[- ](?:rich|free|reduced)|\s+(?:shake|bar|powder|supplement|drink|meal|snack)\b)/.test(after)) continue;
+    // A noun-led statement such as "Protein is important" is not a list item.
+    if (/(?:^|[.!?;])\s*(?:(?:my|the|dietary)\s+)*$/.test(before) &&
+      /^\s+(?:is|are|was|were|matters?|helps?|supports?|can|may|has|have|contains?|plays?)\b/.test(after)) continue;
+    if (requestedAt(match.index)) return true;
+  }
+
+  // These describe event duration or an event extremum, not the count of
+  // events or the minimum/maximum glucose value supported by schema v1.
+  if (!candidates.some(({ metric }) => metric.endsWith("_episodes"))) return false;
+  const event = "(?:(?:(?:low|high|glucose|blood|sugar|hypoglycaemic|hypoglycemic|hyperglycaemic|hyperglycemic)\\s+)*(?:episodes?|events?|periods?|lows?|highs?|hypos?|hypers?))";
+  const eventStatistics = new RegExp(
+    `\\b(?:(?:longest|shortest)\\s+${event}|(?:(?:total|average|mean|median|maximum|minimum|longest|shortest)\\s+)?(?:duration|length|minutes?|hours?)\\s+(?:of\\s+|in\\s+)?(?:(?:my|the|a|an|each)\\s+)?${event}|${event}\\s+(?:duration|length)s?|how\\s+long\\s+(?:(?:did|was|were)\\s+)?(?:(?:my|the|a|an|each|they|it)\\s+)?(?:${event}\\s+)?(?:last(?:ed)?|persist(?:ed)?)|time\\s+spent\\s+(?:low|high|below|above)|durations?|lengths?)\\b`,
+    "g",
+  );
+  for (const match of question.matchAll(eventStatistics)) {
+    if (requestedAt(match.index) || /\bwith\s+(?:(?:their|the|its)\s+)?$/.test(question.slice(0, match.index))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A compound draft is not itself executable under intent schema v1. Split
+ * only explicit, fully represented calculations sharing one whole-period
+ * scope into independently valid v1 intents. Callers must use all results,
+ * not fall back to the first metric if any execution fails.
+ *
+ * Use the same options (especially targetProfile) as resolveTarvisIntent.
+ * Clock-window compounds, current readings, narrative/causal questions and
+ * per-metric conditions remain outside this deliberately bounded adapter.
+ */
+export function resolveTarvisCompoundIntents(
+  resolution: TarvisIntentResolution,
+  options: ResolveTarvisIntentOptions = {},
+): TarvisIntentV1[] | null {
+  if (resolution.outcome.code !== "unsupported_compound_question") return null;
+  // Re-resolve rather than trusting a partially populated or externally
+  // modified draft. This reuses all existing date, clock and exclusion guards.
+  const checked = resolveTarvisIntent(resolution.intent.question, options);
+  const draft = checked.intent;
+  if (
+    checked.outcome.code !== "unsupported_compound_question" ||
+    !draft.temporalScope || draft.clockWindow ||
+    draft.comparison?.value.kind === "explicit_periods" ||
+    draft.metrics.length < 2 || draft.metrics.length > 8
+  ) return null;
+
+  const normalized = draft.normalizedQuestion;
+  // This adapter presents the selected values side by side. A requested
+  // difference, percentage change, ratio or rate is another calculation,
+  // not a synonym for paired values. Leave ordinary "compare" wording and
+  // percentage-valued metrics such as time in range available. This guard
+  // applies only to compound drafts, never ready single-metric comparisons.
+  if (
+    /\b(?:deltas?|ratios?|rates?|differences?)\b|(?:\bpercent(?:age)?|%)\s*[- ]?\s*(?:points?\s+)?(?:changes?|differences?|increases?|decreases?)\b|\b(?:changes?|increases?|decreases?)\s+(?:in|as|by)\s+(?:a\s+)?(?:percent(?:age)?\b|%)|\bby\s+(?:what|which)\s+percent(?:age)?\b|\b(?:absolute|relative|numeric|numerical)\s+changes?\b|\b(?:amount|size|magnitude)\s+of\s+(?:the\s+)?(?:change|increase|decrease)\b|\bhow\s+much\b[\s\S]{0,160}\b(?:change|increase|decrease|rise|fall|drop|higher|lower|more|less|fewer)\b/.test(normalized)
+  ) return null;
+  // These requests need contextual evidence or a different output (for
+  // example the timestamp of a minimum); a list of totals would omit it.
+  if (
+    /\b(?:why|explain|caus(?:e|ed|es)|because|patterns?|correlat(?:e|ed|ion)|relationship|associated|related\s+to|when|whenever|while|where|if|only|just|per|daily|weekly|each\s+(?:day|week)|by\s+(?:day|week)|which\s+(?:day|date|time)|what\s+(?:day|date|time)|at\s+what\s+time)\b|\b(?:low|high)\s+periods?\s+of\b/.test(normalized)
+  ) return null;
+
+  // Work on one offset-stable string for positional bindings. The returned
+  // metric fields still retain their original-question provenance.
+  const candidates = extractMetricCandidates(normalized, normalized);
+  const literals = extractTarvisLiterals(normalized, options);
+  const metricValues = new Set(draft.metrics.map(({ value }) => value));
+  if (
+    candidates.length !== metricValues.size ||
+    candidates.some(({ metric }) =>
+      !metricValues.has(metric) || !SUPPORTED_METRICS.has(metric) ||
+      metric === "glucose.current",
+    ) ||
+    unconsumedCompoundMetricCue(normalized, candidates) ||
+    inferDomains(normalized, candidates).some((domain) =>
+      !candidates.some(({ metric }) => metric.startsWith(`${domain}.`)),
+    ) ||
+    literals.durations.some((duration) => !isScopeDuration(normalized, duration))
+  ) return null;
+
+  // A comparison following the first metric's complete scope must not be
+  // spread over another independently scoped clause which did not request
+  // that comparison. A shared trailing comparison ("mean and lows last week
+  // versus the previous period") has no earlier per-metric scope to conflict.
+  if (draft.comparison) {
+    const hasComparisonByClause = candidates.map((candidate, index) => {
+      const end = candidates[index + 1]?.span.start ?? normalized.length;
+      const hasScope = literals.durations.some((duration) =>
+        duration.start >= candidate.span.end && duration.end <= end &&
+        isScopeDuration(normalized, duration),
+      ) || literals.dates.some((date) =>
+        date.start >= candidate.span.end && date.end <= end,
+      );
+      if (!hasScope) return null;
+      return /\bprevious\b|\bbefore\s+that\b/.test(
+        normalized.slice(candidate.span.end, end),
+      ) || literals.comparisons.some((comparison) =>
+        comparison.start >= candidate.span.end && comparison.end <= end,
+      );
+    }).filter((value) => value !== null);
+    if (hasComparisonByClause.includes(true) && hasComparisonByClause.includes(false)) {
+      return null;
+    }
+  }
+
+  const explicitThresholds = metricThresholdLiterals(literals);
+  const thresholdsByMetric = new Map<TarvisMetric, typeof explicitThresholds>();
+  const originalThresholds = metricThresholdLiterals(checked.literals);
+  for (const [index, threshold] of explicitThresholds.entries()) {
+    const preceding = candidates.filter(({ span }) => span.start < threshold.start);
+    const owner = preceding[preceding.length - 1];
+    if (!owner) return null;
+    // Binding requires the threshold to directly follow its selected metric,
+    // allowing the usual question words but not a different clause/filter.
+    if (/[;?!]|\b(?:and|also|but|where|while|during|for)\b/.test(
+      normalized.slice(owner.span.end, threshold.start),
+    )) return null;
+    const bound = thresholdsByMetric.get(owner.metric) ?? [];
+    if (!originalThresholds[index]) return null;
+    bound.push(originalThresholds[index]);
+    thresholdsByMetric.set(owner.metric, bound);
+  }
+
+  const intents: TarvisIntentV1[] = [];
+  for (const candidate of candidates) {
+    const metric = draft.metrics.find(({ value }) => value === candidate.metric)!;
+    const boundThresholds = thresholdsByMetric.get(candidate.metric) ?? [];
+    let thresholds = targetThresholds([metric], {
+      ...literals, durations: [], thresholds: boundThresholds,
+    }, options.targetProfile ?? DEFAULT_TARGET_PROFILE);
+    if (!options.targetProfile && boundThresholds.length === 0) {
+      thresholds = thresholds.map((threshold) => {
+        const family = threshold.value.role === "low" || threshold.value.role === "range_lower"
+          ? ["low", "range_lower"] : ["high", "range_upper"];
+        const original = resolution.intent.thresholds.find(({ value, provenance }) =>
+          family.includes(value.role) && (provenance.kind === "profile" || provenance.kind === "default"),
+        );
+        return original ? {
+          value: { ...threshold.value, value: original.value.value, unit: original.value.unit },
+          provenance: original.provenance,
+        } : threshold;
+      });
+    }
+    if (thresholdValidationProblem([metric], thresholds)) return null;
+    const intent: TarvisIntentV1 = {
+      schemaVersion: TARVIS_INTENT_SCHEMA_VERSION,
+      question: draft.question,
+      normalizedQuestion: normalized,
+      domain: {
+        value: candidate.metric.split(".")[0] as TarvisDomain,
+        provenance: metric.provenance,
+      },
+      metrics: [metric],
+      operation: { value: candidate.operation, provenance: metric.provenance },
+      temporalScope: draft.temporalScope,
+      clockWindow: null,
+      comparison: draft.comparison ?? null,
+      thresholds,
+    };
+    if (!validateTarvisIntentV1(intent).valid) return null;
+    intents.push(intent);
+  }
+  return intents;
 }

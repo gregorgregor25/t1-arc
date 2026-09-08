@@ -1,0 +1,114 @@
+plugins {
+    id 'com.android.application'
+}
+
+apply from: rootProject.file('../scripts/gradle/t1arc-signing.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-face-signing.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-watchface-artwork.gradle')
+
+def faceNames = ['meridian', 'chronograph', 'atelier', 'pace', 'summit']
+def revisions = [:]
+faceNames.each { faceName ->
+    def resourceRoot = project.file('../watchface-' + faceName + '/src/main/res')
+    def digest = java.security.MessageDigest.getInstance('SHA-256')
+    if (project.file('../watchface-' + faceName + '/artwork').isDirectory()) {
+        fileTree(project.file('../watchface-' + faceName + '/artwork')).files.sort { a, b -> a.name <=> b.name }.each { resource ->
+            digest.update(resource.name.getBytes('UTF-8'))
+            digest.update(resource.bytes)
+        }
+    }
+    fileTree(resourceRoot).files.sort { a, b -> a.path <=> b.path }.each { resource ->
+        digest.update(resourceRoot.toPath().relativize(resource.toPath()).toString().replace('\\', '/').getBytes('UTF-8'))
+        digest.update(resource.bytes)
+    }
+    revisions[faceName] = digest.digest().encodeHex().toString().substring(0, 16)
+}
+
+android {
+    namespace 'io.github.gregorgregor25.t1arc.watchfacepush'
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        minSdk 33
+        targetSdk rootProject.ext.targetSdkVersion
+        versionCode 3
+        versionName '0.3.0'
+    }
+    flavorDimensions 'face'
+    productFlavors {
+        faceNames.each { faceName ->
+            create(faceName) {
+                dimension 'face'
+                applicationId t1ArcWearCompanionApplicationId + '.watchfacepush.' + faceName
+                manifestPlaceholders = [faceRevision: revisions[faceName]]
+            }
+        }
+    }
+    sourceSets {
+        faceNames.each { faceName ->
+            getByName(faceName).res.srcDir('../watchface-' + faceName + '/src/main/res')
+        }
+    }
+    signingConfigs {
+        if (t1ArcFaceSigningConfigured) {
+            faces {
+                storeFile t1ArcFaceStoreFile
+                storePassword t1ArcFaceStorePassword
+                keyAlias t1ArcFaceKeyAlias
+                keyPassword t1ArcFaceKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            debuggable false
+            signingConfig t1ArcFaceSigningConfigured ? signingConfigs.faces : null
+            minifyEnabled true
+        }
+        release {
+            signingConfig t1ArcFaceSigningConfigured ? signingConfigs.faces : null
+            minifyEnabled true
+            shrinkResources false
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def faceName = variant.productFlavors.find { it.first == 'face' }.second
+        def companionId = project.ext.t1ArcVariantApplicationId(
+            project.ext.t1ArcWearCompanionApplicationId, variant.buildType)
+        variant.applicationId.set(companionId + '.watchfacepush.' + faceName)
+        def template = project.file('../watchface-' + faceName + '/src/main/res/raw/watchface.xml')
+        def generator = tasks.register('generate' + variant.name.capitalize() + 'Providers', GeneratePushFaceResources) {
+            sourceFile.set(template)
+            providerPackage.set(companionId)
+            outputDirectory.set(layout.buildDirectory.dir('generated/providers/' + variant.name))
+        }
+        variant.sources.res.addGeneratedSourceDirectory(generator) { it.outputDirectory }
+    }
+}
+
+abstract class GeneratePushFaceResources extends DefaultTask {
+    @InputFile abstract RegularFileProperty getSourceFile()
+    @Input abstract Property<String> getProviderPackage()
+    @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+    @TaskAction void generate() {
+        def source = sourceFile.get().asFile.getText('UTF-8')
+        def canonical = 'io.github.gregorgregor25.t1arc'
+        def pattern = java.util.regex.Pattern.compile('primaryProvider="([^"]+)/([^"]+)"')
+        def matcher = pattern.matcher(source)
+        def result = new StringBuffer()
+        int count = 0
+        while (matcher.find()) {
+            if (matcher.group(1) != canonical) throw new GradleException('Unexpected default provider in face template.')
+            count++
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(
+                'primaryProvider="' + providerPackage.get() + '/' + matcher.group(2) + '"'))
+        }
+        matcher.appendTail(result)
+        if (count == 0) throw new GradleException('No complication providers found in face template.')
+        def output = new File(outputDirectory.get().asFile, 'raw/watchface.xml')
+        output.parentFile.mkdirs()
+        output.setText(result.toString(), 'UTF-8')
+    }
+}

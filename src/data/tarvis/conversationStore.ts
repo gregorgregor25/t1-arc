@@ -353,7 +353,7 @@ function validAnswer(value: unknown): value is TarvisAnswer {
   return (
     nonEmptyString(value.headline) &&
     nonEmptyString(value.answer) &&
-    (value.responseKind === undefined || value.responseKind === 'safety-boundary') &&
+    (value.responseKind === undefined || value.responseKind === 'safety-boundary' || value.responseKind === 'general-education') &&
     (value.confidence === "high" ||
       value.confidence === "moderate" ||
       value.confidence === "limited") &&
@@ -626,6 +626,7 @@ function sampleGapCount(
 function meanForRecordIds(
   bundle: GlucoseAnswerBundleV2,
   recordIds: readonly string[],
+  precisionDecimals: 2 | 4,
 ) {
   if (!recordIds.length) return null;
   const selected = new Set(recordIds);
@@ -644,12 +645,13 @@ function meanForRecordIds(
   const samples = [...byTimestamp.values()].map(
     ({ total, count }) => total / count,
   );
+  const factor = 10 ** precisionDecimals;
   return (
     Math.round(
       (samples.reduce((sum, value) => sum + value, 0) / samples.length +
         Number.EPSILON) *
-        100,
-    ) / 100
+        factor,
+    ) / factor
   );
 }
 
@@ -717,7 +719,7 @@ function exactVisualizationMatchesBundle(
       window.recordCount !== bundleWindow.calculationRecordIds.length ||
       window.coveragePercent !== bundleWindow.coverage.percent ||
       window.meanMmolL !==
-        meanForRecordIds(bundle, bundleWindow.calculationRecordIds)
+        meanForRecordIds(bundle, bundleWindow.calculationRecordIds, window.meanPrecisionDecimals ?? 2)
     ) {
       return false;
     }
@@ -922,6 +924,7 @@ function bundleMatchesExchange(
 function validStoredTarvisExchangeForSchema(
   value: unknown,
   schemaVersion: StoredTarvisConversation["schemaVersion"],
+  validatedBundle?: GlucoseAnswerBundleV2,
 ): value is StoredTarvisExchange {
   if (!isRecord(value)) return false;
   if (
@@ -978,7 +981,7 @@ function validStoredTarvisExchangeForSchema(
     if (
       !localAnswer ||
       exchange.legacyBundleUnavailable !== undefined ||
-      !isGlucoseAnswerBundleV2(exchange.answerBundle) ||
+      (exchange.answerBundle !== validatedBundle && !isGlucoseAnswerBundleV2(exchange.answerBundle)) ||
       !bundleMatchesExchange(exchange.answerBundle, exchange)
     ) {
       return false;
@@ -1009,11 +1012,15 @@ function parsedExchange(
   schemaVersion: StoredTarvisConversation["schemaVersion"],
   fallbackCreatedAt = Date.now(),
 ): LoadedStoredTarvisExchange | null {
-  if (!validStoredTarvisExchangeForSchema(value, schemaVersion)) return null;
-  const exchange = value as StoredTarvisExchange;
-  const answerBundle = exchange.answerBundle
-    ? parseGlucoseAnswerBundleV2(exchange.answerBundle)
+  if (!isRecord(value)) return null;
+  // Parse/validate/freeze once. The schema check still verifies every link from
+  // the exchange to that exact immutable bundle, without recalculating it twice.
+  const answerBundle = value.answerBundle !== undefined
+    ? parseGlucoseAnswerBundleV2(value.answerBundle)
     : undefined;
+  const candidate = { ...value, answerBundle };
+  if (!validStoredTarvisExchangeForSchema(candidate, schemaVersion, answerBundle)) return null;
+  const exchange = candidate;
   const evidence = compactTarvisEvidence(exchange.evidence);
   return {
     ...exchange,
@@ -1229,13 +1236,17 @@ export async function loadTarvisConversationState(): Promise<TarvisConversationL
         message: "The saved Tarv1s conversation is unreadable.",
       };
     }
-    const exchanges = stored.exchanges.map((exchange, index) =>
-      parsedExchange(
-        exchange,
-        stored.schemaVersion!,
-        stored.updatedAt! - (stored.exchanges!.length - index - 1),
-      ),
-    );
+    const exchanges: (LoadedStoredTarvisExchange | null)[] = [];
+    for (let index = 0; index < stored.exchanges.length; index += 1) {
+      // Let the welcome screen and keyboard draw between saved answers. Never
+      // publish a partially validated conversation or enable sending early.
+      await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      exchanges.push(parsedExchange(
+        stored.exchanges[index],
+        stored.schemaVersion,
+        stored.updatedAt - (stored.exchanges.length - index - 1),
+      ));
+    }
     if (exchanges.some((exchange) => exchange === null)) {
       return {
         status: "corrupt",

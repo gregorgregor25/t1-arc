@@ -32,6 +32,7 @@ body:
       label: Area
       options:
         - Phone app
+        - Food search, barcode, recipe, portion, or label reading
         - Provider connection or import
         - Backup or restore
         - Notification, widget, AOD, or Android Auto
@@ -58,7 +59,7 @@ body:
     id: evidence
     attributes:
       label: Non-sensitive evidence
-      description: A screenshot with invented data can help. Developer logs are not required. Include only diagnostics explicitly marked safe to share.
+      description: A screenshot with invented data can help. Developer logs are not required. For food issues, include the source, country, basis unit, and invented example when relevant, not your meal history. Include only diagnostics explicitly marked safe to share.
   - type: checkboxes
     id: privacy
     attributes:

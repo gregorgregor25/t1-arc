@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { loadLibreLinkUpCredentials } from "@/data/libreLinkUp/secureStore";
+import { AppStartupScreen } from '@/components/AppStartupScreen';
 import {
   clearOnboardingState,
   loadOnboardingComplete,
@@ -36,12 +37,14 @@ import { useAppTheme } from "@/theme/theme";
 import { APP_LINK_PREFIXES, isSafeNavigationLink } from "./appLinks";
 import { resolveAppEntry } from "./appEntry";
 import type { SourceJump } from "./sourceNavigation";
+import type { TarvisEntry } from '@/domain/tarvisEntry';
+import type { HistoryRangeSelection } from '@/domain/historySelection';
 
 export type RootTabParamList = {
   Today: { action?: "log-food" | "log-context"; request?: string } | undefined;
-  History: { focus?: "glucose" | "insulin"; request?: string } | undefined;
+  History: { focus?: "glucose" | "insulin"; request?: string; selectedRange?: HistoryRangeSelection } | undefined;
   Health: undefined;
-  Insights: undefined;
+  Insights: { entry?: TarvisEntry } | undefined;
   Sources: { focused?: boolean; source?: SourceJump } | undefined;
 };
 
@@ -146,34 +149,7 @@ export function AppNavigator() {
   }
 
   if (entry === "loading") {
-    return (
-      <View
-        accessibilityLabel="Opening T1 Arc"
-        style={[styles.launch, { backgroundColor: colors.background }]}
-      >
-        <View
-          style={[
-            styles.launchIcon,
-            {
-              backgroundColor: `${colors.primary}18`,
-              borderColor: `${colors.primary}44`,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.primary}
-            name="pulse"
-            size={30}
-          />
-        </View>
-        <Text style={[styles.launchName, { color: colors.text }]}>T1 Arc</Text>
-        <ActivityIndicator
-          color={colors.primary}
-          style={styles.launchSpinner}
-        />
-      </View>
-    );
+    return <AppStartupScreen />;
   }
 
   if (entry === "error") {
@@ -267,7 +243,7 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer linking={linking} theme={navigationTheme}>
+    <NavigationContainer linking={linking} theme={navigationTheme} fallback={<AppStartupScreen />}>
       <Tab.Navigator
         backBehavior="history"
         initialRouteName={initialTab}

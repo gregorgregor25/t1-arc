@@ -700,6 +700,9 @@ describe('food search scheduler', () => {
         results: [],
         personal: { state: 'success' as const, candidateCount: 0 },
         providers: [],
+        hasMore: false,
+        remotePage: 1,
+        countryScope: 'local' as const,
       }));
       const scheduler = createFoodSearchScheduler(
         { search },
@@ -724,6 +727,9 @@ describe('food search scheduler', () => {
         results: [],
         personal: { state: 'success' as const, candidateCount: 0 },
         providers: [],
+        hasMore: false,
+        remotePage: 1,
+        countryScope: 'local' as const,
       }));
       const scheduler = createFoodSearchScheduler(
         { search },

@@ -80,7 +80,9 @@ describe('T1 Arc Android release signing policy', () => {
       'wear/companion/build.gradle',
       'wear/watchface-meridian/build.gradle',
       'wear/watchface-chronograph/build.gradle',
-      'wear/watchface-orbit/build.gradle',
+      'wear/watchface-atelier/build.gradle',
+      'wear/watchface-pace/build.gradle',
+      'wear/watchface-summit/build.gradle',
     ];
 
     for (const module of modules) {

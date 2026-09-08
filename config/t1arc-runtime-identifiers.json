@@ -26,6 +26,7 @@
     { "group": "persisted", "category": "current onboarding state", "file": "src/data/onboarding/onboardingStore.ts", "name": "ONBOARDING_STATE_KEY", "value": "t1arc.onboarding.walkthrough.v1" },
     { "group": "persisted", "category": "insight-review preferences", "file": "src/data/insights/insightReviewPreferences.ts", "name": "REVIEW_PREFERENCES_KEY", "value": "t1arc.insight-review-preferences.v1" },
     { "group": "persisted", "category": "health-goal preferences", "file": "src/data/healthGoals.ts", "name": "STEP_GOAL_KEY", "value": "t1arc.health-goals.steps.v1" },
+    { "group": "persisted", "category": "device backup status", "file": "src/data/backup/backupStatus.ts", "name": "BACKUP_STATUS_KEY", "value": "t1arc.backup-status.v1" },
     { "group": "persisted", "category": "theme preference", "file": "src/data/themePreference.ts", "name": "THEME_PREFERENCE_KEY", "value": "t1arc.app-theme.v1" },
     { "group": "persisted", "category": "regional-profile preference", "file": "src/data/regionalProfile.ts", "name": "REGIONAL_PROFILE_KEY", "value": "t1arc.regional-profile.v2" },
     { "group": "persisted", "category": "Tarv1s treatment-profile preference", "file": "src/data/tarvis/treatmentProfile.ts", "name": "STORAGE_KEY", "value": "t1arc.tarvis-treatment-profile.v1" },
@@ -103,6 +104,9 @@
     { "id": "wear-companion", "value": "io.github.gregorgregor25.t1arc", "file": "wear/companion/build.gradle" },
     { "id": "watchface-meridian", "value": "io.github.gregorgregor25.t1arc.watchface.meridian", "file": "wear/watchface-meridian/build.gradle" },
     { "id": "watchface-chronograph", "value": "io.github.gregorgregor25.t1arc.watchface.chronograph", "file": "wear/watchface-chronograph/build.gradle" },
+    { "id": "watchface-atelier", "value": "io.github.gregorgregor25.t1arc.watchface.atelier", "file": "wear/watchface-atelier/build.gradle" },
+    { "id": "watchface-pace", "value": "io.github.gregorgregor25.t1arc.watchface.pace", "file": "wear/watchface-pace/build.gradle" },
+    { "id": "watchface-summit", "value": "io.github.gregorgregor25.t1arc.watchface.summit", "file": "wear/watchface-summit/build.gradle" },
     { "id": "watchface-orbit", "value": "io.github.gregorgregor25.t1arc.watchface.orbit", "file": "wear/watchface-orbit/build.gradle" }
   ],
   "storageContracts": [
@@ -174,6 +178,7 @@
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.GraphActivity", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/GraphActivity.kt" },
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.data.T1ArcDataLayerService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/data/T1ArcDataLayerService.kt" },
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.complication.T1ArcGlucoseComplicationService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/complication/T1ArcGlucoseComplicationService.kt" },
+    { "fqcn": "io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/complication/T1ArcGlucoseComplicationService.kt" },
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.complication.T1ArcOpticalGlucoseComplicationService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/complication/T1ArcGlucoseComplicationService.kt" },
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.complication.T1ArcFreshnessComplicationService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/complication/T1ArcFreshnessComplicationService.kt" },
     { "fqcn": "io.github.gregorgregor25.t1arc.wear.complication.T1ArcGraphComplicationService", "gradle": "wear/companion/build.gradle", "manifest": "wear/companion/src/main/AndroidManifest.xml", "implementation": "wear/companion/src/main/java/io/github/gregorgregor25/t1arc/wear/complication/T1ArcGraphComplicationService.kt" },

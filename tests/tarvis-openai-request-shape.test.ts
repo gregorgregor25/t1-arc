@@ -171,6 +171,7 @@ describe("Tarv1s direct model-request shape", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected network request in test"));
     resetTarvisConnectionCoordinatorForTests();
     mocks.acquireLease.mockResolvedValue({ epoch: 1 });
     mocks.assertLeaseCurrent.mockResolvedValue(undefined);
@@ -399,19 +400,54 @@ describe("Tarv1s direct model-request shape", () => {
     expect(result.answerSource).toBe("local");
   });
 
-  it("keeps unreviewed education local and makes no model request", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
+  it.each([
+    "What does time in range mean?",
+    "What is the glycaemic index?",
+    "Explain HbA1c in plain English.",
+    "Tell me about depression.",
+  ])("answers general health questions without a prewritten guidance item: %s", async (question) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(JSON.stringify({
+      kind: "explanation",
+      headline: "The general idea",
+      answer: "This explains a health concept, not an individual diagnosis.",
+      limitations: [],
+    })));
     const result = await askTarvis(
-      "What does time in range mean?",
+      question,
       undefined,
-      [],
+      [{ role: "user", text: "My unrelated private history" }],
       { epoch: 1 },
     );
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(result.modelRequestSent).toBe(false);
-    expect(result.answerSource).toBe("local");
-    expect(result.answer.answer).toMatch(/won’t improvise medical guidance/i);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(result.modelRequestSent).toBe(true);
+    expect(result.answerSource).toBe("hosted");
+    expect(result.answer.evidenceIds).toEqual([]);
+    const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(request.store).toBe(false);
+    expect(request.text.format.name).toBe("tarvis_general_education_v1");
+    const input = JSON.parse(request.input[0].content[0].text);
+    expect(input.requestMode).toBe("general-education");
+    expect(input.recentConversation).toEqual([]);
+    expect(input).not.toHaveProperty("evidencePacket");
+    expect(input.reviewedKnowledge).toEqual([]);
+  });
+
+  it("sends only the immediately preceding explanation for a simplification follow-up", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(JSON.stringify({
+      kind: "explanation", headline: "HbA1c, more simply", answer: "HbA1c gives a longer-term picture of glucose.", limitations: [],
+    })));
+    const history = [
+      { role: "user" as const, text: "Older private records" },
+      { role: "assistant" as const, text: "Older answer" },
+      { role: "user" as const, text: "Explain HbA1c in plain English." },
+      { role: "assistant" as const, text: "HbA1c reflects glycated haemoglobin." },
+    ];
+    await askTarvis("Can you explain that more simply?", undefined, history, { epoch: 1 });
+    const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    const input = JSON.parse(request.input[0].content[0].text);
+    expect(input.recentConversation).toEqual(history.slice(-2));
+    expect(input).not.toHaveProperty("evidencePacket");
   });
 
   it.each([
@@ -640,7 +676,7 @@ describe("Tarv1s direct model-request shape", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.modelRequestSent).toBe(false);
     expect(result.answerSource).toBe("local");
-    expect(result.answer.answer).toMatch(/won’t improvise medical guidance/i);
+    expect(result.answer.answer).toMatch(/won’t fill the gap from memory/i);
     expect(result.answer.answer).not.toContain(
       "when insulin levels are adequate",
     );

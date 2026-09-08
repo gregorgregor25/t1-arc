@@ -22,6 +22,9 @@ module.exports = defineConfig([
       '.qa-*',
       '.research/**',
       '.tooling/**',
+      // Promotional renderers are separate projects with their own lint tools.
+      // Do not traverse their frame exports or apply React Native rules to them.
+      'tools/promo/**',
       // This gate is deliberately TypeScript/React-only. The two Node services
       // have independent runtimes and should receive their own Node ESLint job.
       '**/*.js',

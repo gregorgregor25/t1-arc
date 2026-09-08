@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { retainedFoodCatalogData } from './providerRetention';
+import { foodMetadataFromPayload, retainedFoodCatalogData } from './providerRetention';
+import { equivalentFoodBarcodes } from './barcodeIdentity';
 import { servingAmountFromRawPayload } from './servings';
 import type {
   FoodBasisUnit,
@@ -102,6 +103,7 @@ function candidateFromRow(row: MyFoodRow): FoodCandidate {
     lastPortionUnit: row.last_portion_unit ?? undefined,
     sourceLabel: row.source_label,
     rawPayload,
+    ...foodMetadataFromPayload(rawPayload),
   };
 }
 
@@ -124,11 +126,12 @@ async function assertBarcodeAvailable(
   excludingId?: string,
 ) {
   if (!barcode) return;
+  const barcodes = equivalentFoodBarcodes(barcode);
   const collision = await database.getFirstAsync<{ id: string }>(
     `SELECT id FROM food_catalog_cache
-     WHERE provider = 'user' AND barcode = ? AND (? IS NULL OR id <> ?)
+     WHERE provider = 'user' AND barcode IN (${barcodes.map(() => '?').join(', ')}) AND (? IS NULL OR id <> ?)
      LIMIT 1`,
-    barcode,
+    ...barcodes,
     excludingId ?? null,
     excludingId ?? null,
   );
@@ -199,6 +202,11 @@ export async function updateMyFoodInTransaction(
   const revisedPayload = revised.rawPayload as Record<string, unknown>;
   const stable: FoodCandidate = {
     ...revised,
+    ...(existing.basisUnit === revised.basisUnit ? {
+      personalServingAmount: existing.personalServingAmount,
+      personalServingUnit: existing.personalServingUnit,
+      personalServingLabel: existing.personalServingLabel,
+    } : {}),
     id: existing.id,
     externalId: existing.externalId,
     rawPayload: {

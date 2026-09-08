@@ -16,6 +16,8 @@ body:
         - Glucose provider connection
         - Food text search
         - Food barcode scan
+        - Offline food catalogue preparation or removal
+        - Nutrition label reading or portion units
         - Units or measurements
         - Timezone, DST, travel, or schedules
         - Health Connect, workouts, or manual records
@@ -38,7 +40,7 @@ body:
     attributes:
       label: Provider or data source
       description: Leave blank if this is not a provider/data issue.
-      placeholder: Glooko US, Dexcom Japan, USDA FoodData Central, MEXT, Open Food Facts
+      placeholder: Glooko US, Dexcom Japan, USDA FoodData Central, MEXT, CNF, Ciqual, BLS, Open Food Facts
   - type: input
     id: versions
     attributes:

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import appConfig from '../app.json';
 
 import {
   FoodLookupError,
@@ -138,7 +139,7 @@ describe('Open Food Facts barcode adapter', () => {
     expect(options?.headers).toMatchObject({
       Accept: 'application/json',
       'User-Agent':
-        'T1Arc/1.6.9 (https://github.com/gregorgregor25/t1-arc/issues)',
+        'T1Arc/' + appConfig.expo.version + ' (https://github.com/gregorgregor25/t1-arc/issues)',
     });
     expect(options?.signal).toBeInstanceOf(AbortSignal);
   });
@@ -313,7 +314,7 @@ describe('Open Food Facts barcode adapter', () => {
     expect(options?.method).toBe('POST');
     expect(options?.headers).toMatchObject({
       'User-Agent':
-        'T1Arc/1.6.9 (https://github.com/gregorgregor25/t1-arc/issues)',
+        'T1Arc/' + appConfig.expo.version + ' (https://github.com/gregorgregor25/t1-arc/issues)',
     });
     const body = JSON.parse(String(options?.body));
     expect(body).toMatchObject({

@@ -7,7 +7,11 @@ import {
   loadTarvisUsage,
   saveTarvisUsage,
 } from "./secureStore";
-import { classifyTarvisQuestion } from "./scope";
+import {
+  classifyTarvisQuestion,
+  isClearlyOffTopicTarvisQuestion,
+  isTarvisDependentFollowUp,
+} from "./scope";
 import { estimateTarvisCostUsd } from "./cost";
 import { classifyTarvisSafety } from "./safety";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
@@ -26,8 +30,19 @@ import {
   TARVIS_RETROSPECTIVE_LEAD_STYLES,
   tarvisRetrospectiveClaimOptions,
 } from "./retrospectiveAnswerGuardrail";
-import { selectTarvisReviewedKnowledge } from "./reviewedKnowledge";
-import { parseTarvisReviewedKnowledgeAnswer } from "./reviewedKnowledgeAnswerGuardrail";
+import {
+  isTarvisExplicitReviewedKnowledgeRequest,
+  selectTarvisReviewedKnowledge,
+} from "./reviewedKnowledge";
+import {
+  parseTarvisReviewedKnowledgeAnswer,
+  reviewedKnowledgeFallback,
+} from "./reviewedKnowledgeAnswerGuardrail";
+import {
+  parseTarvisGeneralEducationAnswer,
+  TARVIS_GENERAL_EDUCATION_PROMPT,
+  tarvisGeneralEducationTextConfig,
+} from "./generalEducation";
 import { modelSafeTarvisHistory } from "./modelConversationPrivacy";
 import {
   MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS,
@@ -104,8 +119,9 @@ interface OpenAiResponseBody {
 }
 
 function responseTextConfig(
-  mode: "evidence" | "retrospective" | "reviewed-education",
+  mode: "evidence" | "retrospective" | "reviewed-education" | "general-education",
 ) {
+  if (mode === "general-education") return tarvisGeneralEducationTextConfig();
   if (mode === "retrospective") {
     return {
       verbosity: "low",
@@ -229,19 +245,6 @@ function responseTextConfig(
   throw new Error(`Unsupported Tarv1s response mode: ${mode satisfies never}`);
 }
 
-function unreviewedEducationFallback() {
-  return {
-    headline: "I need a reviewed source for that",
-    answer:
-      "I don’t yet have a source-locked NICE guidance item for that general question, so I won’t improvise medical guidance. I can still analyse your recorded data, and this build can answer the reviewed NICE sick-day and physical-activity topics.",
-    confidence: "limited" as const,
-    evidenceIds: [],
-    limitations: [
-      "No personal records were loaded and no OpenAI request was made.",
-    ],
-  };
-}
-
 function trimHistory(history: TarvisConversationTurn[]) {
   return modelSafeTarvisHistory(history)
     .slice(-4)
@@ -315,7 +318,11 @@ export async function askTarvis(
     };
   }
   const scope = classifyTarvisQuestion(prompt, history);
-  if (scope !== "in_scope") {
+  if (
+    scope === "sensitive_credentials" ||
+    (scope !== "in_scope" &&
+      (packet !== undefined || isClearlyOffTopicTarvisQuestion(prompt)))
+  ) {
     const usage = await loadTarvisUsage(writeLease);
     return {
       answer: {
@@ -326,7 +333,7 @@ export async function askTarvis(
         answer:
           scope === "sensitive_credentials"
             ? "TARV1S cannot retrieve or display passwords, API keys, tokens or other secrets. No OpenAI request was made."
-            : "TARV1S only answers questions about Type 1 diabetes and the health evidence available in T1 Arc. No OpenAI request was made.",
+            : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No OpenAI request was made.",
         confidence: "high",
         evidenceIds: [],
         limitations: [],
@@ -349,9 +356,13 @@ export async function askTarvis(
   const reviewedKnowledge = selectedPacket
     ? []
     : selectTarvisReviewedKnowledge(prompt);
-  if (!selectedPacket && reviewedKnowledge.length === 0) {
+  if (
+    !selectedPacket &&
+    reviewedKnowledge.length === 0 &&
+    isTarvisExplicitReviewedKnowledgeRequest(prompt)
+  ) {
     return {
-      answer: unreviewedEducationFallback(),
+      answer: reviewedKnowledgeFallback([]),
       usage: await loadTarvisUsage(writeLease),
       modelRequestSent: false,
       answerSource: "local",
@@ -367,7 +378,9 @@ export async function askTarvis(
     ? "retrospective"
     : selectedPacket
       ? "evidence"
-      : "reviewed-education";
+      : reviewedKnowledge.length > 0
+        ? "reviewed-education"
+        : "general-education";
   if (encodedContext.length > MAX_CONTEXT_CHARACTERS) {
     throw new Error(
       "This evidence window is too large to send safely. Choose a shorter comparison period.",
@@ -434,7 +447,9 @@ export async function askTarvis(
         model: MODEL,
         store: false,
         safety_identifier: safetyIdentifier,
-        instructions: TARVIS_SYSTEM_PROMPT,
+        instructions: responseMode === "general-education"
+          ? TARVIS_GENERAL_EDUCATION_PROMPT
+          : TARVIS_SYSTEM_PROMPT,
         input: [
           {
             role: "user",
@@ -465,9 +480,11 @@ export async function askTarvis(
                         recentConversation: trimHistory(history),
                       }
                     : {
-                        requestMode: "education",
+                        requestMode: responseMode === "general-education" ? "general-education" : "education",
                         reviewedKnowledge,
-                        recentConversation: trimHistory(history),
+                        recentConversation: isTarvisDependentFollowUp(prompt)
+                          ? trimHistory(history.slice(-2))
+                          : [],
                         question: prompt,
                       },
                 ),
@@ -522,11 +539,14 @@ export async function askTarvis(
             prompt,
           )
         : undefined;
+    const educationResult = responseMode === "general-education"
+      ? parseTarvisGeneralEducationAnswer(outputText)
+      : undefined;
     const parsedAnswer = selectedPacket
       ? isTarvisRetrospectiveEvidencePacket(selectedPacket)
         ? retrospectiveResult!.answer
         : parseTarvisEvidenceSelectionResult(outputText, selectedPacket).answer
-      : parseTarvisReviewedKnowledgeAnswer(outputText, reviewedKnowledge);
+      : educationResult?.answer ?? parseTarvisReviewedKnowledgeAnswer(outputText, reviewedKnowledge);
     const coverageResult =
       selectedPacket && !isTarvisRetrospectiveEvidencePacket(selectedPacket)
         ? applyTarvisCoverageGuardrailResult(
@@ -543,7 +563,7 @@ export async function askTarvis(
         : { ...parsedAnswer, evidenceIds: [] },
       usage,
       modelRequestSent: true,
-      answerSource: retrospectiveResult?.acceptedHostedAnswer
+      answerSource: (retrospectiveResult?.acceptedHostedAnswer || educationResult?.acceptedHostedAnswer)
         ? "hosted"
         : "local",
       requestMetrics: knownRequestMetrics,

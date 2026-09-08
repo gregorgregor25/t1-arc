@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,11 +34,36 @@ const paths = proposedPaths().filter((path) =>
   existsSync(resolve(projectRoot, path)),
 );
 const forbiddenArtifacts = /^(?:android|ios)(?:\/|$)|(?:^|\/)(?:node_modules|build|\.gradle|\.cxx|qa-artifacts)(?:\/|$)/i;
-const sensitiveExtension = /\.(?:apk|aab|db|sqlite|sqlite3|jks|keystore|p8|p12|pem|key|mobileprovision|zip|csv)$/i;
+const sensitiveExtension = /\.(?:apk|aab|db(?:\.gz)?|sqlite|sqlite3|jks|keystore|p8|p12|pem|key|mobileprovision|zip|csv)$/i;
+// These are redistributable government food tables, never a health database.
+// Both the exact asset name and its audited manifest hash must match.
+const publicFoodAssets = new Map([
+  ['ca-cnf', 'assets/food-packs/ca-cnf-2026.db'],
+  ['fr-ciqual', 'assets/food-packs/fr-ciqual-2025.db'],
+  ['de-bls', 'assets/food-packs/de-bls-4.0-2025.db'],
+  ['us-usda-branded', 'assets/food-packs/us-usda-branded-2026-04-30.db.gz'],
+]);
+const foodManifests = JSON.parse(readFileSync(resolve(projectRoot, 'src/data/food/country-packs.manifest.json'), 'utf8'));
+const verifiedFoodAssets = new Set();
+for (const [id, path] of publicFoodAssets) {
+  const manifest = foodManifests.find(pack => pack.id === id && pack.bundled);
+  if (!manifest || !paths.includes(path)) {
+    failures.push(`${path}: declared public food asset is missing`);
+    continue;
+  }
+  const compressed = path.endsWith('.gz');
+  const bytes = readFileSync(resolve(projectRoot, path));
+  const expectedHash = compressed ? manifest.compressedSha256 : manifest.sha256;
+  const expectedSize = compressed ? manifest.compressedBytes : manifest.sizeBytes;
+  if (!manifest.sourceUrl?.startsWith('https://') || !manifest.licenceUrl?.startsWith('https://') ||
+      bytes.length !== expectedSize || createHash('sha256').update(bytes).digest('hex') !== expectedHash) {
+    failures.push(`${path}: public food asset provenance or checksum differs`);
+  } else verifiedFoodAssets.add(path);
+}
 
 for (const path of paths) {
   const name = path.split('/').at(-1) ?? path;
-  if (forbiddenArtifacts.test(path) || sensitiveExtension.test(path)) {
+  if (forbiddenArtifacts.test(path) || (sensitiveExtension.test(path) && !verifiedFoodAssets.has(path))) {
     failures.push(`${path}: generated, private-data, signing, or release artifact`);
   }
   if (name.startsWith('.env') && !name.endsWith('.example')) {
@@ -139,6 +165,7 @@ if (prohibitedLicences.length) {
 const requiredLicenceFiles = [
   'LICENSE',
   'modules/t1arc-backup-crypto/LICENSE',
+  'modules/t1arc-food-label/LICENSE',
   'modules/t1arc-glooko-export/LICENSE',
   'modules/t1arc-glucose-display/LICENSE',
   'modules/t1arc-health-connect/LICENSE',

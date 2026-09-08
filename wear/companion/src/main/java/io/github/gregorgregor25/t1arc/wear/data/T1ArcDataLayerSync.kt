@@ -11,6 +11,7 @@ import io.github.gregorgregor25.t1arc.wear.complication.T1ArcChronographGraphCom
 import io.github.gregorgregor25.t1arc.wear.complication.T1ArcFreshnessComplicationService
 import io.github.gregorgregor25.t1arc.wear.complication.T1ArcGraphComplicationService
 import io.github.gregorgregor25.t1arc.wear.complication.T1ArcOrbitGraphComplicationService
+import io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService
 import io.github.gregorgregor25.t1arc.wear.tile.T1ArcGlucoseTileService
 import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
@@ -172,6 +173,10 @@ object T1ArcDataLayerSync {
                 context,
                 ComponentName(context, T1ArcOrbitGraphComplicationService::class.java),
             )
+            .requestUpdateAll()
+        // All collection faces share the existing snapshot, timeline and update trigger.
+        ComplicationDataSourceUpdateRequester
+            .create(context, ComponentName(context, T1ArcWatchFaceGlucoseComplicationService::class.java))
             .requestUpdateAll()
         TileService
             .getUpdater(context)

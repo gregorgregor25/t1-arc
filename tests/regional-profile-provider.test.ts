@@ -9,6 +9,7 @@ import {
 } from '@/domain/regionalProfile';
 
 import { RegionalProfileProvider } from '@/providers/RegionalProfileProvider';
+import { AppStartupScreen } from '@/components/AppStartupScreen';
 import { toDateKey } from '@/domain/time';
 
 const providerMocks = vi.hoisted(() => ({
@@ -158,6 +159,10 @@ vi.mock('react-native', () => ({
   View: 'View',
 }));
 
+vi.mock('@/components/AppStartupScreen', () => ({
+  AppStartupScreen: () => null,
+}));
+
 vi.mock('@/domain/regionalProfile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/domain/regionalProfile')>();
   return {
@@ -227,11 +232,11 @@ describe('RegionalProfileProvider device-context lifecycle', () => {
   it('waits for a stored Tokyo profile before mounting date-sensitive children', () => {
     const firstRender = renderOnce();
     const loading = firstRender.props.children as {
-      props?: { accessibilityLabel?: string };
+      type: unknown;
     };
     expect(firstRender.props.value.ready).toBe(false);
     expect(firstRender.props.children).not.toBe(CHILD);
-    expect(loading.props?.accessibilityLabel).toBe('Loading regional preferences');
+    expect(loading.type).toBe(AppStartupScreen);
 
     providerMocks.observer?.({
       ...DEFAULT_REGIONAL_PROFILE,

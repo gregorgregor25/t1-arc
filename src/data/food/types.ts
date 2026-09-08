@@ -2,6 +2,10 @@ import { MealEvent } from '@/domain/models';
 
 export type FoodProviderId =
   | 'cofid'
+  | 'cnf'
+  | 'ciqual'
+  | 'bls'
+  | 'fineli'
   | 'mext-jp'
   | 'open-food-facts'
   | 'usda-fdc'
@@ -47,10 +51,21 @@ export interface FoodCandidate {
   servingLabel?: string;
   lastPortionAmount?: number;
   lastPortionUnit?: FoodBasisUnit;
+  /** User-defined portion, in canonical units; never a mass/volume conversion. */
+  personalServingAmount?: number;
+  personalServingUnit?: FoodBasisUnit;
+  personalServingLabel?: string;
+  /** Original source semantics; absent for legacy or unspecified sources. */
+  nutrientDefinitions?: {
+    carbohydrate?: 'available' | 'total' | 'by-difference' | 'unknown';
+    energy?: 'reported' | 'atwater-specific' | 'atwater-general';
+    note?: string;
+  };
   sourceLabel: string;
   sourceUrl?: string;
   /** When mutable provider catalogue values were last fetched, not last used. */
   catalogueObservedAt?: number;
+  catalogueStatus?: 'fresh' | 'stale';
   rawPayload?: unknown;
 }
 

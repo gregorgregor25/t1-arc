@@ -7,7 +7,7 @@ import {
   useCameraPermissions,
 } from "expo-camera";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,11 +28,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
   deleteFoodRecipe,
+  cacheFoodBarcodeLookup,
   getFoodBarcodeCacheEntry,
   getFoodLogs,
   getFoodRecipes,
   getRecentMealPresets,
   saveFoodRecipe,
+  saveFoodPersonalServing,
   setFoodRecipeFavorite,
   setFoodFavorite,
   setMealPresetFavorite,
@@ -51,6 +53,7 @@ import {
   updateMyFood,
 } from "@/data/food/myFoodsRepository";
 import { COFID_CATALOG_INFO } from "@/data/food/cofidCatalog";
+import { COUNTRY_FOOD_PACKS, lookupCountryPackBarcode } from "@/data/food/countryPacks";
 import { MEXT_JAPAN_CATALOG_INFO } from "@/data/food/mextJapanCatalog";
 import {
   recipeNutritionPerServing,
@@ -71,10 +74,11 @@ import {
   lookupFoodDataCentralBarcode,
   shouldTryFoodDataCentralBarcodeFallback,
 } from "@/data/food/usdaFoodDataCentral";
-import { totalNutrition } from "@/data/food/nutrition";
+import { totalNutrition, nutritionCompleteness } from "@/data/food/nutrition";
 import {
   defaultFoodInputUnit,
   foodAmountFromCanonical,
+  foodAmountToCanonical,
   foodInputUnits,
   type FoodInputUnit,
 } from "@/data/food/foodMeasurement";
@@ -82,6 +86,7 @@ import { createQuickCarbCandidate } from "@/data/food/quickCarb";
 import type { FoodSearchResponse } from "@/data/food/foodSearch";
 import {
   normaliseFoodSearchText,
+  isFoodSearchQueryReady,
   type RankedFoodSearchResult,
 } from "@/data/food/foodSearchRanking";
 import {
@@ -126,6 +131,13 @@ import {
 import { SectionCard } from "./SectionCard";
 import { SurfaceSheen } from "./SurfaceSheen";
 import { FoodLibraryTabs } from "./foodLogger/FoodLibraryTabs";
+import { FoodLibraryBrowser } from "./foodLogger/FoodLibraryBrowser";
+import { FoodRecipePortionSheet } from "./foodLogger/FoodRecipePortionSheet";
+import { FoodCatalogueExtras } from "./foodLogger/FoodCatalogueExtras";
+import { FoodToolsPage } from "./foodLogger/FoodToolsPage";
+import { FoodLabelCaptureModal } from "./foodLogger/FoodLabelCaptureModal";
+import { customFoodFormFromLabelDraft } from "./foodLogger/labelPresentation";
+import { ADDITIONAL_FOOD_TABS, appendFoodSelection, savedFoodLibraryVisible } from "./foodLogger/savedFoodPicker";
 import { FoodCopyFromDaySheet } from "./foodLogger/FoodCopyFromDaySheet";
 import { defaultFoodCopyItemIdentities } from "./foodLogger/copyPresentation";
 import {
@@ -137,8 +149,6 @@ import {
 } from "./zonedDateTimePicker";
 import {
   foodLibraryContent,
-  foodLibraryCounts,
-  foodLibraryEmptyMessage,
   type FoodLibraryTab,
 } from "./foodLogger/libraryPresentation";
 import {
@@ -223,7 +233,7 @@ function selectedFoodState(
     unit,
     regional.countryCode,
   );
-  const sourcePortion = food.servingLabel
+  const sourcePortion = food.servingLabel || food.personalServingAmount
     ? foodAmountFromCanonical(
         defaultFoodServingAmount(food),
         unit,
@@ -243,7 +253,7 @@ function selectedFoodState(
     portionAmount: sourcePortion
       ? inputNumber(sourcePortion, regional.locale)
       : "",
-    dataStatus,
+    dataStatus: dataStatus ?? (food.catalogueStatus === "stale" ? "stale" : undefined),
   };
 }
 
@@ -348,16 +358,20 @@ export function FoodLoggerCard({
   const [barcodeError, setBarcodeError] = useState<string>();
   const [cameraSettingsRequired, setCameraSettingsRequired] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  const [labelCaptureOpen, setLabelCaptureOpen] = useState(false);
   const [customFood, setCustomFood] = useState<CustomFoodForm>(EMPTY_CUSTOM_FOOD);
   const [customSaving, setCustomSaving] = useState(false);
   const [editingMyFoodId, setEditingMyFoodId] = useState<string>();
   const [myFoodsManaging, setMyFoodsManaging] = useState(false);
   const [myFoodActionBusy, setMyFoodActionBusy] = useState<string>();
+  const [portionSaving, setPortionSaving] = useState<string>();
   const [quickCarbOpen, setQuickCarbOpen] = useState(false);
   const [quickCarbs, setQuickCarbs] = useState("");
   const [quickCarbLabel, setQuickCarbLabel] = useState("");
   const [mealDetailsOpen, setMealDetailsOpen] = useState(false);
   const [moreWaysOpen, setMoreWaysOpen] = useState(false);
+  const [catalogueToolsOpen, setCatalogueToolsOpen] = useState(false);
+  const foodToolSelected = customOpen || quickCarbOpen || barcodeEntryOpen || catalogueToolsOpen;
   const [recipeManagementOpen, setRecipeManagementOpen] = useState(false);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
   const [expandedFoodIds, setExpandedFoodIds] = useState<Set<string>>(
@@ -368,6 +382,9 @@ export function FoodLoggerCard({
   const [recipeName, setRecipeName] = useState("");
   const [recipeServings, setRecipeServings] = useState("4");
   const [libraryTab, setLibraryTab] = useState<FoodLibraryTab>("recent");
+  const [libraryBrowserOpen, setLibraryBrowserOpen] = useState(false);
+  const [portionRecipe, setPortionRecipe] = useState<FoodRecipe>();
+  const [additionalSavedFoodsOpen, setAdditionalSavedFoodsOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [copySourceDate, setCopySourceDate] = useState<DateKey>(() =>
     addDays(toDateKey(initialTimestamp, regional.timeZone), -1),
@@ -394,31 +411,41 @@ export function FoodLoggerCard({
   const [submittedSearchActive, setSubmittedSearchActive] = useState(false);
   const [searchMessage, setSearchMessage] = useState<string>();
   const [searchRetryAvailable, setSearchRetryAvailable] = useState(false);
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchScope, setSearchScope] = useState<"local" | "worldwide">("local");
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [catalogueRevision, setCatalogueRevision] = useState(0);
   const [foodSearchScheduler] = useState(() =>
-    createDefaultFoodSearchScheduler({ debounceMs: 450 }),
+    createDefaultFoodSearchScheduler({ debounceMs: 0 }),
   );
   const handledLaunchRequest = useRef(0);
   const barcodeLookupLock = useRef(false);
+  const barcodeRequestGeneration = useRef(0);
   const searchRequestGeneration = useRef(0);
+  const searchAttempt = useRef<{ page: number; scope: "local" | "worldwide" }>({ page: 1, scope: "local" });
   const suggestionRequestGeneration = useRef(0);
   const copyRequestGeneration = useRef(0);
+  const recipeDraftRevision = useRef(0);
+  useLayoutEffect(() => {
+    recipeDraftRevision.current += 1;
+  }, [selected, title, recipeName, recipeServings, mealType, editingRecipeId, open]);
 
   const normalisedQuery = query.replace(/\s+/g, " ").trim();
   const normalisedQueryKey = normaliseFoodSearchText(query);
+  const queryReady = isFoodSearchQueryReady(query);
+  const hasSubmittedQuery = queryReady && submittedQuery === normalisedQueryKey;
   const matchingSearchResults =
     normalisedQueryKey === completedSearchQuery ? searchResults : [];
   const visibleResults =
-    query.trim().length >= 2 ? matchingSearchResults : suggestions;
-  const libraryCounts = useMemo(
-    () => foodLibraryCounts(suggestions, mealPresets, recipes),
-    [mealPresets, recipes, suggestions],
-  );
+    queryReady ? matchingSearchResults : [];
   const library = useMemo(
     () => foodLibraryContent(libraryTab, suggestions, mealPresets, recipes),
     [libraryTab, mealPresets, recipes, suggestions],
   );
   const libraryEmpty =
     !library.foods.length && !library.meals.length && !library.recipes.length;
+  const showFoodLibrary = savedFoodLibraryVisible(query, selected.length, additionalSavedFoodsOpen);
 
   const draftItems = useMemo(
     () =>
@@ -453,8 +480,18 @@ export function FoodLoggerCard({
     () => presentFoodNutrition(nutrition),
     [nutrition],
   );
+  const nutritionIsPartial = Object.values(nutritionCompleteness(draftItems)).some(value => value === "partial");
 
   function resetLookupState() {
+    barcodeRequestGeneration.current += 1;
+    barcodeLookupLock.current = false;
+    setBarcodeLookingUp(false);
+    setSubmittedQuery("");
+    setSearchPage(1);
+    setSearchScope("local");
+    setSearchHasMore(false);
+    setLibraryBrowserOpen(false);
+    setPortionRecipe(undefined);
     copyRequestGeneration.current += 1;
     setError(undefined);
     foodSearchScheduler.cancel();
@@ -469,6 +506,7 @@ export function FoodLoggerCard({
     setQuickCarbLabel("");
     setMealDetailsOpen(false);
     setMoreWaysOpen(false);
+    setCatalogueToolsOpen(false);
     setRecipeManagementOpen(false);
     setDataInfoOpen(false);
     setExpandedFoodIds(new Set());
@@ -478,6 +516,7 @@ export function FoodLoggerCard({
     setBarcodeError(undefined);
     setCameraSettingsRequired(false);
     setCustomOpen(false);
+    setLabelCaptureOpen(false);
     setCustomFood(EMPTY_CUSTOM_FOOD);
     setEditingMyFoodId(undefined);
     setMyFoodsManaging(false);
@@ -486,6 +525,7 @@ export function FoodLoggerCard({
     setRecipeName("");
     setRecipeServings("4");
     setLibraryTab("recent");
+    setAdditionalSavedFoodsOpen(false);
     setCopyOpen(false);
     setCopySourceLogs([]);
     setCopySelectedIdentities([]);
@@ -732,6 +772,8 @@ export function FoodLoggerCard({
       customFoodChanged,
     );
     const discard = () => {
+      barcodeRequestGeneration.current += 1;
+      barcodeLookupLock.current = false;
       setOpen(false);
       clearEditedDraft();
       if (editingLog) onEditEnd?.();
@@ -748,7 +790,7 @@ export function FoodLoggerCard({
           : "Discard this meal?",
       editingRecipeId
         ? "The saved recipe will stay unchanged."
-        : "Nothing from this draft will be saved.",
+        : "This meal will not be logged. Foods and recipes already saved in your library will stay there.",
       [
         { text: "Keep editing", style: "cancel" },
         { text: "Discard", style: "destructive", onPress: discard },
@@ -762,6 +804,12 @@ export function FoodLoggerCard({
   ) {
     setSearchResults(response.results);
     setCompletedSearchQuery(normaliseFoodSearchText(response.query));
+    setSearchHasMore(response.hasMore);
+    if (mode === "submitted") {
+      setSubmittedQuery(normaliseFoodSearchText(response.query));
+      setSearchPage(response.remotePage);
+      setSearchScope(response.countryScope);
+    }
     setFavoriteIds((current) => {
       const next = new Set(current);
       for (const result of response.results) {
@@ -786,9 +834,10 @@ export function FoodLoggerCard({
     );
   }
 
-  async function submitFoodSearch() {
+  async function submitFoodSearch(page = 1, scope: "local" | "worldwide" = "local") {
     Keyboard.dismiss();
-    if (normalisedQuery.length < 2) return;
+    if (!queryReady || submittedSearchActive) return;
+    searchAttempt.current = { page, scope };
     const requestGeneration = ++searchRequestGeneration.current;
     setFoodSearching(true);
     setSubmittedSearchActive(true);
@@ -798,8 +847,16 @@ export function FoodLoggerCard({
     try {
       const response = await foodSearchScheduler.request(normalisedQuery, {
         immediate: true,
-        limit: 20,
+        limit: Math.min(200, page * 20),
         mode: "submitted",
+        remotePage: page,
+        countryScope: scope,
+        onLocalResults: (localResponse) => {
+          // Keep already visible matches stable during More results/online refresh.
+          if (searchRequestGeneration.current === requestGeneration && !visibleResults.length) {
+            applyFoodSearchResponse(localResponse);
+          }
+        },
       });
       if (!response || searchRequestGeneration.current !== requestGeneration) {
         return;
@@ -853,7 +910,7 @@ export function FoodLoggerCard({
     const searchKey = normalisedQuery.toLocaleLowerCase(
       getRuntimeRegionalDefaults().locale,
     );
-    if (searchKey.length < 2) {
+    if (!isFoodSearchQueryReady(searchKey)) {
       searchRequestGeneration.current += 1;
       foodSearchScheduler.cancel();
       // Clearing a now-invalid query is part of synchronising the debounced
@@ -870,6 +927,10 @@ export function FoodLoggerCard({
 
     let active = true;
     const requestGeneration = ++searchRequestGeneration.current;
+    setSubmittedQuery("");
+    setSearchPage(1);
+    setSearchScope("local");
+    setSearchHasMore(false);
     setFoodSearching(true);
     setSubmittedSearchActive(false);
     setSearchRetryAvailable(false);
@@ -905,11 +966,12 @@ export function FoodLoggerCard({
     return () => {
       active = false;
     };
-  }, [foodSearchScheduler, normalisedQuery, open]);
+  }, [foodSearchScheduler, normalisedQuery, open, regional.countryCode, regional.locale, catalogueRevision]);
 
   useEffect(
     () => () => {
       copyRequestGeneration.current += 1;
+      barcodeRequestGeneration.current += 1;
       foodSearchScheduler.dispose();
     },
     [foodSearchScheduler],
@@ -925,22 +987,21 @@ export function FoodLoggerCard({
     } = {},
   ) {
     if (food.nutritionPerBasis.carbohydrateGrams === undefined) {
-      setError(
-        `${food.name} has no carbohydrate value in its source. Use the carb-only form instead.`,
-      );
-      return;
+      setCustomFood(customFoodFormFromCandidate(food, regional));
+      setEditingMyFoodId(undefined);
+      setBarcode(food.barcode ?? "");
+      setBarcodeEntryOpen(false);
+      setCustomOpen(true);
+      setMoreWaysOpen(true);
+      setQuery("");
+      setError(undefined);
+      setBarcodeError(`${food.name} is missing carbohydrates. Check the label and save it once to My Foods.`);
+      return false;
     }
     invalidateDraftCopyUndo();
     setError(undefined);
-    setSelected((items) => {
-      if (
-        !options.allowDuplicate &&
-        items.some((item) => item.food.id === food.id)
-      ) {
-        return items;
-      }
-      return [
-        ...items,
+    setSelected((items) => appendFoodSelection(
+        items,
         selectedFoodState(
           food,
           options.amount,
@@ -948,11 +1009,14 @@ export function FoodLoggerCard({
           regional,
           options.rowId,
         ),
-      ];
-    });
+        options.allowDuplicate,
+    ));
     setQuery("");
     setSearchMessage(undefined);
     Keyboard.dismiss();
+    setMoreWaysOpen(false);
+    setBarcodeEntryOpen(false);
+    return true;
   }
 
   function isResultFavorite(result: RankedFoodSearchResult) {
@@ -1055,6 +1119,26 @@ export function FoodLoggerCard({
     );
   }
 
+  async function rememberPortion(item: SelectedFood) {
+    if (portionSaving) return;
+    const displayed = amountNumber(item.portionAmount, regional.locale);
+    if (displayed === undefined || displayed <= 0) return;
+    setPortionSaving(item.rowId);
+    setError(undefined);
+    try {
+      const amount = foodAmountToCanonical(displayed, item.unit, regional.countryCode);
+      const lease = await acquireLocalDataWriteLease();
+      const label = "My portion";
+      await saveFoodPersonalServing(item.food, { amount, unit: item.food.basisUnit, label }, lease);
+      await assertLocalDataWriteLeaseCurrent(lease);
+      setSelected(items => items.map(current => current.food.id === item.food.id ? { ...current, food: { ...current.food, personalServingAmount: amount, personalServingUnit: item.food.basisUnit, personalServingLabel: label } } : current));
+      setBarcodeMessage(`Portion remembered for ${item.food.name}. Your meal amount has not changed.`);
+      void loadSuggestions();
+    } catch (nextError) {
+      if (!isLocalDataWriteSupersededError(nextError)) setError(nextError instanceof Error ? nextError.message : "The portion could not be remembered.");
+    } finally { setPortionSaving(undefined); }
+  }
+
   function updateCount(rowId: string, countValue: string) {
     invalidateDraftCopyUndo();
     setSelected((items) =>
@@ -1117,11 +1201,18 @@ export function FoodLoggerCard({
   }
 
   function applyRecipe(recipe: FoodRecipe) {
+    setPortionRecipe(recipe);
+  }
+
+  function addRecipePortions(recipe: FoodRecipe, servings: number) {
     invalidateDraftCopyUndo();
-    setMealType(recipe.mealType);
-    setTitle(recipe.name);
-    setSelected(
-      servingFromRecipe(recipe).map((ingredient) =>
+    if (!selected.length) {
+      setMealType(recipe.mealType);
+      setTitle(recipe.name);
+    }
+    setSelected((current) => [
+      ...current,
+      ...servingFromRecipe(recipe, servings).map((ingredient) =>
         selectedFoodState(
           ingredient.food,
           ingredient.amount,
@@ -1129,13 +1220,15 @@ export function FoodLoggerCard({
           regional,
         ),
       ),
-    );
+    ]);
     setQuery("");
     setError(undefined);
-    setBarcodeMessage(`One serving of ${recipe.name} added.`);
+    setPortionRecipe(undefined);
+    setBarcodeMessage(`${formatRegionalNumber(servings, regional.locale)} ${servings === 1 ? "serving" : "servings"} of ${recipe.name} added.`);
   }
 
   function beginEditRecipe(recipe: FoodRecipe) {
+    setRecipes(current => current.some(item => item.id === recipe.id) ? current : [...current, recipe]);
     resetLookupState();
     invalidateDraftCopyUndo();
     setMealType(recipe.mealType);
@@ -1164,22 +1257,23 @@ export function FoodLoggerCard({
   }
 
   async function saveRecipe() {
-    if (recipeSaving) return;
+    if (recipeSaving || barcodeLookupLock.current || customSaving) return;
     if (draftItems.length !== selected.length) {
       setError("Check each ingredient amount before saving the recipe.");
       return;
     }
     const servings = amountNumber(recipeServings, regional.locale);
+    const savedRevision = recipeDraftRevision.current;
+    const recipeDraft = {
+      name: recipeName,
+      mealType,
+      servings: servings ?? Number.NaN,
+      ingredients: draftItems,
+    };
     setRecipeSaving(true);
     setError(undefined);
     try {
       const writeLease = await acquireLocalDataWriteLease();
-      const recipeDraft = {
-        name: recipeName,
-        mealType,
-        servings: servings ?? Number.NaN,
-        ingredients: draftItems,
-      };
       const existingRecipe = editingRecipeId
         ? recipes.find((recipe) => recipe.id === editingRecipeId)
         : undefined;
@@ -1200,23 +1294,27 @@ export function FoodLoggerCard({
             right.updatedAt - left.updatedAt,
         ),
       );
-      setRecipeSaveOpen(false);
-      setEditingRecipeId(undefined);
-      setRecipeName("");
-      setRecipeServings("4");
-      if (existingRecipe) {
+      const draftUnchanged = recipeDraftRevision.current === savedRevision;
+      if (draftUnchanged) {
+        setRecipeSaveOpen(false);
+        setEditingRecipeId(undefined);
+        setRecipeName("");
+        setRecipeServings("4");
         setSelected([]);
         setTitle("");
         setLibraryTab("recipes");
+        if (!existingRecipe) setPortionRecipe(recipe);
       }
       const perServing = displayNumber(
-        recipeNutritionPerServing(recipe).carbohydrateGrams ?? 0,
+        recipeNutritionPerServing(recipe).carbohydrateGrams,
         " g carbs per serving",
       );
       setBarcodeMessage(
-        existingRecipe
-          ? `Recipe updated · ${perServing}. Logged meals stay unchanged.`
-          : `${recipe.name} saved · ${perServing}.`,
+        !draftUnchanged
+          ? `${recipe.name} ${existingRecipe ? "updated" : "saved"} from the earlier batch. Your newer draft changes are still here.`
+          : existingRecipe
+            ? `Recipe updated · ${perServing}. Logged meals stay unchanged.`
+            : `${recipe.name} saved · ${perServing}.`,
       );
     } catch (recipeError) {
       if (isLocalDataWriteSupersededError(recipeError)) return;
@@ -1343,14 +1441,23 @@ export function FoodLoggerCard({
     }
   }
 
+  function takeCustomFoodFormOwnership() {
+    // Choosing manual entry owns the form; a slower online lookup must not replace it.
+    barcodeRequestGeneration.current += 1;
+    barcodeLookupLock.current = false;
+    setBarcodeLookingUp(false);
+  }
+
   function updateCustomFood<Key extends keyof CustomFoodForm>(
     key: Key,
     value: CustomFoodForm[Key],
   ) {
+    takeCustomFoodFormOwnership();
     setCustomFood((current) => ({ ...current, [key]: value }));
   }
 
   function beginEditMyFood(food: FoodCandidate) {
+    takeCustomFoodFormOwnership();
     setEditingMyFoodId(food.id);
     setCustomFood(customFoodFormFromCandidate(food, regional));
     setBarcode(food.barcode ?? "");
@@ -1358,6 +1465,15 @@ export function FoodLoggerCard({
     setCustomOpen(true);
     setError(undefined);
     setBarcodeMessage(`Editing ${food.name}. Saved meal history will not change.`);
+  }
+
+  function applyCapturedFoodLabel(draft: Parameters<typeof customFoodFormFromLabelDraft>[1]) {
+    takeCustomFoodFormOwnership();
+    setCustomFood(current => customFoodFormFromLabelDraft(current, draft, regional));
+    setLabelCaptureOpen(false);
+    setBarcodeError(undefined);
+    setError(undefined);
+    setBarcodeMessage(undefined);
   }
 
   function confirmDeleteMyFood(food: FoodCandidate) {
@@ -1450,6 +1566,7 @@ export function FoodLoggerCard({
       setCustomOpen(false);
       setBarcode("");
       setBarcodeEntryOpen(false);
+      setMoreWaysOpen(false);
       setBarcodeMessage(
         `${food.name} ${editingMyFoodId ? "updated" : "saved"} in My Foods and added to this meal${
           food.barcode ? ". Its barcode now works offline" : ""
@@ -1524,6 +1641,7 @@ export function FoodLoggerCard({
 
   async function resolveBarcode(value: string) {
     if (barcodeLookupLock.current) return;
+    const generation = ++barcodeRequestGeneration.current;
     barcodeLookupLock.current = true;
     setScannerOpen(false);
     setBarcodeLookingUp(true);
@@ -1533,9 +1651,13 @@ export function FoodLoggerCard({
     setError(undefined);
     let normalisedBarcode = value.replace(/\D/g, "");
     let staleFood: FoodCandidate | undefined;
+    let primaryBarcodeNotFound = false;
+    let writeLease: Awaited<ReturnType<typeof acquireLocalDataWriteLease>> | undefined;
     try {
       normalisedBarcode = normaliseFoodBarcode(value);
       setBarcode(normalisedBarcode);
+      writeLease = await acquireLocalDataWriteLease();
+      if (generation !== barcodeRequestGeneration.current) return;
       const barcodeRegion = {
         countryCode: regional.countryCode,
         languageTag: regional.locale,
@@ -1545,15 +1667,38 @@ export function FoodLoggerCard({
         Date.now(),
         barcodeRegion,
       );
-      if (barcodeCacheLookupPlan(cacheEntry?.status) === "use-cache") {
+      if (generation !== barcodeRequestGeneration.current) return;
+      const useStaleCache = cacheEntry?.status === "stale" && cacheEntry.regionalMatch;
+      if (barcodeCacheLookupPlan(cacheEntry?.status) === "use-cache" || useStaleCache) {
+        await assertLocalDataWriteLeaseCurrent(writeLease);
+        if (generation !== barcodeRequestGeneration.current) return;
         const cachedFood = cacheEntry!.food;
-        addFood(cachedFood);
+        if (!addFood(cachedFood, useStaleCache ? { dataStatus: "stale" } : undefined)) return;
         setBarcode("");
         setBarcodeEntryOpen(false);
-        setBarcodeMessage(`${cachedFood.name} found on this phone.`);
+        setBarcodeMessage(useStaleCache
+          ? `${cachedFood.name} found on this phone using older saved details. Check the label before saving; these details need refreshing.`
+          : `${cachedFood.name} found on this phone.`);
         return;
       }
       staleFood = cacheEntry?.regionalMatch ? cacheEntry.food : undefined;
+
+      let packedFood: FoodCandidate | null = null;
+      try {
+        packedFood = await lookupCountryPackBarcode(normalisedBarcode, { countryCode: regional.countryCode, locale: regional.locale });
+      } catch {
+        // An optional reference pack must not prevent the normal online lookup.
+      }
+      if (generation !== barcodeRequestGeneration.current) return;
+      if (packedFood) {
+        await cacheFoodBarcodeLookup(packedFood, writeLease);
+        await assertLocalDataWriteLeaseCurrent(writeLease);
+        if (generation !== barcodeRequestGeneration.current || !addFood(packedFood)) return;
+        setBarcode("");
+        setBarcodeEntryOpen(false);
+        setBarcodeMessage(`${packedFood.name} found in the offline catalogue.`);
+        return;
+      }
 
       let food: FoodCandidate;
       try {
@@ -1563,6 +1708,8 @@ export function FoodLoggerCard({
           barcodeRegion,
         );
       } catch (openFoodFactsError) {
+        if (generation !== barcodeRequestGeneration.current) return;
+        primaryBarcodeNotFound = openFoodFactsError instanceof FoodLookupError && openFoodFactsError.code === "not_found";
         const canTryUsda = shouldTryFoodDataCentralBarcodeFallback(
           regional.countryCode,
           openFoodFactsError,
@@ -1573,39 +1720,56 @@ export function FoodLoggerCard({
           globalThis.fetch,
         );
       }
-      addFood(food);
+      if (generation !== barcodeRequestGeneration.current) return;
+      await assertLocalDataWriteLeaseCurrent(writeLease);
+      if (food.nutritionPerBasis.carbohydrateGrams !== undefined) {
+        await cacheFoodBarcodeLookup(food, writeLease);
+        await assertLocalDataWriteLeaseCurrent(writeLease);
+      }
+      if (generation !== barcodeRequestGeneration.current) return;
+      if (!addFood(food)) return;
       setBarcode("");
       setBarcodeEntryOpen(false);
       setBarcodeMessage(
         `${food.name}${food.brand ? ` · ${food.brand}` : ""} found.`,
       );
     } catch (lookupError) {
+      if (generation !== barcodeRequestGeneration.current || isLocalDataWriteSupersededError(lookupError)) return;
       const errorCode =
         lookupError instanceof FoodLookupError ? lookupError.code : undefined;
       if (staleFood && canUseStaleBarcodeFallback(errorCode)) {
-        addFood(staleFood, { dataStatus: "stale" });
+        if (!writeLease) return;
+        try { await assertLocalDataWriteLeaseCurrent(writeLease); } catch { return; }
+        if (generation !== barcodeRequestGeneration.current) return;
+        if (!addFood(staleFood, { dataStatus: "stale" })) return;
         setBarcode("");
         setBarcodeEntryOpen(false);
         setBarcodeMessage(staleBarcodeFallbackMessage(staleFood.name));
         return;
       }
       const canCreateFromLabel =
-        lookupError instanceof FoodLookupError &&
-        (lookupError.code === "not_found" || lookupError.code === "incomplete");
+        primaryBarcodeNotFound || (lookupError instanceof FoodLookupError &&
+        (lookupError.code === "not_found" || lookupError.code === "incomplete"));
       setBarcodeError(
         canCreateFromLabel
-          ? `${lookupError.message} Enter it once from the label below; T1 Arc will remember this barcode on your phone.`
+          ? `${lookupError instanceof Error ? lookupError.message : "This barcode could not be confirmed."} Enter it once from the label below; T1 Arc will remember this barcode on your phone.`
           : lookupError instanceof FoodLookupError
             ? lookupError.message
             : "The barcode could not be looked up.",
       );
       setBarcodeEntryOpen(!canCreateFromLabel);
       setCustomOpen(canCreateFromLabel);
+      if (canCreateFromLabel) {
+        setEditingMyFoodId(undefined);
+        setCustomFood({ ...EMPTY_CUSTOM_FOOD });
+      }
       setMoreWaysOpen(true);
       setBarcode(normalisedBarcode);
     } finally {
-      barcodeLookupLock.current = false;
-      setBarcodeLookingUp(false);
+      if (generation === barcodeRequestGeneration.current) {
+        barcodeLookupLock.current = false;
+        setBarcodeLookingUp(false);
+      }
     }
   }
 
@@ -1614,8 +1778,29 @@ export function FoodLoggerCard({
     void resolveBarcode(result.data);
   }
 
+  function backFromFoodTools() {
+    if (customSaving) return;
+    if (Keyboard.isVisible()) {
+      Keyboard.dismiss();
+      return;
+    }
+    takeCustomFoodFormOwnership();
+    if (customOpen || quickCarbOpen || barcodeEntryOpen || catalogueToolsOpen) {
+      setCustomOpen(false);
+      setQuickCarbOpen(false);
+      setBarcodeEntryOpen(false);
+      setCatalogueToolsOpen(false);
+      return;
+    }
+    setMoreWaysOpen(false);
+  }
+
   function handleModalBack() {
     if (saving || customSaving || recipeSaving) return;
+    if (moreWaysOpen) {
+      backFromFoodTools();
+      return;
+    }
     if (copyOpen) {
       cancelCopyFromDay();
       return;
@@ -1734,6 +1919,7 @@ export function FoodLoggerCard({
   }
 
   async function save() {
+    if (saving || barcodeLookupLock.current || customSaving) return;
     setError(undefined);
     if (!selected.length) {
       setError("Add at least one food.");
@@ -1762,6 +1948,7 @@ export function FoodLoggerCard({
           " g carbs",
         )}`,
       );
+      barcodeRequestGeneration.current += 1;
       setSelected([]);
       setTitle("");
       setQuery("");
@@ -1942,10 +2129,10 @@ export function FoodLoggerCard({
         visible={open}
       >
         <SafeAreaView
-          accessibilityElementsHidden={copyOpen || scannerOpen}
+          accessibilityElementsHidden={copyOpen || scannerOpen || moreWaysOpen}
           edges={["top", "bottom"]}
           importantForAccessibility={
-            copyOpen || scannerOpen ? "no-hide-descendants" : "auto"
+            copyOpen || scannerOpen || moreWaysOpen ? "no-hide-descendants" : "auto"
           }
           style={[styles.modal, { backgroundColor: colors.background }]}
         >
@@ -1969,15 +2156,6 @@ export function FoodLoggerCard({
                     : editingLog
                       ? "Edit meal"
                       : "Add food"}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.modalSubtitle,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Private and stored on this phone
                 </Text>
               </View>
               <Pressable
@@ -2092,12 +2270,7 @@ export function FoodLoggerCard({
                 style={({ pressed }) => [
                   styles.mealSummary,
                   {
-                    backgroundColor: mealDetailsOpen
-                      ? `${colors.primary}12`
-                      : colors.surface,
-                    borderColor: mealDetailsOpen
-                      ? `${colors.primary}66`
-                      : colors.border,
+                    backgroundColor: mealDetailsOpen ? colors.surfaceMuted : "transparent",
                     borderRadius: radius.md,
                     opacity: pressed ? 0.72 : 1,
                   },
@@ -2107,7 +2280,6 @@ export function FoodLoggerCard({
                   style={[
                     styles.mealSummaryIcon,
                     {
-                      backgroundColor: `${colors.primary}14`,
                       borderRadius: radius.sm,
                     },
                   ]}
@@ -2121,7 +2293,6 @@ export function FoodLoggerCard({
                 </View>
                 <View style={styles.mealSummaryCopy}>
                   <Text
-                    numberOfLines={1}
                     style={[styles.mealSummaryTitle, { color: colors.text }]}
                   >
                     {
@@ -2130,7 +2301,6 @@ export function FoodLoggerCard({
                     }
                   </Text>
                   <Text
-                    numberOfLines={1}
                     style={[
                       styles.mealSummaryDetail,
                       { color: colors.textSecondary },
@@ -2298,59 +2468,6 @@ export function FoodLoggerCard({
                   </View>
                 </View>
               ) : null}
-              <Pressable
-                accessibilityHint="Choose whole meals or individual foods from an earlier day"
-                accessibilityLabel="Copy foods from yesterday or another day"
-                accessibilityRole="button"
-                onPress={beginCopyFromDay}
-                style={({ pressed }) => [
-                  styles.copyFromDay,
-                  {
-                    backgroundColor: `${colors.accent}0F`,
-                    borderColor: `${colors.accent}42`,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.68 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.copyFromDayIcon,
-                    {
-                      backgroundColor: `${colors.accent}18`,
-                      borderRadius: radius.sm,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    accessibilityElementsHidden
-                    color={colors.accent}
-                    name="copy-outline"
-                    size={20}
-                  />
-                </View>
-                <View style={styles.copyFromDayCopy}>
-                  <Text
-                    style={[styles.copyFromDayTitle, { color: colors.text }]}
-                  >
-                    Copy from another day
-                  </Text>
-                  <Text
-                    style={[
-                      styles.copyFromDayDetail,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Starts with the previous day; pick a meal or individual foods
-                  </Text>
-                </View>
-                <Ionicons
-                  accessibilityElementsHidden
-                  color={colors.textTertiary}
-                  name="chevron-forward"
-                  size={20}
-                />
-              </Pressable>
 
               {copyUndo ? (
                 <View
@@ -2486,716 +2603,35 @@ export function FoodLoggerCard({
                 </Pressable>
               </View>
 
-              <Pressable
-                accessibilityHint="Shows quick carbs, manual barcode entry and custom foods"
-                accessibilityLabel="More ways to add food"
-                accessibilityRole="button"
-                accessibilityState={{ expanded: moreWaysOpen }}
-                onPress={() => setMoreWaysOpen((value) => !value)}
-                style={({ pressed }) => [
-                  styles.moreWaysToggle,
-                  {
-                    backgroundColor: moreWaysOpen
-                      ? `${colors.primary}0D`
-                      : colors.surface,
-                    borderColor: moreWaysOpen
-                      ? `${colors.primary}55`
-                      : colors.border,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.68 : 1,
-                  },
-                ]}
-              >
-                <Ionicons
-                  accessibilityElementsHidden
-                  color={colors.textSecondary}
-                  name="ellipsis-horizontal-circle-outline"
-                  size={21}
-                />
-                <Text
-                  style={[styles.moreWaysText, { color: colors.textSecondary }]}
+              {selected.length > 0 && !query.trim() ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add another saved food"
+                  accessibilityState={{ expanded: additionalSavedFoodsOpen }}
+                  onPress={() => {
+                    if (!additionalSavedFoodsOpen && (libraryTab === "meals" || libraryTab === "recipes")) setLibraryTab("recent");
+                    setAdditionalSavedFoodsOpen(value => !value);
+                  }}
+                  style={({ pressed }) => [styles.moreWaysToggle, { borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, opacity: pressed ? 0.68 : 1 }]}
                 >
-                  More ways to add
-                </Text>
-                <Ionicons
-                  accessibilityElementsHidden
-                  color={colors.textTertiary}
-                  name={moreWaysOpen ? "chevron-up" : "chevron-down"}
-                  size={18}
-                />
-              </Pressable>
-
-              {moreWaysOpen ? (
-                <View style={styles.advancedEntryPanel}>
-                  <Pressable
-                    accessibilityLabel="Enter a barcode number"
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: barcodeEntryOpen }}
-                    onPress={() => setBarcodeEntryOpen((value) => !value)}
-                    style={({ pressed }) => [
-                      styles.customToggle,
-                      {
-                        backgroundColor: barcodeEntryOpen
-                          ? `${colors.primary}12`
-                          : colors.surface,
-                        borderColor: barcodeEntryOpen
-                          ? `${colors.primary}66`
-                          : colors.border,
-                        borderRadius: radius.md,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={
-                        barcodeEntryOpen ? colors.primary : colors.textSecondary
-                      }
-                      name="keypad-outline"
-                      size={20}
-                    />
-                    <View style={styles.customToggleCopy}>
-                      <Text
-                        style={[
-                          styles.customToggleTitle,
-                          { color: colors.text },
-                        ]}
-                      >
-                        Enter barcode number
-                      </Text>
-                      <Text
-                        style={[
-                          styles.customToggleDetail,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Useful when the camera cannot read it
-                      </Text>
-                    </View>
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={colors.textTertiary}
-                      name={barcodeEntryOpen ? "chevron-up" : "chevron-down"}
-                      size={18}
-                    />
-                  </Pressable>
-
-                  {barcodeEntryOpen ? (
-                    <View
-                      style={[
-                        styles.barcodeEntry,
-                        {
-                          backgroundColor: colors.surfaceMuted,
-                          borderColor: colors.border,
-                          borderRadius: radius.md,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        accessibilityLabel="Food barcode number"
-                        keyboardType="number-pad"
-                        maxLength={14}
-                        onChangeText={(value) =>
-                          setBarcode(value.replace(/\D/g, ""))
-                        }
-                        placeholder="EAN or UPC number"
-                        placeholderTextColor={colors.textTertiary}
-                        returnKeyType="done"
-                        selectionColor={colors.primary}
-                        style={[styles.barcodeInput, { color: colors.text }]}
-                        value={barcode}
-                      />
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={barcodeLookingUp || !barcode}
-                        onPress={() => void resolveBarcode(barcode)}
-                        style={({ pressed }) => [
-                          styles.lookupButton,
-                          {
-                            backgroundColor:
-                              barcodeLookingUp || !barcode
-                                ? colors.surface
-                                : colors.primary,
-                            borderRadius: radius.sm,
-                            opacity: pressed ? 0.72 : 1,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.lookupText,
-                            {
-                              color:
-                                barcodeLookingUp || !barcode
-                                  ? colors.textTertiary
-                                  : colors.onPrimary,
-                            },
-                          ]}
-                        >
-                          Look up
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
-
-                  {barcodeError ? (
-                    <View
-                      accessibilityLiveRegion="assertive"
-                      style={[
-                        styles.barcodeError,
-                        {
-                          backgroundColor: `${colors.danger}12`,
-                          borderColor: `${colors.danger}55`,
-                          borderRadius: radius.md,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        accessibilityElementsHidden
-                        color={colors.danger}
-                        name="alert-circle-outline"
-                        size={19}
-                      />
-                      <View style={styles.barcodeErrorCopy}>
-                        <Text
-                          style={[
-                            styles.barcodeErrorText,
-                            { color: colors.danger },
-                          ]}
-                        >
-                          {barcodeError}
-                        </Text>
-                        {cameraSettingsRequired ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            onPress={() => void Linking.openSettings()}
-                            style={({ pressed }) => [
-                              styles.barcodeSettingsButton,
-                              {
-                                borderColor: `${colors.danger}66`,
-                                borderRadius: radius.sm,
-                                opacity: pressed ? 0.7 : 1,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.barcodeSettingsButtonText,
-                                { color: colors.danger },
-                              ]}
-                            >
-                              Open app settings
-                            </Text>
-                            <Ionicons
-                              accessibilityElementsHidden
-                              color={colors.danger}
-                              name="open-outline"
-                              size={16}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: quickCarbOpen }}
-                    onPress={() => {
-                      setQuickCarbOpen((value) => !value);
-                      setError(undefined);
-                    }}
-                    style={({ pressed }) => [
-                      styles.customToggle,
-                      {
-                        backgroundColor: quickCarbOpen
-                          ? `${colors.primary}12`
-                          : colors.surface,
-                        borderColor: quickCarbOpen
-                          ? `${colors.primary}66`
-                          : colors.border,
-                        borderRadius: radius.md,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={
-                        quickCarbOpen ? colors.primary : colors.textSecondary
-                      }
-                      name="flash-outline"
-                      size={19}
-                    />
-                    <View style={styles.customToggleCopy}>
-                      <Text
-                        style={[
-                          styles.customToggleTitle,
-                          { color: colors.text },
-                        ]}
-                      >
-                        Just enter carbs
-                      </Text>
-                      <Text
-                        style={[
-                          styles.customToggleDetail,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Fast carb-only entry when the full label is not
-                        available
-                      </Text>
-                    </View>
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={colors.textTertiary}
-                      name={quickCarbOpen ? "chevron-up" : "chevron-down"}
-                      size={18}
-                    />
-                  </Pressable>
-
-                  {quickCarbOpen ? (
-                    <View
-                      style={[
-                        styles.quickCarbForm,
-                        {
-                          backgroundColor: colors.surfaceMuted,
-                          borderColor: colors.border,
-                          borderRadius: radius.md,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        accessibilityLabel="Quick carbohydrate label, optional"
-                        autoCapitalize="sentences"
-                        maxLength={120}
-                        onChangeText={setQuickCarbLabel}
-                        placeholder="What was it? (optional)"
-                        placeholderTextColor={colors.textTertiary}
-                        selectionColor={colors.primary}
-                        style={[
-                          styles.customWideInput,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.border,
-                            borderRadius: radius.sm,
-                            color: colors.text,
-                          },
-                        ]}
-                        value={quickCarbLabel}
-                      />
-                      <View style={styles.quickCarbRow}>
-                        <TextInput
-                          accessibilityLabel="Quick carbohydrate grams"
-                          keyboardType="decimal-pad"
-                          maxLength={7}
-                          onChangeText={setQuickCarbs}
-                          onSubmitEditing={addQuickCarbs}
-                          placeholder="Carbs"
-                          placeholderTextColor={colors.textTertiary}
-                          returnKeyType="done"
-                          selectionColor={colors.primary}
-                          style={[
-                            styles.quickCarbInput,
-                            {
-                              backgroundColor: colors.surface,
-                              borderColor: colors.border,
-                              borderRadius: radius.sm,
-                              color: colors.text,
-                            },
-                          ]}
-                          value={quickCarbs}
-                        />
-                        <Text
-                          style={[
-                            styles.quickCarbUnit,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          g
-                        </Text>
-                        <Pressable
-                          accessibilityLabel="Add quick carbohydrate entry"
-                          accessibilityRole="button"
-                          disabled={!quickCarbs.trim()}
-                          onPress={addQuickCarbs}
-                          style={({ pressed }) => [
-                            styles.quickCarbAdd,
-                            {
-                              backgroundColor: quickCarbs.trim()
-                                ? colors.primary
-                                : colors.surface,
-                              borderRadius: radius.sm,
-                              opacity: pressed ? 0.72 : 1,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            accessibilityElementsHidden
-                            color={
-                              quickCarbs.trim()
-                                ? colors.onPrimary
-                                : colors.textTertiary
-                            }
-                            name="add"
-                            size={19}
-                          />
-                          <Text
-                            style={[
-                              styles.quickCarbAddText,
-                              {
-                                color: quickCarbs.trim()
-                                  ? colors.onPrimary
-                                  : colors.textTertiary,
-                              },
-                            ]}
-                          >
-                            Add
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <Text
-                        style={[
-                          styles.customHint,
-                          { color: colors.textTertiary },
-                        ]}
-                      >
-                        Stored explicitly as carb-only; no calories, protein or
-                        fat are inferred.
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: customOpen }}
-                    onPress={() => {
-                      setCustomOpen((value) => {
-                        const next = !value;
-                        if (next && editingMyFoodId) {
-                          setEditingMyFoodId(undefined);
-                          setCustomFood(EMPTY_CUSTOM_FOOD);
-                          setBarcode("");
-                        }
-                        return next;
-                      });
-                      setError(undefined);
-                    }}
-                    style={({ pressed }) => [
-                      styles.customToggle,
-                      {
-                        backgroundColor: customOpen
-                          ? `${colors.accent}12`
-                          : colors.surface,
-                        borderColor: customOpen
-                          ? `${colors.accent}66`
-                          : colors.border,
-                        borderRadius: radius.md,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={customOpen ? colors.accent : colors.textSecondary}
-                      name="create-outline"
-                      size={19}
-                    />
-                    <View style={styles.customToggleCopy}>
-                      <Text
-                        style={[
-                          styles.customToggleTitle,
-                          { color: colors.text },
-                        ]}
-                      >
-                        {editingMyFoodId ? "Edit My Food" : "Create a food"}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.customToggleDetail,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        {editingMyFoodId
-                          ? "Update future uses; logged meals stay unchanged"
-                          : "Add a missing product from its label"}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={colors.textTertiary}
-                      name={customOpen ? "chevron-up" : "chevron-down"}
-                      size={18}
-                    />
-                  </Pressable>
-
-                  {customOpen ? (
-                    <View
-                      style={[
-                        styles.customForm,
-                        {
-                          backgroundColor: colors.surfaceMuted,
-                          borderColor: colors.border,
-                          borderRadius: radius.md,
-                        },
-                      ]}
-                    >
-                      <TextInput
-                        accessibilityLabel="Custom food name"
-                        autoCapitalize="sentences"
-                        onChangeText={(value) =>
-                          updateCustomFood("name", value)
-                        }
-                        placeholder="Food name"
-                        placeholderTextColor={colors.textTertiary}
-                        selectionColor={colors.primary}
-                        style={[
-                          styles.customWideInput,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.border,
-                            borderRadius: radius.sm,
-                            color: colors.text,
-                          },
-                        ]}
-                        value={customFood.name}
-                      />
-                      <TextInput
-                        accessibilityLabel="Custom food brand, optional"
-                        autoCapitalize="words"
-                        onChangeText={(value) =>
-                          updateCustomFood("brand", value)
-                        }
-                        placeholder="Brand (optional)"
-                        placeholderTextColor={colors.textTertiary}
-                        selectionColor={colors.primary}
-                        style={[
-                          styles.customWideInput,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.border,
-                            borderRadius: radius.sm,
-                            color: colors.text,
-                          },
-                        ]}
-                        value={customFood.brand}
-                      />
-                      <View style={styles.customServingRow}>
-                        <View style={styles.customServingField}>
-                          <Text
-                            style={[
-                              styles.customLabel,
-                              { color: colors.textSecondary },
-                            ]}
-                          >
-                            Serving
-                          </Text>
-                          <TextInput
-                            accessibilityLabel="Custom food serving amount"
-                            keyboardType="decimal-pad"
-                            onChangeText={(value) =>
-                              updateCustomFood("serving", value)
-                            }
-                            selectionColor={colors.primary}
-                            style={[
-                              styles.customNumberInput,
-                              {
-                                backgroundColor: colors.surface,
-                                borderColor: colors.border,
-                                borderRadius: radius.sm,
-                                color: colors.text,
-                              },
-                            ]}
-                            value={customFood.serving}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.customLabel,
-                            { color: colors.textSecondary },
-                          ]}
-                        >
-                          Unit
-                        </Text>
-                        <View
-                          accessibilityRole="radiogroup"
-                          accessibilityLabel="Custom food serving unit"
-                          style={styles.unitSelector}
-                        >
-                          {[
-                            ...foodInputUnits("g"),
-                            ...foodInputUnits("ml"),
-                          ].map((unit) => {
-                            const active = customFood.unit === unit;
-                            return (
-                              <Pressable
-                                accessibilityRole="radio"
-                                accessibilityState={{ checked: active }}
-                                key={unit}
-                                onPress={() => updateCustomFood("unit", unit)}
-                                style={[
-                                  styles.unitOption,
-                                  {
-                                    backgroundColor: active
-                                      ? colors.primary
-                                      : colors.surface,
-                                    borderColor: active
-                                      ? colors.primary
-                                      : colors.border,
-                                    borderRadius: radius.sm,
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.unitOptionText,
-                                    {
-                                      color: active
-                                        ? colors.onPrimary
-                                        : colors.textSecondary,
-                                    },
-                                  ]}
-                                >
-                                  {unit}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-                      </View>
-                      <Text
-                        style={[
-                          styles.customHint,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Nutrition for that serving
-                      </Text>
-                      {barcode ? (
-                        <View
-                          style={[
-                            styles.customBarcodeLink,
-                            {
-                              backgroundColor: `${colors.primary}0D`,
-                              borderColor: `${colors.primary}38`,
-                              borderRadius: radius.sm,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            accessibilityElementsHidden
-                            color={colors.primary}
-                            name="barcode-outline"
-                            size={18}
-                          />
-                          <Text
-                            style={[
-                              styles.customBarcodeText,
-                              { color: colors.textSecondary },
-                            ]}
-                          >
-                            Barcode {barcode} will work offline after this meal
-                            is saved.
-                          </Text>
-                        </View>
-                      ) : null}
-                      <View style={styles.customNutrientGrid}>
-                        {[
-                          ["carbs", "Carbs (g)", true],
-                          [
-                            "energy",
-                            `Energy (${regional.energyUnit})`,
-                            false,
-                          ],
-                          ["protein", "Protein (g)", false],
-                          ["fat", "Fat (g)", false],
-                          ["fibre", "Fibre (g)", false],
-                        ].map(([key, label, required]) => (
-                          <View
-                            key={key as string}
-                            style={styles.customNutrientField}
-                          >
-                            <Text
-                              style={[
-                                styles.customLabel,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {label as string}
-                              {required ? " *" : ""}
-                            </Text>
-                            <TextInput
-                              accessibilityLabel={`Custom food ${label}`}
-                              keyboardType="decimal-pad"
-                              onChangeText={(value) =>
-                                updateCustomFood(
-                                  key as keyof CustomFoodForm,
-                                  value,
-                                )
-                              }
-                              placeholder="0"
-                              placeholderTextColor={colors.textTertiary}
-                              selectionColor={colors.primary}
-                              style={[
-                                styles.customNumberInput,
-                                {
-                                  backgroundColor: colors.surface,
-                                  borderColor: colors.border,
-                                  borderRadius: radius.sm,
-                                  color: colors.text,
-                                },
-                              ]}
-                              value={
-                                customFood[
-                                  key as keyof CustomFoodForm
-                                ] as string
-                              }
-                            />
-                          </View>
-                        ))}
-                      </View>
-                      <Pressable
-                        accessibilityLabel="Save this custom food in My Foods and add it to the current meal"
-                        accessibilityRole="button"
-                        accessibilityState={{ busy: customSaving, disabled: customSaving }}
-                        disabled={customSaving}
-                        onPress={() => void addCustomFood()}
-                        style={({ pressed }) => [
-                          styles.customAddButton,
-                          {
-                            backgroundColor: colors.primary,
-                            borderRadius: radius.sm,
-                            opacity: customSaving ? 0.56 : pressed ? 0.74 : 1,
-                          },
-                        ]}
-                      >
-                        {customSaving ? (
-                          <ActivityIndicator color={colors.onPrimary} size="small" />
-                        ) : (
-                          <Ionicons
-                            accessibilityElementsHidden
-                            color={colors.onPrimary}
-                            name="bookmark-outline"
-                            size={19}
-                          />
-                        )}
-                        <Text
-                          style={[
-                            styles.customAddText,
-                            { color: colors.onPrimary },
-                          ]}
-                        >
-                          {customSaving
-                            ? "Saving…"
-                            : editingMyFoodId
-                              ? "Save changes & add"
-                              : "Save to My Foods & add"}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
-                </View>
+                  <Ionicons accessibilityElementsHidden name="bookmark-outline" size={20} color={colors.primary} />
+                  <Text style={[styles.moreWaysText, { color: colors.primary }]}>Add another saved food</Text>
+                  <Ionicons accessibilityElementsHidden name={additionalSavedFoodsOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textTertiary} />
+                </Pressable>
               ) : null}
+
+              <View style={styles.foodActions}>
+                <Pressable accessibilityLabel="Copy foods from yesterday or another day" accessibilityHint="Choose meals or individual foods from an earlier day" accessibilityRole="button" onPress={beginCopyFromDay} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.65 : 1 }]}>
+                  <Ionicons accessibilityElementsHidden name="copy-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.foodActionText, { color: colors.primary }]}>Copy from a day</Text>
+                </Pressable>
+                <Pressable accessibilityLabel="More ways to add food" accessibilityHint="Opens manual entry and food tools on a separate screen" accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setMoreWaysOpen(true); }} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.65 : 1 }]}>
+                  <Ionicons accessibilityElementsHidden name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                  <Text style={[styles.foodActionText, { color: colors.textSecondary }]}>More options</Text>
+                </Pressable>
+              </View>
+
+
 
               {barcodeMessage ? (
                 <View
@@ -3271,17 +2707,24 @@ export function FoodLoggerCard({
 
               {!selected.length && !query.trim() ? (
                 <FoodLibraryTabs
-                  counts={libraryCounts}
                   onChange={setLibraryTab}
                   value={libraryTab}
                 />
               ) : null}
+              {selected.length > 0 && showFoodLibrary ? (
+                <View style={styles.additionalFoodTabs}>
+                  {ADDITIONAL_FOOD_TABS.map(tab => (
+                    <Pressable key={tab.id} accessibilityRole="tab" accessibilityLabel={tab.label} accessibilityState={{ selected: libraryTab === tab.id }} onPress={() => setLibraryTab(tab.id)} style={({ pressed }) => [styles.additionalFoodTab, { borderRadius: radius.pill, backgroundColor: libraryTab === tab.id ? colors.primary : colors.surfaceMuted, opacity: pressed ? 0.68 : 1 }]}>
+                      <Text style={[styles.additionalFoodTabLabel, { color: libraryTab === tab.id ? colors.onPrimary : colors.textSecondary }]}>{tab.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
 
-              {!selected.length &&
-              !query.trim() &&
+              {showFoodLibrary &&
               !loadingSuggestions &&
               !suggestionError &&
-              libraryEmpty ? (
+              (selected.length ? !library.foods.length : libraryEmpty) ? (
                 <View
                   accessibilityLiveRegion="polite"
                   style={[
@@ -3305,12 +2748,18 @@ export function FoodLoggerCard({
                       { color: colors.textSecondary },
                     ]}
                   >
-                    {foodLibraryEmptyMessage(libraryTab)}
+                    No quick picks here yet. Browse your full library below.
                   </Text>
                 </View>
               ) : null}
 
-              {!selected.length && !query.trim() && library.foods.length ? (
+              {showFoodLibrary ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Browse all saved foods" onPress={() => setLibraryBrowserOpen(true)} style={styles.suggestionRetry}>
+                  <Text style={[styles.suggestionRetryText, { color: colors.primary }]}>See all saved foods</Text>
+                </Pressable>
+              ) : null}
+
+              {showFoodLibrary && library.foods.length ? (
                 <View style={styles.quickPicks}>
                   <View style={styles.sectionHeading}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -3533,8 +2982,8 @@ export function FoodLoggerCard({
                         ]}
                       >
                         <Pressable
-                          accessibilityHint="Adds one serving with every ingredient"
-                          accessibilityLabel={`Add one serving of ${recipe.name}`}
+                          accessibilityHint="Choose how many servings to add with every ingredient"
+                          accessibilityLabel={`Choose servings of ${recipe.name}`}
                           accessibilityRole="button"
                           onPress={() => applyRecipe(recipe)}
                           style={({ pressed }) => [
@@ -4038,14 +3487,15 @@ export function FoodLoggerCard({
                               { borderTopColor: colors.divider },
                             ]}
                           >
+                            {item.food.nutrientDefinitions?.note ? <Text style={[styles.hint, { color: colors.textSecondary }]}>{item.food.nutrientDefinitions.note}</Text> : null}
                             <Text
                               style={[
                                 styles.servingLabel,
                                 { color: colors.textTertiary },
                               ]}
                             >
-                              {item.food.servingLabel
-                                ? `Source portion: ${item.food.servingLabel}`
+                              {item.food.personalServingLabel ?? item.food.servingLabel
+                                ? `Portion: ${item.food.personalServingLabel ?? item.food.servingLabel}`
                                 : "Set one item’s weight to log a count"}
                             </Text>
                             <View
@@ -4083,6 +3533,9 @@ export function FoodLoggerCard({
                                 {item.unit} each
                               </Text>
                             </View>
+                            <Pressable accessibilityRole="button" accessibilityLabel={`Remember portion for ${item.food.name}`} accessibilityState={{ disabled: Boolean(portionSaving) || !canCount }} disabled={Boolean(portionSaving) || !canCount} onPress={() => void rememberPortion(item)} style={styles.suggestionRetry}>
+                              <Text style={[styles.suggestionRetryText, { color: colors.primary, opacity: canCount ? 1 : 0.5 }]}>{portionSaving === item.rowId ? "Remembering…" : "Remember this portion"}</Text>
+                            </Pressable>
                             <View style={styles.countEditor}>
                               <Pressable
                                 accessibilityLabel={`Remove one ${item.food.name}`}
@@ -4227,7 +3680,7 @@ export function FoodLoggerCard({
                           >
                             {editingRecipeId
                               ? "Edit the full batch and its serving count."
-                              : "Keep this full batch, then log one serving in a tap."}
+                              : "Keep this full batch, then choose how much to add to your meal."}
                           </Text>
                         </View>
                         <Ionicons
@@ -4278,7 +3731,7 @@ export function FoodLoggerCard({
                                   { color: colors.textSecondary },
                                 ]}
                               >
-                                Each future tap logs one serving.
+                                Choose how many servings to add when you use this recipe.
                               </Text>
                             </View>
                             <View
@@ -4365,16 +3818,14 @@ export function FoodLoggerCard({
                     </Text>
                     {foodSearching ? (
                       <ActivityIndicator color={colors.primary} size="small" />
-                    ) : query.trim().length >= 2 ? (
+                    ) : queryReady ? (
                       <Text
                         style={[
                           styles.resultCount,
                           { color: colors.textTertiary },
                         ]}
                       >
-                        {matchingSearchResults.length >= 20
-                          ? "20 matches shown · Refine to narrow"
-                          : `${formatRegionalNumber(
+                        {`${formatRegionalNumber(
                               matchingSearchResults.length,
                               getRuntimeRegionalDefaults().locale,
                             )} ${
@@ -4385,12 +3836,17 @@ export function FoodLoggerCard({
                       </Text>
                     ) : null}
                   </View>
-                  {query.trim().length === 1 ? (
+                  {!queryReady ? (
                     <Text
                       style={[styles.hint, { color: colors.textSecondary }]}
                     >
                       Type one more character to search.
                     </Text>
+                  ) : null}
+                  {queryReady && !hasSubmittedQuery ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel="Search foods online" accessibilityState={{ disabled: submittedSearchActive }} disabled={submittedSearchActive} onPress={() => void submitFoodSearch()} style={[styles.searchRetry, { backgroundColor: colors.primary, borderRadius: radius.md, minHeight: 48 }]}>
+                      <Text style={[styles.searchRetryText, { color: colors.onPrimary }]}>{submittedSearchActive ? "Searching…" : "Search"}</Text>
+                    </Pressable>
                   ) : null}
                   {foodSearching ? (
                     <View
@@ -4429,7 +3885,7 @@ export function FoodLoggerCard({
                         <Pressable
                           accessibilityLabel="Retry branded food search"
                           accessibilityRole="button"
-                          onPress={() => void submitFoodSearch()}
+                          onPress={() => void submitFoodSearch(searchAttempt.current.page, searchAttempt.current.scope)}
                           style={({ pressed }) => [
                             styles.searchRetry,
                             {
@@ -4452,7 +3908,7 @@ export function FoodLoggerCard({
                     </View>
                   ) : null}
                   {!foodSearching &&
-                  query.trim().length >= 2 &&
+                  queryReady &&
                   !visibleResults.length ? (
                     <View
                       style={[
@@ -4477,13 +3933,12 @@ export function FoodLoggerCard({
                             { color: colors.text },
                           ]}
                         >
-                          Nothing matched
+                          {hasSubmittedQuery ? "No matches found" : "No matches on this phone yet"}
                         </Text>
                         <Text
                           style={[styles.hint, { color: colors.textSecondary }]}
                         >
-                          Try another name, scan the barcode, or add the label
-                          once.
+                          {hasSubmittedQuery ? "Try another name, search other countries, or add it from the label." : "Tap Search to check branded foods online, or scan the barcode."}
                         </Text>
                       </View>
                       <Pressable
@@ -4525,7 +3980,7 @@ export function FoodLoggerCard({
                     return (
                       <Pressable
                         accessibilityHint="Adds this food to the meal"
-                        accessibilityLabel={`Add ${food.name}, ${foodPresentation.carbs} per ${displayNumber(
+                        accessibilityLabel={`Add ${food.name}${food.brand ? ` by ${food.brand}` : ""}, ${foodPresentation.carbs} per ${displayNumber(
                           food.basisAmount,
                           ` ${food.basisUnit}`,
                         )}`}
@@ -4669,8 +4124,16 @@ export function FoodLoggerCard({
                       </Pressable>
                     );
                   })}
+                  {hasSubmittedQuery && !foodSearching ? (
+                    <View style={styles.searchMessageRow}>
+                      {searchHasMore && !searchRetryAvailable && searchPage < 10 ? <Pressable accessibilityRole="button" onPress={() => void submitFoodSearch(searchPage + 1, searchScope)} style={styles.suggestionRetry}><Text style={[styles.suggestionRetryText, { color: colors.primary }]}>More results</Text></Pressable> : null}
+                      {searchScope === "local" ? <Pressable accessibilityRole="button" onPress={() => void submitFoodSearch(1, "worldwide")} style={styles.suggestionRetry}><Text style={[styles.suggestionRetryText, { color: colors.primary }]}>Search other countries</Text></Pressable> : <Text style={[styles.hint, { color: colors.textTertiary }]}>Including foods from other countries</Text>}
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
+
+              {nutritionIsPartial && selected.length ? <Text style={[styles.hint, { color: colors.textSecondary }]}>Some nutrition totals are partial because a food has not reported every nutrient.</Text> : null}
 
               {error ? (
                 <View
@@ -4729,6 +4192,13 @@ export function FoodLoggerCard({
               </Pressable>
               {dataInfoOpen ? (
                 <View style={styles.attributionBlock}>
+                  {COUNTRY_FOOD_PACKS.filter(pack => pack.countryCode === regional.countryCode).map(pack => (
+                    <View key={pack.id}>
+                      <Text style={[styles.attribution, { color: colors.textTertiary }]}>{pack.label}{pack.optional ? " (optional offline catalogue)" : ""}. {pack.attribution}</Text>
+                      <Pressable accessibilityRole="link" accessibilityLabel={`View ${pack.label} source`} onPress={() => openFoodSource(pack.sourceUrl)} style={styles.suggestionRetry}><Text style={[styles.suggestionRetryText, { color: colors.primary }]}>View source</Text></Pressable>
+                      <Pressable accessibilityRole="link" accessibilityLabel={`View ${pack.licence}`} onPress={() => openFoodSource(pack.licenceUrl)} style={styles.suggestionRetry}><Text style={[styles.suggestionRetryText, { color: colors.primary }]}>{pack.licence}</Text></Pressable>
+                    </View>
+                  ))}
                   {showCofid ? (
                     <>
                       <Text
@@ -4922,7 +4392,7 @@ export function FoodLoggerCard({
               </View>
               <Pressable
                 accessibilityRole="button"
-                disabled={saving || recipeSaving || !selected.length}
+                disabled={saving || recipeSaving || customSaving || barcodeLookingUp || !selected.length}
                 onPress={() =>
                   editingRecipeId ? void saveRecipe() : void save()
                 }
@@ -4930,7 +4400,7 @@ export function FoodLoggerCard({
                   styles.save,
                   {
                     backgroundColor:
-                      saving || recipeSaving || !selected.length
+                      saving || recipeSaving || customSaving || barcodeLookingUp || !selected.length
                         ? colors.surfaceMuted
                         : colors.primary,
                     borderRadius: radius.md,
@@ -4973,6 +4443,700 @@ export function FoodLoggerCard({
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {open && moreWaysOpen ? (
+        <FoodToolsPage visible title={customOpen ? (editingMyFoodId ? "Edit food" : "Create a food") : quickCarbOpen ? "Enter carbs" : barcodeEntryOpen ? "Enter barcode" : catalogueToolsOpen ? "Offline food catalogue" : "More food options"} backLabel={foodToolSelected ? "Back to food options" : "Back to meal"} onBack={backFromFoodTools} busy={customSaving}>
+                <View style={styles.advancedEntryPanel}>
+                  {!foodToolSelected ? <Pressable
+                    accessibilityLabel="Enter a barcode number"
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: barcodeEntryOpen }}
+                    onPress={() => setBarcodeEntryOpen((value) => !value)}
+                    style={({ pressed }) => [
+                      styles.toolsChoice,
+                      {
+                        borderColor: colors.divider,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={
+                        barcodeEntryOpen ? colors.primary : colors.textSecondary
+                      }
+                      name="keypad-outline"
+                      size={20}
+                    />
+                    <View style={styles.customToggleCopy}>
+                      <Text
+                        style={[
+                          styles.customToggleTitle,
+                          { color: colors.text },
+                        ]}
+                      >
+                        Enter barcode number
+                      </Text>
+                      <Text
+                        style={[
+                          styles.customToggleDetail,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Useful when the camera cannot read it
+                      </Text>
+                    </View>
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={colors.textTertiary}
+                      name="chevron-forward"
+                      size={18}
+                    />
+                  </Pressable> : null}
+
+                  {barcodeEntryOpen ? (
+                    <View
+                      style={[
+                        styles.barcodeEntry,
+                        {
+                          backgroundColor: colors.surfaceMuted,
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <TextInput
+                        accessibilityLabel="Food barcode number"
+                        keyboardType="number-pad"
+                        maxLength={14}
+                        onChangeText={(value) =>
+                          setBarcode(value.replace(/\D/g, ""))
+                        }
+                        placeholder="EAN or UPC number"
+                        placeholderTextColor={colors.textTertiary}
+                        returnKeyType="done"
+                        selectionColor={colors.primary}
+                        style={[styles.barcodeInput, { color: colors.text }]}
+                        value={barcode}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={barcodeLookingUp || !barcode}
+                        onPress={() => void resolveBarcode(barcode)}
+                        style={({ pressed }) => [
+                          styles.lookupButton,
+                          {
+                            backgroundColor:
+                              barcodeLookingUp || !barcode
+                                ? colors.surface
+                                : colors.primary,
+                            borderRadius: radius.sm,
+                            opacity: pressed ? 0.72 : 1,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.lookupText,
+                            {
+                              color:
+                                barcodeLookingUp || !barcode
+                                  ? colors.textTertiary
+                                  : colors.onPrimary,
+                            },
+                          ]}
+                        >
+                          Look up
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+
+                  {barcodeError && foodToolSelected ? (
+                    <View
+                      accessibilityLiveRegion="assertive"
+                      style={[
+                        styles.barcodeError,
+                        {
+                          backgroundColor: `${colors.danger}12`,
+                          borderColor: `${colors.danger}55`,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        accessibilityElementsHidden
+                        color={colors.danger}
+                        name="alert-circle-outline"
+                        size={19}
+                      />
+                      <View style={styles.barcodeErrorCopy}>
+                        <Text
+                          style={[
+                            styles.barcodeErrorText,
+                            { color: colors.danger },
+                          ]}
+                        >
+                          {barcodeError}
+                        </Text>
+                        {cameraSettingsRequired ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => void Linking.openSettings()}
+                            style={({ pressed }) => [
+                              styles.barcodeSettingsButton,
+                              {
+                                borderColor: `${colors.danger}66`,
+                                borderRadius: radius.sm,
+                                opacity: pressed ? 0.7 : 1,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.barcodeSettingsButtonText,
+                                { color: colors.danger },
+                              ]}
+                            >
+                              Open app settings
+                            </Text>
+                            <Ionicons
+                              accessibilityElementsHidden
+                              color={colors.danger}
+                              name="open-outline"
+                              size={16}
+                            />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {!foodToolSelected ? <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: quickCarbOpen }}
+                    onPress={() => {
+                      setQuickCarbOpen((value) => !value);
+                      setError(undefined);
+                    }}
+                    style={({ pressed }) => [
+                      styles.toolsChoice,
+                      {
+                        borderColor: colors.divider,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={
+                        quickCarbOpen ? colors.primary : colors.textSecondary
+                      }
+                      name="flash-outline"
+                      size={19}
+                    />
+                    <View style={styles.customToggleCopy}>
+                      <Text
+                        style={[
+                          styles.customToggleTitle,
+                          { color: colors.text },
+                        ]}
+                      >
+                        Just enter carbs
+                      </Text>
+                      <Text
+                        style={[
+                          styles.customToggleDetail,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Fast carb-only entry when the full label is not
+                        available
+                      </Text>
+                    </View>
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={colors.textTertiary}
+                      name="chevron-forward"
+                      size={18}
+                    />
+                  </Pressable> : null}
+
+                  {quickCarbOpen ? (
+                    <View
+                      style={[
+                        styles.quickCarbForm,
+                        {
+                          backgroundColor: colors.surfaceMuted,
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <TextInput
+                        accessibilityLabel="Quick carbohydrate label, optional"
+                        autoCapitalize="sentences"
+                        maxLength={120}
+                        onChangeText={setQuickCarbLabel}
+                        placeholder="What was it? (optional)"
+                        placeholderTextColor={colors.textTertiary}
+                        selectionColor={colors.primary}
+                        style={[
+                          styles.customWideInput,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                            borderRadius: radius.sm,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={quickCarbLabel}
+                      />
+                      <View style={styles.quickCarbRow}>
+                        <TextInput
+                          accessibilityLabel="Quick carbohydrate grams"
+                          keyboardType="decimal-pad"
+                          maxLength={7}
+                          onChangeText={setQuickCarbs}
+                          onSubmitEditing={addQuickCarbs}
+                          placeholder="Carbs"
+                          placeholderTextColor={colors.textTertiary}
+                          returnKeyType="done"
+                          selectionColor={colors.primary}
+                          style={[
+                            styles.quickCarbInput,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: colors.border,
+                              borderRadius: radius.sm,
+                              color: colors.text,
+                            },
+                          ]}
+                          value={quickCarbs}
+                        />
+                        <Text
+                          style={[
+                            styles.quickCarbUnit,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          g
+                        </Text>
+                        <Pressable
+                          accessibilityLabel="Add quick carbohydrate entry"
+                          accessibilityRole="button"
+                          disabled={!quickCarbs.trim()}
+                          onPress={addQuickCarbs}
+                          style={({ pressed }) => [
+                            styles.quickCarbAdd,
+                            {
+                              backgroundColor: quickCarbs.trim()
+                                ? colors.primary
+                                : colors.surface,
+                              borderRadius: radius.sm,
+                              opacity: pressed ? 0.72 : 1,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            accessibilityElementsHidden
+                            color={
+                              quickCarbs.trim()
+                                ? colors.onPrimary
+                                : colors.textTertiary
+                            }
+                            name="add"
+                            size={19}
+                          />
+                          <Text
+                            style={[
+                              styles.quickCarbAddText,
+                              {
+                                color: quickCarbs.trim()
+                                  ? colors.onPrimary
+                                  : colors.textTertiary,
+                              },
+                            ]}
+                          >
+                            Add
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <Text
+                        style={[
+                          styles.customHint,
+                          { color: colors.textTertiary },
+                        ]}
+                      >
+                        Stored explicitly as carb-only; no calories, protein or
+                        fat are inferred.
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {!foodToolSelected ? <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: customOpen }}
+                    onPress={() => {
+                      setCustomOpen(true);
+                      setError(undefined);
+                    }}
+                    style={({ pressed }) => [
+                      styles.toolsChoice,
+                      {
+                        borderColor: colors.divider,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={customOpen ? colors.accent : colors.textSecondary}
+                      name="create-outline"
+                      size={19}
+                    />
+                    <View style={styles.customToggleCopy}>
+                      <Text
+                        style={[
+                          styles.customToggleTitle,
+                          { color: colors.text },
+                        ]}
+                      >
+                        {editingMyFoodId ? "Edit My Food" : "Create a food"}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.customToggleDetail,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {editingMyFoodId
+                          ? "Update future uses; logged meals stay unchanged"
+                          : "Add a missing product from its label"}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      accessibilityElementsHidden
+                      color={colors.textTertiary}
+                      name="chevron-forward"
+                      size={18}
+                    />
+                  </Pressable> : null}
+
+                  {customOpen ? (
+                    <View
+                      style={[
+                        styles.customForm,
+                        {
+                          backgroundColor: colors.surfaceMuted,
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                        },
+                      ]}
+                    >
+                      <TextInput
+                        accessibilityLabel="Custom food name"
+                        autoCapitalize="sentences"
+                        onChangeText={(value) =>
+                          updateCustomFood("name", value)
+                        }
+                        placeholder="Food name"
+                        placeholderTextColor={colors.textTertiary}
+                        selectionColor={colors.primary}
+                        style={[
+                          styles.customWideInput,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                            borderRadius: radius.sm,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={customFood.name}
+                      />
+                      <Pressable accessibilityRole="button" accessibilityLabel="Read nutrition label with camera" onPress={() => { Keyboard.dismiss(); setLabelCaptureOpen(true); }} style={styles.suggestionRetry}>
+                        <Text style={[styles.suggestionRetryText, { color: colors.primary }]}>Read nutrition label</Text>
+                      </Pressable>
+                      <TextInput
+                        accessibilityLabel="Custom food brand, optional"
+                        autoCapitalize="words"
+                        onChangeText={(value) =>
+                          updateCustomFood("brand", value)
+                        }
+                        placeholder="Brand (optional)"
+                        placeholderTextColor={colors.textTertiary}
+                        selectionColor={colors.primary}
+                        style={[
+                          styles.customWideInput,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                            borderRadius: radius.sm,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={customFood.brand}
+                      />
+                      <View style={styles.customServingRow}>
+                        <View style={styles.customServingField}>
+                          <Text
+                            style={[
+                              styles.customLabel,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            Serving
+                          </Text>
+                          <TextInput
+                            accessibilityLabel="Custom food serving amount"
+                            keyboardType="decimal-pad"
+                            onChangeText={(value) =>
+                              updateCustomFood("serving", value)
+                            }
+                            selectionColor={colors.primary}
+                            style={[
+                              styles.customNumberInput,
+                              {
+                                backgroundColor: colors.surface,
+                                borderColor: colors.border,
+                                borderRadius: radius.sm,
+                                color: colors.text,
+                              },
+                            ]}
+                            value={customFood.serving}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.customLabel,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          Unit
+                        </Text>
+                        <View
+                          accessibilityRole="radiogroup"
+                          accessibilityLabel="Custom food serving unit"
+                          style={styles.unitSelector}
+                        >
+                          {[
+                            ...foodInputUnits("g"),
+                            ...foodInputUnits("ml"),
+                          ].map((unit) => {
+                            const active = customFood.unit === unit;
+                            return (
+                              <Pressable
+                                accessibilityRole="radio"
+                                accessibilityState={{ checked: active }}
+                                key={unit}
+                                onPress={() => updateCustomFood("unit", unit)}
+                                style={[
+                                  styles.unitOption,
+                                  {
+                                    backgroundColor: active
+                                      ? colors.primary
+                                      : colors.surface,
+                                    borderColor: active
+                                      ? colors.primary
+                                      : colors.border,
+                                    borderRadius: radius.sm,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.unitOptionText,
+                                    {
+                                      color: active
+                                        ? colors.onPrimary
+                                        : colors.textSecondary,
+                                    },
+                                  ]}
+                                >
+                                  {unit}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+                      <Text
+                        style={[
+                          styles.customHint,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Nutrition for that serving
+                      </Text>
+                      {barcode ? (
+                        <View
+                          style={[
+                            styles.customBarcodeLink,
+                            {
+                              backgroundColor: `${colors.primary}0D`,
+                              borderColor: `${colors.primary}38`,
+                              borderRadius: radius.sm,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            accessibilityElementsHidden
+                            color={colors.primary}
+                            name="barcode-outline"
+                            size={18}
+                          />
+                          <Text
+                            style={[
+                              styles.customBarcodeText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            Barcode {barcode} will work offline once you save
+                            this food to My Foods.
+                          </Text>
+                        </View>
+                      ) : null}
+                      <View style={styles.customNutrientGrid}>
+                        {[
+                          ["carbs", "Carbs (g)", true],
+                          [
+                            "energy",
+                            `Energy (${regional.energyUnit})`,
+                            false,
+                          ],
+                          ["protein", "Protein (g)", false],
+                          ["fat", "Fat (g)", false],
+                          ["fibre", "Fibre (g)", false],
+                        ].map(([key, label, required]) => (
+                          <View
+                            key={key as string}
+                            style={styles.customNutrientField}
+                          >
+                            <Text
+                              style={[
+                                styles.customLabel,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {label as string}
+                              {required ? " *" : ""}
+                            </Text>
+                            <TextInput
+                              accessibilityLabel={`Custom food ${label}`}
+                              keyboardType="decimal-pad"
+                              onChangeText={(value) =>
+                                updateCustomFood(
+                                  key as keyof CustomFoodForm,
+                                  value,
+                                )
+                              }
+                              placeholder={key === "carbs" ? "Required" : "Not set"}
+                              placeholderTextColor={colors.textTertiary}
+                              selectionColor={colors.primary}
+                              style={[
+                                styles.customNumberInput,
+                                {
+                                  backgroundColor: colors.surface,
+                                  borderColor: colors.border,
+                                  borderRadius: radius.sm,
+                                  color: colors.text,
+                                },
+                              ]}
+                              value={
+                                customFood[
+                                  key as keyof CustomFoodForm
+                                ] as string
+                              }
+                            />
+                          </View>
+                        ))}
+                      </View>
+                      <Pressable
+                        accessibilityLabel="Save this custom food in My Foods and add it to the current meal"
+                        accessibilityRole="button"
+                        accessibilityState={{ busy: customSaving, disabled: customSaving }}
+                        disabled={customSaving}
+                        onPress={() => void addCustomFood()}
+                        style={({ pressed }) => [
+                          styles.customAddButton,
+                          {
+                            backgroundColor: colors.primary,
+                            borderRadius: radius.sm,
+                            opacity: customSaving ? 0.56 : pressed ? 0.74 : 1,
+                          },
+                        ]}
+                      >
+                        {customSaving ? (
+                          <ActivityIndicator color={colors.onPrimary} size="small" />
+                        ) : (
+                          <Ionicons
+                            accessibilityElementsHidden
+                            color={colors.onPrimary}
+                            name="bookmark-outline"
+                            size={19}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.customAddText,
+                            { color: colors.onPrimary },
+                          ]}
+                        >
+                          {customSaving
+                            ? "Saving…"
+                            : editingMyFoodId
+                              ? "Save changes & add"
+                              : "Save to My Foods & add"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
+          {!foodToolSelected && regional.countryCode === "US" ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Manage offline food catalogue" onPress={() => setCatalogueToolsOpen(true)} style={({ pressed }) => [styles.toolsChoice, { borderColor: colors.divider, opacity: pressed ? 0.7 : 1 }]}>
+              <Ionicons accessibilityElementsHidden name="download-outline" size={20} color={colors.textSecondary} />
+              <View style={styles.customToggleCopy}>
+                <Text style={[styles.customToggleTitle, { color: colors.text }]}>Offline food catalogue</Text>
+                <Text style={[styles.customToggleDetail, { color: colors.textSecondary }]}>More US packaged foods</Text>
+              </View>
+              <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
+            </Pressable>
+          ) : null}
+          {catalogueToolsOpen ? <FoodCatalogueExtras onChange={() => { foodSearchScheduler.cancel(); setCatalogueRevision(value => value + 1); void loadSuggestions(); }} /> : null}
+          {error ? <Text accessibilityLiveRegion="polite" style={[styles.customHint, { color: colors.danger }]}>{error}</Text> : null}
+        </FoodToolsPage>
+      ) : null}
+
+      {open && labelCaptureOpen ? <FoodLabelCaptureModal visible onClose={() => setLabelCaptureOpen(false)} onResult={applyCapturedFoodLabel} /> : null}
+
+      {open && libraryBrowserOpen ? <FoodLibraryBrowser initialTab={libraryTab} foodsOnly={selected.length > 0}
+        onClose={() => setLibraryBrowserOpen(false)}
+        onFoodOptions={(food, favourite) => {
+          Alert.alert(food.name, undefined, [
+            ...(food.provider !== "user" ? [{ text: "Cancel", style: "cancel" as const }] : []),
+            ...(food.provider === "user" ? [
+              { text: "Edit food", onPress: () => { setLibraryBrowserOpen(false); beginEditMyFood(food); } },
+              { text: "Delete food", onPress: () => { setLibraryBrowserOpen(false); confirmDeleteMyFood(food); } },
+            ] : []),
+            { text: favourite ? "Remove favourite" : "Add favourite", onPress: () => {
+              setLibraryBrowserOpen(false);
+              void (async () => { try { const lease = await acquireLocalDataWriteLease(); await setFoodFavorite(food, !favourite, lease); await assertLocalDataWriteLeaseCurrent(lease); await loadSuggestions(); } catch (nextError) { if (!isLocalDataWriteSupersededError(nextError)) setError("The favourite could not be updated."); } })();
+            } },
+          ], { cancelable: true });
+        }}
+        onRecipeOptions={recipe => Alert.alert(recipe.name, undefined, [
+          { text: "Cancel", style: "cancel" },
+          { text: "Edit recipe", onPress: () => { setLibraryBrowserOpen(false); beginEditRecipe(recipe); } },
+          { text: "Delete recipe", onPress: () => { setLibraryBrowserOpen(false); confirmDeleteRecipe(recipe); } },
+        ])}
+        onMealOptions={meal => Alert.alert(meal.title, undefined, [
+          { text: "Cancel", style: "cancel" },
+          { text: meal.isFavorite ? "Remove favourite" : "Add favourite", onPress: () => { setLibraryBrowserOpen(false); void toggleMealFavorite(meal); } },
+        ])}
+        onFood={food => { setLibraryBrowserOpen(false); addFood(food, { dataStatus: food.catalogueStatus === "stale" ? "stale" : undefined }); }}
+        onRecipe={recipe => { setLibraryBrowserOpen(false); applyRecipe(recipe); }}
+        onMeal={meal => { setLibraryBrowserOpen(false); applyMealPreset(meal); }} /> : null}
+      {open && portionRecipe ? <FoodRecipePortionSheet key={portionRecipe.id} recipe={portionRecipe} onClose={() => setPortionRecipe(undefined)} onAdd={servings => addRecipePortions(portionRecipe, servings)} /> : null}
 
       <FoodCopyFromDaySheet
         actionError={copyActionError}
@@ -5107,6 +5271,9 @@ export function FoodLoggerCard({
 }
 
 const styles = StyleSheet.create({
+  additionalFoodTabs: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  additionalFoodTab: { minHeight: 48, paddingHorizontal: 14, paddingVertical: 10, justifyContent: "center" },
+  additionalFoodTabLabel: { fontSize: 14, lineHeight: 22, fontWeight: "600" },
   compactCard: {
     minHeight: 68,
     borderWidth: StyleSheet.hairlineWidth,
@@ -5256,17 +5423,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   mealSummary: {
-    minHeight: 64,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    minHeight: 48,
+    paddingHorizontal: 0,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
   mealSummaryIcon: {
-    width: 40,
-    height: 40,
+    width: 24,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -5305,6 +5471,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  foodActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 12,
+  },
+  foodAction: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  foodActionText: { fontSize: 14, lineHeight: 20, fontWeight: "600", flexShrink: 1 },
+  toolsChoice: {
+    minHeight: 76,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 4,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
   copyFromDayIcon: {
     width: 40,

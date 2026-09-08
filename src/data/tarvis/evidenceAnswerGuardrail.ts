@@ -1,8 +1,8 @@
 import type { TarvisAnswer, TarvisEvidencePacket } from "./types";
 import { formatTarvisNumber } from "./regionalNumberPresentation";
 
-export const MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS = 4;
-const MAX_EVIDENCE_REFERENCES = 5;
+export const MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS = 6;
+const MAX_EVIDENCE_REFERENCES = 12;
 const MIN_COMPLETE_COVERAGE_PERCENT = 70;
 
 interface ApprovedEvidenceFinding {
@@ -104,7 +104,7 @@ function withRequiredFindings(
     nextEvidenceIds.forEach((id) => evidenceIds.add(id));
   }
 
-  return [...requested, ...required].filter(
+  return [...required, ...requested].filter(
     (finding, index, values) =>
       selectedIds.has(finding.id) &&
       values.findIndex(({ id }) => id === finding.id) === index,
@@ -223,7 +223,7 @@ export interface TarvisEvidenceSelectionResult {
 
 /**
  * Parses only a list of known finding IDs. Any altered shape, duplicate,
- * unknown ID, or selection requiring more than five evidence references
+ * unknown ID, or selection requiring more than twelve evidence references
  * fails closed to a completely local answer.
  */
 export function parseTarvisEvidenceSelectionResult(

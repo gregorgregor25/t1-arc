@@ -6,6 +6,8 @@ import {
 import { servingAmountFromRawPayload } from './servings';
 import { FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY } from './providerRetention';
 import appPackage from '../../../package.json';
+import { isFoodSearchQueryReady } from './foodSearchRanking';
+import { openFoodFactsCountryTag } from './openFoodFactsCountries';
 
 const OPEN_FOOD_FACTS_BASE =
   'https://world.openfoodfacts.org/api/v3/product';
@@ -64,6 +66,9 @@ interface OpenFoodFactsResponse {
 
 interface OpenFoodFactsSearchResponse {
   hits?: OpenFoodFactsProduct[];
+  page_count?: number;
+  count?: number;
+  is_count_exact?: boolean;
   errors?: unknown[];
   timed_out?: boolean;
 }
@@ -108,6 +113,9 @@ export interface FoodLookupRequestOptions {
   countryCode?: string;
   /** Preferred BCP-47 language tag used for product names and taxonomy labels. */
   languageTag?: string;
+  page?: number;
+  pageSize?: number;
+  countryScope?: 'local' | 'worldwide';
 }
 
 export type OpenFoodFactsEndpoint = keyof typeof OPEN_FOOD_FACTS_MINIMUM_INTERVAL_MS;
@@ -363,7 +371,7 @@ export function normaliseFoodBarcode(value: string) {
 
 export function normaliseFoodSearchQuery(value: string) {
   const query = value.replace(/\s+/g, ' ').trim();
-  if (query.length < 2) {
+  if (!isFoodSearchQueryReady(query)) {
     throw new FoodLookupError(
       'incomplete',
       'Enter at least two characters to search branded foods.',
@@ -526,7 +534,16 @@ export function parseOpenFoodFactsSearchResponse(
   return candidates;
 }
 
-export async function searchOpenFoodFactsProducts(
+export function openFoodFactsSearchFields(food: FoodCandidate) {
+  const payload = food.rawPayload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  return Object.entries(payload as Record<string, unknown>)
+    .filter(([key, value]) => typeof value === 'string' &&
+      (key === 'generic_name' || key === 'product_name' || key.startsWith('product_name_')))
+    .slice(0, 8).map(([, value]) => String(value).slice(0, 240));
+}
+
+export async function searchOpenFoodFactsPage(
   value: string,
   fetchImpl: typeof fetch = globalThis.fetch,
   options: FoodLookupRequestOptions = {},
@@ -534,20 +551,12 @@ export async function searchOpenFoodFactsProducts(
   const query = normaliseFoodSearchQuery(value);
   const language = (options.languageTag ?? 'en').split('-')[0]!.toLowerCase();
   const country = options.countryCode?.trim().toUpperCase();
-  let countryTag: string | undefined;
-  if (country && /^[A-Z]{2}$/.test(country)) {
-    try {
-      countryTag = new Intl.DisplayNames(['en'], { type: 'region' })
-        .of(country)
-        ?.normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-    } catch {
-      countryTag = undefined;
-    }
-  }
+  const countryTag = options.countryScope === 'worldwide'
+    ? undefined : openFoodFactsCountryTag(country);
+  const page = Number.isFinite(options.page)
+    ? Math.max(1, Math.min(Math.floor(options.page!), 10)) : 1;
+  const pageSize = Number.isFinite(options.pageSize)
+    ? Math.max(1, Math.min(Math.floor(options.pageSize!), 50)) : 20;
   let response: Response;
   try {
     response = await fetchOpenFoodFacts(
@@ -562,10 +571,10 @@ export async function searchOpenFoodFactsProducts(
         },
         body: JSON.stringify({
           q: countryTag
-            ? `${query} countries_tags:"en:${countryTag}"`
+            ? `${query} countries_tags:"${countryTag}"`
             : query,
-          page: 1,
-          page_size: 20,
+          page,
+          page_size: pageSize,
           boost_phrase: true,
           langs: [language],
           fields: [
@@ -617,7 +626,7 @@ export async function searchOpenFoodFactsProducts(
     );
   }
   const catalogueObservedAt = Date.now();
-  return parseOpenFoodFactsSearchResponse(
+  const foods = parseOpenFoodFactsSearchResponse(
     payload,
     language,
     country ?? 'ZZ',
@@ -625,6 +634,21 @@ export async function searchOpenFoodFactsProducts(
       ...food,
       catalogueObservedAt,
     }));
+  const hasMore = typeof payload.page_count === 'number' && Number.isFinite(payload.page_count)
+    ? page < payload.page_count
+    : typeof payload.count === 'number' && Number.isFinite(payload.count) && payload.is_count_exact !== false
+      ? page * pageSize < payload.count
+      : (payload.hits?.length ?? 0) >= pageSize;
+  return { foods, hasMore: page < 10 && hasMore };
+}
+
+/** Compatibility API for callers that only need a page's foods. */
+export async function searchOpenFoodFactsProducts(
+  value: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+  options: FoodLookupRequestOptions = {},
+) {
+  return (await searchOpenFoodFactsPage(value, fetchImpl, options)).foods;
 }
 
 export async function lookupOpenFoodFactsBarcode(

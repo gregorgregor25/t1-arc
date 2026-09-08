@@ -175,13 +175,18 @@ function scoreFood(item: SearchableFood, query: string, tokens: string[]) {
   return score - item.searchName.length;
 }
 
-export function searchCofidFoods(query: string, limit = 30) {
+export function cofidSearchQuery(query: string) {
   const normalised = normaliseSearchText(query);
-  if (normalised.length < 2 || limit <= 0) return [];
   const rawTokens = normalised.split(' ').filter(Boolean);
   const meaningfulTokens = rawTokens.filter((token) => !CONTEXT_TOKENS.has(token));
   const tokens = meaningfulTokens.length ? meaningfulTokens : rawTokens;
-  const rankingQuery = tokens.join(' ');
+  return tokens.join(' ');
+}
+
+export function searchCofidFoods(query: string, limit = 30) {
+  const rankingQuery = cofidSearchQuery(query);
+  if (rankingQuery.length < 2 || limit <= 0) return [];
+  const tokens = rankingQuery.split(' ').filter(Boolean);
 
   return searchable
     .map((item) => ({ item, score: scoreFood(item, rankingQuery, tokens) }))

@@ -25,6 +25,7 @@ import { classifyTarvisQuestion } from "@/data/tarvis/scope";
 const NOW = Date.parse("2026-08-13T20:00:00+01:00");
 
 type ExpectedPath =
+  | "scoped-compound"
   | "scoped-glucose"
   | "scoped-personal-data"
   | "openai"
@@ -416,6 +417,7 @@ function productionPath(testCase: NaturalQuestionCase): ExpectedPath {
   });
   if (
     plan.kind === "scoped-glucose" ||
+    plan.kind === "scoped-compound" ||
     plan.kind === "scoped-personal-data" ||
     plan.kind === "retrospective-event" ||
     plan.kind === "treatment-profile"

@@ -20,12 +20,14 @@ import {
 import { DEFAULT_GLUCOSE_APPEARANCE } from '@/domain/glucoseAppearance';
 import { PORTABLE_PREFERENCES_VERSION } from '@/domain/portablePreferences';
 import { DEFAULT_REGIONAL_PROFILE } from '@/domain/regionalProfile';
+import { NOTEBOOK_STORAGE_KEY } from '@/domain/personalNotebook';
+import { DISPLAY_PREFERENCES_STORAGE_KEY, DEFAULT_DISPLAY_PREFERENCES } from '@/domain/displayPreferences';
 
 const MIGRATION_METADATA = {
   format: 't1arc-maintainer-migration' as const,
   version: 1 as const,
   createdAt: 1_750_000_000_000,
-  sourceBackupVersion: HEALTH_BACKUP_VERSION,
+  sourceBackupVersion: 16,
   sourceContainerSha256: 'a'.repeat(64),
   recordFingerprintSha256: 'b'.repeat(64),
 };
@@ -122,6 +124,45 @@ function genuineVersionOneBackupWithHealthConnectPreference() {
 }
 
 describe('health backup validation', () => {
+  it('preserves explicit sensor changes and migrates old sensor notes without guessing a start', () => {
+    const backup = emptyBackup();
+    const row = {
+      id: 'sensor-start', source_id: 't1arc-manual', origin: 'manual', start_ms: 1_720_000_000_000,
+      end_ms: null, title: 'Started a new sensor', category: 'sensor', detail: null,
+      recorded_at_ms: 1_720_000_000_000, source_file: null, source_row: null,
+      glucose_mmol_l: null, sensor_started: 1, sensor_glucose_source_id: 'libre-link-up',
+    };
+    backup.tables.context_notes = [row];
+    backup.manifest.counts.context_notes = 1;
+    backup.manifest.totalRecords = 1;
+    expect(validateHealthBackupDocument(backup).tables.context_notes[0]).toEqual(row);
+    backup.manifest.version = 16;
+    const { sensor_started: _started, sensor_glucose_source_id: _source, ...oldNote } = row;
+    backup.tables.context_notes = [oldNote];
+    expect(validateHealthBackupDocument(backup).tables.context_notes[0]).toMatchObject({
+      title: 'Started a new sensor', sensor_started: null, sensor_glucose_source_id: null,
+    });
+    backup.manifest.version = HEALTH_BACKUP_VERSION;
+    backup.tables.context_notes = [{ ...row, category: 'illness' }];
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/invalid sensor change/);
+    backup.tables.context_notes = [{ ...row, sensor_glucose_source_id: '' }];
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/invalid sensor change/);
+  });
+
+  it('allowlists notebook and display settings without exporting unrelated private metadata', () => {
+    const backup = emptyBackup();
+    backup.tables.portable_app_state = [
+      { key: NOTEBOOK_STORAGE_KEY, value: JSON.stringify({ version: 1, entries: [] }) },
+      { key: DISPLAY_PREFERENCES_STORAGE_KEY, value: JSON.stringify(DEFAULT_DISPLAY_PREFERENCES) },
+    ];
+    backup.manifest.counts.portable_app_state = 2;
+    backup.manifest.totalRecords = 2;
+    expect(validateHealthBackupDocument(backup).tables.portable_app_state).toHaveLength(2);
+    backup.tables.portable_app_state[1] = backup.tables.portable_app_state[0]!;
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/duplicate private application state/);
+    backup.tables.portable_app_state[1] = { key: 'openai-api-key', value: 'not-a-real-key' };
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/unsupported private application state/);
+  });
   it('freezes the private-converter record fingerprint framing fixture', () => {
     const rows = [
       [
@@ -893,6 +934,8 @@ describe('health backup validation', () => {
       title: 'Pod / site',
       category: 'pump',
       detail: 'Changed pod after suspected site issue',
+      sensor_started: null,
+      sensor_glucose_source_id: null,
       recorded_at_ms: 1_720_000_001_000,
       source_file: null,
       source_row: null,
@@ -920,6 +963,8 @@ describe('health backup validation', () => {
       title: 'Blood glucose check',
       category: 'other',
       detail: 'Manual reading: Yes',
+      sensor_started: null,
+      sensor_glucose_source_id: null,
       recorded_at_ms: 1_720_000_001_000,
       source_file: 'bg_data.csv',
       source_row: 2,
@@ -971,6 +1016,8 @@ describe('health backup validation', () => {
       end_ms: null,
       title: 'Unknown',
       category: 'unbounded-value',
+      sensor_started: null,
+      sensor_glucose_source_id: null,
       detail: null,
       recorded_at_ms: 1_720_000_001_000,
       source_file: null,

@@ -11,8 +11,12 @@ Start with the [installation guide](docs/GETTING_STARTED.md) and
 the APK files attached to this repository's GitHub Releases. Source archives
 are not installable Android apps.
 
-If those guides do not solve the problem, search existing issues and open the
-closest issue form. Include:
+If those guides do not solve the problem,
+[search existing issues](https://github.com/gregorgregor25/t1-arc/issues) and
+[open the closest issue form](https://github.com/gregorgregor25/t1-arc/issues/new/choose).
+For an everyday-use question, [ask a usage question](https://github.com/gregorgregor25/t1-arc/issues/new?template=question.yml)
+and describe the step that is unclear; a crash or developer log is not required.
+Include:
 
 - the T1 Arc version shown in the app or GitHub Release;
 - the phone model and Android version;
@@ -26,7 +30,8 @@ screenshots. Maintainers will not ask for a real health-data export.
 
 ## Regions and external services
 
-Use the regional compatibility issue form for a country-specific provider,
+Use the [regional compatibility form](https://github.com/gregorgregor25/t1-arc/issues/new?template=regional-compatibility.yml)
+for a country-specific provider,
 food catalogue, unit, timezone, language, Android Auto or Wear OS problem. A
 country, service name, app version and non-sensitive error code are normally
 enough to begin. The [regional capability matrix](docs/REGIONAL_CAPABILITY_MATRIX.md)
@@ -45,3 +50,8 @@ Do not disclose a suspected vulnerability in a public issue. Follow the
 People using the APK do not need to build T1 Arc. Developers who want to change
 the source should read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [development guide](docs/DEVELOPMENT.md).
+
+Guide corrections, accessibility feedback and synthetic examples are welcome.
+See the [first small PR path](CONTRIBUTING.md#your-first-small-pull-request).
+Maintainers respond as time allows; this is not a monitored support service.
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).

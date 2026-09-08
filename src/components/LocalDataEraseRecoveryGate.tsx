@@ -1,6 +1,7 @@
 import { PropsWithChildren, useEffect, useState } from 'react';
 
 import { resumePendingLocalDataErase } from '@/data/privacy/localDataVault';
+import { AppStartupScreen } from './AppStartupScreen';
 
 /** Prevents source configuration from publishing while an erase is recovering. */
 export function LocalDataEraseRecoveryGate({
@@ -33,5 +34,5 @@ export function LocalDataEraseRecoveryGate({
   }, []);
 
   if (state.error) throw state.error;
-  return state.ready ? children : null;
+  return state.ready ? children : <AppStartupScreen />;
 }

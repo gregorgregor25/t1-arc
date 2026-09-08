@@ -27,11 +27,14 @@ T1 Arc keeps each input independent:
    normalised, so one large file cannot reject the whole export.
 3. **Food:** regional reference search is bundled and offline: GB uses CoFID
    2021, the US uses the curated FoodData Central Foundation/FNDDS catalogue,
-   and Japan uses the curated MEXT 2023 catalogue. Explicit branded text search
-   and barcode lookup use Open Food Facts and transmit only the typed food
-   query or barcode. Search is never performed on each keystroke. After an
-   Open Food Facts barcode miss, the US profile can use the low-rate public USDA
-   exact-GTIN fallback; normal US text search does not consume USDA API quota.
+   Japan uses MEXT 2023, Canada uses CNF 2026, France uses Ciqual 2025 and Germany
+   uses BLS 4.0. The larger US branded catalogue is an optional local index.
+   Only local search runs while typing. Explicit online branded search and
+   barcode lookup can send the query or barcode, plus country/language context,
+   directly to Open Food Facts. After an Open Food Facts barcode miss, the US
+   profile can use the low-rate public USDA exact-GTIN fallback; normal US text
+   search does not consume USDA API quota. Android label capture reads a photo
+   locally into a reviewable form and never saves a food automatically.
    Each saved item keeps a nutrient and provenance snapshot so later catalogue
    changes cannot rewrite history.
 4. **Phone and wearable context:** Health Connect is the Android aggregation
@@ -440,15 +443,65 @@ expected time range. Do not provide a Health Connect database dump.
 
 ## Food data boundary
 
-The selected regional profile chooses the bundled offline reference catalogue:
-GB CoFID 2021, a curated US FoodData Central Foundation/FNDDS catalogue, or a
-curated Japan MEXT 2023 catalogue. Other profiles retain saved/user-created
-foods and can use branded-product search. Normal reference typeahead is local.
-For a packaged product, T1 Arc calls Open Food Facts by barcode and caches the
-normalized product locally. After an Open Food Facts miss, the US profile can
-try the low-rate public USDA exact-GTIN fallback; the bundled US text catalogue
-does not depend on that API. A saved food log contains immutable item snapshots,
-quantities, nutrition, provider, source label, barcode and source URL.
+This section describes the current source contract. The new country packs,
+optional US branded index and label camera are not a claim about an already
+published APK; use its release notes to identify included features.
+
+The selected country chooses the offline reference catalogue: GB CoFID 2021,
+5,742 US FoodData Central Foundation/FNDDS foods, 2,538 Japan MEXT 2023 foods,
+5,993 Canada CNF 2026 foods, 3,483 France Ciqual 2025 foods or 7,140 Germany BLS
+4.0 foods. The Canadian, French and German indexes are prepared from bundled
+assets on first use. Other profiles retain saved/user-created foods and online
+branded-product search. No Finnish index is included.
+
+The optional US branded snapshot contains 409,329 foods from 30 April 2026.
+Its compressed APK asset is 40,804,016 bytes; enabling its local index needs
+150,691,840 bytes plus temporary preparation space. Preparation verifies the
+file against its manifest before activation. Disabling or removing this public
+catalogue does not delete personal foods, recipes or historical meal snapshots.
+Neither reference search nor the enabled branded index needs a paid API,
+account or user-supplied key.
+
+Normal typeahead stays local. Explicit online search sends typed text and
+country/language context to Open Food Facts, whose server also sees the phone's
+network address. Barcode lookup checks saved products and the enabled US
+branded index before Open Food Facts. After an Open Food Facts miss, the US
+profile can try the low-rate public USDA exact-GTIN fallback; normal US text
+search does not depend on that API. Successful complete barcode results are
+cached independently of meal saving, with source freshness and regional
+context. They do not increment use counts, create health records or overwrite
+personal label corrections. Recognised but incomplete products open a label
+form instead of silently treating missing carbohydrate as zero.
+
+Saved foods, recipes and meals have independent searchable pages. A personal
+portion definition is separate from the last logged quantity and source
+serving. Recipe ingredients describe the batch; adding a recipe scales the
+chosen number of servings. Mass and volume are not interchanged without a
+source conversion. Missing nutrients remain distinct from reported zero, and
+known carbohydrate definitions are retained without inventing net-carbohydrate
+adjustments. A saved food log contains immutable item snapshots, quantities,
+nutrition, provider, source label, barcode and source URL. Catalogue refreshes
+and personal-food edits do not rewrite those historical nutrition values.
+USDA branded nutrients retain the source's 100 g or 100 ml basis, with a
+separate exact source-labelled serving where available. Reference-food values
+remain per 100 g. Contradictory repeated values for the same nutrient stay
+unknown, including conflicting energy values; alternate energy definitions
+are not substituted to hide a conflict. Products with missing or conflicting
+carbohydrate need manual completion. Unsupported source basis units are not
+converted using an assumed density.
+
+Android nutrition-label capture uses a bundled Latin text-recognition model,
+including offline first use. Its English-focused parser proposes values only
+when the table basis is identifiable; ambiguous or missing values need manual
+review. The photo and recognised text are not sent to a cloud OCR service.
+Temporary camera and recognition copies are removed on success, cancellation
+or failure, with OS cache cleanup as the fallback if deletion fails. The user
+reviews the form and saves explicitly. Manual label entry remains available.
+Local image/text processing does not mean the SDK makes no network requests:
+Google documents ML Kit performance/usage telemetry and maintenance contacts.
+The bundled SDK's diagnostics are disclosed separately in
+[the privacy model](../PRIVACY.md#network-flows-chosen-by-the-user), following
+[Google's ML Kit terms](https://developers.google.com/ml-kit/terms).
 
 For an unrecognized product, the smallest useful test input is:
 

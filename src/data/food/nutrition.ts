@@ -54,6 +54,16 @@ export function totalNutrition(
   return total;
 }
 
+/** Completeness accompanies sums; missing source values never become zero. */
+export function nutritionCompleteness(
+  items: readonly FoodLogItemDraft[],
+): Record<keyof FoodNutrition, 'complete' | 'partial' | 'missing'> {
+  return Object.fromEntries(NUTRIENT_KEYS.map((key) => {
+    const known = items.filter((item) => item.food.nutritionPerBasis[key] !== undefined).length;
+    return [key, known === 0 ? 'missing' : known === items.length ? 'complete' : 'partial'];
+  })) as Record<keyof FoodNutrition, 'complete' | 'partial' | 'missing'>;
+}
+
 export function scaleNutrition(
   nutrition: FoodNutrition,
   multiplier: number,

@@ -78,6 +78,29 @@ export interface WearCompanionStatus {
   error?: string;
 }
 
+export type WatchFaceId = 'meridian' | 'chronograph' | 'atelier' | 'pace' | 'summit';
+
+export type WatchFaceResultCode =
+  | 'ready' | 'active' | 'activation_required' | 'unsupported'
+  | 'companion_update_required' | 'unreachable' | 'busy' | 'uncertain' | 'failed';
+
+export interface WatchFaceResult {
+  code: WatchFaceResultCode;
+  supported: boolean;
+  active?: boolean;
+  activationUsed?: boolean;
+  activationDenied?: boolean;
+  installedFaceId?: WatchFaceId;
+  retiredFaceId?: 'orbit';
+  installedVersion?: number;
+  catalog?: WatchFaceId[];
+}
+
+export interface WatchFaceDeviceStatus extends WatchFaceResult {
+  nodeId: string;
+  watchName: string;
+}
+
 export interface HomeWidgetStatus {
   supported: boolean;
   pinningSupported: boolean;

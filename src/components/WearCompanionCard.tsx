@@ -22,6 +22,7 @@ import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { SectionCard } from './SectionCard';
+import { WatchFaceChooser } from './WatchFaceChooser';
 
 export function WearCompanionCard() {
   const { colors, radius } = useAppTheme();
@@ -213,6 +214,8 @@ export function WearCompanionCard() {
           </Text>
         </View>
       </View>
+
+      <WatchFaceChooser />
 
       <View style={styles.features}>
         <Feature

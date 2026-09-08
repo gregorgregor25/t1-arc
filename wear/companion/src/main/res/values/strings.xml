@@ -4,4 +4,13 @@
     <string name="glucose_graph_complication_label">T1 Arc glucose history</string>
     <string name="glucose_tile_label">T1 Arc glucose</string>
     <string name="glucose_tile_description">Current glucose, trend, and freshness from your T1 Arc phone app.</string>
+    <string name="watch_faces_title">Watch face</string>
+    <string name="watch_faces_activate">Use selected face</string>
+    <string name="watch_faces_done">Done</string>
+    <string name="watch_faces_unsupported">Face installation needs Wear OS 6 or later. Glucose sync is still available.</string>
+    <string name="watch_faces_manual">Touch and hold your current watch face, choose Add watch face, then select the T1 Arc face you installed.</string>
+    <string name="watch_faces_activation_explanation">Use the face selected on your phone. Android may ask permission.</string>
+    <string name="watch_faces_busy">A watch face operation is still running. Wait a moment and check again.</string>
+    <string name="watch_faces_failed">This step could not be saved. Close this screen and try again.</string>
+    <string name="watch_faces_active">Your selected T1 Arc face is active.</string>
 </resources>

@@ -3,7 +3,9 @@ param(
   [string]$CompanionApkPath,
   [string]$MeridianApkPath,
   [string]$ChronographApkPath,
-  [string]$OrbitApkPath,
+  [string]$AtelierApkPath,
+  [string]$PaceApkPath,
+  [string]$SummitApkPath,
   [string]$ApplicationIdBase = 'io.github.gregorgregor25.t1arc',
   [string]$ApplicationIdSuffix = ''
 )
@@ -27,8 +29,14 @@ if (-not $MeridianApkPath) {
 if (-not $ChronographApkPath) {
   $ChronographApkPath = ProjectPath 'wear\watchface-chronograph\build\outputs\apk\release\watchface-chronograph-release.apk'
 }
-if (-not $OrbitApkPath) {
-  $OrbitApkPath = ProjectPath 'wear\watchface-orbit\build\outputs\apk\release\watchface-orbit-release.apk'
+if (-not $AtelierApkPath) {
+  $AtelierApkPath = ProjectPath 'wear\watchface-atelier\build\outputs\apk\release\watchface-atelier-release.apk'
+}
+if (-not $PaceApkPath) {
+  $PaceApkPath = ProjectPath 'wear\watchface-pace\build\outputs\apk\release\watchface-pace-release.apk'
+}
+if (-not $SummitApkPath) {
+  $SummitApkPath = ProjectPath 'wear\watchface-summit\build\outputs\apk\release\watchface-summit-release.apk'
 }
 
 $androidSdk = if ($env:ANDROID_HOME) {
@@ -150,7 +158,9 @@ $companion = VerifyWearApk $CompanionApkPath "$ApplicationIdBase$ApplicationIdSu
 $faces = @(
   VerifyWearApk $MeridianApkPath "$ApplicationIdBase.watchface.meridian$ApplicationIdSuffix" 33 $true
   VerifyWearApk $ChronographApkPath "$ApplicationIdBase.watchface.chronograph$ApplicationIdSuffix" 33 $true
-  VerifyWearApk $OrbitApkPath "$ApplicationIdBase.watchface.orbit$ApplicationIdSuffix" 33 $true
+  VerifyWearApk $AtelierApkPath "$ApplicationIdBase.watchface.atelier$ApplicationIdSuffix" 33 $true
+  VerifyWearApk $PaceApkPath "$ApplicationIdBase.watchface.pace$ApplicationIdSuffix" 33 $true
+  VerifyWearApk $SummitApkPath "$ApplicationIdBase.watchface.summit$ApplicationIdSuffix" 33 $true
 )
 
 if ($companion.Package -cne $phonePackage) {
@@ -160,8 +170,14 @@ if ($companion.Certificate -ne $phoneCertificate) {
   throw 'Phone and Wear companion certificates differ, so Data Layer sync would fail.'
 }
 foreach ($face in $faces) {
-  if ($face.Certificate -ne $phoneCertificate) {
-    throw "Watch-face certificate differs from the test release set: $($face.Path)."
+  if ($face.Certificate -ne $faces[0].Certificate) {
+    throw "Watch-face certificates differ: $($face.Path)."
+  }
+  if ($ApplicationIdSuffix -eq '.sideload' -and $face.Certificate -ne $phoneCertificate) {
+    throw 'Private standalone faces must preserve their installed signing identity.'
+  }
+  if ($ApplicationIdSuffix -eq '' -and $face.Certificate -eq $phoneCertificate) {
+    throw 'Production faces must use the separate face signing key.'
   }
 }
 
@@ -183,4 +199,4 @@ foreach ($face in $faces) {
   Write-Output "Verified $($face.Package) $($face.Version) ($($face.VersionCode))"
 }
 Write-Output "Phone and companion share application ID $phonePackage and signing certificate $phoneCertificate."
-Write-Output 'All Wear APKs are signed, non-debuggable, watch-only and certificate-compatible with the phone.'
+Write-Output 'All Wear APKs are signed, non-debuggable and watch-only. Phone/companion identity and face signing policy passed.'

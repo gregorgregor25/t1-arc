@@ -42,7 +42,7 @@ def applicationIdBase = forkApplicationIdBase ?: officialApplicationIdBase
 def releaseApplicationIdSuffix = project.ext.t1ArcPrivateTestBuildRequested
   ? privateTestApplicationIdSuffix
   : null
-def watchFaceNames = ['meridian', 'chronograph', 'orbit'] as Set
+def watchFaceNames = ['meridian', 'chronograph', 'atelier', 'pace', 'summit'] as Set
 
 ext.t1ArcOfficialApplicationIdBase = officialApplicationIdBase
 ext.t1ArcApplicationIdBase = applicationIdBase

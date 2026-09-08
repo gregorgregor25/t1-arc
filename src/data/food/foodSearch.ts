@@ -1,9 +1,11 @@
 import type { FoodCandidate } from './types';
 import {
   FoodSearchOrigin,
+  FoodSearchMatchEvidence,
   FoodSearchSeed,
   RankedFoodSearchResult,
   normaliseFoodSearchText,
+  isFoodSearchQueryReady,
   rankFoodSearchSeeds,
 } from './foodSearchRanking';
 
@@ -18,9 +20,19 @@ export interface FoodSearchProviderContext {
   signal?: AbortSignal;
   limit: number;
   mode: FoodSearchMode;
+  page: number;
+  countryScope: FoodSearchCountryScope;
 }
 
 export type FoodSearchMode = 'typeahead' | 'submitted';
+export type FoodSearchCountryScope = 'local' | 'worldwide';
+
+export interface FoodSearchProviderPage {
+  foods: readonly FoodCandidate[];
+  hasMore: boolean;
+}
+
+type FoodSearchProviderResult = readonly FoodCandidate[] | FoodSearchProviderPage;
 
 /**
  * Provider-neutral catalogue boundary. A future server-brokered commercial
@@ -34,12 +46,16 @@ export interface FoodSearchProvider {
   minQueryLength?: number;
   /** Public catalogues that prohibit search-as-you-type leave this false. */
   supportsTypeahead?: boolean;
+  supportsPagination?: boolean;
+  /** Real indexed aliases/categories, never an unverified claim that a hit matches. */
+  matchEvidence?(food: FoodCandidate, query: string):
+    Pick<FoodSearchMatchEvidence, 'matchedQuery' | 'fields'>;
   /** Separates cached remote results when locale/country/account context changes. */
   cacheScope?(): string;
   search(
     query: string,
     context: FoodSearchProviderContext,
-  ): Promise<readonly FoodCandidate[]> | readonly FoodCandidate[];
+  ): Promise<FoodSearchProviderResult> | FoodSearchProviderResult;
 }
 
 export interface FoodSearchProviderStatus {
@@ -48,6 +64,7 @@ export interface FoodSearchProviderStatus {
   kind: FoodSearchProvider['kind'];
   state: 'success' | 'error' | 'skipped';
   candidateCount: number;
+  hasMore?: boolean;
   skipReason?: 'query-too-short' | 'submission-required';
   message?: string;
 }
@@ -61,6 +78,9 @@ export interface FoodSearchResponse {
     message?: string;
   };
   providers: FoodSearchProviderStatus[];
+  hasMore: boolean;
+  remotePage: number;
+  countryScope: FoodSearchCountryScope;
 }
 
 export interface FoodSearchOptions {
@@ -69,6 +89,11 @@ export interface FoodSearchOptions {
   now?: number;
   /** Submitted is a deliberate keyboard/search action, not every keystroke. */
   mode?: FoodSearchMode;
+  /** Cumulative explicit online pages; page one remains cached when loading more. */
+  remotePage?: number;
+  countryScope?: FoodSearchCountryScope;
+  /** Submitted searches can publish local matches without awaiting online IO. */
+  onLocalResults?(response: FoodSearchResponse): void;
 }
 
 export interface FoodSearchEngine {
@@ -88,6 +113,18 @@ export interface CreateFoodSearchEngineOptions {
 interface ProviderCacheEntry {
   storedAt: number;
   foods: readonly FoodCandidate[];
+  hasMore: boolean;
+}
+
+interface ProviderSearchOutcome {
+  status: FoodSearchProviderStatus;
+  seeds: FoodSearchSeed[];
+}
+
+interface StoredSearchOutcome {
+  candidates: readonly StoredFoodSearchCandidate[];
+  state: 'success' | 'error';
+  message?: string;
 }
 
 export class FoodSearchCancelledError extends Error {
@@ -138,7 +175,7 @@ export function createFoodSearchEngine({
   const remoteCache = new Map<string, ProviderCacheEntry>();
   const cacheRemoteFoods = (
     cacheKey: string,
-    foods: readonly FoodCandidate[],
+    page: FoodSearchProviderPage,
     storedAt: number,
   ) => {
     for (const [key, entry] of remoteCache) {
@@ -149,7 +186,7 @@ export function createFoodSearchEngine({
       if (oldestKey === undefined) break;
       remoteCache.delete(oldestKey);
     }
-    remoteCache.set(cacheKey, { storedAt, foods: [...foods] });
+    remoteCache.set(cacheKey, { storedAt, foods: [...page.foods], hasMore: page.hasMore });
   };
 
   return {
@@ -161,6 +198,9 @@ export function createFoodSearchEngine({
       // Fail closed: a caller must explicitly identify a deliberate submit
       // before any public remote provider is allowed to run.
       const mode = options.mode ?? 'typeahead';
+      const remotePage = Number.isFinite(options.remotePage)
+        ? Math.max(1, Math.min(Math.floor(options.remotePage!), 10)) : 1;
+      const countryScope = options.countryScope === 'worldwide' ? 'worldwide' : 'local';
 
       const storedPromise = loadStoredCandidates(options.signal)
         .then((candidates) => ({
@@ -179,9 +219,9 @@ export function createFoodSearchEngine({
           };
         });
 
-      const providerTasks = providers.map(async (provider) => {
+      const providerTasks = providers.map(async (provider): Promise<ProviderSearchOutcome> => {
         const minimum = Math.max(2, provider.minQueryLength ?? 2);
-        if (query.length < minimum) {
+        if (!isFoodSearchQueryReady(query, minimum)) {
           return {
             status: skippedStatus(provider, 'query-too-short'),
             seeds: [] as FoodSearchSeed[],
@@ -197,51 +237,45 @@ export function createFoodSearchEngine({
             seeds: [] as FoodSearchSeed[],
           };
         }
-        const providerLimit = Math.max(40, limit * 2);
-        const cacheKey = [
-          provider.id,
-          provider.cacheScope?.() ?? '',
-          mode,
-          providerLimit,
-          query,
-        ].join('\u0000');
-        const cached = provider.kind === 'remote' ? remoteCache.get(cacheKey) : undefined;
-        const cacheAge = cached ? now - cached.storedAt : undefined;
-        if (
-          cached &&
-          cacheAge !== undefined &&
-          cacheAge >= 0 &&
-          cacheAge < remoteCacheTtlMs
-        ) {
-          return {
-            status: {
-              id: provider.id,
-              label: provider.label,
-              kind: provider.kind,
-              state: 'success',
-              candidateCount: cached.foods.length,
-            } satisfies FoodSearchProviderStatus,
-            seeds: cached.foods.map((food) => ({
-              food,
-              origins: ['remote-catalogue'] as const,
-            })),
-          };
-        }
-
+        const paged = provider.kind === 'remote' && provider.supportsPagination === true;
+        const providerLimit = paged ? 20 : Math.max(40, limit * 2);
+        const requestedPages = paged ? remotePage : 1;
+        const foods: FoodCandidate[] = [];
+        let hasMore = false;
+        const seeds = (): FoodSearchSeed[] => foods.map((food, rank) => ({
+          food,
+          origins: [provider.kind === 'remote' ? 'remote-catalogue' : 'offline-catalogue'],
+          searchEvidence: {
+            ...provider.matchEvidence?.(food, query),
+            query,
+            rank,
+          },
+        }));
         try {
-          const foods = await provider.search(query, {
-            signal: options.signal,
-            limit: providerLimit,
-            mode,
-          });
-          throwIfAborted(options.signal);
-          if (provider.kind === 'remote') {
-            cacheRemoteFoods(cacheKey, foods, now);
+          for (let page = 1; page <= requestedPages; page += 1) {
+            const cacheKey = [provider.id, provider.cacheScope?.() ?? '', mode,
+              providerLimit, countryScope, page, query].join('\u0000');
+            const cached = provider.kind === 'remote' ? remoteCache.get(cacheKey) : undefined;
+            const age = cached ? now - cached.storedAt : undefined;
+            let result: FoodSearchProviderPage;
+            if (cached && age !== undefined && age >= 0 && age < remoteCacheTtlMs) {
+              result = cached;
+            } else {
+              const supplied = await provider.search(query, {
+                signal: options.signal, limit: providerLimit, mode, page, countryScope,
+              });
+              throwIfAborted(options.signal);
+              result = 'foods' in supplied ? supplied : {
+                foods: supplied,
+                hasMore: supplied.length >= providerLimit,
+              };
+              result = { foods: result.foods.slice(0, providerLimit), hasMore: result.hasMore };
+              if (provider.kind === 'remote') cacheRemoteFoods(cacheKey, result, now);
+            }
+            foods.push(...result.foods);
+            hasMore = result.hasMore;
+            if (!hasMore) break;
           }
-          const origin: FoodSearchOrigin =
-            provider.kind === 'remote'
-              ? 'remote-catalogue'
-              : 'offline-catalogue';
           return {
             status: {
               id: provider.id,
@@ -249,8 +283,9 @@ export function createFoodSearchEngine({
               kind: provider.kind,
               state: 'success',
               candidateCount: foods.length,
+              hasMore: hasMore && (!paged || remotePage < 10),
             } satisfies FoodSearchProviderStatus,
-            seeds: foods.map((food) => ({ food, origins: [origin] })),
+            seeds: seeds(),
           };
         } catch (error) {
           throwIfAborted(options.signal);
@@ -260,41 +295,58 @@ export function createFoodSearchEngine({
               label: provider.label,
               kind: provider.kind,
               state: 'error',
-              candidateCount: 0,
+              candidateCount: foods.length,
+              hasMore: paged && foods.length > 0,
               message: errorMessage(error, provider),
             } satisfies FoodSearchProviderStatus,
-            seeds: [] as FoodSearchSeed[],
+            seeds: seeds(),
           };
         }
       });
 
+      const responseFor = (storedResult: StoredSearchOutcome, providerResults: readonly ProviderSearchOutcome[]): FoodSearchResponse => {
+        const storedSeeds: FoodSearchSeed[] = storedResult.candidates.map((entry) => ({
+          food: entry.food,
+          origins: originsForStored(entry),
+          isFavourite: entry.isFavourite,
+          useCount: entry.useCount,
+          lastUsedAt: entry.lastUsedAt,
+        }));
+        const providerSeeds = providerResults.flatMap((result) => result.seeds);
+        const ranked = rankFoodSearchSeeds(query, [...storedSeeds, ...providerSeeds], {
+          limit: 200,
+          now,
+        });
+        return {
+          query,
+          results: ranked.slice(0, limit),
+          hasMore: limit < 200 && (ranked.length > limit ||
+            providerResults.some(({ status }) => status.hasMore)),
+          remotePage,
+          countryScope,
+          personal: {
+            state: storedResult.state,
+            candidateCount: storedResult.candidates.length,
+            ...(storedResult.message !== undefined ? { message: storedResult.message } : {}),
+          },
+          providers: providerResults.map((result) => result.status),
+        };
+      };
+
+      const localPublication = mode === 'submitted' && options.onLocalResults
+        ? Promise.all([storedPromise, Promise.all(providerTasks.filter((_, index) => providers[index]!.kind === 'offline'))])
+          .then(([stored, local]) => {
+            throwIfAborted(options.signal);
+            options.onLocalResults?.(responseFor(stored, local));
+          })
+        : Promise.resolve();
+      // Both branches are observed immediately, including cancellation failures.
+      // A slow public provider cannot delay the independent local publication.
       const [storedResult, providerResults] = await Promise.all([
-        storedPromise,
-        Promise.all(providerTasks),
+        storedPromise, Promise.all(providerTasks), localPublication,
       ]);
       throwIfAborted(options.signal);
-
-      const storedSeeds: FoodSearchSeed[] = storedResult.candidates.map((entry) => ({
-        food: entry.food,
-        origins: originsForStored(entry),
-        isFavourite: entry.isFavourite,
-        useCount: entry.useCount,
-        lastUsedAt: entry.lastUsedAt,
-      }));
-      const providerSeeds = providerResults.flatMap((result) => result.seeds);
-      return {
-        query,
-        results: rankFoodSearchSeeds(query, [...storedSeeds, ...providerSeeds], {
-          limit,
-          now,
-        }),
-        personal: {
-          state: storedResult.state,
-          candidateCount: storedResult.candidates.length,
-          ...('message' in storedResult ? { message: storedResult.message } : {}),
-        },
-        providers: providerResults.map((result) => result.status),
-      };
+      return responseFor(storedResult, providerResults);
     },
 
     clearRemoteCache() {
@@ -362,7 +414,7 @@ export function createFoodSearchScheduler(
       cancelPending();
       const requestGeneration = generation;
       const controller = new AbortController();
-      const { immediate = false, ...searchOptions } = options;
+        const { immediate = false, onLocalResults, ...searchOptions } = options;
       return new Promise<FoodSearchResponse | undefined>((resolve, reject) => {
         const current: PendingSearch = { controller, resolve };
         current.timer = setTimeout(async () => {
@@ -372,6 +424,11 @@ export function createFoodSearchScheduler(
               mode: defaultMode,
               ...searchOptions,
               signal: controller.signal,
+              ...(onLocalResults ? { onLocalResults: (response: FoodSearchResponse) => {
+                if (!disposed && !controller.signal.aborted && generation === requestGeneration) {
+                  onLocalResults(response);
+                }
+              } } : {}),
             });
             if (
               disposed ||

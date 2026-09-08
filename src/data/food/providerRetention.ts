@@ -19,6 +19,10 @@ export const FOOD_PROVIDER_RETENTION_POLICIES: Record<
   FoodProviderId,
   FoodProviderRetentionPolicy
 > = {
+  cnf: { historySnapshot: 'permitted', rawPayload: 'none' },
+  ciqual: { historySnapshot: 'permitted', rawPayload: 'none' },
+  bls: { historySnapshot: 'permitted', rawPayload: 'none' },
+  fineli: { historySnapshot: 'permitted', rawPayload: 'none' },
   cofid: {
     historySnapshot: 'permitted',
     rawPayload: 'none',
@@ -97,6 +101,37 @@ function serialise(value: unknown) {
   }
 }
 
+export function foodMetadataFromPayload(payload: unknown): Pick<FoodCandidate,
+  'personalServingAmount' | 'personalServingUnit' | 'personalServingLabel' | 'nutrientDefinitions'> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+  const source = payload as Record<string, unknown>;
+  const result: ReturnType<typeof foodMetadataFromPayload> = {};
+  const personal = source._t1arcPersonalServing;
+  if (personal && typeof personal === 'object' && !Array.isArray(personal)) {
+    const serving = personal as Record<string, unknown>;
+    if (typeof serving.amount === 'number' && Number.isFinite(serving.amount) && serving.amount > 0 &&
+        (serving.unit === 'g' || serving.unit === 'ml')) {
+      result.personalServingAmount = serving.amount;
+      result.personalServingUnit = serving.unit;
+      if (typeof serving.label === 'string') result.personalServingLabel = serving.label.slice(0, 80);
+    }
+  }
+  const definitions = source._t1arcNutrientDefinitions;
+  if (definitions && typeof definitions === 'object' && !Array.isArray(definitions)) {
+    const sourceDefinitions = definitions as Record<string, unknown>;
+    const normalized: NonNullable<FoodCandidate['nutrientDefinitions']> = {};
+    if (['available', 'total', 'by-difference', 'unknown'].includes(String(sourceDefinitions.carbohydrate))) {
+      normalized.carbohydrate = sourceDefinitions.carbohydrate as NonNullable<FoodCandidate['nutrientDefinitions']>['carbohydrate'];
+    }
+    if (['reported', 'atwater-specific', 'atwater-general'].includes(String(sourceDefinitions.energy))) {
+      normalized.energy = sourceDefinitions.energy as NonNullable<FoodCandidate['nutrientDefinitions']>['energy'];
+    }
+    if (typeof sourceDefinitions.note === 'string') normalized.note = sourceDefinitions.note.slice(0, 240);
+    if (Object.keys(normalized).length) result.nutrientDefinitions = normalized;
+  }
+  return result;
+}
+
 function retainedLocalPayload(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -138,6 +173,19 @@ export function retainedFoodCatalogData(
       minimal[FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY] = regionalContext;
     }
     retainedPayload = Object.keys(minimal).length ? minimal : undefined;
+  }
+  // Only normalized app metadata is retained, never an arbitrary provider blob.
+  const metadata = foodMetadataFromPayload({
+    _t1arcPersonalServing: { amount: food.personalServingAmount, unit: food.personalServingUnit, label: food.personalServingLabel },
+    _t1arcNutrientDefinitions: food.nutrientDefinitions,
+  });
+  if (metadata.personalServingAmount !== undefined || metadata.nutrientDefinitions) {
+    const enriched = { ...(retainedPayload as Record<string, unknown> | undefined) };
+    if (metadata.personalServingAmount !== undefined) enriched._t1arcPersonalServing = {
+      amount: metadata.personalServingAmount, unit: metadata.personalServingUnit, label: metadata.personalServingLabel,
+    };
+    if (metadata.nutrientDefinitions) enriched._t1arcNutrientDefinitions = metadata.nutrientDefinitions;
+    retainedPayload = enriched;
   }
   return {
     rawPayloadJson: serialise(retainedPayload),

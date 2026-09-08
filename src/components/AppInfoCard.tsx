@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { SectionCard } from "@/components/SectionCard";
+import { AppUpdateCard } from "@/components/AppUpdateCard";
 import {
   buildDetailsText,
   describeBuildSource,
@@ -97,6 +98,7 @@ export function AppInfoCard() {
           </Text>
         </View>
       ))}
+      <AppUpdateCard installed={details} />
       <Text style={[styles.body, { color: colors.textSecondary }]}>
         Two apps can share a name. Android uses the package above to keep
         installations separate. Build details contain no health records, account

@@ -4,6 +4,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,6 +19,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
@@ -56,11 +59,25 @@ jobs:
         working-directory: android
         env:
           NODE_ENV: production
+          T1ARC_PRIVATE_TEST_BUILD: '1'
+          T1ARC_FACE_STORE_FILE: ${{ runner.temp }}/t1arc-ci-faces.p12
+          T1ARC_FACE_STORE_PASSWORD: ephemeral-ci-only
+          T1ARC_FACE_KEY_ALIAS: ci-faces
+          T1ARC_FACE_KEY_PASSWORD: ephemeral-ci-only
         run: |
+          # Lint checks the actual bundled faces. This temporary signer is never
+          # published, and cannot update any user-installed release.
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$T1ARC_FACE_STORE_FILE" \
+            -storepass:env T1ARC_FACE_STORE_PASSWORD \
+            -keypass:env T1ARC_FACE_KEY_PASSWORD \
+            -alias "$T1ARC_FACE_KEY_ALIAS" -keyalg RSA -keysize 3072 \
+            -validity 2 -dname 'CN=T1 Arc CI only'
           chmod +x gradlew
           ./gradlew \
             :app:testDebugUnitTest \
             :t1arc-backup-crypto:testDebugUnitTest \
+            :t1arc-food-label:testDebugUnitTest \
             :t1arc-glooko-export:testDebugUnitTest \
             :t1arc-glucose-display:testDebugUnitTest \
             :t1arc-health-connect:testDebugUnitTest \
@@ -68,9 +85,17 @@ jobs:
             :wear:testDebugUnitTest \
             :watchface-meridian:testDebugUnitTest \
             :watchface-chronograph:testDebugUnitTest \
-            :watchface-orbit:testDebugUnitTest \
+            :watchface-atelier:testDebugUnitTest \
+            :watchface-pace:testDebugUnitTest \
+            :watchface-summit:testDebugUnitTest \
+            :watchface-push:testMeridianDebugUnitTest \
+            :watchface-push:testChronographDebugUnitTest \
+            :watchface-push:testAtelierDebugUnitTest \
+            :watchface-push:testPaceDebugUnitTest \
+            :watchface-push:testSummitDebugUnitTest \
             :app:lintRelease \
             :t1arc-backup-crypto:lintRelease \
+            :t1arc-food-label:lintRelease \
             :t1arc-glooko-export:lintRelease \
             :t1arc-glucose-display:lintRelease \
             :t1arc-health-connect:lintRelease \
@@ -78,7 +103,14 @@ jobs:
             :wear:lintRelease \
             :watchface-meridian:lintRelease \
             :watchface-chronograph:lintRelease \
-            :watchface-orbit:lintRelease \
+            :watchface-atelier:lintRelease \
+            :watchface-pace:lintRelease \
+            :watchface-summit:lintRelease \
+            :watchface-push:lintMeridianRelease \
+            :watchface-push:lintChronographRelease \
+            :watchface-push:lintAtelierRelease \
+            :watchface-push:lintPaceRelease \
+            :watchface-push:lintSummitRelease \
             --no-daemon
       - name: Verify release packaging fails closed without an explicit signer
         working-directory: android
@@ -97,6 +129,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24

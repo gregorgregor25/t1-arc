@@ -1,6 +1,6 @@
 import rawCatalog from './mext-japan-2023.json';
 
-import { normaliseFoodSearchText } from './foodSearchRanking';
+import { isFoodSearchQueryReady, normaliseFoodSearchText } from './foodSearchRanking';
 import type {
   FoodCandidate,
   FoodNutrition,
@@ -81,23 +81,68 @@ function candidate(food: RawMextFood): FoodCandidate {
 interface SearchableMextFood {
   food: RawMextFood;
   searchName: string;
+  searchFields: string[];
 }
 
-const searchable: SearchableMextFood[] = catalog.foods.map((food) => ({
-  food,
-  searchName: normaliseFoodSearchText(food.searchName),
-}));
+/** Script folding affects retrieval only; source names and preparations stay intact. */
+export function normaliseMextSearchQuery(value: string) {
+  return normaliseFoodSearchText(value.normalize('NFKC')
+    .replace(/[\u30a1-\u30f6]/g, (letter) => String.fromCharCode(letter.charCodeAt(0) - 0x60)));
+}
+
+function everydayAliases(name: string) {
+  const aliases: string[] = [];
+  // Cooked rice aliases deliberately never match the uncooked 水稲穀粒 rows.
+  if (name.startsWith('こめ') && name.includes('水稲めし')) {
+    aliases.push('ごはん ご飯 飯 炊いた米');
+    if (name.includes('精白米 うるち米')) aliases.push('白ごはん 白飯');
+  }
+  const rules: [RegExp, string][] = [
+    [/^うし /, '牛肉 ぎゅうにく'],
+    [/^ぶた /, '豚肉 ぶたにく'],
+    [/^にわとり /, '鶏肉 とりにく チキン'],
+    [/^鶏卵 /, '卵 たまご 玉子'],
+    [/豆腐/, 'とうふ トーフ'],
+    [/^じゃがいも /, 'じゃが芋 ジャガイモ'],
+    [/^ほうれんそう /, 'ほうれん草 ホウレンソウ'],
+    [/（たまねぎ類） たまねぎ /, '玉ねぎ 玉葱'],
+    [/（にんじん類） にんじん /, '人参 ニンジン'],
+    [/（だいこん類） だいこん /, '大根 ダイコン'],
+    [/^りんご /, '林檎 リンゴ'],
+  ];
+  for (const [pattern, alias] of rules) if (pattern.test(name)) aliases.push(alias);
+  return aliases;
+}
+
+const searchable: SearchableMextFood[] = catalog.foods.map((food) => {
+  const searchName = normaliseMextSearchQuery(food.searchName);
+  return {
+    food,
+    searchName,
+    searchFields: [searchName, ...everydayAliases(food.name)
+      .map((alias) => normaliseMextSearchQuery(`${alias} ${food.name}`))],
+  };
+});
+const searchableById = new Map(searchable.map((item) => [item.food.code, item]));
+
+export function mextJapanSearchFields(food: FoodCandidate) {
+  return searchableById.get(food.externalId)?.searchFields ?? [];
+}
 
 function scoreFood(item: SearchableMextFood, query: string, tokens: string[]) {
   if (item.searchName === query) return 10_000;
   if (item.searchName.startsWith(query)) return 7_000 - item.searchName.length;
-  if (!tokens.every((token) => item.searchName.includes(token))) return -1;
-  return 4_000 - item.searchName.indexOf(query) - item.searchName.length;
+  const indexed = item.searchFields.join(' ');
+  if (!tokens.every((token) => indexed.includes(token))) return -1;
+  const nameMatches = tokens.every((token) => item.searchName.includes(token));
+  const plainCookedRice = !nameMatches && item.food.name.includes('水稲めし') &&
+    item.food.name.includes('精白米 うるち米');
+  return (nameMatches ? 4_000 : plainCookedRice ? 3_900 : 3_500) - item.searchName.length;
 }
 
 export function searchMextJapanFoods(query: string, limit = 30) {
-  const normalised = normaliseFoodSearchText(query);
-  if (normalised.length < 2 || limit <= 0) return [];
+  const normalised = normaliseMextSearchQuery(query);
+  if (!isFoodSearchQueryReady(normalised) || limit <= 0) return [];
   const tokens = normalised.split(' ').filter(Boolean);
 
   return searchable

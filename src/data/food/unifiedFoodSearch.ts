@@ -1,5 +1,5 @@
-import { searchCofidFoods } from './cofidCatalog';
-import { searchMextJapanFoods } from './mextJapanCatalog';
+import { cofidSearchQuery, searchCofidFoods } from './cofidCatalog';
+import { mextJapanSearchFields, normaliseMextSearchQuery, searchMextJapanFoods } from './mextJapanCatalog';
 import {
   FoodSearchEngine,
   FoodSearchOptions,
@@ -9,10 +9,28 @@ import {
   createFoodSearchScheduler,
 } from './foodSearch';
 import { getStoredFoodSearchEntries } from './foodLogRepository';
-import { searchOpenFoodFactsProducts } from './openFoodFacts';
-import { searchUsdaReferenceFoods } from './usdaReferenceCatalog';
+import { openFoodFactsSearchFields, searchOpenFoodFactsPage } from './openFoodFacts';
+import { searchUsdaReferenceFoods, usdaReferenceSearchFields } from './usdaReferenceCatalog';
 import { resolveRegionalDefaults } from '@/domain/regionalProfile';
 import { getRuntimeRegionalProfile } from '@/domain/regionalProfileRuntime';
+import { countryPackMatchEvidence, getCountryFoodPackRevision, searchCountryPackFoods } from './countryPacks';
+
+export const countryPackSearchProvider: FoodSearchProvider = {
+  id: 'country-food-packs',
+  label: 'Offline country foods',
+  kind: 'offline',
+  minQueryLength: 2,
+  supportsTypeahead: true,
+  matchEvidence: countryPackMatchEvidence,
+  cacheScope() {
+    const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
+    return `${defaults.countryCode}|${defaults.locale}|${getCountryFoodPackRevision()}`;
+  },
+  search(query, { limit, signal }) {
+    const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
+    return searchCountryPackFoods(query, { countryCode: defaults.countryCode, locale: defaults.locale, limit, signal });
+  },
+};
 
 export const cofidSearchProvider: FoodSearchProvider = {
   id: 'cofid',
@@ -20,6 +38,9 @@ export const cofidSearchProvider: FoodSearchProvider = {
   kind: 'offline',
   minQueryLength: 2,
   supportsTypeahead: true,
+  matchEvidence(_food, query) {
+    return { matchedQuery: cofidSearchQuery(query) };
+  },
   search(query, { limit }) {
     const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
     return defaults.countryCode === 'GB' ? searchCofidFoods(query, limit) : [];
@@ -33,16 +54,23 @@ export const openFoodFactsSearchProvider: FoodSearchProvider = {
   // Avoid issuing a public network search for every very short input.
   minQueryLength: 3,
   supportsTypeahead: false,
+  supportsPagination: true,
+  matchEvidence(food) {
+    return { fields: openFoodFactsSearchFields(food) };
+  },
   cacheScope() {
     const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
     return `${defaults.countryCode}|${defaults.locale}`;
   },
-  search(query, { signal }) {
+  search(query, { signal, page, limit, countryScope }) {
     const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
-    return searchOpenFoodFactsProducts(query, globalThis.fetch, {
+    return searchOpenFoodFactsPage(query, globalThis.fetch, {
       signal,
       countryCode: defaults.countryCode === 'ZZ' ? undefined : defaults.countryCode,
       languageTag: defaults.locale,
+      page,
+      pageSize: limit,
+      countryScope,
     });
   },
 };
@@ -53,6 +81,9 @@ export const mextJapanSearchProvider: FoodSearchProvider = {
   kind: 'offline',
   minQueryLength: 2,
   supportsTypeahead: true,
+  matchEvidence(food, query) {
+    return { matchedQuery: normaliseMextSearchQuery(query), fields: mextJapanSearchFields(food) };
+  },
   search(query, { limit }) {
     const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
     return defaults.countryCode === 'JP'
@@ -67,6 +98,9 @@ export const usdaFoodDataCentralSearchProvider: FoodSearchProvider = {
   kind: 'offline',
   minQueryLength: 2,
   supportsTypeahead: true,
+  matchEvidence(food) {
+    return { fields: usdaReferenceSearchFields(food) };
+  },
   search(query, { limit }) {
     const defaults = resolveRegionalDefaults(getRuntimeRegionalProfile());
     if (defaults.countryCode !== 'US') return [];
@@ -97,6 +131,7 @@ export function createDefaultFoodSearchEngine(
       mextJapanSearchProvider,
       openFoodFactsSearchProvider,
       usdaFoodDataCentralSearchProvider,
+      countryPackSearchProvider,
       ...(options.additionalProviders ?? []),
     ],
   });

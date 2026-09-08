@@ -46,6 +46,12 @@ const recipe: FoodRecipe = {
 };
 
 describe('food recipes', () => {
+  it('scales every ingredient by one recipe multiplier without changing the recipe', () => {
+    expect(servingFromRecipe(recipe, 0.5)[0]?.amount).toBe(25);
+    expect(servingFromRecipe(recipe, 2)[0]?.amount).toBe(100);
+    expect(recipe.ingredients[0]?.amount).toBe(200);
+    expect(() => servingFromRecipe(recipe, 0)).toThrow('greater than zero');
+  });
   it('turns a batch into one-serving ingredient amounts', () => {
     expect(servingFromRecipe(recipe)).toEqual([
       { food: oats, amount: 50, unit: 'g' },

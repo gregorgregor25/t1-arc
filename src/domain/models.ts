@@ -303,6 +303,10 @@ export interface ContextNoteEvent extends HealthContextBase {
   detail?: string;
   /** Canonical value for imported meter checks; presentation chooses mg/dL or mmol/L. */
   glucoseMmolL?: number;
+  /** Explicit user-recorded start, never inferred from a glucose gap or note title. */
+  sensorStarted?: boolean;
+  /** The live glucose source selected when the sensor change was recorded. */
+  sensorGlucoseSourceId?: string;
 }
 
 export type HealthContextEvent =

@@ -11,6 +11,7 @@ import {
   TimeRange,
 } from '@/domain/models';
 import { legacyContextNoteGlucoseMmolL } from '@/domain/contextNotes';
+import { SENSOR_RESUMED_RECEIPT_WINDOW_MS, SENSOR_RESUMED_CLOCK_SKEW_MS, type SensorChangeStatusValue } from '@/domain/sensorChange';
 import { toDateKey } from '@/domain/time';
 import { hevyWorkoutDetail } from '@/data/hevy/mapping';
 import { parseHevyWorkout } from '@/data/hevy/validation';
@@ -170,6 +171,8 @@ interface ContextNoteRow {
   category: ContextNoteEvent['category'];
   detail: string | null;
   glucose_mmol_l: number | null;
+  sensor_started: number | null;
+  sensor_glucose_source_id: string | null;
   recorded_at_ms: number;
   source_file: string | null;
   source_row: number | null;
@@ -401,6 +404,9 @@ function noteFromRow(row: ContextNoteRow): ContextNoteEvent {
     detail: row.detail ?? undefined,
     glucoseMmolL:
       row.glucose_mmol_l ?? legacyContextNoteGlucoseMmolL(row.title),
+    ...(row.sensor_started === 1 && row.category === 'sensor' && row.origin === 'manual'
+      ? { sensorStarted: true, sensorGlucoseSourceId: row.sensor_glucose_source_id ?? undefined }
+      : {}),
     recordedAt: row.recorded_at_ms,
     sourceFile: row.source_file ?? undefined,
     sourceRow: row.source_row ?? undefined,
@@ -776,6 +782,36 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       })),
     ).events;
     return mergeHevyHealthConnectActivities(selected);
+  }
+
+  /** A recorded change is context, not a provider-reported warm-up state. */
+  async getSensorChangeStatus(sourceId: string | undefined, now: number): Promise<SensorChangeStatusValue | undefined> {
+    const database = await this.getDatabase();
+    const row = await database.getFirstAsync<ContextNoteRow>(
+      `SELECT * FROM context_notes
+       WHERE origin = 'manual' AND category = 'sensor' AND sensor_started = 1
+         AND start_ms <= ?
+         AND (sensor_glucose_source_id = ? OR sensor_glucose_source_id IS NULL)
+       ORDER BY start_ms DESC, recorded_at_ms DESC LIMIT 1`,
+      now, sourceId ?? null,
+    );
+    if (!row) return undefined;
+    const event = noteFromRow(row);
+    if (!event.sensorGlucoseSourceId || event.sensorGlucoseSourceId !== sourceId) {
+      return { event, waiting: false };
+    }
+    // Check persisted observations rather than only the last reading. Once
+    // readings return, a later outage or unrelated backfill cannot reopen warm-up.
+    const resumed = await database.getFirstAsync<{ id: string }>(
+      `SELECT id FROM glucose_readings
+       WHERE source_id = ? AND timestamp_ms > ? AND timestamp_ms <= ?
+         AND received_at_ms <= ? AND received_at_ms >= timestamp_ms - ?
+         AND received_at_ms - timestamp_ms <= ?
+         AND mmol_l > 0 AND imported_at_ms IS NULL AND source_file IS NULL
+       ORDER BY timestamp_ms ASC LIMIT 1`,
+      sourceId, event.start, now, now, SENSOR_RESUMED_CLOCK_SKEW_MS, SENSOR_RESUMED_RECEIPT_WINDOW_MS,
+    );
+    return { event, waiting: resumed === null };
   }
 
   async getRawSourceRecords(
@@ -1714,8 +1750,9 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         await database.runAsync(
         `INSERT INTO context_notes (
            id, source_id, origin, start_ms, end_ms, title, category, detail,
-           glucose_mmol_l, recorded_at_ms, source_file, source_row
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           glucose_mmol_l, recorded_at_ms, source_file, source_row,
+           sensor_started, sensor_glucose_source_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            start_ms = excluded.start_ms,
            end_ms = excluded.end_ms,
@@ -1723,6 +1760,8 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
            category = excluded.category,
            detail = excluded.detail,
            glucose_mmol_l = excluded.glucose_mmol_l,
+           sensor_started = excluded.sensor_started,
+           sensor_glucose_source_id = excluded.sensor_glucose_source_id,
            recorded_at_ms = excluded.recorded_at_ms`,
         event.id,
         event.sourceId,
@@ -1736,6 +1775,8 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         event.recordedAt ?? Date.now(),
         event.sourceFile ?? null,
         event.sourceRow ?? null,
+        event.sensorStarted === true ? 1 : null,
+        event.sensorStarted === true ? event.sensorGlucoseSourceId ?? null : null,
       );
       } else {
         const values = contextColumns(event);

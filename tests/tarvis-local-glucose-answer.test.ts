@@ -76,7 +76,7 @@ describe("local Tarv1s recurring-window glucose answers", () => {
       "2 of the 3 requested overnight windows",
     );
     expect(result.answer.answer).toContain(
-      "observed arithmetic mean was 7.5 mmol/L",
+      "Your average glucose from the available readings was 7.5 mmol/L",
     );
     expect(result.evidence.recordIds).toEqual([
       "wed-0000",

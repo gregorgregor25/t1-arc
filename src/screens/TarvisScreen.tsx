@@ -61,7 +61,8 @@ import {
   buildLocalPersonalDataAnswer,
   rangesForLocalPersonalDataIntent,
 } from "@/data/tarvis/localPersonalDataAnswer";
-import { coordinateTarvisRequest } from "@/data/tarvis/requestCoordinator";
+import { coordinateTarvisContextRequest, resolveSelectedContextAsOf } from "@/data/tarvis/contextRequestCoordinator";
+import { loadLocalCompoundAnswer } from "@/data/tarvis/localCompoundAnswer";
 import { tarvisEvidencePlanClarificationAnswer } from "@/data/tarvis/evidencePlanner";
 import { loadPlannedGlucoseEpisodeEvidence } from "@/data/tarvis/plannedGlucoseEpisodeEvidence";
 import { loadRetrospectiveEventReview } from "@/data/tarvis/retrospectiveEventReview";
@@ -84,7 +85,16 @@ import {
   TarvisConversationStorageLimitError,
 } from "@/data/tarvis/conversationStore";
 import { tarvisSettingsPresentation } from "@/data/tarvis/conversationScope";
+import { captureTarvisEntry, createTarvisComposerLifecycle } from '@/data/tarvis/composerLifecycle';
 import { formatTarvisConversation } from "@/data/tarvis/conversationExport";
+import { isTarvisGeneralEducationAnswer } from "@/data/tarvis/generalEducation";
+import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacket";
+import { buildTarvisSuggestions, isDefaultContextQuestion, type TarvisEntry } from '@/domain/tarvisEntry';
+import { PersonalNotebook } from '@/components/PersonalNotebook';
+import { SaveToNotebookButton } from '@/components/SaveToNotebookButton';
+import type { NotebookEntry } from '@/domain/personalNotebook';
+import { buildSelectedContextAnswer, selectedContextRange } from '@/data/tarvis/selectedContextAnswer';
+import { buildSelectedHealthEvidencePacket } from '@/data/tarvis/selectedHealthEvidence';
 import type { GlucoseAnswerBundleV2 } from "@/data/tarvis/glucoseAnswerBundleV2";
 import {
   describeTarvisIntent,
@@ -134,28 +144,6 @@ import {
   type LocalDataWriteLease,
   withLocalDataWriteLeaseTransaction,
 } from "@/data/privacy/localDataWriteEpoch";
-
-const SUGGESTIONS: {
-  icon: keyof typeof Ionicons.glyphMap;
-  question: string;
-}[] = [
-  {
-    icon: "trending-down-outline",
-    question: "Why have I been going low recently?",
-  },
-  {
-    icon: "analytics-outline",
-    question: "What patterns changed this week?",
-  },
-  {
-    icon: "walk-outline",
-    question: "How did my last workout affect glucose?",
-  },
-  {
-    icon: "restaurant-outline",
-    question: "Compare yesterday's carbs and bolus",
-  },
-];
 
 function guidanceReferences(
   items: readonly TarvisReviewedKnowledgeItem[],
@@ -208,12 +196,16 @@ function combineTarvisRequestMetrics(
   };
 }
 
+// Saved/local replies need their exact references, not an eagerly built report.
+type ChatEvidenceLookup = Pick<TarvisEvidenceLookup, 'references'> &
+  Partial<Pick<TarvisEvidenceLookup, 'packet'>>;
+
 interface ChatExchange {
   id: string;
   threadId: string;
   question: string;
   answer: TarvisAnswer;
-  evidence: TarvisEvidenceLookup;
+  evidence: ChatEvidenceLookup;
   clarificationQuestion?: string;
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
@@ -265,10 +257,15 @@ function conversationUpdatedLabel(timestamp: number) {
 
 interface Props {
   asOf: number;
+  selectionAsOf?: number;
   conversationScope: TarvisConversationScope;
   initialQuestion?: string;
+  entryContext?: TarvisEntry;
+  onClearEntry?(): void;
+  onRestoreEntry?(entry: TarvisEntry): void;
   liveData: boolean;
-  report: InsightReport;
+  report?: InsightReport;
+  loadDefaultReport?(): Promise<InsightReport>;
   loadGlucoseReadings?(range: TimeRange): Promise<GlucoseReading[]>;
   loadTimelineData?(range: TimeRange): Promise<TimelineData>;
   loadPhysiologyData?: RetrospectivePhysiologyLoader;
@@ -285,11 +282,11 @@ interface Props {
 function confidenceLabel(confidence: TarvisAnswer["confidence"]) {
   switch (confidence) {
     case "high":
-      return "How well the records support this: Strong";
+      return "Based on your recorded data";
     case "moderate":
-      return "How well the records support this: Moderate";
+      return "Some context is missing";
     default:
-      return "How well the records support this: Limited";
+      return "Limited records for this answer";
   }
 }
 
@@ -550,7 +547,7 @@ function TarvisDirectAnswerContent({
   presentation,
 }: {
   disabled: boolean;
-  evidenceLookup: TarvisEvidenceLookup;
+  evidenceLookup: ChatEvidenceLookup;
   guidanceSources: TarvisGuidanceReference[];
   onInspectEvidence(evidence: EvidenceReference): void;
   onFollowUp(question: string): void;
@@ -1300,10 +1297,15 @@ function TarvisConversationHistory({
 
 export function TarvisScreen({
   asOf,
+  selectionAsOf,
   conversationScope,
   initialQuestion,
+  entryContext,
+  onClearEntry,
+  onRestoreEntry,
   liveData,
   report,
+  loadDefaultReport,
   loadGlucoseReadings,
   loadTimelineData,
   loadPhysiologyData,
@@ -1313,7 +1315,7 @@ export function TarvisScreen({
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
-  const evidence = useMemo(() => buildTarvisEvidencePacket(report), [report]);
+  const evidence = useMemo(() => report ? buildTarvisEvidencePacket(report) : undefined, [report]);
   const { width: screenWidth, fontScale } = useWindowDimensions();
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
@@ -1324,12 +1326,34 @@ export function TarvisScreen({
   const [apiKey, setApiKey] = useState("");
   const [, setUsage] = useState<TarvisUsage>();
   const [question, setQuestion] = useState("");
+  const [composerLifecycle] = useState(createTarvisComposerLifecycle);
+  const setComposerQuestion = useCallback((text: string) => {
+    composerLifecycle.replaceDraft();
+    setQuestion(text);
+  }, [composerLifecycle]);
+  const [suggestionSnapshot, setSuggestionSnapshot] = useState<{ scope: string; data: TimelineData }>();
+  const suggestionData = suggestionSnapshot?.scope === conversationScope.identity ? suggestionSnapshot.data : undefined;
+  const suggestions = useMemo(() => buildTarvisSuggestions(suggestionData, asOf), [suggestionData, asOf]);
+  const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
+  const [notebookVisible, setNotebookVisible] = useState(false);
+  const [notebookSeed, setNotebookSeed] = useState<NotebookEntry>();
   const [exchanges, setExchanges] = useState<ChatExchange[]>([]);
   const [recentThreads, setRecentThreads] = useState<
     ConversationThreadSummary[]
   >([]);
   const [conversationVisible, setConversationVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
+  const suggestionWindow = Math.floor(asOf / (5 * 60_000));
+  useEffect(() => {
+    if (!loadTimelineData || conversationVisible) return;
+    let active = true;
+    const end = suggestionWindow * 5 * 60_000;
+    void loadTimelineData({ start: end - 7 * 86_400_000, end }).then(data => {
+      if (active) setSuggestionSnapshot({ scope: conversationScope.identity, data });
+    }).catch(() => { if (active) setSuggestionSnapshot(undefined); });
+    return () => { active = false; };
+    // Suggestions are optional. Never block the composer or keep scanning while chatting.
+  }, [loadTimelineData, conversationScope.identity, suggestionWindow, conversationVisible]);
   const [threadPendingDelete, setThreadPendingDelete] =
     useState<ConversationThreadSummary>();
   const [conversationLoaded, setConversationLoaded] = useState(false);
@@ -1386,7 +1410,7 @@ export function TarvisScreen({
       createdAt: exchange.createdAt,
       scope: exchange.scope,
       evidence: {
-        packet: evidence.packet,
+        packet: evidence?.packet,
         references: new Map(
           exchange.evidence.map((reference) => [reference.id, reference]),
         ),
@@ -1426,10 +1450,27 @@ export function TarvisScreen({
     return `thread:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
   }
 
+  const entryOwnerIdentity = conversationScope.kind === 'legacy-unknown' ? undefined : conversationScope.ownerIdentity;
+  const lastPrefillId = useRef<string | undefined>(undefined);
   useEffect(() => {
     const draft = initialQuestion?.trim();
-    if (draft) setQuestion(draft);
-  }, [initialQuestion]);
+    if (entryContext && entryContext.ownerIdentity !== entryOwnerIdentity) {
+      setComposerQuestion('');
+      onClearEntry?.();
+    } else if (draft) {
+      setComposerQuestion(draft);
+      const prefillId = entryContext?.requestId ?? `draft:${draft}`;
+      if (lastPrefillId.current === prefillId) return;
+      lastPrefillId.current = prefillId;
+      setSettingsVisible(false);
+      setApiKey('');
+      setHistoryVisible(false);
+      setConversationVisible(false);
+      setConfirmation(undefined);
+      setPendingClarification(undefined);
+      setError(undefined);
+    }
+  }, [initialQuestion, entryContext, entryOwnerIdentity, onClearEntry, setComposerQuestion]);
 
   const refreshSettings = useCallback(async () => {
     setLoadingSettings(true);
@@ -1501,6 +1542,12 @@ export function TarvisScreen({
       setConversationCorrupt(false);
       setConversationScopeNotice(false);
       setError(undefined);
+      if (previousScope && previousScope.kind !== 'legacy-unknown' &&
+        (conversationScope.kind === 'legacy-unknown' || previousScope.ownerIdentity !== conversationScope.ownerIdentity) &&
+        (!entryContext || entryContext.ownerIdentity !== entryOwnerIdentity)) {
+        setComposerQuestion('');
+        onClearEntry?.();
+      }
     }
     workingRef.current = false;
     setConversationLoaded(false);
@@ -1640,7 +1687,7 @@ export function TarvisScreen({
     }: {
       answer: TarvisAnswer;
       clarificationQuestion?: string;
-      evidenceLookup: TarvisEvidenceLookup;
+      evidenceLookup: ChatEvidenceLookup;
       intent?: TarvisIntentV1;
       presentation?: TarvisEvidencePresentation;
       prompt: string;
@@ -1759,7 +1806,8 @@ export function TarvisScreen({
     setExchanges([]);
     setConversationVisible(false);
     setPendingClarification(undefined);
-    setQuestion("");
+    setComposerQuestion("");
+    onClearEntry?.();
     setError(undefined);
     requestAnimationFrame(() => questionInputRef.current?.focus());
   }
@@ -1827,7 +1875,8 @@ export function TarvisScreen({
     activeThreadIdRef.current = threadId;
     exchangesRef.current = restored;
     setExchanges(restored);
-    setQuestion("");
+    setComposerQuestion("");
+    onClearEntry?.();
     setError(undefined);
     const clarificationQuestion = stored.at(-1)?.clarificationQuestion;
     if (clarificationQuestion) {
@@ -1961,9 +2010,9 @@ export function TarvisScreen({
       .finally(() => setSettingsWorking(false));
   }
 
-  async function sendQuestion(value = question) {
-    const prompt = value.trim();
-    if (!prompt || workingRef.current || !conversationLoaded) return;
+  async function sendQuestion(value?: string) {
+    const prompt = (value ?? question).trim();
+    if (!prompt || workingRef.current || loadingSettings || !conversationLoaded) return;
     const scopeLease = conversationScopeLeaseRef.current;
     if (!scopeLease || scopeLease.identity !== conversationScope.identity) {
       return;
@@ -1975,6 +2024,12 @@ export function TarvisScreen({
       if (isTarvisScreenLifecycleSupersededError(reason)) return;
       throw reason;
     }
+    // A tapped suggestion or follow-up is a new choice, even if its text happens
+    // to match an older selected event from another source.
+    const selection = value === undefined
+      ? captureTarvisEntry(entryContext, prompt, entryOwnerIdentity)
+      : undefined;
+    onClearEntry?.();
     const startsNewThread = !conversationVisible;
     if (startsNewThread || !activeThreadIdRef.current) {
       activeThreadIdRef.current = createThreadId();
@@ -1984,7 +2039,14 @@ export function TarvisScreen({
     }
     workingRef.current = true;
     setConversationVisible(true);
-    setQuestion("");
+    setComposerQuestion("");
+    const composerRequest = composerLifecycle.beginRequest();
+    const restoreDraft = () => {
+      if (!composerRequest.canRestoreDraft()) return false;
+      setComposerQuestion(prompt);
+      if (selection) onRestoreEntry?.(selection);
+      return true;
+    };
     setError(undefined);
     setWorking(true);
     let writeLease: LocalDataWriteLease | undefined;
@@ -2013,13 +2075,26 @@ export function TarvisScreen({
             },
           ]
         : [];
-      const questionAsOf = liveData ? Date.now() : asOf;
-      const plan = coordinateTarvisRequest({
+      const questionAsOf = resolveSelectedContextAsOf({
+        entryContext: selection, question: prompt, ownerIdentity: entryOwnerIdentity,
+        selectionAsOf, fallbackAsOf: liveData ? Date.now() : asOf,
+      });
+      if (selection && conversationScope.kind !== 'legacy-unknown' && isDefaultContextQuestion(selection, prompt, conversationScope.ownerIdentity) && loadTimelineData) {
+        const timeline = await loadTimelineData(selectedContextRange(selection, questionAsOf));
+        operation.assertCurrent();
+        await assertLocalDataWriteLeaseCurrent(activeWriteLease);
+        const selected = buildSelectedContextAnswer(selection, timeline, questionAsOf, conversationScope.ownerIdentity);
+        await appendExchange({ answer: selected.answer, evidenceLookup: { references: new Map(selected.evidence.map(reference => [reference.id, reference])) }, nextPendingClarification: undefined, prompt: `${prompt}\n${selection.label}` }, activeWriteLease, operation);
+        return;
+      }
+      const plan = coordinateTarvisContextRequest({
         question: prompt,
         asOf: questionAsOf,
+        entryContext: selection,
+        ownerIdentity: entryOwnerIdentity,
         conversationHistory: history,
         intentHistory,
-        pendingClarification,
+        pendingClarification: startsNewThread ? undefined : pendingClarification,
       });
       if (plan.kind === "answer") {
         await appendExchange(
@@ -2027,7 +2102,7 @@ export function TarvisScreen({
             answer: plan.answer,
             clarificationQuestion: plan.pendingClarification?.question,
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(),
             },
             nextPendingClarification: plan.pendingClarification,
@@ -2066,7 +2141,7 @@ export function TarvisScreen({
             modelRequestSent: false,
             modelSharing: "local-only",
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(),
             },
             nextPendingClarification: undefined,
@@ -2075,6 +2150,28 @@ export function TarvisScreen({
           activeWriteLease,
           operation,
         );
+        return;
+      }
+      if (plan.kind === "scoped-compound") {
+        const local = await loadLocalCompoundAnswer({
+          asOf: questionAsOf,
+          intents: plan.intents,
+          loadGlucoseReadings,
+          loadTimelineData,
+        });
+        operation.assertCurrent();
+        await assertLocalDataWriteLeaseCurrent(activeWriteLease);
+        const localEvidence = compactTarvisEvidence(local.evidence);
+        await appendExchange({
+          answer: local.answer,
+          answerSource: "local",
+          modelRequestSent: false,
+          modelSharing: "local-only",
+          evidenceLookup: { references: new Map(localEvidence.map((reference) => [reference.id, reference])) },
+          nextPendingClarification: undefined,
+          presentation: local.presentation,
+          prompt,
+        }, activeWriteLease, operation);
         return;
       }
       if (plan.kind === "scoped-glucose") {
@@ -2104,7 +2201,7 @@ export function TarvisScreen({
           {
             answer: local.answer,
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(
                 localEvidence.map((reference) => [reference.id, reference]),
               ),
@@ -2145,7 +2242,7 @@ export function TarvisScreen({
           {
             answer: local.answer,
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(
                 localEvidence.map((reference) => [reference.id, reference]),
               ),
@@ -2208,7 +2305,7 @@ export function TarvisScreen({
                 modelSharing: "local-only",
                 modelRequestSent: requestFailure?.modelRequestSent ?? false,
                 evidenceLookup: {
-                  packet: evidence.packet,
+                  packet: evidence?.packet,
                   references: new Map(
                     localEvidence.map((reference) => [reference.id, reference]),
                   ),
@@ -2236,7 +2333,7 @@ export function TarvisScreen({
               modelSharing: "local-only",
               modelRequestSent: response.modelRequestSent,
               evidenceLookup: {
-                packet: evidence.packet,
+                packet: evidence?.packet,
                 references:
                   mapTarvisRetrospectiveEvidenceReferences(localEvidence),
               },
@@ -2267,7 +2364,7 @@ export function TarvisScreen({
             answer: local.answer,
             modelSharing: "local-only",
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(
                 localEvidence.map((reference) => [reference.id, reference]),
               ),
@@ -2294,7 +2391,7 @@ export function TarvisScreen({
               modelRequestSent: failure?.modelRequestSent ?? false,
               modelSharing: "local-only",
               evidenceLookup: {
-                packet: evidence.packet,
+                packet: evidence?.packet,
                 references: new Map(),
               },
               nextPendingClarification: undefined,
@@ -2376,7 +2473,7 @@ export function TarvisScreen({
               modelRequestSent: true,
               modelSharing: "local-only",
               evidenceLookup: {
-                packet: evidence.packet,
+                packet: evidence?.packet,
                 references: new Map(),
               },
               nextPendingClarification: undefined,
@@ -2517,7 +2614,7 @@ export function TarvisScreen({
             answerSource: "local",
             modelRequestSent: false,
             evidenceLookup: {
-              packet: evidence.packet,
+              packet: evidence?.packet,
               references: new Map(),
             },
             guidanceSources: guidanceReferences(reviewedKnowledge),
@@ -2531,6 +2628,9 @@ export function TarvisScreen({
         return;
       }
 
+      if (plan.kind === 'model-evidence' && plan.evidenceRanges && !loadReportForRange) {
+        throw new Error('Your selected records could not be loaded. Reopen that period and try again.');
+      }
       const reportForQuestion =
         plan.kind === "model-evidence" &&
         plan.evidenceRanges &&
@@ -2541,19 +2641,40 @@ export function TarvisScreen({
               questionAsOf,
             )
           : undefined;
+      if (plan.kind === 'model-evidence' && plan.evidenceRanges && reportForQuestion &&
+        (reportForQuestion.currentRange.start !== plan.evidenceRanges.current.start ||
+          reportForQuestion.currentRange.end !== plan.evidenceRanges.current.end ||
+          reportForQuestion.previousRange.start !== plan.evidenceRanges.previous.start ||
+          reportForQuestion.previousRange.end !== plan.evidenceRanges.previous.end)) {
+        throw new Error('The loaded records do not match your selected period. Reopen that period and try again.');
+      }
+      const defaultReportForQuestion =
+        plan.kind === 'model-evidence' && !reportForQuestion && !evidence && loadDefaultReport
+          ? await loadDefaultReport()
+          : undefined;
+      operation.assertCurrent();
       const rawEvidenceForQuestion =
         plan.kind === "model-education"
           ? undefined
           : reportForQuestion
-            ? buildTarvisEvidencePacket(reportForQuestion)
-            : evidence;
+            ? plan.kind === 'model-evidence' && plan.selectedHealthMetric
+              ? buildSelectedHealthEvidencePacket(reportForQuestion, plan.selectedHealthMetric)
+              : buildTarvisEvidencePacket(reportForQuestion)
+            : defaultReportForQuestion
+              ? buildTarvisEvidencePacket(defaultReportForQuestion)
+              : evidence;
+      if (plan.kind === 'model-evidence' && !rawEvidenceForQuestion) {
+        throw new Error('Your local records could not be loaded for that question. Please try again.');
+      }
       const evidenceForQuestion =
         plan.kind === "model-evidence" && rawEvidenceForQuestion
           ? {
               ...rawEvidenceForQuestion,
               packet: selectTarvisEvidencePacket(
                 prompt,
-                rawEvidenceForQuestion.packet,
+                plan.episodeReviewKind
+                  ? focusTarvisEpisodeReviewPacket(prompt, rawEvidenceForQuestion.packet, plan.episodeReviewKind)
+                  : rawEvidenceForQuestion.packet,
               ),
             }
           : rawEvidenceForQuestion;
@@ -2613,7 +2734,7 @@ export function TarvisScreen({
               evidenceIds: [],
               limitations: ["Nothing left this phone."],
             },
-            evidenceLookup: { packet: evidence.packet, references: new Map() },
+            evidenceLookup: { packet: evidence?.packet, references: new Map() },
             nextPendingClarification: undefined,
             prompt,
           },
@@ -2634,7 +2755,7 @@ export function TarvisScreen({
               evidenceIds: [],
               limitations: ["Nothing left this phone."],
             },
-            evidenceLookup: { packet: evidence.packet, references: new Map() },
+            evidenceLookup: { packet: evidence?.packet, references: new Map() },
             nextPendingClarification: undefined,
             prompt,
           },
@@ -2651,7 +2772,7 @@ export function TarvisScreen({
           evidenceForQuestion?.packet,
           plan.history,
           writeLease,
-          { signal: operation.signal, safetyHistory: history },
+          { signal: operation.signal, safetyHistory: history, packetIsPreselected: true },
         );
       } catch (reason) {
         if (
@@ -2678,7 +2799,7 @@ export function TarvisScreen({
           answerSource: response.answerSource,
           modelRequestSent: response.modelRequestSent,
           evidenceLookup: evidenceForQuestion ?? {
-            packet: evidence.packet,
+            packet: evidence?.packet,
             references: new Map(),
           },
           intent: plan.intent,
@@ -2717,7 +2838,7 @@ export function TarvisScreen({
         return;
       }
       if (!writeLease) {
-        setQuestion(prompt);
+        if (!restoreDraft()) return;
         setError(
           reason instanceof Error
             ? reason.message
@@ -2735,7 +2856,7 @@ export function TarvisScreen({
             {
               answer: clockBoundaryCapability,
               evidenceLookup: {
-                packet: evidence.packet,
+                packet: evidence?.packet,
                 references: new Map(),
               },
               nextPendingClarification: undefined,
@@ -2748,7 +2869,7 @@ export function TarvisScreen({
         }
         await withLocalDataWriteLeaseTransaction(writeLease, async () => {
           operation.assertCurrent();
-          setQuestion(prompt);
+          if (!restoreDraft()) return;
           setError(
             reason instanceof Error
               ? reason.message
@@ -2769,7 +2890,7 @@ export function TarvisScreen({
           if (isTarvisScreenLifecycleSupersededError(scopeError)) return;
           return;
         }
-        setQuestion(prompt);
+        if (!restoreDraft()) return;
         setError(
           "Tarv1s could not safely finish this request. Nothing new was added to the conversation.",
         );
@@ -2873,10 +2994,10 @@ export function TarvisScreen({
   );
 
   const canSendQuestion = Boolean(
-    conversationLoaded && question.trim() && !working,
+    !loadingSettings && conversationLoaded && question.trim() && !working,
   );
   const composerFooter =
-    !loadingSettings && !settingsVisible && !historyVisible ? (
+    !settingsVisible && !historyVisible ? (
       <View
         style={[
           styles.composerDock,
@@ -2886,6 +3007,12 @@ export function TarvisScreen({
           },
         ]}
       >
+        {entryContext && conversationScope.kind !== 'legacy-unknown' && entryContext.ownerIdentity === conversationScope.ownerIdentity ? (
+          <View style={[styles.interpretation, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: radius.md }]}>
+            <View style={{ flex: 1 }}><Text style={[styles.evidenceLabel, { color: colors.text }]}>{entryContext.label}</Text><Text style={[styles.evidenceCount, { color: colors.textSecondary }]}>Selected records · sends only when you tap Send</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Clear selected context" onPress={onClearEntry} style={{ minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
+          </View>
+        ) : null}
         {error ? (
           <View
             accessibilityLiveRegion="polite"
@@ -2908,6 +3035,11 @@ export function TarvisScreen({
               {error}
             </Text>
           </View>
+        ) : null}
+        {loadingSettings || (!conversationLoaded && !conversationCorrupt && !error) ? (
+          <Text accessibilityLiveRegion="polite" style={[styles.boundary, { color: colors.textTertiary }]}>
+            Opening saved conversations and connection…
+          </Text>
         ) : null}
         {working ? (
           <View style={styles.workingRow}>
@@ -2937,7 +3069,7 @@ export function TarvisScreen({
             accessibilityLabel="Question for Tarv1s"
             editable={!working}
             multiline
-            onChangeText={setQuestion}
+            onChangeText={(text) => { setComposerQuestion(text); if (entryContext && text !== entryContext.question) onClearEntry?.(); }}
             placeholder="Message Tarv1s"
             placeholderTextColor={colors.textTertiary}
             style={[styles.questionInput, { color: colors.text }]}
@@ -2969,7 +3101,7 @@ export function TarvisScreen({
           </Pressable>
         </View>
         <Text style={[styles.boundary, { color: colors.textTertiary }]}>
-          Diabetes and personal health questions only.
+          Diabetes, health and nutrition questions.
         </Text>
       </View>
     ) : undefined;
@@ -3024,7 +3156,18 @@ export function TarvisScreen({
           />
         )}
 
-        {loadingSettings ? (
+        {!settingsVisible && conversationScope.kind !== 'legacy-unknown' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open my notebook"
+            onPress={() => { setNotebookSeed(undefined); setNotebookVisible(true); }}
+            style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}
+          >
+            <Ionicons accessibilityElementsHidden name="bookmark-outline" size={18} color={colors.primary} />
+            <Text style={[styles.conversationActionText, { color: colors.primary }]}>My notebook</Text>
+          </Pressable>
+        ) : null}
+        {loadingSettings && settingsVisible ? (
           <SectionCard style={styles.loadingCard}>
             <ActivityIndicator color={colors.primary} />
           </SectionCard>
@@ -3355,8 +3498,8 @@ export function TarvisScreen({
                 <Text
                   style={[styles.introDetail, { color: colors.textSecondary }]}
                 >
-                  Ask about your diabetes, activity, meals, insulin or any
-                  health records available in T1 Arc.
+                  Ask about diabetes, health and nutrition, or explore how your
+                  records in T1 Arc fit together.
                 </Text>
                 <View
                   style={[
@@ -3377,7 +3520,7 @@ export function TarvisScreen({
                   <Text
                     style={[styles.recordsReadyText, { color: colors.text }]}
                   >
-                    Answers use data available in T1 Arc
+                    Personal answers use your T1 Arc records
                   </Text>
                 </View>
               </View>
@@ -3389,14 +3532,14 @@ export function TarvisScreen({
 
             {!conversationVisible ? (
               <View style={styles.suggestions}>
-                {SUGGESTIONS.map((suggestion) => (
+                {suggestions.map((suggestion) => (
                   <Pressable
                     key={suggestion.question}
                     accessibilityState={{
-                      disabled: !conversationLoaded || working,
+                      disabled: loadingSettings || !conversationLoaded || working,
                     }}
                     accessibilityRole="button"
-                    disabled={!conversationLoaded || working}
+                    disabled={loadingSettings || !conversationLoaded || working}
                     onPress={() => void sendQuestion(suggestion.question)}
                     style={({ pressed }) => [
                       styles.suggestion,
@@ -3408,7 +3551,7 @@ export function TarvisScreen({
                           : colors.surface,
                         borderColor: colors.border,
                         borderRadius: radius.md,
-                        opacity: !conversationLoaded || working ? 0.55 : 1,
+                        opacity: loadingSettings || !conversationLoaded || working ? 0.55 : 1,
                       },
                     ]}
                   >
@@ -3575,19 +3718,22 @@ export function TarvisScreen({
                                 >
                                   {exchange.answer.headline}
                                 </Text>
-                                {exchange.answer.responseKind !== 'safety-boundary' ? (
+                                {exchange.answer.responseKind !== 'safety-boundary' &&
+                                (exchange.answer.evidenceIds.length > 0 || isTarvisGeneralEducationAnswer(exchange.answer)) ? (
                                   <Text
                                     style={[
                                       styles.confidence,
                                       { color: colors.textTertiary },
                                     ]}
                                   >
-                                    {confidenceLabel(exchange.answer.confidence)}
+                                    {isTarvisGeneralEducationAnswer(exchange.answer)
+                                      ? "General explanation · No personal records used"
+                                      : confidenceLabel(exchange.answer.confidence)}
                                   </Text>
                                 ) : null}
                               </View>
                             </View>
-                            {exchange.intent ? (
+                            {exchange.intent && expandedAnswers.has(exchange.id) ? (
                               <View
                                 accessible
                                 accessibilityLabel={`Answering for ${describeTarvisIntent(exchange.intent, { timezone: "local time" })}`}
@@ -3698,10 +3844,11 @@ export function TarvisScreen({
                                 ))}
                               </View>
                             ) : null}
-                            <TarvisEvidenceSummary
+                            {exchange.answer.evidenceIds.length ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedAnswers.has(exchange.id) }} onPress={() => setExpandedAnswers(current => { const next = new Set(current); if (next.has(exchange.id)) next.delete(exchange.id); else next.add(exchange.id); return next; })} style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}><Ionicons accessibilityElementsHidden name={expandedAnswers.has(exchange.id) ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} /><Text style={[styles.evidenceLabel, { color: colors.primary }]}>{expandedAnswers.has(exchange.id) ? 'Hide supporting details' : 'View calculation and records'}</Text></Pressable> : null}
+                            {expandedAnswers.has(exchange.id) ? <TarvisEvidenceSummary
                               presentation={exchange.presentation}
-                            />
-                            {exchange.answer.evidenceIds.length ? (
+                            /> : null}
+                            {exchange.answer.evidenceIds.length && expandedAnswers.has(exchange.id) ? (
                               <View style={styles.evidenceList}>
                                 <Text
                                   style={[
@@ -3803,6 +3950,7 @@ export function TarvisScreen({
                             ) : null}
                           </>
                         )}
+                        {exchange.scope.kind !== 'legacy-unknown' ? <SaveToNotebookButton id={exchange.id} title={exchange.question} answer={exchange.answer} evidence={[...exchange.evidence.references.values()]} createdAt={exchange.createdAt} ownerIdentity={exchange.scope.ownerIdentity} dataMode={exchange.scope.dataMode} disabled={working} onSaved={entry => { setNotebookSeed(entry); setNotebookVisible(true); }} /> : null}
                         <TarvisRouteMarker
                           hostedAnswer={exchange.answerSource === "hosted"}
                           latest={exchangeIndex === exchanges.length - 1}
@@ -3815,6 +3963,7 @@ export function TarvisScreen({
           </>
         )}
       </AppScreen>
+      {conversationScope.kind !== 'legacy-unknown' ? <PersonalNotebook visible={notebookVisible} onClose={() => { setNotebookVisible(false); setNotebookSeed(undefined); }} ownerIdentity={conversationScope.ownerIdentity} dataMode={conversationScope.dataMode} seed={notebookSeed} /> : null}
       <TarvisConfirmationDialog
         confirmation={confirmation}
         onCancel={() => {

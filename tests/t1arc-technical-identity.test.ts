@@ -64,7 +64,9 @@ describe('permanent T1 Arc technical identity', () => {
     expect(identity.android.watchFaceApplicationIds).toEqual({
       meridian: `${namespace}.watchface.meridian`,
       chronograph: `${namespace}.watchface.chronograph`,
-      orbit: `${namespace}.watchface.orbit`,
+      atelier: `${namespace}.watchface.atelier`,
+      pace: `${namespace}.watchface.pace`,
+      summit: `${namespace}.watchface.summit`,
     });
     expect(identity.android.variants).toEqual({
       debugApplicationIdSuffix: '.dev',

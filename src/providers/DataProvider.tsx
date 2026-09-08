@@ -109,6 +109,7 @@ import {
   syncHevyIfDue,
 } from "@/data/hevy/sync";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
+import { clearBackupStatus } from "@/data/backup/backupStatus";
 import { DiabetesRepository } from "@/data/contracts";
 import { DexcomShareGlucoseSource } from "@/data/dexcomShare/DexcomShareGlucoseSource";
 import {
@@ -678,9 +679,26 @@ export function DataProvider({ children }: PropsWithChildren) {
           await withLocalDataWriteLeaseTransaction(writeLease, () =>
             saveDataMode(mode),
           );
+          // Publish the verified owner and local repository before registering
+          // optional background jobs or scanning historical bounds. Live chat
+          // must not wait on those tasks to open its saved conversations.
+          if (id !== configurationId.current) return;
+          await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+            if (id !== configurationId.current) return;
+            configuredLibreCredentials.current = mode === 'live' ? credentials : undefined;
+            setRepositoryState({
+              repository: repositoryForPublication(repository),
+              mode,
+              ready: true,
+              backgroundSyncAvailable: false,
+              tarvisLocalDataEpoch: writeLease!.epoch,
+              tarvisOwnerSources,
+            });
+            setRevision((value) => value + 1);
+          });
           let backgroundSyncAvailable = false;
           if (mode === "live") {
-            backgroundSyncAvailable = await registerLibreBackgroundSync();
+            backgroundSyncAvailable = await registerLibreBackgroundSync().catch(() => false);
           } else {
             await unregisterLibreBackgroundSync();
           }
@@ -703,23 +721,16 @@ export function DataProvider({ children }: PropsWithChildren) {
 
           if (id !== configurationId.current) return;
           if (mode === "live") {
-            await refreshEarliestLiveDate(() => true, writeLease);
+            await refreshEarliestLiveDate(() => id === configurationId.current, writeLease);
           }
           if (id !== configurationId.current) return;
           await withLocalDataWriteLeaseTransaction(writeLease, async () => {
             if (id !== configurationId.current) return;
-            configuredLibreCredentials.current =
-              mode === "live" ? credentials : undefined;
-            setRepositoryState({
-              repository: repositoryForPublication(repository),
-              mode,
-              ready: true,
+            setRepositoryState((state) => ({
+              ...state,
               backgroundSyncAvailable,
-              tarvisLocalDataEpoch: writeLease!.epoch,
-              tarvisOwnerSources,
-            });
+            }));
             setGlookoBackgroundSyncAvailable(glookoBackgroundAvailable);
-            setRevision((value) => value + 1);
           });
         } catch (error) {
           if (id !== configurationId.current) return;
@@ -2435,6 +2446,7 @@ export function DataProvider({ children }: PropsWithChildren) {
             saveGlucoseAlertPreferences({ ...alerts, enabled: false }),
             resetGlucoseAlertState(),
             clearInsightReviewPreferences(),
+            clearBackupStatus(),
           ]);
 
           const resetLease = await T1ArcGlookoExport.beginDataResetAsync();

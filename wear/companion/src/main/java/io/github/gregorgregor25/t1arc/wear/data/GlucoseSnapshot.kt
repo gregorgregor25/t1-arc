@@ -60,6 +60,9 @@ object GlucoseSemantics {
         }
     }
 
+    fun watchFaceStatusTitle(snapshot: GlucoseSnapshot?, freshness: GlucoseFreshness): String =
+        snapshot?.let { unitLabel(it) + " · " + statusTitle(it, freshness) } ?: "WAITING FOR GLUCOSE"
+
     fun freshness(
         snapshot: GlucoseSnapshot?,
         nowMs: Long = System.currentTimeMillis(),

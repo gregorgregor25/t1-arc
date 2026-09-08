@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   getCachedDateTimeFormat,
@@ -13,6 +13,24 @@ function currencyCode(index: number) {
 }
 
 describe('bounded Intl formatter cache', () => {
+  it('does not collate option names while retaining locale and changed-option behaviour', () => {
+    const collate = vi.spyOn(String.prototype, 'localeCompare');
+    try {
+      const options: Intl.NumberFormatOptions = { maximumFractionDigits: 2, useGrouping: false };
+      const original = getCachedNumberFormat('fr-FR', options);
+      for (let index = 0; index < 2_000; index += 1) {
+        expect(getCachedNumberFormat('fr-FR', { useGrouping: false, maximumFractionDigits: 2, minimumFractionDigits: undefined })).toBe(original);
+      }
+      expect(original.format(1.5)).toBe('1,5');
+      expect(getCachedNumberFormat('en-US', options).format(1.5)).toBe('1.5');
+      options.maximumFractionDigits = 1;
+      expect(getCachedNumberFormat('fr-FR', options)).not.toBe(original);
+      expect(collate).not.toHaveBeenCalled();
+    } finally {
+      collate.mockRestore();
+    }
+  });
+
   it('reuses equivalent number and date formatter requests', () => {
     expect(
       getCachedNumberFormat('en-US', {

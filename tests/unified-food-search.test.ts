@@ -7,18 +7,26 @@ import {
   createDefaultFoodSearchEngine,
   openFoodFactsSearchProvider,
 } from '@/data/food/unifiedFoodSearch';
+import { searchCofidFoods } from '@/data/food/cofidCatalog';
 
 const mocks = vi.hoisted(() => ({
   loadStored: vi.fn(),
   searchOpenFoodFacts: vi.fn(),
+  searchCountryPacks: vi.fn(),
 }));
+
+vi.mock('@/data/food/countryPacks', async () => {
+  const { countryPackMatchEvidence } = await import('@/data/food/countryPackValidation');
+  return { searchCountryPackFoods: mocks.searchCountryPacks, countryPackMatchEvidence, getCountryFoodPackRevision: () => 0 };
+});
 
 vi.mock('@/data/food/foodLogRepository', () => ({
   getStoredFoodSearchEntries: mocks.loadStored,
 }));
 
 vi.mock('@/data/food/openFoodFacts', () => ({
-  searchOpenFoodFactsProducts: mocks.searchOpenFoodFacts,
+  searchOpenFoodFactsPage: mocks.searchOpenFoodFacts,
+  openFoodFactsSearchFields: () => [],
 }));
 
 const remoteFood = {
@@ -46,7 +54,8 @@ const remoteFood = {
 describe('default unified food search policy', () => {
   beforeEach(() => {
     mocks.loadStored.mockReset().mockResolvedValue([]);
-    mocks.searchOpenFoodFacts.mockReset().mockResolvedValue([remoteFood]);
+    mocks.searchOpenFoodFacts.mockReset().mockResolvedValue({ foods: [remoteFood], hasMore: false });
+    mocks.searchCountryPacks.mockReset().mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -74,6 +83,19 @@ describe('default unified food search policy', () => {
 
   it('keeps the public provider fail-closed during typeahead', () => {
     expect(openFoodFactsSearchProvider.supportsTypeahead).toBe(false);
+  });
+
+  it('keeps local-country alias matches and forwards country, language and cancellation', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'CA', languageTag: 'fr-CA' });
+    const french = { ...remoteFood, id: 'cnf:2', provider: 'cnf' as const, externalId: '2',
+      name: 'Soufflé au fromage', brand: undefined, barcode: undefined, sourceLabel: 'Canadian Nutrient File 2026',
+      rawPayload: { searchAliases: ['Cheese souffle', 'Soufflé au fromage'] } };
+    mocks.searchCountryPacks.mockResolvedValue([french]);
+    const controller = new AbortController();
+    const response = await createDefaultFoodSearchEngine().search('cheese souffle', { mode: 'typeahead', signal: controller.signal });
+    expect(mocks.searchCountryPacks).toHaveBeenCalledWith('cheese souffle', expect.objectContaining({ countryCode: 'CA', locale: 'fr-CA', signal: controller.signal }));
+    expect(response.results.some((row) => row.food.id === 'cnf:2')).toBe(true);
+    expect(mocks.searchOpenFoodFacts).not.toHaveBeenCalled();
   });
 
   it('searches the bundled USDA reference without a network request for US users', async () => {
@@ -122,5 +144,60 @@ describe('default unified food search policy', () => {
     });
     expect(response.results.some((result) => result.food.provider === 'mext-jp')).toBe(true);
     expect(mocks.searchOpenFoodFacts).not.toHaveBeenCalled();
+  });
+
+  it('retains CoFID context-word matches and its relevance order', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'GB' });
+    const engine = createDefaultFoodSearchEngine();
+    const bread = await engine.search('bakery bread');
+    expect(bread.results.length).toBeGreaterThan(0);
+    expect(bread.results.some(({ food }) => food.name.startsWith('Bread'))).toBe(true);
+    const milk = await engine.search('milk');
+    expect(milk.results[0]?.food.id).toBe(searchCofidFoods('milk')[0]?.id);
+    expect(mocks.searchOpenFoodFacts).not.toHaveBeenCalled();
+  });
+
+  it('retains USDA category-only matches through unified ranking', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'US' });
+    const response = await createDefaultFoodSearchEngine().search('poultry mixed dishes');
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(response.results.some(({ food }) => food.name === 'Chili, white')).toBe(true);
+    expect(response.results.every(({ food }) => food.provider === 'usda-fdc')).toBe(true);
+  });
+
+  it('finds everyday cooked-rice aliases and single kanji without raw-rice leakage', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'JP', languageTag: 'ja-JP' });
+    const engine = createDefaultFoodSearchEngine();
+    for (const query of ['ごはん', 'ご飯', '飯']) {
+      const response = await engine.search(query);
+      expect(response.results.length).toBeGreaterThan(0);
+      expect(response.results.some(({ food }) => food.name.includes('水稲めし'))).toBe(true);
+      if (query !== '飯') {
+        expect(response.results.every(({ food }) => food.name.includes('水稲めし'))).toBe(true);
+      }
+      expect(response.results.some(({ food }) => food.name.includes('水稲穀粒'))).toBe(false);
+    }
+    expect(mocks.searchOpenFoodFacts).not.toHaveBeenCalled();
+  });
+
+  it('supports kana variants and preserves Japanese preparation qualifiers', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'JP', languageTag: 'ja-JP' });
+    const engine = createDefaultFoodSearchEngine();
+    const hiragana = await engine.search('ばなな');
+    const katakana = await engine.search('バナナ');
+    expect(hiragana.results.map(({ food }) => food.id).sort())
+      .toEqual(katakana.results.map(({ food }) => food.id).sort());
+    const beef = await engine.search('牛肉 もも 焼き');
+    expect(beef.results.length).toBeGreaterThan(0);
+    expect(beef.results.every(({ food }) => food.name.startsWith('うし ') &&
+      food.name.includes('もも') && food.name.includes('焼き'))).toBe(true);
+    expect((await engine.search('ごはん 生')).results).toEqual([]);
+  });
+
+  it('passes explicit worldwide scope and page size without changing language', async () => {
+    setRuntimeRegionalProfile({ ...DEFAULT_REGIONAL_PROFILE, countryCode: 'FR', languageTag: 'fr-FR' });
+    await createDefaultFoodSearchEngine().search('beans', { mode: 'submitted', countryScope: 'worldwide' });
+    expect(mocks.searchOpenFoodFacts).toHaveBeenCalledWith('beans', globalThis.fetch,
+      expect.objectContaining({ countryCode: 'FR', languageTag: 'fr-FR', countryScope: 'worldwide', page: 1, pageSize: 20 }));
   });
 });

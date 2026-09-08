@@ -7,6 +7,8 @@ import {
 } from "@/data/privacy/localDataVault";
 import { HEVY_CONNECTION_OWNERSHIP_KEY } from "@/data/hevy/ownership";
 import { INSIGHT_REVIEW_PREFERENCES_DB_KEY } from "@/data/insights/insightReviewMetadata";
+import { NOTEBOOK_STORAGE_KEY, validateSerializedNotebook } from "@/domain/personalNotebook";
+import { DISPLAY_PREFERENCES_STORAGE_KEY, validateSerializedDisplayPreferences } from "@/domain/displayPreferences";
 import {
   acquireLocalDataWriteLeaseFromDatabase,
   LOCAL_DATA_ERASE_INTENT_KEY,
@@ -83,6 +85,9 @@ vi.mock("@/data/hevy/repository", () => ({
 }));
 vi.mock("@/data/insights/insightReviewPreferences", () => ({
   clearInsightReviewPreferences: mocks.cleanup,
+}));
+vi.mock("@/data/backup/backupStatus", () => ({
+  clearBackupStatus: mocks.cleanup,
 }));
 vi.mock("@/data/libreLinkUp/secureStore", () => ({
   clearLibreLinkUpCredentials: mocks.cleanup,
@@ -173,6 +178,12 @@ describe("local data erase", () => {
           mocks.events.push(`metadata-clear:${key}`);
         } else if (statement.includes("DELETE FROM glucose_readings")) {
           mocks.events.push("delete-glucose");
+        } else {
+          const literalKey = /^DELETE FROM app_metadata WHERE key = '([^']+)'$/.exec(statement.trim())?.[1];
+          if (literalKey) {
+            mocks.metadata.delete(literalKey);
+            mocks.events.push(`metadata-clear:${literalKey}`);
+          }
         }
         return { changes: 1 };
       },
@@ -219,6 +230,46 @@ describe("local data erase", () => {
       mocks.nativeEpoch = epoch;
       return { supported: true };
     });
+  });
+
+  function seedNotebookAndDisplayPreferences() {
+    const start = Date.parse('2026-09-07T10:00:00Z');
+    const entries = [
+      { id: 'active-live', ownerIdentity: 'current-live-owner', dataMode: 'live' },
+      { id: 'archived-live', ownerIdentity: 'previous-live-owner', dataMode: 'live' },
+      { id: 'active-demo', ownerIdentity: 'demo-fixture-v1', dataMode: 'demo' },
+      { id: 'archived-demo', ownerIdentity: 'previous-demo-owner', dataMode: 'demo' },
+    ].map(scope => ({ ...scope, createdAt: start, title: 'Saved health answer', answer: 'Recorded glucose averaged 6.5 mmol/L.',
+      note: 'Question for my appointment', limitations: ['Recorded samples only.'],
+      evidence: [{ label: 'Selected glucose', description: 'Original recorded values', range: { start, end: start + 600_000 }, recordCount: 2, sourceIds: ['cgm'] }],
+      glucoseTrace: { range: { start, end: start + 600_000 }, maximumGapMs: 720_000,
+        points: [{ timestamp: start, mmolL: 6 }, { timestamp: start + 300_000, mmolL: 7 }] },
+    }));
+    mocks.metadata.set(NOTEBOOK_STORAGE_KEY, validateSerializedNotebook(JSON.stringify({ version: 1, entries })));
+    const preferences = validateSerializedDisplayPreferences(JSON.stringify({ version: 1, glanceOrder: ['time-in-range', 'insulin'], hiddenHealthMetrics: ['sleep', 'steps'] }));
+    mocks.metadata.set(DISPLAY_PREFERENCES_STORAGE_KEY, preferences);
+    return preferences;
+  }
+
+  it('erases every live/demo notebook owner and its health traces while retaining display preferences', async () => {
+    const preferences = seedNotebookAndDisplayPreferences();
+    await eraseLocalHealthData();
+    expect(mocks.metadata.has(NOTEBOOK_STORAGE_KEY)).toBe(false);
+    expect(mocks.metadata.get(DISPLAY_PREFERENCES_STORAGE_KEY)).toBe(preferences);
+    const deletion = mocks.events.indexOf(`metadata-clear:${NOTEBOOK_STORAGE_KEY}`);
+    expect(deletion).toBeGreaterThan(mocks.events.indexOf('metadata:local-data-erase-intent-v1'));
+    expect(deletion).toBeLessThan(mocks.events.indexOf('logical-commit'));
+    expect(deletion).toBeLessThan(mocks.events.indexOf('checkpoint-complete'));
+  });
+
+  it('also removes the complete notebook when an interrupted privacy erase is resumed', async () => {
+    const preferences = seedNotebookAndDisplayPreferences();
+    mocks.metadata.set('local-data-write-epoch-v1', '3');
+    mocks.metadata.set(LOCAL_DATA_ERASE_INTENT_KEY, '3');
+    await expect(resumePendingLocalDataErase()).resolves.toBe(true);
+    expect(mocks.metadata.has(NOTEBOOK_STORAGE_KEY)).toBe(false);
+    expect(mocks.metadata.get(DISPLAY_PREFERENCES_STORAGE_KEY)).toBe(preferences);
+    expect(mocks.metadata.has(LOCAL_DATA_ERASE_INTENT_KEY)).toBe(false);
   });
 
   it("removes report sync metadata and leaves a reset sentinel, not fake preferences", async () => {

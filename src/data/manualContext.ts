@@ -62,6 +62,10 @@ export type ManualContextDraft =
       value: ManualUrineKetoneLevel;
     })
   | (DraftBase & {
+      kind: "sensor-start";
+      glucoseSourceId?: string;
+    })
+  | (DraftBase & {
       kind: "note";
       category: ContextNoteEvent["category"];
       detail?: string;
@@ -134,6 +138,8 @@ function defaultTitle(draft: ManualContextDraft) {
       return formatManualKetoneTitle(validatedManualKetoneReading(draft));
     case "note":
       return contextNoteCategoryLabel(draft.category);
+    case "sensor-start":
+      return "Started a new sensor";
   }
 }
 
@@ -238,6 +244,14 @@ export function manualContextDraftFromEvent(
       break;
     case "note":
       {
+        if (event.sensorStarted === true && event.category === "sensor") {
+          draft = {
+            kind: "sensor-start",
+            timestamp: event.start,
+            glucoseSourceId: event.sensorGlucoseSourceId,
+          };
+          break;
+        }
         const ketone = manualKetoneDraftFromEvent(event);
         if (ketone) {
           draft = ketone;
@@ -264,10 +278,13 @@ export function createManualContextEvent(
   if (draft.kind === "ketone") {
     assertManualKetoneTimestamp(draft.timestamp);
   }
+  if (draft.kind === "sensor-start" && draft.timestamp > Date.now()) {
+    throw new Error("A sensor change cannot be dated in the future.");
+  }
   const recordedAt = options.recordedAt ?? Date.now();
   const id = options.id ?? createLocalId(draft.kind, draft.timestamp);
   const title =
-    draft.kind === "ketone"
+    draft.kind === "ketone" || draft.kind === "sensor-start"
       ? defaultTitle(draft)
       : optionalText(draft.title, 120, "Label") || defaultTitle(draft);
   const base = {
@@ -364,6 +381,15 @@ export function createManualContextEvent(
         category: "other",
         detail: encodeManualKetoneDetail(validatedManualKetoneReading(draft)),
       };
+    case "sensor-start":
+      return {
+        ...base,
+        kind: "note",
+        category: "sensor",
+        sensorStarted: true,
+        sensorGlucoseSourceId: optionalText(draft.glucoseSourceId, 200, "Glucose source"),
+        detail: "User recorded a new sensor. Warm-up duration and the reason for any gap are not confirmed by this note.",
+      };
     case "note": {
       const detail = optionalText(draft.detail, 1_000, "Detail");
       if (usesManualKetoneDetailNamespace(detail)) {
@@ -391,7 +417,7 @@ export function reviseManualContextEvent(
   ) {
     throw new Error("Only entries created in T1 Arc can be edited.");
   }
-  const existingKind = isManualKetoneEvent(existing) ? "ketone" : existing.kind;
+  const existingKind = manualContextDraftFromEvent(existing).kind;
   if (existingKind !== draft.kind) {
     throw new Error("The type of an existing context entry cannot be changed.");
   }

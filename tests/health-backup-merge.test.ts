@@ -24,6 +24,8 @@ import { TARVIS_CONVERSATION_STORAGE_KEY } from '@/data/tarvis/conversationStore
 import { resolveTarvisDatasetOwnerIdentity } from '@/data/tarvis/conversationScope';
 import { runExclusiveLocalDataMutation } from '@/data/privacy/localDataMutationCoordinator';
 import { LOCAL_DATA_WRITE_EPOCH_KEY } from '@/data/privacy/localDataWriteEpoch';
+import { NOTEBOOK_STORAGE_KEY } from '@/domain/personalNotebook';
+import { DISPLAY_PREFERENCES_STORAGE_KEY, DEFAULT_DISPLAY_PREFERENCES } from '@/domain/displayPreferences';
 
 const mocks = vi.hoisted(() => {
   const metadata = new Map<string, string>();
@@ -270,7 +272,7 @@ const MIGRATION_METADATA = {
   format: 't1arc-maintainer-migration' as const,
   version: 1 as const,
   createdAt: 1_775_000_000_000,
-  sourceBackupVersion: HEALTH_BACKUP_VERSION,
+  sourceBackupVersion: 16,
   sourceContainerSha256: 'a'.repeat(64),
   recordFingerprintSha256: 'b'.repeat(64),
 };
@@ -373,10 +375,10 @@ function joinBytes(chunks: Uint8Array[]) {
   return result;
 }
 
-function streamedNotificationBackup(rows: Record<string, any>[]) {
+function streamedNotificationBackup(rows: Record<string, any>[], sourceVersion = HEALTH_BACKUP_VERSION) {
   const backup = backupWithNotificationEvents(rows);
   const encoder = new TextEncoder();
-  const manifest = encoder.encode(JSON.stringify(backup.manifest));
+  const manifest = encoder.encode(JSON.stringify({ ...backup.manifest, version: sourceVersion }));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('notification_source_events');
   const uri = `file:///notification-restore-${mocks.files.size}.container`;
   const frames = [
@@ -393,13 +395,14 @@ function streamedNotificationBackup(rows: Record<string, any>[]) {
   return {
     kind: 'stream' as const,
     manifest: backup.manifest,
-    sourceVersion: HEALTH_BACKUP_VERSION,
+    sourceVersion,
     sourceUri: uri,
   };
 }
 
 function streamedPortableConversationMigration(value: string) {
   const backup = emptyBackup();
+  backup.manifest.version = 16;
   const row = { key: TARVIS_CONVERSATION_STORAGE_KEY, value };
   backup.tables.portable_app_state = [row];
   backup.manifest.counts.portable_app_state = 1;
@@ -407,7 +410,7 @@ function streamedPortableConversationMigration(value: string) {
   backup.manifest.migration = MIGRATION_METADATA;
   const document = validateHealthBackupDocument(backup);
   const encoder = new TextEncoder();
-  const manifest = encoder.encode(JSON.stringify(document.manifest));
+  const manifest = encoder.encode(JSON.stringify({ ...document.manifest, version: 16 }));
   const payload = encoder.encode(JSON.stringify(row));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('portable_app_state');
   const uri = `file:///portable-migration-${mocks.files.size}.container`;
@@ -425,7 +428,7 @@ function streamedPortableConversationMigration(value: string) {
   return {
     kind: 'stream' as const,
     manifest: document.manifest,
-    sourceVersion: HEALTH_BACKUP_VERSION,
+    sourceVersion: 16,
     sourceUri: uri,
   };
 }
@@ -615,6 +618,42 @@ describe('health backup additive merge', () => {
     mocks.withT1ArcReadSnapshot.mockClear();
     mocks.pruneRetainedGlookoSources.mockClear();
     mocks.backfillLegacyGlookoMeterContextNotes.mockClear();
+  });
+
+  it('merges notebook items without replacing local edits and keeps destination display choices', async () => {
+    const entry = (id: string, note: string) => ({
+      id, ownerIdentity: 'demo-fixture-v1', dataMode: 'demo', createdAt: 1_750_000_000_000,
+      title: 'Saved observation', answer: 'An answer', note, limitations: [], evidence: [],
+    });
+    mocks.metadata.set(NOTEBOOK_STORAGE_KEY, JSON.stringify({ version: 1, entries: [entry('kept', 'My edited note')] }));
+    const display = { ...DEFAULT_DISPLAY_PREFERENCES, glanceOrder: ['sleep', 'activity', 'time-in-range'] };
+    mocks.metadata.set(DISPLAY_PREFERENCES_STORAGE_KEY, JSON.stringify(display));
+    const backup = emptyBackup();
+    backup.tables.portable_app_state = [
+      { key: NOTEBOOK_STORAGE_KEY, value: JSON.stringify({ version: 1, entries: [entry('kept', 'Older copy'), entry('new', 'New note')] }) },
+      { key: DISPLAY_PREFERENCES_STORAGE_KEY, value: JSON.stringify(DEFAULT_DISPLAY_PREFERENCES) },
+    ];
+    backup.manifest.counts.portable_app_state = 2;
+    backup.manifest.totalRecords = 2;
+    await mergeHealthBackup(validateHealthBackupDocument(backup));
+    await mergeHealthBackup(validateHealthBackupDocument(backup));
+    expect(JSON.parse(mocks.metadata.get(NOTEBOOK_STORAGE_KEY)!)).toMatchObject({ entries: [
+      { id: 'kept', note: 'My edited note' }, { id: 'new', note: 'New note' },
+    ] });
+    expect(JSON.parse(mocks.metadata.get(DISPLAY_PREFERENCES_STORAGE_KEY)!)).toEqual(display);
+  });
+
+  it('rejects notebook overflow rather than discarding saved observations during restore', async () => {
+    const entry = (id: string) => ({ id, ownerIdentity: 'demo-fixture-v1', dataMode: 'demo',
+      createdAt: 1_750_000_000_000, title: 'Saved', answer: '', note: '', limitations: [], evidence: [] });
+    const original = JSON.stringify({ version: 1, entries: Array.from({ length: 150 }, (_, index) => entry(String(index))) });
+    mocks.metadata.set(NOTEBOOK_STORAGE_KEY, original);
+    const backup = emptyBackup();
+    backup.tables.portable_app_state = [{ key: NOTEBOOK_STORAGE_KEY, value: JSON.stringify({ version: 1, entries: [entry('new')] }) }];
+    backup.manifest.counts.portable_app_state = 1;
+    backup.manifest.totalRecords = 1;
+    await expect(mergeHealthBackup(validateHealthBackupDocument(backup))).rejects.toThrow(/exceed 150/);
+    expect(mocks.metadata.get(NOTEBOOK_STORAGE_KEY)).toBe(original);
   });
 
   it('replaces an older local Tarv1s conversation with a newer backup', async () => {
@@ -1204,7 +1243,7 @@ describe('health backup additive merge', () => {
   );
 
   it('imports a validated migration exactly once into an empty store', async () => {
-    const backup = streamedNotificationBackup([notificationEvent()]);
+    const backup = streamedNotificationBackup([notificationEvent()], 16);
     backup.manifest.migration = MIGRATION_METADATA;
 
     const first = await importPreparedHealthMigration(
@@ -1288,7 +1327,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rejects migration metadata that differs from the authenticated manifest', async () => {
-    const backup = streamedNotificationBackup([]);
+    const backup = streamedNotificationBackup([], 16);
     backup.manifest.migration = MIGRATION_METADATA;
 
     await expect(
@@ -1301,7 +1340,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rejects an unverified record fingerprint before opening a transaction', async () => {
-    const backup = streamedNotificationBackup([]);
+    const backup = streamedNotificationBackup([], 16);
     backup.manifest.migration = MIGRATION_METADATA;
 
     await expect(
@@ -1314,7 +1353,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rejects a different bundle after a completed migration', async () => {
-    const backup = streamedNotificationBackup([]);
+    const backup = streamedNotificationBackup([], 16);
     backup.manifest.migration = MIGRATION_METADATA;
     await importPreparedHealthMigration(
       backup,
@@ -1336,7 +1375,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rolls back when final destination counts differ from the manifest', async () => {
-    const backup = streamedNotificationBackup([notificationEvent()]);
+    const backup = streamedNotificationBackup([notificationEvent()], 16);
     backup.manifest.migration = MIGRATION_METADATA;
     const originalGetFirst = mocks.database.getFirstAsync.getMockImplementation()!;
     let notificationCountReads = 0;
@@ -1368,7 +1407,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rejects a migration when portable destination data already exists', async () => {
-    const backup = streamedNotificationBackup([]);
+    const backup = streamedNotificationBackup([], 16);
     backup.manifest.migration = MIGRATION_METADATA;
     const originalGetFirst = mocks.database.getFirstAsync.getMockImplementation()!;
     mocks.database.getFirstAsync.mockImplementation(
@@ -1397,7 +1436,7 @@ describe('health backup additive merge', () => {
   });
 
   it('treats excluded raw-payload tables as non-empty migration state', async () => {
-    const backup = streamedNotificationBackup([]);
+    const backup = streamedNotificationBackup([], 16);
     backup.manifest.migration = MIGRATION_METADATA;
     const originalGetFirst = mocks.database.getFirstAsync.getMockImplementation()!;
     mocks.database.getFirstAsync.mockImplementation(
@@ -1426,7 +1465,7 @@ describe('health backup additive merge', () => {
   });
 
   it('rolls rows and portable preferences back if the applied marker cannot commit', async () => {
-    const backup = streamedNotificationBackup([notificationEvent()]);
+    const backup = streamedNotificationBackup([notificationEvent()], 16);
     backup.manifest.migration = MIGRATION_METADATA;
     const originalPreferences = migrationPreferences('light');
     const incomingPreferences = migrationPreferences('dark');

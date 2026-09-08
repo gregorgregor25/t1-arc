@@ -2,7 +2,7 @@
   "expo": {
     "name": "T1 Arc",
     "slug": "t1-arc",
-    "version": "1.6.9",
+    "version": "1.7.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "t1arc",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "io.github.gregorgregor25.t1arc",
-      "versionCode": 26,
+      "versionCode": 28,
       "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "blockedPermissions": [

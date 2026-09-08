@@ -35,11 +35,17 @@ replacement for a clinician.
 
 ## Food logging
 
-![Food logging choices](screenshots/food-logging.png)
+![Synthetic food draft showing compact tools and an expanded portion control](screenshots/food-logging.png)
 
 Food logging includes recent foods, favourites, saved foods and meals, regional
 reference search, Open Food Facts product search, barcode scanning, quick carbs
 and copying from another day.
+
+The example shows a selected food before saving, with its source and portion
+controls visible. **More options** opens separate barcode, carbohydrate-entry,
+custom-food and optional-catalogue pages; returning keeps the meal draft.
+The illustrated quantity is an example, not a dietary recommendation. See the
+[food guide](FOOD_LOGGING.md) for the complete flow and release boundary.
 
 ## Sources and regional settings
 

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>T1 Arc | Product film</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='none' stroke='%2390a8ff' stroke-width='3' d='M2 18h6l4-12 6 20 4-14 4 6h5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <main id="film" aria-label="T1 Arc product walkthrough using synthetic example data">
+    <div class="background-glow"></div>
+    <canvas id="scene" aria-label="Original three-dimensional phone and watch models showing real T1 Arc demo screens"></canvas>
+    <header class="masthead"><div class="wordmark"><svg viewBox="0 0 44 30" aria-hidden="true"><path d="M2 18h8l5-13 7 22 6-17 5 8h8"/></svg>T1 Arc<span class="brand-dot">.</span></div><div class="edition">YOUR DAY, IN CONTEXT</div></header>
+    <section id="copy"><p id="eyebrow"></p><h1 id="headline"></h1><p id="detail"></p></section>
+    <div id="face-names" aria-label="Watch face names"></div>
+    <p id="note"></p>
+    <footer><span>DEMO · EXAMPLE DATA</span><span>For understanding, not medical or dosing advice.</span></footer>
+    <div class="progress-track"><div id="progress"></div></div>
+  </main>
+  <nav id="controls" aria-label="Film controls"><button id="play" type="button">Play film</button><label>Position <input id="seek" type="range" min="0" max="46" step="0.1" value="0"></label><output id="time">0:00 / 0:46</output></nav>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>

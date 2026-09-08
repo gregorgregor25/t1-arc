@@ -1,4 +1,5 @@
 import type { FoodCandidate, FoodProviderId } from './types';
+import { canonicalFoodBarcode } from './barcodeIdentity';
 
 export type FoodSearchOrigin =
   | 'favourite'
@@ -26,6 +27,15 @@ export interface FoodSearchSeed {
   isFavourite?: boolean;
   useCount?: number;
   lastUsedAt?: number;
+  /** Transient evidence for this query; never persisted on the food itself. */
+  searchEvidence?: FoodSearchMatchEvidence;
+}
+
+export interface FoodSearchMatchEvidence {
+  query: string;
+  matchedQuery?: string;
+  fields?: readonly string[];
+  rank: number;
 }
 
 export interface FoodSearchProvenance {
@@ -87,6 +97,12 @@ export function normaliseFoodSearchText(value: string) {
     .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+/** One ideograph can name a food; one Latin letter cannot. */
+export function isFoodSearchQueryReady(value: string, minimum = 2) {
+  const query = normaliseFoodSearchText(value).normalize('NFC');
+  return [...query].length >= minimum || /\p{Script=Han}/u.test(query);
 }
 
 function stableCompare(left: string, right: string) {
@@ -165,19 +181,25 @@ function fuzzyWordMatch(word: string, token: string) {
   return maximum > 0 && boundedEditDistance(word, token, maximum) <= maximum;
 }
 
-function classifyMatch(food: FoodCandidate, query: string): FoodSearchMatch | undefined {
-  if (!query) return 'suggestion';
-  const name = normaliseFoodSearchText(food.name);
-  const brand = normaliseFoodSearchText(food.brand ?? '');
-  const combined = [brand, name].filter(Boolean).join(' ');
-  const fields = [name, combined].filter(Boolean);
-
+function classifyFields(fields: string[], query: string): FoodSearchMatch | undefined {
   if (fields.some((field) => field === query)) return 'exact';
-  if (fields.some((field) => field.startsWith(query))) return 'prefix';
+  // A complete phrase prefix ("bread with seeds") outranks a word elsewhere.
+  // A partial Latin word ("breadfruit") must not outrank actual "white bread";
+  // retain it below whole words through fuzzy/typeahead matching instead.
+  // Japanese scripts do not require spaces between words.
+  const unsegmentedQuery = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]\p{M}*$/u.test(query);
+  if (fields.some((field) => field.startsWith(`${query} `) ||
+      (unsegmentedQuery && field.startsWith(query)))) return 'prefix';
 
   const queryTokens = query.split(' ').filter(Boolean);
+  const combined = fields.join(' ');
   const words = combined.split(' ').filter(Boolean);
   if (queryTokens.every((token) => words.includes(token))) return 'tokens';
+  if (queryTokens.every((token) =>
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(token)
+      ? combined.includes(token)
+      : words.includes(token),
+  )) return 'tokens';
   if (
     queryTokens.every((token) =>
       words.some((word) => fuzzyWordMatch(word, token)),
@@ -188,6 +210,37 @@ function classifyMatch(food: FoodCandidate, query: string): FoodSearchMatch | un
   return undefined;
 }
 
+function queryEvidence(seed: FoodSearchSeed, query: string) {
+  const evidence = seed.searchEvidence;
+  if (!query || !evidence ||
+      normaliseFoodSearchText(evidence.query).slice(0, 80) !== query ||
+      !Number.isInteger(evidence.rank) || evidence.rank < 0 || evidence.rank >= 2_000 ||
+      !seed.origins.some((origin) => origin === 'offline-catalogue' || origin === 'remote-catalogue')) {
+    return undefined;
+  }
+  return evidence;
+}
+
+function classifyMatch(seed: FoodSearchSeed, query: string): FoodSearchMatch | undefined {
+  if (!query) return 'suggestion';
+  const name = normaliseFoodSearchText(seed.food.name);
+  const brand = normaliseFoodSearchText(seed.food.brand ?? '');
+  const fields = [name, [brand, name].filter(Boolean).join(' ')].filter(Boolean);
+  const directMatch = classifyFields(fields, query);
+  const evidence = queryEvidence(seed, query);
+  if (!evidence) return directMatch;
+  const matchedQuery = normaliseFoodSearchText(evidence.matchedQuery ?? query).slice(0, 80);
+  if (!matchedQuery) return directMatch;
+  const extraFields = (evidence.fields ?? []).slice(0, 8)
+    .map((field) => normaliseFoodSearchText(field.slice(0, 240)));
+  const evidenceMatch = classifyFields([...fields, ...extraFields], matchedQuery);
+  // A category/alias match must not outrank an exact product-name match.
+  const boundedMatch = evidenceMatch === 'exact' || evidenceMatch === 'prefix'
+    ? 'tokens' : evidenceMatch;
+  return boundedMatch && (!directMatch || MATCH_SCORE[boundedMatch] > MATCH_SCORE[directMatch])
+    ? boundedMatch : directMatch;
+}
+
 function identityKeys(seed: FoodSearchSeed) {
   const food = seed.food;
   const keys = [
@@ -195,7 +248,7 @@ function identityKeys(seed: FoodSearchSeed) {
     `id:${food.provider}:${normaliseOpaqueIdentity(food.id)}`,
   ];
   const barcode = food.barcode?.replace(/[^0-9]/g, '');
-  if (barcode && barcode.length >= 7) keys.push(`barcode:${barcode}`);
+  if (barcode && barcode.length >= 7) keys.push(`barcode:${canonicalFoodBarcode(barcode)}`);
 
   const brand = normaliseFoodSearchText(food.brand ?? '');
   const name = normaliseFoodSearchText(food.name);
@@ -368,7 +421,7 @@ export function rankFoodSearchSeeds(
   return deduplicateFoodSearchSeeds(seeds)
     .flatMap(({ seeds: groupedSeeds }): RankedFoodSearchResult[] => {
       const matchingSeeds = groupedSeeds.flatMap((seed) => {
-        const match = classifyMatch(seed.food, query);
+        const match = classifyMatch(seed, query);
         return match ? [{ seed, match }] : [];
       });
       if (!matchingSeeds.length) return [];
@@ -404,13 +457,35 @@ export function rankFoodSearchSeeds(
       const isFavourite = origins.has('favourite');
       const isRecent = origins.has('recent');
       const isCustom = origins.has('custom');
+      const personalPortion = [...groupedSeeds]
+        .sort((left, right) => (right.lastUsedAt ?? 0) - (left.lastUsedAt ?? 0))
+        .find(({ food }) => food.personalServingUnit === representative.food.basisUnit &&
+          Number.isFinite(food.personalServingAmount) && (food.personalServingAmount ?? 0) > 0)?.food;
+      const rememberedPortion = [...groupedSeeds]
+        .sort((left, right) => (right.lastUsedAt ?? 0) - (left.lastUsedAt ?? 0))
+        .find(({ food }) => food.lastPortionUnit === representative.food.basisUnit &&
+          Number.isFinite(food.lastPortionAmount) && (food.lastPortionAmount ?? 0) > 0)?.food;
       return [
         {
-          food: representative.food,
+          food: {
+            ...representative.food,
+            ...(personalPortion ? {
+              personalServingAmount: personalPortion.personalServingAmount,
+              personalServingUnit: personalPortion.personalServingUnit,
+              personalServingLabel: personalPortion.personalServingLabel,
+            } : {}),
+            ...(rememberedPortion ? {
+              lastPortionAmount: rememberedPortion.lastPortionAmount,
+              lastPortionUnit: rememberedPortion.lastPortionUnit,
+            } : {}),
+          },
           match,
           score:
             MATCH_SCORE[match] +
-            personalScore(origins, useCount, lastUsedAt, now),
+            personalScore(origins, useCount, lastUsedAt, now) +
+            (queryEvidence(representative, query)
+              ? 200 / (1 + representative.searchEvidence!.rank)
+              : 0),
           isFavourite,
           isRecent,
           isCustom,

@@ -16,7 +16,9 @@ import {
   validateSerializedTarvisConversation,
 } from '@/data/tarvis/conversationStore';
 import { rebindSerializedTarvisConversationToDatasetOwner } from '@/data/tarvis/conversationMigration';
-import { resolveTarvisDatasetOwnerIdentity } from '@/data/tarvis/conversationScope';
+import { resolveTarvisDatasetOwnerIdentity, isTarvisDatasetOwnerIdentity } from '@/data/tarvis/conversationScope';
+import { NOTEBOOK_STORAGE_KEY, mergeSerializedNotebooks, parseNotebook, validateSerializedNotebook } from '@/domain/personalNotebook';
+import { DISPLAY_PREFERENCES_STORAGE_KEY, validateSerializedDisplayPreferences } from '@/domain/displayPreferences';
 import { repairHevyWorkoutContextOwnership } from '@/data/hevy/contextOwnership';
 import {
   FULL_RECONCILIATION_CANDIDATE_KEY,
@@ -32,7 +34,7 @@ import {
 } from '@/data/migration/migrationFormat';
 
 export const HEALTH_BACKUP_FORMAT = 't1arc-health-backup';
-export const HEALTH_BACKUP_VERSION = 16;
+export const HEALTH_BACKUP_VERSION = 17;
 export const HEALTH_BACKUP_MIME = 'application/vnd.t1arc.health-backup';
 export const HEALTH_BACKUP_EXTENSION = '.t1arc';
 
@@ -319,6 +321,8 @@ const BACKUP_TABLE_DEFINITIONS = {
     'source_file',
     'source_row',
     'glucose_mmol_l',
+    'sensor_started',
+    'sensor_glucose_source_id',
   ],
   // Keep newly introduced tables at the end. Streamed backups identify
   // tables by index, so appending preserves every older frame index.
@@ -414,8 +418,8 @@ export const BACKUP_TABLE_NAMES = Object.keys(
  * Every application table must be either portable or named here. Restoring
  * device-specific scheduler history on another phone would make the Sources
  * diagnostics misleading. app_metadata remains excluded as a whole; the
- * synthetic portable_app_state section exports one explicitly allowlisted,
- * user-owned conversation and nothing else.
+ * synthetic portable_app_state section exports only explicitly allowlisted
+ * user-owned conversations, notebook entries and display preferences.
  */
 export const HEALTH_BACKUP_EXCLUDED_TABLES = {
   app_metadata: 'internal database and migration state',
@@ -525,18 +529,19 @@ const BINARY_PAYLOAD_TABLES = new Set<BackupTableName>([
 ]);
 
 const PORTABLE_APP_STATE_TABLE: BackupTableName = 'portable_app_state';
+const PORTABLE_APP_STATE_KEYS = [TARVIS_CONVERSATION_STORAGE_KEY, NOTEBOOK_STORAGE_KEY, DISPLAY_PREFERENCES_STORAGE_KEY];
 
 function backupSourceTable(table: BackupTableName) {
   return table === PORTABLE_APP_STATE_TABLE ? 'app_metadata' : table;
 }
 
 function backupSourceWhere(table: BackupTableName) {
-  return table === PORTABLE_APP_STATE_TABLE ? ' WHERE "key" = ?' : '';
+  return table === PORTABLE_APP_STATE_TABLE ? ` WHERE "key" IN (${PORTABLE_APP_STATE_KEYS.map(() => '?').join(', ')})` : '';
 }
 
 function backupSourceParameters(table: BackupTableName) {
   return table === PORTABLE_APP_STATE_TABLE
-    ? [TARVIS_CONVERSATION_STORAGE_KEY]
+    ? PORTABLE_APP_STATE_KEYS
     : [];
 }
 
@@ -689,6 +694,23 @@ function normalizedPortableConversation(value: unknown) {
   return { serialized, updatedAt };
 }
 
+function rebindPortableState(row: BackupRow, targetOwnerIdentity: string): BackupRow {
+  if (row.key === TARVIS_CONVERSATION_STORAGE_KEY) {
+    return { ...row, value: rebindSerializedTarvisConversationToDatasetOwner(row.value, targetOwnerIdentity) };
+  }
+  if (row.key !== NOTEBOOK_STORAGE_KEY) return row;
+  const notebook = parseNotebook(JSON.parse(validateSerializedNotebook(String(row.value))));
+  const sourceOwners = new Set(notebook.entries.filter(entry => entry.dataMode === 'live').map(entry => entry.ownerIdentity));
+  if (!isTarvisDatasetOwnerIdentity(targetOwnerIdentity) || sourceOwners.size > 1 ||
+    [...sourceOwners].some(owner => !isTarvisDatasetOwnerIdentity(owner))) {
+    throw new Error('The notebook dataset owner cannot be verified for this migration.');
+  }
+  return { ...row, value: validateSerializedNotebook(JSON.stringify({ ...notebook,
+    entries: notebook.entries.map(entry => entry.dataMode === 'live'
+      ? { ...entry, ownerIdentity: targetOwnerIdentity } : entry),
+  })) };
+}
+
 /**
  * app_metadata already contains a row with the same key on an actively used
  * destination phone. A plain INSERT OR IGNORE would silently discard a newer
@@ -700,6 +722,23 @@ async function mergePortableAppStateRow(
   database: BackupTransaction,
   row: BackupRow,
 ) {
+  if (row.key === NOTEBOOK_STORAGE_KEY || row.key === DISPLAY_PREFERENCES_STORAGE_KEY) {
+    const key = row.key;
+    const validate = key === NOTEBOOK_STORAGE_KEY ? validateSerializedNotebook : validateSerializedDisplayPreferences;
+    const incoming = validate(String(row.value));
+    const current = await database.getFirstAsync<{ value: string }>('SELECT value FROM app_metadata WHERE key = ?', key);
+    const value = current?.value
+      ? key === NOTEBOOK_STORAGE_KEY
+        ? mergeSerializedNotebooks(current.value, incoming)
+        : validate(current.value)
+      : incoming;
+    if (value === current?.value) return 0;
+    const result = await database.runAsync(
+      `INSERT INTO app_metadata (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value,
+    );
+    return result.changes;
+  }
   const incoming = normalizedPortableConversation(row.value);
   const current = await database.getFirstAsync<{ value: string }>(
     'SELECT value FROM app_metadata WHERE key = ?',
@@ -1110,15 +1149,17 @@ function validateRow(
   }
   if (table === PORTABLE_APP_STATE_TABLE) {
     if (
-      rowIndex !== 0 ||
-      value.key !== TARVIS_CONVERSATION_STORAGE_KEY ||
+      rowIndex >= PORTABLE_APP_STATE_KEYS.length ||
+      !PORTABLE_APP_STATE_KEYS.includes(String(value.key)) ||
       typeof value.value !== 'string'
     ) {
       throw new Error(
         'The backup contains unsupported private application state.',
       );
     }
-    validateSerializedTarvisConversation(value.value);
+    if (value.key === NOTEBOOK_STORAGE_KEY) validateSerializedNotebook(value.value);
+    else if (value.key === DISPLAY_PREFERENCES_STORAGE_KEY) validateSerializedDisplayPreferences(value.value);
+    else validateSerializedTarvisConversation(value.value);
   }
   if (BINARY_PAYLOAD_TABLES.has(table)) {
     const encoded = value.payload_base64;
@@ -1165,6 +1206,20 @@ function validateRow(
       `${table} row ${rowIndex + 1} contains an invalid canonical glucose value.`,
     );
   }
+  if (table === 'context_notes') {
+    const started = value.sensor_started;
+    const glucoseSource = value.sensor_glucose_source_id;
+    if (
+      (started !== null && started !== 0 && started !== 1) ||
+      (started === 1 && (value.category !== 'sensor' || value.origin !== 'manual')) ||
+      (glucoseSource !== null && (
+        started !== 1 || typeof glucoseSource !== 'string' ||
+        !glucoseSource.trim() || glucoseSource.length > 200
+      ))
+    ) {
+      throw new Error(`${table} row ${rowIndex + 1} contains an invalid sensor change.`);
+    }
+  }
 }
 
 const LEGACY_V1_GLUCOSE_COLUMNS = [
@@ -1185,6 +1240,13 @@ function migrateBackupRow(
   table: BackupTableName,
   value: unknown,
 ) {
+  if (version < 17 && table === 'context_notes' && isPlainObject(value)) {
+    value = {
+      ...value,
+      sensor_started: null,
+      sensor_glucose_source_id: null,
+    };
+  }
   if (version === 1 && table === 'glucose_readings' && isPlainObject(value)) {
     const keys = Object.keys(value);
     const legacy = new Set(LEGACY_V1_GLUCOSE_COLUMNS);
@@ -1335,6 +1397,7 @@ export function validateHealthBackupDocument(
       13,
       14,
       15,
+      16,
       HEALTH_BACKUP_VERSION,
     ].includes(manifest.version as number)
   ) {
@@ -1382,6 +1445,9 @@ export function validateHealthBackupDocument(
       migrateBackupRow(version, table, row),
     );
     normalisedRows.forEach((row, index) => validateRow(table, row, index));
+    if (table === PORTABLE_APP_STATE_TABLE && new Set(normalisedRows.map(row => (row as BackupRow).key)).size !== normalisedRows.length) {
+      throw new Error('The backup contains duplicate private application state.');
+    }
     normalisedTables[table] = normalisedRows as BackupRow[];
     counts[table] = rows.length;
     totalRecords += rows.length;
@@ -1429,7 +1495,7 @@ export function validateCurrentContainerManifest(
   }
   if (
     value.format !== HEALTH_BACKUP_FORMAT ||
-    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, HEALTH_BACKUP_VERSION].includes(
+    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, HEALTH_BACKUP_VERSION].includes(
       value.version as number,
     )
   ) {
@@ -1601,6 +1667,7 @@ async function scanBackupContainer(
     // list while preserving the version 13+ ordering.
     const sourceTableNames = backupTableNamesForVersion(sourceVersion);
     const observedCounts = emptyCounts();
+    const portableKeys = new Set<string>();
     let observedTotal = 0;
     let lastTableIndex = -1;
     let reachedEnd = false;
@@ -1666,6 +1733,11 @@ async function scanBackupContainer(
         }
       } else {
         validateRow(table, rowValue, observedCounts[table]);
+        if (table === PORTABLE_APP_STATE_TABLE) {
+          const key = String((rowValue as BackupRow).key);
+          if (portableKeys.has(key)) throw new Error('The backup contains duplicate private application state.');
+          portableKeys.add(key);
+        }
       }
 
       const row = rowValue as BackupRow;
@@ -2032,13 +2104,7 @@ async function restorePreparedHealthBackupRows(
       attemptByTable[table].attempted += rows.length;
       for (const row of rows) {
         const portableRow = options.rebindTarvisConversationToOwner
-          ? {
-              ...row,
-              value: rebindSerializedTarvisConversationToDatasetOwner(
-                row.value,
-                options.rebindTarvisConversationToOwner,
-              ),
-            }
+          ? rebindPortableState(row, options.rebindTarvisConversationToOwner)
           : row;
         attemptByTable[table].inserted += await mergePortableAppStateRow(
           database,

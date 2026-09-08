@@ -21,6 +21,7 @@ import {
   canonicalGlucoseSamples,
   GMI_FORMULA_VERSION,
   GLUCOSE_STATISTICS_VERSION,
+  GLUCOSE_MEAN_METRIC_VERSION,
 } from "./query/glucoseStatistics";
 import type { TarvisAnswer } from "./types";
 import { isLocalGlucoseScopeWithinLimit } from "./localScopeLimit";
@@ -47,7 +48,7 @@ import {
   type EvidenceQueryEvent,
   type EvidenceQueryVisualizationReference,
 } from "@/domain/evidenceQueryChart";
-import { formatTarvisRequestedPeriod } from "./timePresentation";
+import { formatTarvisRequestedPeriod, tarvisComparisonDurationNote } from "./timePresentation";
 import {
   formatGlucose,
   glucoseFromMmolL,
@@ -181,6 +182,7 @@ const SAMPLE_STATISTIC_METRICS = new Set<SupportedMetric>([
 ]);
 
 function metricAlgorithmVersion(metric: SupportedMetric) {
+  if (metric === "glucose.mean") return GLUCOSE_MEAN_METRIC_VERSION;
   if (metric === "glucose.time_in_range") {
     return "duration-forward-cap-12m-v1";
   }
@@ -223,6 +225,17 @@ export interface LocalGlucoseRangeAnswerResult {
   evidence: EvidenceReference[];
   presentation: TarvisEvidencePresentation;
 }
+
+interface LocalGlucoseRangeAnswerInput {
+  asOf: number;
+  intent: TarvisIntentV1;
+  readings: GlucoseReading[];
+}
+
+export type LocalGlucoseRangeComponentResult = Omit<
+  LocalGlucoseRangeAnswerResult,
+  "answerBundle"
+>;
 
 export class UnsupportedLocalGlucoseRangeIntentError extends Error {
   readonly code = "unsupported-local-glucose-range-intent";
@@ -563,7 +576,7 @@ function calculateRange(
         return {
           id: metric,
           unit: "mmol/L" as const,
-          value: statistic(statistics.arithmeticMeanMmolL),
+          value: statistics.arithmeticMeanMmolL,
         };
       case "glucose.median":
         return {
@@ -673,7 +686,7 @@ function arithmeticMean(readings: readonly GlucoseReading[], range: TimeRange) {
     range,
     observationGapCapMilliseconds: OBSERVATION_GAP_MS,
   }).arithmeticMeanMmolL;
-  return value === null ? null : round(value, 2);
+  return value;
 }
 
 function queryChartEvents(
@@ -841,6 +854,7 @@ function queryVisualizationFor(
             ? ("limited" as const)
             : ("sufficient" as const),
       meanMmolL: arithmeticMean(value.readings, value.range),
+      meanPrecisionDecimals: 4 as const,
       points: samples.map(({ recordIds, mmolL, timestamp }) => ({
         recordIds,
         mmolL,
@@ -1088,7 +1102,7 @@ function metricCopy(
     if (metric.value === null) return "the requested result is unavailable";
     switch (metric.id) {
       case "glucose.mean":
-        return `the observed arithmetic mean was ${regionalGlucose(metric.value)}`;
+        return `your average glucose from the available readings was ${regionalGlucose(metric.value)}`;
       case "glucose.median":
         return `the observed median was ${regionalGlucose(metric.value)}`;
       case "glucose.minimum":
@@ -1243,7 +1257,7 @@ function answerHeadline(calculation: RangeCalculation) {
   if (calculation.metrics.length > 1) return "Observed glucose results";
   switch (first.id) {
     case "glucose.mean":
-      return `Observed average glucose: ${regionalGlucose(first.value)}`;
+      return `${calculation.coveragePercent < SUFFICIENT_COVERAGE_PERCENT ? "Observed" : "Your"} average glucose: ${regionalGlucose(first.value)}`;
     case "glucose.median":
       return `Observed median glucose: ${regionalGlucose(first.value)}`;
     case "glucose.minimum":
@@ -1353,15 +1367,35 @@ function previousPeriodLabel(basis: TarvisIntentComparisonBasis | null) {
  * Executes exact rolling/calendar glucose intents locally. The model is never
  * allowed to replace the resolved half-open range with a nearby report.
  */
-export function buildLocalGlucoseRangeAnswer({
-  asOf,
-  intent,
-  readings,
-}: {
-  asOf: number;
-  intent: TarvisIntentV1;
-  readings: GlucoseReading[];
-}): LocalGlucoseRangeAnswerResult {
+export function buildLocalGlucoseRangeAnswer(
+  input: LocalGlucoseRangeAnswerInput,
+): LocalGlucoseRangeAnswerResult {
+  return executeLocalGlucoseRangeAnswer(input, true);
+}
+
+/**
+ * Compound answers retain each component's exact calculations, references and
+ * presentation, not a misleading single-metric answer bundle. Avoid creating
+ * that discarded snapshot while using the same validated calculation path.
+ */
+export function buildLocalGlucoseRangeComponent(
+  input: LocalGlucoseRangeAnswerInput,
+): LocalGlucoseRangeComponentResult {
+  return executeLocalGlucoseRangeAnswer(input, false);
+}
+
+function executeLocalGlucoseRangeAnswer(
+  input: LocalGlucoseRangeAnswerInput,
+  includeAnswerBundle: true,
+): LocalGlucoseRangeAnswerResult;
+function executeLocalGlucoseRangeAnswer(
+  input: LocalGlucoseRangeAnswerInput,
+  includeAnswerBundle: false,
+): LocalGlucoseRangeComponentResult;
+function executeLocalGlucoseRangeAnswer(
+  { asOf, intent, readings }: LocalGlucoseRangeAnswerInput,
+  includeAnswerBundle: boolean,
+): LocalGlucoseRangeAnswerResult | LocalGlucoseRangeComponentResult {
   const executable = validateIntent(intent);
   const resolved = resolveRanges(executable, asOf);
   const canonical = canonicalReadings(readings);
@@ -1443,7 +1477,7 @@ export function buildLocalGlucoseRangeAnswer({
     ),
     ...(combinedChartEvidence ? [combinedChartEvidence] : []),
   ];
-  const answerBundle = createGlucoseAnswerBundleV2({
+  const answerBundle = includeAnswerBundle ? createGlucoseAnswerBundleV2({
     executor: "exact-range",
     originalIntent: intent,
     normalizedThresholds: executable.thresholds,
@@ -1503,7 +1537,7 @@ export function buildLocalGlucoseRangeAnswer({
           },
         ]
       : [],
-  });
+  }) : undefined;
   const current = calculations[0]!.value;
   const answerParts = calculations.map(({ label, value }) => {
     const datedLabel = `${label} (${formatTarvisRequestedPeriod(value.range)})`;
@@ -1511,7 +1545,7 @@ export function buildLocalGlucoseRangeAnswer({
       return `${datedLabel} has no glucose readings, so its result is unavailable`;
     }
     const coverage = `${formatTarvisFixedNumber(value.coveragePercent, 1)}% observed sensor coverage`;
-    return `${datedLabel} has ${coverage}; ${metricCopy(executable, value).join("; ")}`;
+    return `${datedLabel}: ${metricCopy(executable, value).join("; ")}. ${coverage}`;
   });
   const limited = calculations.some(
     ({ value }) => value.coveragePercent < SUFFICIENT_COVERAGE_PERCENT,
@@ -1524,6 +1558,7 @@ export function buildLocalGlucoseRangeAnswer({
         !hasRepresentativeGmiDuration(value.range) ||
         value.coveragePercent < SUFFICIENT_COVERAGE_PERCENT,
     );
+  const durationNote = tarvisComparisonDurationNote(resolved);
   const limitations = [
     ...(limited
       ? [
@@ -1535,7 +1570,7 @@ export function buildLocalGlucoseRangeAnswer({
       : []),
     ...(executable.metrics.some((metric) => metric.endsWith("_episodes"))
       ? [
-          `Episode counts use ${GLUCOSE_EPISODE_DEFINITION_VERSION}; up to 15 minutes of boundary context is used only to attribute each event to its observed start period.`,
+          "A high or low must last at least 15 minutes to count. Readings just outside the requested dates help determine when an event started; they are not included in your average.",
         ]
       : []),
     ...(executable.metrics.includes("glucose.gmi")
@@ -1548,13 +1583,7 @@ export function buildLocalGlucoseRangeAnswer({
           "GMI confidence is limited because at least one period was shorter than 14 days or had less than 70% observed sensor coverage.",
         ]
       : []),
-    ...(calculations.length > 1 &&
-    calculations[0]!.value.range.end - calculations[0]!.value.range.start !==
-      calculations[1]!.value.range.end - calculations[1]!.value.range.start
-      ? [
-          `These dates last different amounts of time because the clocks changed (${round((calculations[0]!.value.range.end - calculations[0]!.value.range.start) / 3_600_000, 2)} versus ${round((calculations[1]!.value.range.end - calculations[1]!.value.range.start) / 3_600_000, 2)} hours). Event counts are shown as recorded and are not adjusted for that difference.`,
-        ]
-      : []),
+    ...(durationNote ? [durationNote] : []),
   ];
   const kind = presentationKind(executable.metrics);
   return {
@@ -1565,12 +1594,12 @@ export function buildLocalGlucoseRangeAnswer({
             ? "Glucose comparison incomplete"
             : "Observed glucose comparison"
           : answerHeadline(current),
-      answer: `${answerParts.join(". ")}. I used only the periods you asked about and did not count missing time as zero. This describes your recorded data, not a treatment recommendation.`,
+      answer: `${answerParts.join(". ")}.`,
       confidence: limited || noData || gmiInsufficient ? "limited" : "high",
       evidenceIds: evidence.map(({ id }) => id),
       limitations: limitations.slice(0, 5),
     },
-    answerBundle,
+    ...(answerBundle ? { answerBundle } : {}),
     evidence,
     presentation: {
       kind,

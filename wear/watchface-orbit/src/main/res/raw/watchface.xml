@@ -39,7 +39,7 @@
                 defaultSystemProviderType="EMPTY"/>
             <BoundingRoundBox x="0" y="0" width="320" height="158" cornerRadius="18" outlinePadding="2"/>
             <Complication type="RANGED_VALUE">
-                <Group x="0" y="0" width="320" height="158" alpha="255">
+                <Group name="glucose_active" x="0" y="0" width="320" height="158" alpha="255">
                     <Variant mode="AMBIENT" target="alpha" value="0"/>
                     <Condition>
                         <Expressions>
@@ -70,18 +70,18 @@
                             <Expression name="blue"><![CDATA[[COMPLICATION.RANGED_VALUE_VALUE] >= 4.5 && [COMPLICATION.RANGED_VALUE_VALUE] < 5.5]]></Expression>
                             <Expression name="purple"><![CDATA[[COMPLICATION.RANGED_VALUE_VALUE] >= 5.5 && [COMPLICATION.RANGED_VALUE_VALUE] < 6.5]]></Expression>
                         </Expressions>
-                        <Compare expression="rose"><PartText x="224" y="12" width="64" height="60" tintColor="#FFFF9BAE"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="amber"><PartText x="224" y="12" width="64" height="60" tintColor="#FFF1B66F"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="orange"><PartText x="224" y="12" width="64" height="60" tintColor="#FFFFB066"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="cyan"><PartText x="224" y="12" width="64" height="60" tintColor="#FF59D7E6"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="green"><PartText x="224" y="12" width="64" height="60" tintColor="#FF69D5AC"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="blue"><PartText x="224" y="12" width="64" height="60" tintColor="#FF82B7FF"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Compare expression="purple"><PartText x="224" y="12" width="64" height="60" tintColor="#FFC2A9FF"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
-                        <Default><PartText x="224" y="12" width="64" height="60" tintColor="#FFA9BDC2"><Text align="LEFT"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Default>
+                        <Compare expression="rose"><PartText x="224" y="12" width="64" height="60" tintColor="#FFFF9BAE"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="amber"><PartText x="224" y="12" width="64" height="60" tintColor="#FFF1B66F"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="orange"><PartText x="224" y="12" width="64" height="60" tintColor="#FFFFB066"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="cyan"><PartText x="224" y="12" width="64" height="60" tintColor="#FF59D7E6"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="green"><PartText x="224" y="12" width="64" height="60" tintColor="#FF69D5AC"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="blue"><PartText x="224" y="12" width="64" height="60" tintColor="#FF82B7FF"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Compare expression="purple"><PartText x="224" y="12" width="64" height="60" tintColor="#FFC2A9FF"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Compare>
+                        <Default><PartText x="224" y="12" width="64" height="60" tintColor="#FFA9BDC2"><Text align="START"><Font family="SYNC_TO_DEVICE" size="52" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TITLE]"/></Template></Font></Text></PartText></Default>
                     </Condition>
                     <PartText x="0" y="103" width="320" height="24" tintColor="#FFF4F4F2"><Text align="CENTER"><Font family="SYNC_TO_DEVICE" size="21">GLUCOSE</Font></Text></PartText>
                 </Group>
-                <Group x="0" y="0" width="320" height="158" alpha="0">
+                <Group name="glucose_ambient" x="0" y="0" width="320" height="158" alpha="0">
                     <Variant mode="AMBIENT" target="alpha" value="255"/>
                     <PartText x="0" y="5" width="320" height="104" tintColor="#FFFFFFFF"><Text align="CENTER"><Font family="SYNC_TO_DEVICE" size="98" weight="LIGHT"><Template>%s<Parameter expression="[COMPLICATION.TEXT]"/></Template></Font></Text></PartText>
                     <PartText x="0" y="114" width="320" height="22" tintColor="#FFC6D0D2"><Text align="CENTER"><Font family="SYNC_TO_DEVICE" size="18">GLUCOSE</Font></Text></PartText>

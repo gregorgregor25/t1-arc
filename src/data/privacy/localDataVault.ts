@@ -12,6 +12,7 @@ import {
 import { clearHevyConnection } from "@/data/hevy/secureStore";
 import { invalidateHevyConnectionOwnership } from "@/data/hevy/repository";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
+import { clearBackupStatus } from "@/data/backup/backupStatus";
 import { INSIGHT_REVIEW_PREFERENCES_DB_KEY } from "@/data/insights/insightReviewMetadata";
 import { clearLibreLinkUpCredentials } from "@/data/libreLinkUp/secureStore";
 import { clearMedtrumConnection } from "@/data/medtrum/secureStore";
@@ -36,6 +37,7 @@ import {
   type LocalDataWriteLease,
 } from "@/data/privacy/localDataWriteEpoch";
 import { LocalDataSummary } from "@/domain/localDataSummary";
+import { NOTEBOOK_STORAGE_KEY } from "@/domain/personalNotebook";
 import { clearTarvisStoredData } from "@/data/tarvis/secureStore";
 import { clearTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
 import { clearXdripConnection } from "@/data/xdrip/secureStore";
@@ -256,6 +258,7 @@ export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
         `DELETE FROM app_metadata WHERE key = 'health-connect-background-state-v1'`,
         `DELETE FROM app_metadata WHERE key = '${INSIGHT_REVIEW_PREFERENCES_DB_KEY}'`,
         `DELETE FROM app_metadata WHERE key = 'tarvis-conversation-v1'`,
+        `DELETE FROM app_metadata WHERE key = '${NOTEBOOK_STORAGE_KEY}'`,
         `DELETE FROM app_metadata WHERE key = 'hevy-sync-state-v1'`,
         `DELETE FROM app_metadata WHERE key = 'hevy-full-reconciliation-state-v1'`,
         `DELETE FROM app_metadata WHERE key = 'hevy-full-reconciliation-candidate-v1'`,
@@ -392,6 +395,7 @@ export async function resumePendingLocalDataErase() {
       saveGlucoseAlertPreferences({ ...alerts, enabled: false }),
       resetGlucoseAlertState(),
       clearInsightReviewPreferences(),
+      clearBackupStatus(),
     ]);
     await eraseLocalHealthData();
     // The database erase deliberately replaces source metadata. Re-plan from

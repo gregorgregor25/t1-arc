@@ -7,12 +7,15 @@ function source(relativePath: string) {
 }
 
 describe("public GitHub APK release", () => {
-  it("keeps private packaging out of the normal quality workflow", () => {
+  it("keeps downloadable releases out of the normal quality workflow", () => {
     const workflow = source(".github/workflows/quality.yml");
 
     expect(workflow).toContain("name: T1 Arc quality");
     expect(workflow).not.toContain("private-android-release");
-    expect(workflow).not.toContain("T1ARC_PRIVATE_TEST_BUILD");
+    expect(workflow).not.toContain(":app:assembleRelease");
+    expect(workflow).not.toContain("gh release create");
+    expect(workflow).not.toContain("actions/upload-artifact");
+    expect(workflow).toContain("ephemeral-ci-only");
     expect(workflow).not.toContain(".sideload");
     expect(workflow.match(/NODE_ENV: production/g)).toHaveLength(3);
   });
@@ -29,6 +32,14 @@ describe("public GitHub APK release", () => {
     expect(workflow).toContain("T1ARC_RELEASE_STORE_PASSWORD");
     expect(workflow).toContain("T1ARC_RELEASE_KEY_ALIAS");
     expect(workflow).toContain("T1ARC_RELEASE_KEY_PASSWORD");
+    expect(workflow).toContain("T1ARC_FACE_KEYSTORE_BASE64");
+    expect(workflow).toContain("T1ARC_FACE_STORE_PASSWORD");
+    expect(workflow).toContain("T1ARC_FACE_KEY_ALIAS");
+    expect(workflow).toContain("T1ARC_FACE_KEY_PASSWORD");
+    expect(workflow).toContain(":wear:assembleRelease");
+    expect(workflow).toContain("./scripts/verify-wear-apks.ps1");
+    expect(workflow).toContain("wearArtifacts = $wearArtifacts");
+    expect(workflow).toContain('"$RUNNER_TEMP/t1arc-faces.p12"');
     expect(workflow).toContain(
       "Confirm protected signing secrets are configured",
     );

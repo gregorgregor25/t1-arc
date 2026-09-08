@@ -8,9 +8,7 @@ import {
   TARGET_LOW_MMOL_L,
   TimeRange,
 } from './models';
-import { minutesBetween } from './time';
-
-const MAX_OBSERVED_GAP_MINUTES = 12;
+import { calculateGlucoseStatistics } from './glucoseStatistics';
 
 function round(value: number, decimals = 1) {
   const factor = 10 ** decimals;
@@ -21,68 +19,26 @@ export function calculateGlucoseStats(
   readings: GlucoseReading[],
   range: TimeRange,
 ): GlucoseStats {
-  const sorted = readings
-    .filter((reading) => reading.timestamp >= range.start && reading.timestamp < range.end)
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  let belowMinutes = 0;
-  let inRangeMinutes = 0;
-  let aboveMinutes = 0;
-  let weightedMmolMinutes = 0;
-  let weightedSquaredMmolMinutes = 0;
-
-  sorted.forEach((reading, index) => {
-    const next = sorted[index + 1];
-    const intervalEnd = Math.min(next?.timestamp ?? range.end, range.end);
-    const duration = minutesBetween(reading.timestamp, intervalEnd);
-    const observedDuration = Math.min(duration, MAX_OBSERVED_GAP_MINUTES);
-
-    if (observedDuration <= 0) return;
-    weightedMmolMinutes += reading.mmolL * observedDuration;
-    weightedSquaredMmolMinutes +=
-      reading.mmolL * reading.mmolL * observedDuration;
-
-    if (reading.mmolL < TARGET_LOW_MMOL_L) belowMinutes += observedDuration;
-    else if (reading.mmolL <= TARGET_HIGH_MMOL_L) inRangeMinutes += observedDuration;
-    else aboveMinutes += observedDuration;
+  const statistics = calculateGlucoseStatistics({
+    readings,
+    range,
+    thresholds: {
+      lowerMmolL: TARGET_LOW_MMOL_L,
+      upperMmolL: TARGET_HIGH_MMOL_L,
+    },
   });
-
-  const observedMinutes = belowMinutes + inRangeMinutes + aboveMinutes;
-  const totalRangeMinutes = minutesBetween(range.start, range.end);
-  const unroundedAverage =
-    observedMinutes > 0 ? weightedMmolMinutes / observedMinutes : null;
-  const standardDeviation =
-    unroundedAverage === null
-      ? null
-      : Math.sqrt(
-          Math.max(
-            0,
-            weightedSquaredMmolMinutes / observedMinutes -
-              unroundedAverage * unroundedAverage,
-          ),
-        );
-  const percent = (minutes: number) =>
-    observedMinutes > 0 ? round((minutes / observedMinutes) * 100) : 0;
-
+  const displayed = (value: number | null) => value === null ? null : round(value);
   return {
-    averageMmolL:
-      unroundedAverage === null ? null : round(unroundedAverage),
-    standardDeviationMmolL:
-      standardDeviation === null ? null : round(standardDeviation),
-    coefficientOfVariationPercent:
-      standardDeviation === null ||
-      unroundedAverage === null ||
-      unroundedAverage <= 0
-        ? null
-        : round((standardDeviation / unroundedAverage) * 100),
-    timeBelowPercent: percent(belowMinutes),
-    timeInRangePercent: percent(inRangeMinutes),
-    timeAbovePercent: percent(aboveMinutes),
-    coveragePercent:
-      totalRangeMinutes > 0
-        ? Math.min(100, round((observedMinutes / totalRangeMinutes) * 100))
-        : 0,
-    observedMinutes: round(observedMinutes, 0),
+    // Convert to the display unit before rounding. Rounding mmol/L here can
+    // change both borderline mmol/L values and the eventual mg/dL result.
+    averageMmolL: statistics.arithmeticMeanMmolL,
+    standardDeviationMmolL: displayed(statistics.populationStandardDeviationMmolL),
+    coefficientOfVariationPercent: displayed(statistics.coefficientOfVariationPercent),
+    timeBelowPercent: statistics.distribution?.belowPercent ?? 0,
+    timeInRangePercent: statistics.distribution?.inRangePercent ?? 0,
+    timeAbovePercent: statistics.distribution?.abovePercent ?? 0,
+    coveragePercent: statistics.coveragePercent,
+    observedMinutes: round(statistics.observedMilliseconds / 60_000, 0),
   };
 }
 

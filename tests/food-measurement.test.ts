@@ -21,6 +21,9 @@ describe('regional food measurement input', () => {
     expect(foodAmountToCanonical(1, 'cup', 'US')).toBeCloseTo(236.5882, 4);
     expect(foodAmountToCanonical(1, 'cup', 'JP')).toBe(200);
     expect(foodAmountToCanonical(1, 'cup', 'AU')).toBe(250);
+    expect(foodAmountToCanonical(1, 'tbsp', 'AU')).toBe(20);
+    expect(foodAmountFromCanonical(40, 'tbsp', 'AU')).toBe(2);
+    expect(foodAmountToCanonical(1, 'tbsp', 'GB')).toBe(15);
     expect(canonicalFoodBasisUnit('tbsp')).toBe('ml');
   });
 

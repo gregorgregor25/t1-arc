@@ -4,18 +4,23 @@ plugins {
 }
 
 apply from: rootProject.file('../scripts/gradle/t1arc-signing.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-watchface-catalog.gradle')
 
 android {
     namespace 'io.github.gregorgregor25.t1arc.wear'
     compileSdk rootProject.ext.compileSdkVersion
+    useLibrary 'wear-sdk', false
+    sourceSets.main.java.srcDir('../shared/src/main/java')
+    testBuildType 'release'
 
     defaultConfig {
         // Data Layer requires phone and watch package names and signatures to match.
         applicationId t1ArcWearCompanionApplicationId
         minSdk 30
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName '0.2.0'
+        versionCode 6
+        versionName '0.4.0'
+        testInstrumentationRunner 'io.github.gregorgregor25.t1arc.wear.watchfaces.WatchFaceSmokeInstrumentation'
     }
 
     compileOptions {

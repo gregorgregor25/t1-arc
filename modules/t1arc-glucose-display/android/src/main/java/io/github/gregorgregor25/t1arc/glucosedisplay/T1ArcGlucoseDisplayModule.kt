@@ -3291,6 +3291,18 @@ class T1ArcGlucoseDisplayModule : Module() {
       T1ArcGlucosePublicationGate.observeCurrent(context) { it.toDouble() }
     }
 
+    AsyncFunction("getWatchFaceStatusAsync") Coroutine { ->
+      T1ArcWatchFaceClient.status(requireNotNull(appContext.reactContext))
+    }
+
+    AsyncFunction("installBundledWatchFaceAsync") Coroutine { nodeId: String, faceId: String ->
+      T1ArcWatchFaceClient.install(requireNotNull(appContext.reactContext), nodeId, faceId)
+    }
+
+    AsyncFunction("openWatchFaceActivationAsync") Coroutine { nodeId: String ->
+      T1ArcWatchFaceClient.openActivation(requireNotNull(appContext.reactContext), nodeId)
+    }
+
     AsyncFunction("getWearStatusAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)
       try {

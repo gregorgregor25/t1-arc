@@ -2,6 +2,7 @@ import {
   isReadyTarvisIntent,
   PendingTarvisClarification,
   resolveTarvisClarificationReply,
+  resolveTarvisCompoundIntents,
   TarvisIntentHistoryEntry,
   TarvisIntentResolution,
   TarvisIntentV1,
@@ -14,6 +15,7 @@ import {
   classifyTarvisQuestion,
   isClearlyOffTopicTarvisQuestion,
   isTarvisDependentFollowUp,
+  isTarvisGeneralExplanation,
   TarvisScope,
 } from "./scope";
 import {
@@ -39,6 +41,7 @@ import {
   type TarvisEvidencePlanningOptions,
 } from "./evidencePlanner";
 import { isTarvisTreatmentProfileQuestion } from "./treatmentProfileAnswer";
+import type { TarvisHealthMetric } from '@/domain/tarvisEntry';
 
 const PERSONAL_ACTIVITY_GUIDANCE_REVIEW =
   /(?=[\s\S]*\b(?:nice|guidance|guidelines?)\b)(?=[\s\S]*\b(?:activity|exercise|walk(?:ed|ing)?|run|ran|running|cycle|cycled|cycling|swim|swam|swimming|workout|gym)\b)(?=[\s\S]*\b(?:glucose|blood sugar|sugar|readings?|low|high)\b)/i;
@@ -54,7 +57,7 @@ const PERSONAL_ACTIVITY_GUIDANCE_DATA_REQUEST =
   /(?=[\s\S]*\b(?:nice|guidance|guidelines?)\b)(?=[\s\S]*\b(?:activity|exercise|walk(?:ed|ing)?|run|ran|running|cycle|cycled|cycling|swim|swam|swimming|workout|gym)\b)(?=[\s\S]*\bmy\s+(?:exercise\s+)?(?:data|records?|readings?|lows?|highs?|patterns?)\b)/i;
 
 const OPEN_ENDED_GLUCOSE_EPISODE_REVIEW =
-  /\b(?:why|investigat(?:e|ed|ing|ion)|explain|review|what (?:happened|was going on|might explain)|can you look into|any idea why|what do my records suggest)\b|\b(?:did|could|might)\b[\s\S]{0,100}\b(?:cause|caused|explain|affect|make|made|trigger|triggered|lead to|responsible)\b|\bwas\b[\s\S]{0,100}\b(?:related to|because|responsible for|caused by|affected by|triggered by|due to)\b/i;
+  /\b(?:why|investigat(?:e|ed|ing|ion)|explain|review|(?:what|which) patterns?|what (?:happened|was going on|might explain)|can you look into|any idea why|what do my records suggest)\b|\b(?:did|could|might)\b[\s\S]{0,100}\b(?:cause|caused|explain|affect|make|made|trigger|triggered|lead to|responsible)\b|\bwas\b[\s\S]{0,100}\b(?:related to|because|responsible for|caused by|affected by|triggered by|due to)\b/i;
 
 function isOpenEndedGlucoseEpisodeReview(question: string) {
   return OPEN_ENDED_GLUCOSE_EPISODE_REVIEW.test(question);
@@ -99,6 +102,30 @@ function hasOnlyAncillaryEpisodeEvidenceMetrics(
   );
 }
 
+function isContextualEpisodeReview(
+  question: string,
+  resolution: TarvisIntentResolution,
+  eventKind: ReturnType<typeof retrospectiveGlucoseEventKind>,
+) {
+  if (eventKind !== "high" && eventKind !== "low") return false;
+  const episodeMetric = `glucose.${eventKind}_episodes`;
+  // The period report contains local episode counts and their context, not
+  // arbitrary glucose calculations or user-defined threshold calculations.
+  return (
+    isOpenEndedGlucoseEpisodeReview(question) &&
+    (resolution.outcome.code === "ready" ||
+      resolution.outcome.code === "unsupported_compound_question") &&
+    resolution.literals.thresholds.length === 0 &&
+    resolution.intent.metrics.some(({ value }) => value === episodeMetric) &&
+    resolution.intent.metrics.every(
+      ({ value }) =>
+        value === episodeMetric || ANCILLARY_EPISODE_EVIDENCE_METRICS.has(value),
+    ) &&
+    !EXACT_CONTEXTUAL_EVIDENCE_METRIC_REQUEST.test(question) &&
+    !EXACT_DATA_GAP_REQUEST.test(question)
+  );
+}
+
 type TarvisAnswerRequestPlan = {
       kind: "answer";
       answer: TarvisAnswer;
@@ -110,6 +137,10 @@ export type TarvisRequestPlan =
   | TarvisAnswerRequestPlan
   | {
       kind: "treatment-profile";
+    }
+  | {
+      kind: "scoped-compound";
+      intents: TarvisIntentV1[];
     }
   | {
       kind: "scoped-glucose";
@@ -131,6 +162,8 @@ export type TarvisRequestPlan =
   | {
       kind: "model-evidence";
       evidenceRanges?: TarvisEvidenceRanges;
+      selectedHealthMetric?: TarvisHealthMetric;
+      episodeReviewKind?: "low" | "high";
       history: TarvisConversationTurn[];
       intent?: TarvisIntentV1;
     }
@@ -157,7 +190,7 @@ function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
       : "That is outside Tarv1s\u2019s scope",
     answer: credentialRequest
       ? "Tarv1s cannot retrieve or display passwords, API keys, tokens or other secrets. No OpenAI request was made."
-      : "Tarv1s only answers questions about Type 1 diabetes and the health evidence available in T1 Arc. No OpenAI request was made.",
+      : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No OpenAI request was made.",
     confidence: "high",
     evidenceIds: [],
     limitations: [],
@@ -167,20 +200,20 @@ function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
 function unsupportedRangeAnswer(reason: string): TarvisAnswer {
   return {
     headline: "I need an exact period for that review",
-    answer: `${reason} Please ask with one exact supported period, such as yesterday, last week, or the last 14 days. I won\u2019t substitute the report currently shown on screen.`,
+    answer: `${reason} Which period would you like to look at: yesterday, last week, or the last 14 days?`,
     confidence: "limited",
     evidenceIds: [],
     limitations: [
-      "No health records were loaded and no OpenAI request was made for the unsupported time or comparison request.",
+      "I haven’t loaded your health records or sent this question to OpenAI.",
     ],
   };
 }
 
 function evidencePlannerUnavailableAnswer(): TarvisAnswer {
   return {
-    headline: "I couldn’t complete that evidence search",
+    headline: "I couldn’t complete that review",
     answer:
-      "I recognised this as a question about one of your past glucose events, but I couldn’t safely turn it into a bounded T1 Arc evidence request. I haven’t guessed at a cause or substituted a different calculation.",
+      "Try asking about one high or low, including the date or approximate time. I haven’t loaded your records for this question.",
     confidence: "limited",
     evidenceIds: [],
     limitations: [
@@ -283,7 +316,6 @@ export function coordinateTarvisRequest({
     };
   }
   if (
-    scope === "in_scope" &&
     !dependentEducationFollowUp &&
     isTarvisExplicitReviewedKnowledgeRequest(question) &&
     selectedReviewedKnowledge.length === 0
@@ -304,6 +336,20 @@ export function coordinateTarvisRequest({
     },
     pendingClarification,
   );
+  if (
+    !pendingClarification &&
+    isTarvisGeneralExplanation(question) &&
+    resolution.literals.dates.length === 0 &&
+    resolution.literals.durations.length === 0 &&
+    resolution.literals.times.length === 0 &&
+    resolution.literals.clockWindows.length === 0 &&
+    resolution.literals.comparisons.length === 0
+  ) {
+    return {
+      kind: "model-education",
+      history: modelHistoryForEducation(question, conversationHistory),
+    };
+  }
   // Scope still runs before API-key/settings state. The deterministic resolver
   // is allowed to recognise terse local commands first so conversational
   // phrases and misspellings are not mistaken for unrelated chat.
@@ -321,7 +367,9 @@ export function coordinateTarvisRequest({
       question,
     )
   ) {
-    return { kind: "answer", answer: scopeAnswer(scope), source: "scope" };
+    // A dictionary miss is not proof that a question is unrelated to health.
+    // Let the education model decide relevance with no personal records.
+    return { kind: "model-education", history: [] };
   }
   if (dependentEducationFollowUp && !isReadyTarvisIntent(resolution)) {
     return {
@@ -329,9 +377,45 @@ export function coordinateTarvisRequest({
       history: modelHistoryForEducation(question, conversationHistory),
     };
   }
+  const compound = resolveTarvisCompoundIntents(resolution, {
+    now: asOf,
+    timezone: getRuntimeRegionalDefaults().timeZone,
+  });
+  if (compound) {
+    const routes = compound.map((intent) => routeTarvisIntent({
+      ...resolution,
+      intent,
+      outcome: { status: "ready", code: "ready" },
+    }));
+    const unavailable = routes.find((candidate) => candidate.kind === "capability");
+    if (unavailable?.kind === "capability") {
+      return { kind: "answer", source: "capability", answer: unavailable.answer };
+    }
+    if (routes.every((candidate) => candidate.kind === "scoped-glucose" || candidate.kind === "scoped-personal-data")) {
+      return { kind: "scoped-compound", intents: compound };
+    }
+  }
   const route = routeTarvisIntent(resolution);
 
   const unresolvedEventKind = retrospectiveGlucoseEventKind(question);
+  const contextualEpisodeRanges = isContextualEpisodeReview(
+    question,
+    resolution,
+    unresolvedEventKind,
+  )
+    ? resolveTarvisEvidenceRangeRequest(resolution, asOf)
+    : undefined;
+  if (scope === "in_scope" && contextualEpisodeRanges?.kind === "resolved" &&
+    (unresolvedEventKind === "low" || unresolvedEventKind === "high")) {
+    // A review of episodes across a period needs the full period report, not
+    // the single-largest-event context used for "why did I go low yesterday?".
+    return {
+      kind: "model-evidence",
+      evidenceRanges: contextualEpisodeRanges.ranges,
+      episodeReviewKind: unresolvedEventKind,
+      history: modelSafeTarvisHistory(conversationHistory),
+    };
+  }
   const evidencePlanningOptions =
     scope === "in_scope" &&
     (unresolvedEventKind === "high" || unresolvedEventKind === "low") &&

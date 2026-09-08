@@ -67,6 +67,43 @@ Food data used by T1 Arc:
   [MEXT food-composition data use](https://www.mext.go.jp/a_menu/syokuhinseibun/index.htm)
   and [MEXT website content policy](https://www.mext.go.jp/b_menu/1351168.htm).
 
+Additional offline country packs contain only public food-composition data;
+they are separate from the user's health records and the MIT application code:
+
+- Canadian Nutrient File, Health Canada, 2026. Contains information licensed
+  under the [Open Government Licence – Canada](https://open.canada.ca/en/open-government-licence-canada).
+  [Official dataset](https://open.canada.ca/data/en/dataset/1b6139bd-ed7e-4043-bc28-ff00e10f3109).
+  The processed pack retains English/French names, selected nutrients and source
+  gram portions. Total carbohydrate by difference includes dietary fibre.
+- Anses. 2025. Table de composition nutritionnelle des aliments Ciqual.
+  [Official dataset and licence](https://doi.org/10.57745/RDMHWY), Etalab Open
+  Licence 2.0. T1 Arc's selected-nutrient SQLite conversion is not an official
+  Anses product. Source attribution, version and original available-carbohydrate
+  meaning are retained. Trace and below-quantification cells are not guessed zero.
+- Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 –
+  Deutsche Nährstoffdatenbank. Karlsruhe. DOI: 10.25826/Data20251217-134202-0.
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  [official licence/download](https://blsdb.de/download).
+  Changes: selected nutrients, normalized whitespace, English/German search
+  fields, source-name-derived bread aliases for B-coded foods, SQLite conversion.
+  BLS CHO is available carbohydrate, including polyols.
+- Optional USDA branded foods snapshot, April 2026, US Department of Agriculture,
+  Agricultural Research Service, FoodData Central. CC0 1.0 (as above).
+  [Official bulk downloads](https://fdc.nal.usda.gov/download-datasets/).
+  T1 Arc retains supported nutrients for United States market entries and resolves
+  equivalent GTIN revisions by publication date and then FDC identifier. Repeated
+  contradictory amounts for the same nutrient stay unknown; identical duplicates
+  collapse. Documented g/GRM and ml/MLT source units are normalized while retaining
+  the per-100-source-unit basis; no density is inferred. It is a dated snapshot,
+  not a live claim about current product formulation.
+
+The pack manifest records original source SHA-256 hashes, transformed database
+SHA-256 and bounded verification chunks, licence/attribution, nutrient definitions,
+version, record counts and size. Search text is normalized; real numeric zero is
+retained and missing/trace supported nutrients remain unknown. The source files
+are cached only in local build QA.
+These publishers do not endorse T1 Arc. No images or logos are bundled.
+
 Additional runtime packages include:
 
 - fflate, copyright © Arjun Barrett, MIT License.

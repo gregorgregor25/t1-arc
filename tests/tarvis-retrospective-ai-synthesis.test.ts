@@ -245,6 +245,70 @@ describe("Tarv1s retrospective AI synthesis boundary", () => {
     );
   });
 
+  it("can lead directly with local facts without compulsory companion filler", () => {
+    const packet = buildTarvisRetrospectiveEvidencePacket(review(), START);
+    const plan = companionPlan();
+    const result = parseTarvisRetrospectiveAnswerResult(
+      JSON.stringify({
+        ...plan,
+        leadText: "",
+        claims: plan.claims.map((claim) => ({ ...claim, bridgeText: "" })),
+        closingStyle: "none",
+        closingText: "",
+      }),
+      packet,
+    );
+
+    expect(result.acceptedHostedAnswer).toBe(true);
+    expect(result.answer.answer.startsWith(packet.verifiedReview.chronology)).toBe(true);
+    expect(result.answer.answer).toContain("the activity could have contributed");
+    expect(result.answer.answer).not.toContain(DIRECT_LEAD);
+    expect(result.answer.answer).not.toContain(FIRST_BRIDGE);
+    expect(result.answer.answer).not.toContain(EVIDENCE_CLOSE);
+    expect(result.answer.evidenceIds).toEqual(packet.evidence.map(({ id }) => id));
+    expect(result.answer.limitations).toEqual(packet.verifiedReview.limitations);
+    expect(result.answer.confidence).toBe(packet.verifiedReview.confidence);
+  });
+
+  it("can return only the unchanged chronology when no interpretation is needed", () => {
+    const packet = buildTarvisRetrospectiveEvidencePacket(review(), START);
+    const result = parseTarvisRetrospectiveAnswerResult(JSON.stringify({
+      leadStyle: "direct-cautious",
+      leadText: "",
+      claims: [],
+      closingStyle: "none",
+      closingText: "",
+    }), packet);
+    expect(result.acceptedHostedAnswer).toBe(true);
+    expect(result.answer.answer).toBe(packet.verifiedReview.chronology);
+  });
+
+  it.each([
+    { leadText: " " },
+    { leadText: "\u200b" },
+    { leadText: "Take 2 units now." },
+    { bridgeText: " " },
+    { bridgeText: "\u200b" },
+    { bridgeText: "Your walk caused the low." },
+    { evidenceIds: ["incident-evidence-2", "incident-evidence-1"] },
+    { evidenceIds: [] },
+    { knowledgeIds: ["invented-guideline"] },
+    { claimId: "invented-claim" },
+  ])("empty optional framing does not bypass prose or provenance checks: %j", (change) => {
+    const packet = buildTarvisRetrospectiveEvidencePacket(review(), START);
+    const plan = companionPlan();
+    const { leadText = "", ...claimChange } = change;
+    const result = parseTarvisRetrospectiveAnswerResult(JSON.stringify({
+      ...plan,
+      leadText,
+      claims: plan.claims.map((claim) => ({ ...claim, bridgeText: "", ...claimChange })),
+      closingStyle: "none",
+      closingText: "",
+    }), packet);
+    expect(result.acceptedHostedAnswer).toBe(false);
+    expect(result.answer.answer).toBe(packet.verifiedReview.chronology);
+  });
+
   it.each([
     ["direct-cautious", DIRECT_LEAD, "offer-evidence", EVIDENCE_CLOSE],
     ["timeline-first", TIMELINE_LEAD, "offer-limitations", LIMITATIONS_CLOSE],

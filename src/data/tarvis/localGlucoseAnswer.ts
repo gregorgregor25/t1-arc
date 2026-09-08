@@ -24,6 +24,7 @@ import {
   canonicalGlucoseSamples,
   GMI_FORMULA_VERSION,
   GLUCOSE_STATISTICS_VERSION,
+  GLUCOSE_MEAN_METRIC_VERSION,
 } from "./query/glucoseStatistics";
 import type { TarvisAnswer } from "./types";
 import { isLocalGlucoseScopeWithinLimit } from "./localScopeLimit";
@@ -142,6 +143,7 @@ const SAMPLE_STATISTIC_METRICS = new Set<SupportedMetric>([
 ]);
 
 function metricAlgorithmVersion(metric: SupportedMetric) {
+  if (metric === "glucose.mean") return GLUCOSE_MEAN_METRIC_VERSION;
   if (metric === "glucose.time_in_range") {
     return `duration-gap-cap-${OBSERVATION_GAP_MINUTES}m-v1`;
   }
@@ -697,7 +699,7 @@ function metricResults(
         return {
           id: metric,
           unit: "mmol/L" as const,
-          value: statistic(statistics.arithmeticMeanMmolL),
+          value: statistics.arithmeticMeanMmolL,
         };
       case "glucose.median":
         return {
@@ -812,7 +814,7 @@ function answerFor(
     if (metric.value === null) return "the requested result was unavailable";
     switch (metric.id) {
       case "glucose.mean":
-        return `Across those readings, your observed arithmetic mean was ${regionalGlucose(metric.value)}`;
+        return `Your average glucose from the available readings was ${regionalGlucose(metric.value)}`;
       case "glucose.median":
         return `Across those readings, your observed median was ${regionalGlucose(metric.value)}`;
       case "glucose.minimum":
@@ -884,7 +886,7 @@ function answerFor(
         ? "Observed glucose events"
         : "Observed glucose results"
       : first?.id === "glucose.mean"
-        ? `Observed average glucose: ${first.value === null || first.value === undefined ? "unavailable" : regionalGlucose(first.value)}`
+        ? `${status === "limited" ? "Observed" : "Your"} average glucose: ${first.value === null || first.value === undefined ? "unavailable" : regionalGlucose(first.value)}`
         : first?.id === "glucose.median"
           ? `Observed median glucose: ${first.value === null || first.value === undefined ? "unavailable" : regionalGlucose(first.value)}`
           : first?.id === "glucose.minimum"
@@ -913,7 +915,7 @@ function answerFor(
       bundle.result.coverage.percent < SUFFICIENT_COVERAGE_PERCENT);
   return {
     headline,
-    answer: `${requestedCoverageSentence(bundle, executable)} ${copies.join("; ")}. This is a description of the recorded data, not a treatment recommendation.`,
+    answer: `${copies.join("; ")}. ${requestedCoverageSentence(bundle, executable)}`,
     confidence:
       status === "sufficient" && !gmiInsufficient ? "high" : "limited",
     evidenceIds: [evidenceId],

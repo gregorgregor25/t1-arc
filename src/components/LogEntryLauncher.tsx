@@ -24,6 +24,7 @@ export type LogEntryKind =
   | "medication"
   | "insulin"
   | "ketone"
+  | "sensor-start"
   | "note";
 
 const OPTIONS: {
@@ -79,6 +80,12 @@ const OPTIONS: {
     label: "Note",
     detail: "Illness, stress, travel or anything else",
     icon: "document-text-outline",
+  },
+  {
+    kind: "sensor-start",
+    label: "New sensor",
+    detail: "Record when you started a new sensor",
+    icon: "radio-outline",
   },
 ];
 

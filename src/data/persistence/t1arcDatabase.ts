@@ -215,14 +215,14 @@ async function ensureHealthConnectExtendedKinds(
   }
 }
 
-async function ensureRegionalFoodProviderKinds(
+export async function ensureRegionalFoodProviderKinds(
   database: SQLite.SQLiteDatabase,
 ) {
   const table = await database.getFirstAsync<{ sql: string | null }>(
     `SELECT sql FROM sqlite_master
      WHERE type = 'table' AND name = 'food_catalog_cache'`,
   );
-  if (!table?.sql || table.sql.includes("'mext-jp'")) return;
+  if (!table?.sql || ['mext-jp', 'cnf', 'ciqual', 'bls', 'fineli'].every((provider) => table.sql!.includes(`'${provider}'`))) return;
 
   // SQLite cannot widen a CHECK constraint in place. Rebuild the three food
   // tables atomically, preserving every existing catalogue, log and recipe row.
@@ -239,7 +239,7 @@ async function ensureRegionalFoodProviderKinds(
       CREATE TABLE food_catalog_cache_regional (
         id TEXT NOT NULL PRIMARY KEY,
         provider TEXT NOT NULL CHECK (
-          provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
         ),
         external_id TEXT NOT NULL,
         barcode TEXT,
@@ -280,7 +280,7 @@ async function ensureRegionalFoodProviderKinds(
         ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
         catalog_id TEXT REFERENCES food_catalog_cache(id) ON DELETE SET NULL,
         provider TEXT NOT NULL CHECK (
-          provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
         ),
         external_id TEXT NOT NULL,
         name_snapshot TEXT NOT NULL,
@@ -309,7 +309,7 @@ async function ensureRegionalFoodProviderKinds(
         ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
         catalog_id TEXT REFERENCES food_catalog_cache(id) ON DELETE SET NULL,
         provider TEXT NOT NULL CHECK (
-          provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
         ),
         external_id TEXT NOT NULL,
         name_snapshot TEXT NOT NULL,
@@ -554,6 +554,8 @@ async function openAndMigrate() {
       ),
       detail TEXT,
       glucose_mmol_l REAL,
+      sensor_started INTEGER CHECK (sensor_started IN (0, 1)),
+      sensor_glucose_source_id TEXT,
       recorded_at_ms INTEGER NOT NULL,
       source_file TEXT,
       source_row INTEGER
@@ -636,7 +638,7 @@ async function openAndMigrate() {
     CREATE TABLE IF NOT EXISTS food_catalog_cache (
       id TEXT NOT NULL PRIMARY KEY,
       provider TEXT NOT NULL CHECK (
-        provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
       ),
       external_id TEXT NOT NULL,
       barcode TEXT,
@@ -705,7 +707,7 @@ async function openAndMigrate() {
       ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
       catalog_id TEXT REFERENCES food_catalog_cache(id) ON DELETE SET NULL,
       provider TEXT NOT NULL CHECK (
-        provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
       ),
       external_id TEXT NOT NULL,
       name_snapshot TEXT NOT NULL,
@@ -756,7 +758,7 @@ async function openAndMigrate() {
       ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
       catalog_id TEXT REFERENCES food_catalog_cache(id) ON DELETE SET NULL,
       provider TEXT NOT NULL CHECK (
-        provider IN ('cofid', 'mext-jp', 'open-food-facts', 'usda-fdc', 'user')
+          provider IN ('cofid', 'mext-jp', 'cnf', 'ciqual', 'bls', 'fineli', 'open-food-facts', 'usda-fdc', 'user')
       ),
       external_id TEXT NOT NULL,
       name_snapshot TEXT NOT NULL,
@@ -1028,6 +1030,8 @@ async function openAndMigrate() {
   await ensureColumn(database, 'context_events', 'calories_burned', 'REAL');
   await ensureColumn(database, 'context_events', 'medication_type', 'TEXT');
   await ensureColumn(database, 'context_notes', 'glucose_mmol_l', 'REAL');
+  await ensureColumn(database, 'context_notes', 'sensor_started', 'INTEGER CHECK (sensor_started IN (0, 1))');
+  await ensureColumn(database, 'context_notes', 'sensor_glucose_source_id', 'TEXT');
   await backfillLegacyGlookoMeterContextNotes(database);
   await ensureColumn(
     database,

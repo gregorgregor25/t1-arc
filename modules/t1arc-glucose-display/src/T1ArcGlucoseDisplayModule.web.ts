@@ -40,6 +40,15 @@ export default {
       watchNames: [],
     };
   },
+  async getWatchFaceStatusAsync() {
+    return [];
+  },
+  async installBundledWatchFaceAsync() {
+    return { code: 'unsupported' as const, supported: false };
+  },
+  async openWatchFaceActivationAsync() {
+    return false;
+  },
   async getHomeWidgetStatusAsync() {
     return {
       supported: false,

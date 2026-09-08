@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from wear/designs. Edit the design source and regenerate. -->
+<WatchFace width="450" height="450">
+    <Metadata key="CLOCK_TYPE" value="ANALOG"/>
+    <Metadata key="PREVIEW_TIME" value="10:08:30"/>
+    <UserConfigurations>
+        <ColorConfiguration id="accent" displayName="accent_label" defaultValue="amber">
+            <ColorOption id="silver" colors="#FFD9DEE0" displayName="accent_silver"/>
+            <ColorOption id="champagne" colors="#FFE3C999" displayName="accent_champagne"/>
+            <ColorOption id="lime" colors="#FFD3F47A" displayName="accent_lime"/>
+            <ColorOption id="amber" colors="#FFF3B568" displayName="accent_amber"/>
+        </ColorConfiguration>
+    </UserConfigurations>
+    <Scene backgroundColor="#FF000000">
+        <Group name="summit_field_dial" x="0" y="0" width="450" height="450" alpha="255">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <PartDraw x="0" y="0" width="450" height="450">
+                <Ellipse x="93" y="34" width="264" height="264">
+                    <Stroke color="#FF48514F" thickness="1"/>
+                </Ellipse>
+                <Ellipse x="99" y="40" width="252" height="252">
+                    <Stroke color="#FF252D2C" thickness="1"/>
+                </Ellipse>
+                <RoundRectangle x="73" y="282" width="304" height="103" cornerRadiusX="9" cornerRadiusY="9">
+                    <Fill color="#FF111817"/>
+                </RoundRectangle>
+                <Line startX="96" startY="277" endX="354" endY="277">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="1"/>
+                </Line>
+                <Line startX="124" startY="410" endX="326" endY="410">
+                    <Stroke color="#FF36423E" thickness="1"/>
+                </Line>
+            </PartDraw>
+            <PartDraw x="0" y="0" width="450" height="450">
+                <Line startX="225" startY="59" endX="225" endY="48">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="236.81" startY="53.62" endX="237.33" endY="48.65">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="248.49" startY="55.47" endX="249.53" endY="50.58">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="259.92" startY="58.53" endX="261.46" endY="53.78">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="270.96" startY="62.77" endX="272.99" endY="58.2">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="278.5" startY="73.34" endX="284" endY="63.81">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="291.42" startY="74.58" endX="294.36" endY="70.54">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="300.61" startY="82.02" endX="303.96" endY="78.31">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="308.98" startY="90.39" endX="312.69" endY="87.04">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="316.42" startY="99.58" endX="320.46" endY="96.64">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="317.66" startY="112.5" endX="327.19" endY="107">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="328.23" startY="120.04" endX="332.8" endY="118.01">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="332.47" startY="131.08" endX="337.22" endY="129.54">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="335.53" startY="142.51" endX="340.42" endY="141.47">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="337.38" startY="154.19" endX="342.35" endY="153.67">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="332" startY="166" endX="343" endY="166">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="337.38" startY="177.81" endX="342.35" endY="178.33">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="335.53" startY="189.49" endX="340.42" endY="190.53">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="332.47" startY="200.92" endX="337.22" endY="202.46">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="328.23" startY="211.96" endX="332.8" endY="213.99">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="317.66" startY="219.5" endX="327.19" endY="225">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="316.42" startY="232.42" endX="320.46" endY="235.36">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="308.98" startY="241.61" endX="312.69" endY="244.96">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="300.61" startY="249.98" endX="303.96" endY="253.69">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="291.42" startY="257.42" endX="294.36" endY="261.46">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="278.5" startY="258.66" endX="284" endY="268.19">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="270.96" startY="269.23" endX="272.99" endY="273.8">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="259.92" startY="273.47" endX="261.46" endY="278.22">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="248.49" startY="276.53" endX="249.53" endY="281.42">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="236.81" startY="278.38" endX="237.33" endY="283.35">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="225" startY="273" endX="225" endY="284">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="213.19" startY="278.38" endX="212.67" endY="283.35">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="201.51" startY="276.53" endX="200.47" endY="281.42">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="190.08" startY="273.47" endX="188.54" endY="278.22">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="179.04" startY="269.23" endX="177.01" endY="273.8">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="171.5" startY="258.66" endX="166" endY="268.19">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="158.58" startY="257.42" endX="155.64" endY="261.46">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="149.39" startY="249.98" endX="146.04" endY="253.69">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="141.02" startY="241.61" endX="137.31" endY="244.96">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="133.58" startY="232.42" endX="129.54" endY="235.36">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="132.34" startY="219.5" endX="122.81" endY="225">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="121.77" startY="211.96" endX="117.2" endY="213.99">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="117.53" startY="200.92" endX="112.78" endY="202.46">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="114.47" startY="189.49" endX="109.58" endY="190.53">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="112.62" startY="177.81" endX="107.65" endY="178.33">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="118" startY="166" endX="107" endY="166">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="112.62" startY="154.19" endX="107.65" endY="153.67">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="114.47" startY="142.51" endX="109.58" endY="141.47">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="117.53" startY="131.08" endX="112.78" endY="129.54">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="121.77" startY="120.04" endX="117.2" endY="118.01">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="132.34" startY="112.5" endX="122.81" endY="107">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="133.58" startY="99.58" endX="129.54" endY="96.64">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="141.02" startY="90.39" endX="137.31" endY="87.04">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="149.39" startY="82.02" endX="146.04" endY="78.31">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="158.58" startY="74.58" endX="155.64" endY="70.54">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="171.5" startY="73.34" endX="166" endY="63.81">
+                    <Stroke color="[CONFIGURATION.accent]" thickness="3"/>
+                </Line>
+                <Line startX="179.04" startY="62.77" endX="177.01" endY="58.2">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="190.08" startY="58.53" endX="188.54" endY="53.78">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="201.51" startY="55.47" endX="200.47" endY="50.58">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+                <Line startX="213.19" startY="53.62" endX="212.67" endY="48.65">
+                    <Stroke color="#FF74827B" thickness="1"/>
+                </Line>
+            </PartDraw>
+            <PartText x="180" y="56" width="90" height="34" tintColor="#FFE8EDD9">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="27" weight="BOLD">12</Font>
+                </Text>
+            </PartText>
+            <PartText x="304" y="148" width="35" height="34" tintColor="#FFE8EDD9">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="27" weight="BOLD">3</Font>
+                </Text>
+            </PartText>
+            <PartText x="110" y="148" width="35" height="34" tintColor="#FFE8EDD9">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="27" weight="BOLD">9</Font>
+                </Text>
+            </PartText>
+            <PartText x="180" y="241" width="90" height="29" tintColor="#FFE8EDD9">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD">6</Font>
+                </Text>
+            </PartText>
+            <PartText x="150" y="118" width="150" height="21" tintColor="[CONFIGURATION.accent]">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="14" weight="MEDIUM">T 1  A R C</Font>
+                </Text>
+            </PartText>
+            <PartText x="150" y="205" width="150" height="18" tintColor="#FFAFBDB5">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="10" weight="NORMAL">S U M M I T</Font>
+                </Text>
+            </PartText>
+            <PartText x="144" y="224" width="162" height="18" tintColor="#FFBBC8BF">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="12" weight="NORMAL">
+                        <Template>%s  %s<Parameter expression="[DAY_OF_WEEK_S]"/>
+                            <Parameter expression="[DAY_Z]"/>
+                        </Template>
+                    </Font>
+                </Text>
+            </PartText>
+            <PartText x="80" y="387" width="290" height="23" tintColor="#FFCFD7CD">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="15" weight="NORMAL">
+                        <Template>BAT %d%%   ·   %d STEPS<Parameter expression="[BATTERY_PERCENT]"/>
+                            <Parameter expression="[STEP_COUNT]"/>
+                        </Template>
+                    </Font>
+                </Text>
+            </PartText>
+        </Group>
+        <Group name="summit_hands" x="0" y="0" width="450" height="450" alpha="255">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <AnalogClock x="0" y="0" width="450" height="450">
+                <HourHand resource="summit_hour_hand" x="217" y="96" width="16" height="94" pivotX="0.5" pivotY="0.7446808510638298"/>
+                <MinuteHand resource="summit_minute_hand" x="219" y="63" width="12" height="127" pivotX="0.5" pivotY="0.8110236220472441"/>
+                <SecondHand resource="summit_second_hand" x="223" y="54" width="4" height="136" pivotX="0.5" pivotY="0.8235294117647058">
+                    <Variant mode="AMBIENT" target="alpha" value="0"/>
+                </SecondHand>
+            </AnalogClock>
+            <PartDraw x="0" y="0" width="450" height="450">
+                <Ellipse x="220" y="161" width="10" height="10">
+                    <Fill color="#FFE4E8EA"/>
+                </Ellipse>
+            </PartDraw>
+        </Group>
+        <Group name="summit_aod_time" x="0" y="0" width="450" height="450" alpha="0">
+            <Variant mode="AMBIENT" target="alpha" value="255"/>
+            <DigitalClock x="70" y="98" width="310" height="70">
+                <TimeText x="0" y="0" width="310" height="70" format="hh:mm" hourFormat="SYNC_TO_DEVICE" align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="56" weight="MEDIUM" color="#FFFFFFFF"/>
+                </TimeText>
+            </DigitalClock>
+        </Group>
+        <ComplicationSlot x="83" y="288" width="284" height="90" slotId="600" displayName="glucose_slot_label" isCustomizable="FALSE" supportedTypes="RANGED_VALUE SHORT_TEXT EMPTY">
+            <DefaultProviderPolicy primaryProvider="io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService" primaryProviderType="RANGED_VALUE" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
+            <BoundingRoundBox x="0" y="0" width="284" height="90" cornerRadius="8" outlinePadding="2"/>
+            <Complication type="RANGED_VALUE">
+                <Group name="glucose_active" x="0" y="0" width="284" height="90" alpha="255">
+                    <Variant mode="AMBIENT" target="alpha" value="0"/>
+                    <Condition>
+                        <Expressions>
+                            <Expression name="rose">[COMPLICATION.RANGED_VALUE_VALUE] &lt; 0.5</Expression>
+                            <Expression name="amber">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 0.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 1.5</Expression>
+                            <Expression name="orange">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 1.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 2.5</Expression>
+                            <Expression name="cyan">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 2.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 3.5</Expression>
+                            <Expression name="green">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 3.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 4.5</Expression>
+                            <Expression name="blue">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 4.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 5.5</Expression>
+                            <Expression name="purple">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 5.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 6.5</Expression>
+                        </Expressions>
+                        <Compare expression="rose">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FFFF9BAE">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="amber">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FFF1B66F">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="orange">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FFFFB066">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="cyan">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FF65D2E7">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="green">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FF69D5AC">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="blue">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FF82B7FF">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="purple">
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FFC2A9FF">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Default>
+                            <PartText x="0" y="0" width="284" height="66" tintColor="#FFA9BDC2">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Default>
+                    </Condition>
+                </Group>
+                <Group name="glucose_ambient" x="0" y="0" width="284" height="90" alpha="0">
+                    <Variant mode="AMBIENT" target="alpha" value="255"/>
+                    <PartText x="0" y="0" width="284" height="66" tintColor="#FFE0E5E8">
+                        <Text align="CENTER">
+                            <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                                <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                </Template>
+                            </Font>
+                        </Text>
+                    </PartText>
+                </Group>
+                <PartText x="0" y="66" width="284" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL">
+                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+            <Complication type="SHORT_TEXT">
+                <PartText x="0" y="0" width="284" height="66" tintColor="#FFA9BDC2">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="58" weight="MEDIUM">
+                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="0" y="66" width="284" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL">
+                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+            <Complication type="EMPTY">
+                <PartText x="0" y="0" width="284" height="66" tintColor="#FFA9BDC2">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="58" weight="NORMAL">--</Font>
+                    </Text>
+                </PartText>
+                <PartText x="0" y="66" width="284" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL">WAITING FOR GLUCOSE</Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+    </Scene>
+</WatchFace>

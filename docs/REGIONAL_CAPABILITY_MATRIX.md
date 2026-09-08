@@ -1,6 +1,6 @@
 # T1 Arc regional capability matrix
 
-Updated: 2 September 2026
+Updated: 8 September 2026 (food coverage)
 
 This is the authoritative status of the multi-region implementation. “Complete”
 means the behaviour is implemented and covered by local automated evidence.
@@ -8,7 +8,7 @@ It does not mean that an external provider, national dataset, translation, or
 clinical pack has been approved in every country.
 
 The audit baseline records the state found before the regional work. Current
-status describes the locally verified public-ready source; verification below
+status describes the current implementation; verification below
 separates completed local gates from evidence that still requires an external
 service, licensed content, qualified review or physical hardware.
 
@@ -17,12 +17,17 @@ service, licensed content, qualified review or physical hardware.
 There is one T1 Arc app and one behaviour path. The maintainer's copy does not
 receive a private provider, food, or Tarv1s route that public users lack.
 
+The food expansion below describes current source changes, not a claim that
+an existing GitHub APK already includes them. Check the exact APK's release
+notes. New catalogue preparation and label capture still need acceptance on
+that release build.
+
 | Feature | United Kingdom | United States | Japan | Other regions |
 | --- | --- | --- | --- | --- |
 | Glucose, measurements, dates and timezones | Regional display; canonical records | Regional display; canonical records | Regional display; canonical records | Regional display when the selected locale is supported |
-| Reference-food search while typing | Bundled CoFID; offline | Bundled 5,742-food USDA Foundation/FNDDS catalogue; offline | Bundled 2,538-food MEXT catalogue; offline | Saved and user-created foods |
-| Packaged-food search | Open Food Facts after Search is pressed | Open Food Facts after Search is pressed | Open Food Facts after Search is pressed | Open Food Facts after Search is pressed |
-| Barcode scan | Open Food Facts | Open Food Facts first; low-rate USDA public exact-GTIN fallback only after a miss | Open Food Facts | Open Food Facts |
+| Reference-food search while typing | Bundled CoFID; offline | Bundled 5,742-food USDA Foundation/FNDDS catalogue; offline | Bundled 2,538-food MEXT catalogue; offline | Canada: 5,993 CNF foods; France: 3,483 Ciqual foods; Germany: 7,140 BLS foods; saved and user-created foods elsewhere |
+| Packaged-food search | Open Food Facts after Search is pressed | Optional 409,329-food offline USDA branded catalogue; Open Food Facts after Search is pressed | Open Food Facts after Search is pressed | Open Food Facts after Search is pressed |
+| Barcode scan | Saved products, then Open Food Facts | Saved products and enabled offline USDA branded catalogue, then Open Food Facts; low-rate USDA public exact-GTIN fallback after a miss | Saved products, then Open Food Facts | Saved products, then Open Food Facts |
 | Commercial glucose providers | Implemented routes; UK is the regression baseline | Implemented routes; field reports still welcome | Implemented where the provider offers Japan/international service | Only explicitly supported provider regions are selectable |
 | Tarv1s | Same direct BYOK flow for every build | Same direct BYOK flow for every build | Same direct BYOK flow for every build | Same direct BYOK flow for every build |
 | Clinical guidance | Reviewed GB/NICE pack plus general safety | General safety; no claimed reviewed US pack | General safety; no claimed reviewed Japan pack | General safety unless a reviewed pack exists |
@@ -34,6 +39,14 @@ the caller's network/public IP. People behind the same carrier or Wi-Fi NAT may
 therefore share an allowance. The USDA `DEMO_KEY` is not used for normal US
 text search.
 
+The Canadian Nutrient File 2026, Ciqual 2025 and BLS 4.0 catalogues are bundled
+and prepared locally on first use for their country. The optional US branded
+snapshot is dated 30 April 2026: 409,329 foods, 150,691,840 bytes installed and
+40,804,016 bytes compressed in the APK. Users enable it under **More options >
+Offline food catalogue**; removing it does not remove saved foods or meals. No Finnish
+catalogue is included. Counts and source editions are recorded in the
+[catalogue manifest](../src/data/food/country-packs.manifest.json).
+
 ## Detailed audit
 
 | Promised area | Audit baseline | Current status | Evidence and boundary |
@@ -41,7 +54,7 @@ text search.
 | Regional profile, migration and backup | Partial | Complete | Independent country, locale, IANA timezone, glucose, measurement, energy, provider-region and clinical-jurisdiction preferences are current T1 Arc contracts. Portable backup v16 includes the weekly-review schedule, richer portable state and canonical imported meter-check glucose; readers for backup schemas v1–v15 remain. The one-time pre-release maintainer migration proved canonical values and regional state without making recovery-app private keys a public runtime dependency. Original ZIP/PDF/import downloads stay device-local rather than entering backups. |
 | React Native glucose and measurement formatting | Partial | Complete | Glucose cards, profiles, chart ticks and evidence views format at the presentation boundary. Health, workout, weight, distance, height, elevation, speed, temperature, volume and energy values retain canonical storage and render through the regional formatter. |
 | Native Android, widget, persistent notification and Android Auto | Partial | Complete in code; physical Android Auto is externally untestable here | The phone passes unit, locale and timezone metadata to the native display module. Widget, notification and Auto choose their label and converted glucose value from that metadata. A car/head-unit check is still required. |
-| Wear companion, complications and watch faces | Partial | Complete in code; complete physical coverage is externally untestable here | Canonical mmol/L plus display metadata crosses the data layer. Companion, tile, complications and all three bundled faces format the value using frozen permanent T1 Arc wire/component identifiers. Current builds/tests cover the code; each face still needs a user-selected physical-device visual check. |
+| Wear companion, complications and watch faces | Partial | Complete in code; complete physical coverage is externally untestable here | Canonical mmol/L plus display metadata crosses the data layer. Companion, tile, complications and all five bundled faces format the value using frozen permanent T1 Arc wire/component identifiers. Current builds/tests cover the code; each face still needs a user-selected physical-device visual check. |
 | Timezone, DST, travel and weekly schedules | Partial | Complete | Runtime IANA timezone replaces fixed-London analysis paths; weekly day/time/timezone is configurable and backed up. Date-only pickers remain calendar-only, while manual-record and food wall clocks resolve through one numeric timezone path that rejects nonexistent DST times and requires an explicit first/second choice for repeated times. Tests cover London and New York DST plus a half-hour zone. Provider service region remains independent of travel/device timezone. |
 | Glooko | Partial | Complete in code; US route is experimental | EU and US automatic import uses publicly reachable regional consumer hosts and an observed private consumer-web exchange, not a documented public API. A new connection stores an explicitly confirmed export IANA timezone with the current credential envelope, so travel cannot reinterpret account data. Imported rows without a current account binding require explicit same-person confirmation before connection. Manual files require a date order and IANA timezone snapshotted before preview/import. Regional timestamp parsing, canonical conversion, atomic archive validation and safe region/error diagnostics are implemented. Mismatched regions or account clocks are rejected. The US route is available as a beta rather than being artificially blocked; no production-account field validation is claimed. |
 | Dexcom Share and Clarity | Partial | Complete in code; live non-UK accounts externally untestable here | Share keeps International, US and Japan service selection independent of the device region. Clarity supports explicit date order/timezone and localized header/event aliases. Production account/export fixtures are still required for field validation. |
@@ -49,9 +62,10 @@ text search.
 | Medtrum | Partial | Complete in code; live regional accounts externally untestable here | Service region and explicit source glucose unit are stored with the account. Import no longer guesses units from the numeric value. Production EU/France fixtures and accounts remain a field-test requirement. |
 | Nightscout and xDrip | Partial | Complete in code | User-supplied/local endpoints are geography-neutral. Their glucose protocols define `sgv` values as mg/dL; T1 Arc converts that canonical input for regional presentation. Local/network configuration remains user-controlled. |
 | Notification capture | Partial | Complete generic regional path; publisher coverage remains extensible | Explicit/automatic unit handling, Latin/Arabic/Persian/full-width digits, decimal punctuation, provenance, supported-app allow-listing and canonical conversion are implemented. Explicit unit-labelled values and unambiguous value-only custom views do not depend on English labels; the optional unitless labelled heuristic currently recognises English glucose/sensor/SG/BG labels. A publisher-specific failure can be added from a sanitized fixture through the regional issue/PR route without disabling generic capture. |
-| Food search and barcode scanning | Partial | Complete for the principal GB/US/JP profiles; global branded fallback | Open Food Facts receives selected country/language context for text and barcode requests and caches are region-scoped. Britain adds bundled CoFID. The US adds a reproducibly generated 5,742-food offline USDA Foundation/FNDDS catalogue, so normal text search has no USDA API quota; only an exact-GTIN fallback after an Open Food Facts barcode miss uses USDA's low-rate public demo key. Japan adds a reproducibly generated 2,538-food offline MEXT catalogue. Source, licence/reuse and privacy disclosures are in the app. |
-| Food portions and units | Partial | Complete | Mass, volume and household inputs include g, oz, lb, ml, regional fl oz/cup, tbsp and tsp; nutrition remains canonical per g/ml and energy follows kcal/kJ preference. |
-| Food logging workflow and save path | Partial | Complete for the requested local workflow | Recent, Favourites, My Foods, Meals and Recipes are first-class library views. My Foods has durable create/edit/delete storage. A user can choose another calendar day, select a whole meal or individual foods, append or replace the current draft, preserve duplicate rows, and undo the copy before saving. Primary food writes are batched in one transaction; post-save insight work is deferred/coalesced rather than blocking the modal. |
+| Food search and barcode scanning | Partial | Implemented for GB/US/JP/CA/FR/DE; new pack acceptance pending for the release APK | Reference search is local, with the catalogue counts above. Optional US branded search and exact barcodes also work locally once enabled. Explicit Open Food Facts requests carry country/language context; network caches are region-scoped and successful barcode lookups are retained without logging a meal. The US public USDA fallback runs only after an Open Food Facts barcode miss, not for normal text search. Source and reuse disclosures remain visible. |
+| Food portions and units | Partial | Complete in code | Mass, volume and household inputs include g, oz, lb, ml, regional fl oz/cup, tbsp and tsp; Australian tbsp is 20 ml. Nutrition stays per g/ml, with no invented mass-to-volume conversion. Users can remember a personal portion; the last logged total remains the next default. Energy follows kcal/kJ preference, and missing nutrients remain distinct from zero. |
+| Food logging workflow and save path | Partial | Complete in code for the local workflow | Recent, Favourites, My Foods, Meals and Recipes have searchable, paged full-library views, including older entries. My Foods and recipes retain create/edit/delete actions. Recipe batch saving is separate from choosing servings to add. Day copying can append or replace, preserves duplicates and offers undo. Barcode results with missing carbohydrate values open label completion instead of adding zero. Primary food writes remain transactional; later catalogue updates do not rewrite saved nutrition. |
+| Nutrition-label camera | Missing | Implemented on Android; exact release-build acceptance pending | Bundled Latin text recognition runs on the phone. The English-focused nutrition parser proposes editable values and flags uncertainty. Review and a separate save are required; reading a label never logs a food. Temporary photos are removed after the operation, with OS cache cleanup as fallback. Manual entry remains available. |
 | Health Connect, workouts and manual records | Partial | Complete | Records stay in canonical source/SI units; presentation covers regional measurement and temperature formats. Manual imperial weight converts back to kilograms before validation/storage. |
 | Carb ratios and treatment profile | Complete | Complete | Ratios remain grams per unit, are interpreted against the selected analysis timezone and are not silently converted as a measurement preference. |
 | Tarv1s and Insights | Partial | Complete in code | Every build uses the same direct BYOK route: the user's key is stored on that phone and both planning and answer requests go directly to OpenAI. The archived Analyst Lab and WIF/mTLS experiments cannot supersede it. Request context, ranges, recurring windows, charts, evidence and physiology presentation use locale, timezone, glucose and measurement preferences. Data/tool schemas remain canonical. |
@@ -59,17 +73,17 @@ text search.
 | Language and localisation | Partial | Partial | Locale choice drives numbers, dates, food request language and accessibility values. The interface is still an English release; no translated release is claimed until strings are professionally translated and reviewed. |
 | Accessibility | Partial | Complete for regionalized values; broader device review remains external | Dynamic glucose/measurement accessibility labels use the same regional formatter. TalkBack, large-font, translated pronunciation and every physical screen size remain release-matrix checks. |
 | Onboarding and demo data | Partial | Complete in code | Regional settings disclose the English-only UI and clinical-pack boundary; synthetic/demo dates and values use runtime locale/timezone formatting. Reviewed translated onboarding remains part of localisation work. |
-| QA and release capability matrix | Missing | Complete for local implementation evidence; external rows remain explicit | This matrix separates implementation evidence from field validation. A regional issue form and contribution guide accept safe reports and evidence-based beta fixes without requiring the maintainer to recruit foreign account holders. The complete automated/native graph, whole-app Android 17 manifest and fresh public-history reproduction have passed. Physical hardware, real external accounts, professional translation and qualified non-GB clinical review remain honestly outside that local claim. |
+| QA and release capability matrix | Missing | Complete for local implementation evidence; external rows remain explicit | This matrix separates implementation evidence from field validation. A regional issue form and contribution guide accept safe reports and evidence-based beta fixes without requiring the maintainer to recruit foreign account holders. The recorded earlier regional baseline passed automated/native checks, Android 17 manifest checks and fresh public-history reproduction. That baseline is not acceptance of subsequent food or Tarv1s changes: rerun the required gates on the exact release commit and record its results. Physical hardware, real external accounts, professional translation and qualified non-GB clinical review remain outside the local claim. |
 
 ## Region-level release capability
 
 | Region/profile | Formatting and canonical data | Food | Provider contracts | Clinical content | Interface language |
 | --- | --- | --- | --- | --- | --- |
 | United Kingdom | Complete | Open Food Facts plus GB-only CoFID | Implemented; existing UK behaviour is the regression baseline | Reviewed GB/NICE boundary available | English |
-| United States | Complete | Open Food Facts plus bundled 5,742-food USDA reference catalogue; low-rate USDA exact-GTIN fallback only after a barcode miss | Dexcom/Libre implemented; Glooko US implemented as experimental beta | General safety only | English with US formatting |
+| United States | Complete | Open Food Facts plus 5,742 offline USDA reference foods; optional 409,329-food branded catalogue; low-rate USDA exact-GTIN fallback after a barcode miss | Dexcom/Libre implemented; Glooko US implemented as experimental beta | General safety only | English with US formatting |
 | Japan | Complete | Open Food Facts plus bundled MEXT 2023 reference table | Dexcom Japan implemented; supported international provider regions remain selectable | General safety only | English UI with Japanese formatting and Japanese food search |
-| Europe | Complete | Open Food Facts context; no bundled national dataset except GB CoFID | International/region-specific contracts implemented where offered | General safety except GB profile | English with selected locale formatting |
-| Other | Complete when the platform supports the chosen locale/timezone | Open Food Facts context | User-selected supported service region only | General safety only | English with selected locale formatting |
+| Europe | Complete | GB CoFID, France Ciqual and Germany BLS reference foods; Open Food Facts context elsewhere | International/region-specific contracts implemented where offered | General safety except GB profile | English with selected locale formatting |
+| Other | Complete when the platform supports the chosen locale/timezone | Canada CNF reference foods; Open Food Facts context in supported countries | User-selected supported service region only | General safety only | English with selected locale formatting |
 
 ## Verification evidence
 
@@ -83,8 +97,11 @@ text search.
 - Regional tests cover canonical storage, display conversion, provider-region
   selection, date order, IANA timezones, daylight-saving boundaries, food
   catalogue selection and backup migration.
-- The production release workflow accepts only protected signing credentials,
-  verifies the final phone APK and creates a draft for exact-asset testing.
+- The production release workflow requires explicit app and face signing
+  credentials, verifies the final phone APK and creates a draft for exact-asset
+  testing. The `production` environment name does not establish effective access
+  protection. Approval and branch restrictions remain separate pre-signing gates;
+  see the current [release status](RELEASE_STATUS.md).
 
 Counts and device results belong in the relevant GitHub Actions run or release
 notes. This document describes the maintained capability boundary rather than
@@ -101,8 +118,10 @@ beta implementations:
    does not need to recruit volunteers before shipping the beta.
 2. Additional national or commercial food sources still need a reusable public
    licence or contributor-supplied permission. USDA (public domain/CC0), MEXT
-   (app reuse with attribution), CoFID (OGL) and Open Food Facts (ODbL/DbCL)
-   already have implemented attribution paths.
+   (app reuse with attribution), CoFID (OGL), CNF (Open Government Licence -
+   Canada), Ciqual (Etalab Open Licence 2.0), BLS (CC BY 4.0) and Open Food Facts
+   (ODbL/DbCL) have implemented attribution paths. See the
+   [third-party notices](../THIRD_PARTY_NOTICES.md) for source-specific terms.
 3. Professional translation, linguistic review, TalkBack pronunciation and
    layout testing are needed before advertising a translated release. Locale,
    Japanese food search and regional formatting work today, but the interface

@@ -86,6 +86,8 @@ export interface EvidenceQueryChartWindow {
   id: string;
   label: string;
   meanMmolL: number | null;
+  /** Missing on legacy saved charts, whose means were rounded to 2 decimals. */
+  meanPrecisionDecimals?: 2 | 4;
   /** All and only readings inside `range`; never boundary-context readings. */
   points: EvidenceQueryChartPoint[];
   range: EvidenceQueryRange;
@@ -728,6 +730,7 @@ function validKindAndMetric(value: Record<string, unknown>) {
 
 function meanFromPersistedPoints(
   points: Record<string, unknown>[],
+  decimals: 2 | 4,
 ): number | null {
   if (!points.length) return null;
   const byTimestamp = new Map<number, { count: number; total: number }>();
@@ -747,7 +750,8 @@ function meanFromPersistedPoints(
   );
   const mean =
     samples.reduce((total, sample) => total + sample, 0) / samples.length;
-  return Math.round((mean + Number.EPSILON) * 100) / 100;
+  const factor = 10 ** decimals;
+  return Math.round((mean + Number.EPSILON) * factor) / factor;
 }
 
 function coverageFromPersistedPoints(
@@ -953,6 +957,8 @@ export function isEvidenceQueryVisualizationReference(
       ) ||
       (window.meanMmolL !== null &&
         (!finite(window.meanMmolL) || window.meanMmolL <= 0)) ||
+      (window.meanPrecisionDecimals !== undefined &&
+        window.meanPrecisionDecimals !== 2 && window.meanPrecisionDecimals !== 4) ||
       !Array.isArray(window.points) ||
       !Array.isArray(window.events) ||
       !validDistribution(window.distribution)
@@ -1017,7 +1023,7 @@ export function isEvidenceQueryVisualizationReference(
           window.sampling === undefined
         : window.coverageStatus !== 'unavailable' && window.meanMmolL !== null);
     const calculatedMean = pointsValid && window.sampling === undefined
-      ? meanFromPersistedPoints(window.points)
+      ? meanFromPersistedPoints(window.points, window.meanPrecisionDecimals === 4 ? 4 : 2)
       : null;
     const meanValid =
       window.sampling !== undefined

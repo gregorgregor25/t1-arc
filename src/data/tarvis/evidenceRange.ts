@@ -45,7 +45,11 @@ function derivedPreviousComparison() {
 function dateLiteralScope(
   resolution: TarvisIntentResolution,
 ): TarvisIntentField<TarvisTemporalScope> | undefined {
-  if (resolution.literals.dates.length !== 1) return undefined;
+  if (
+    resolution.literals.dates.length !== 1 ||
+    resolution.literals.durations.length > 0 ||
+    resolution.literals.comparisons.length > 0
+  ) return undefined;
   const date = resolution.literals.dates[0]!;
   return {
     value: { kind: "calendar_date", date: date.date },

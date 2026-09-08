@@ -1,7 +1,9 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute, type NavigationProp, type RouteProp } from "@react-navigation/native";
+import type { RootTabParamList } from '@/navigation/AppNavigator';
+import { isTarvisEntry, type TarvisEntry } from '@/domain/tarvisEntry';
 
 import { AppScreen, SectionHeading } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
@@ -21,7 +23,6 @@ import {
 } from "@/components/TarvisWorkspaceSwitcher";
 import {
   EvidenceReference,
-  buildInsightReport,
   InsightCategory,
   InsightFinding,
   InsightKind,
@@ -41,6 +42,7 @@ import {
   toDateKey,
 } from "@/domain/time";
 import { useInsights } from "@/hooks/useInsights";
+import { loadInsightReport, loadInsightReportForRanges } from "@/data/insights/loadInsightReport";
 import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useSavedInsightReports } from "@/hooks/useSavedInsightReports";
 import { useDataContext } from "@/providers/DataProvider";
@@ -58,6 +60,7 @@ import {
   resolveInsightRequestPresentation,
   resolveInsightReviewAccess,
   resolveTarvisLaunchContext,
+  resolveLiveTarvisLaunchContext,
 } from "@/data/tarvis/conversationScope";
 
 type InsightPeriodChoice = "3" | "7" | "14" | "30";
@@ -348,6 +351,9 @@ function RetryErrorCard({
 }
 
 export function InsightsScreen() {
+  const route = useRoute<RouteProp<RootTabParamList, 'Insights'>>();
+  const navigation = useNavigation<NavigationProp<RootTabParamList, 'Insights'>>();
+  const [entryContext, setEntryContext] = useState<TarvisEntry>();
   const { defaults: regional } = useRegionalProfile();
   const { colors, radius } = useAppTheme();
   const {
@@ -356,6 +362,7 @@ export function InsightsScreen() {
     now,
     ownerIdentity,
     repository,
+    ready,
     refreshData,
     syncing,
     today,
@@ -365,7 +372,20 @@ export function InsightsScreen() {
   const periodDays = Number(periodChoice) as InsightPeriodDays;
   const [comparisonEndDate, setComparisonEndDate] =
     useState(latestCompleteDate);
-  const insightState = useInsights(periodDays, comparisonEndDate);
+  const [workspace, setWorkspace] = useState<TarvisWorkspace>(
+    DEFAULT_TARVIS_WORKSPACE,
+  );
+  const prepareInsights =
+    workspace === 'insights' ||
+    dataMode !== 'live' ||
+    comparisonEndDate !== latestCompleteDate;
+  const insightState = useInsights(periodDays, comparisonEndDate, prepareInsights);
+  const loadTarvisDefaultReport = useCallback(async () => {
+    if (!repository) throw new Error('Your local health data is not ready yet.');
+    return loadInsightReport({
+      repository, dataMode, periodDays, comparisonEndDate, now,
+    });
+  }, [repository, dataMode, periodDays, comparisonEndDate, now]);
   const loadTarvisGlucoseReadings = useCallback(
     async (range: TimeRange) => {
       if (!repository) {
@@ -402,13 +422,11 @@ export function InsightsScreen() {
       if (!repository) {
         throw new Error("Your local health data is not ready yet.");
       }
-      const [current, previous] = await Promise.all([
-        repository.getTimeline(currentRange),
-        repository.getTimeline(previousRange),
-      ]);
-      return buildInsightReport(current, previous, generatedAt);
+      return loadInsightReportForRanges({
+        repository, dataMode, currentRange, previousRange, generatedAt,
+      });
     },
-    [repository],
+    [repository, dataMode],
   );
   const {
     error: reviewHistoryError,
@@ -416,19 +434,40 @@ export function InsightsScreen() {
     markViewed: markReviewViewed,
     reload: reloadReviewHistory,
     reports: savedReviewReports,
-  } = useSavedInsightReports();
+  } = useSavedInsightReports(prepareInsights);
   const scrollViewRef = useRef<ScrollView>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [reviewsVisible, setReviewsVisible] = useState(false);
   const [allFindingsVisible, setAllFindingsVisible] = useState(false);
   const [confidenceVisible, setConfidenceVisible] = useState(false);
   const [periodControlsVisible, setPeriodControlsVisible] = useState(false);
-  const [workspace, setWorkspace] = useState<TarvisWorkspace>(
-    DEFAULT_TARVIS_WORKSPACE,
-  );
   const [tarvisDraft, setTarvisDraft] = useState<string>();
-  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceReference>();
   const [selectedReview, setSelectedReview] = useState<SavedInsightReport>();
+  const [selectedEvidence, setSelectedEvidence] = useState<EvidenceReference>();
+  const clearTarvisEntry = useCallback(() => {
+    setEntryContext(undefined);
+    setTarvisDraft(undefined);
+  }, []);
+  const restoreTarvisEntry = useCallback((entry: TarvisEntry) => {
+    if (entry.ownerIdentity !== ownerIdentity) return;
+    setEntryContext(entry);
+    setTarvisDraft(entry.question);
+  }, [ownerIdentity]);
+  useEffect(() => {
+    const entry = route.params?.entry;
+    if (entry === undefined) return;
+    // Consume rejected commands too, so a later owner switch cannot replay them.
+    navigation.setParams({ entry: undefined });
+    if (!isTarvisEntry(entry) || entry.ownerIdentity !== ownerIdentity) return;
+    // Explicit, one-shot navigation command; never sends a question automatically.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWorkspace('tarvis');
+    setSelectedReview(undefined);
+    setSelectedEvidence(undefined);
+    setComparisonEndDate(latestCompleteDate);
+    setEntryContext(entry);
+    setTarvisDraft(entry.question);
+  }, [route.params?.entry, navigation, latestCompleteDate, ownerIdentity]);
   const requestedRangeEnd = dayRange(comparisonEndDate, now).end;
   const cachedReport = savedReviewReports.find(
     (saved) =>
@@ -473,7 +512,15 @@ export function InsightsScreen() {
             report: activeReport,
             reviewId: selectedReview?.id,
           })
-        : undefined,
+        : ready && repository
+          ? resolveLiveTarvisLaunchContext({
+              dataMode,
+              isLatestCompletePeriod: !selectedReview && comparisonEndDate === latestCompleteDate,
+              now,
+              ownerIdentity,
+              reviewId: selectedReview?.id,
+            })
+          : undefined,
     [
       activeReport,
       comparisonEndDate,
@@ -482,6 +529,8 @@ export function InsightsScreen() {
       now,
       ownerIdentity,
       selectedReview,
+      ready,
+      repository,
     ],
   );
   const activeRequest = resolveInsightRequestPresentation({
@@ -499,7 +548,6 @@ export function InsightsScreen() {
   useFocusEffect(
     useCallback(() => {
       setWorkspace(DEFAULT_TARVIS_WORKSPACE);
-      setTarvisDraft(undefined);
     }, []),
   );
 
@@ -597,12 +645,13 @@ export function InsightsScreen() {
   }
 
   function openTarvisForFinding(finding: InsightFinding) {
+    clearTarvisEntry();
     setTarvisDraft(`Help me understand this insight: ${finding.title}`);
     setWorkspace("tarvis");
   }
 
   function changeWorkspace(next: TarvisWorkspace) {
-    if (next === "tarvis") setTarvisDraft(undefined);
+    clearTarvisEntry();
     setWorkspace(next);
   }
 
@@ -626,6 +675,7 @@ export function InsightsScreen() {
         accessibilityLabel="Open weekly reviews"
         accessibilityRole="button"
         onPress={() => {
+          clearTarvisEntry();
           setWorkspace("insights");
           setReviewsVisible(true);
         }}
@@ -656,15 +706,20 @@ export function InsightsScreen() {
   );
 
   if (workspace === "tarvis") {
-    if (activeReport && tarvisContext) {
+    if (tarvisContext) {
       return (
         <>
           <TarvisScreen
             asOf={tarvisContext.asOf}
+            selectionAsOf={now}
             conversationScope={tarvisContext.scope}
             initialQuestion={tarvisDraft}
+            entryContext={entryContext}
+            onClearEntry={clearTarvisEntry}
+            onRestoreEntry={restoreTarvisEntry}
             liveData={tarvisContext.liveData}
             report={activeReport}
+            loadDefaultReport={loadTarvisDefaultReport}
             loadGlucoseReadings={loadTarvisGlucoseReadings}
             loadTimelineData={loadTarvisTimelineData}
             loadPhysiologyData={
@@ -675,7 +730,7 @@ export function InsightsScreen() {
             }
             loadReportForRange={loadTarvisReportForRange}
             onBack={() => {
-              setTarvisDraft(undefined);
+              clearTarvisEntry();
               setWorkspace("insights");
             }}
             onInspectEvidence={setSelectedEvidence}

@@ -103,6 +103,12 @@ const searchable: SearchableUsdaReferenceFood[] = catalog.foods.map((food) => {
   );
   return { food, searchName, words: searchName.split(' ') };
 });
+const searchableById = new Map(searchable.map((item) => [String(item.food.fdcId), item]));
+
+export function usdaReferenceSearchFields(food: FoodCandidate) {
+  const item = searchableById.get(food.externalId);
+  return item ? [item.searchName] : [];
+}
 
 function scoreFood(
   item: SearchableUsdaReferenceFood,

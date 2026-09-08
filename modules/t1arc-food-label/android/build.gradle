@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.gregorgregor25.t1arc.foodlabel'
+version = '0.1.0'
+
+android {
+  namespace 'io.github.gregorgregor25.t1arc.foodlabel'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+    testInstrumentationRunner 'io.github.gregorgregor25.t1arc.foodlabel.FoodLabelSmokeInstrumentation'
+  }
+}
+
+dependencies {
+  // Bundled Latin model: recognition works offline, including first use.
+  // https://developers.google.com/ml-kit/vision/text-recognition/v2/android
+  implementation 'com.google.mlkit:text-recognition:16.0.1'
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.exifinterface:exifinterface:1.4.2'
+  testImplementation 'junit:junit:4.13.2'
+}

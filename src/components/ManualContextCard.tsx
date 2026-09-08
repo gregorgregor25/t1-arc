@@ -85,6 +85,7 @@ const kindOptions: {
   { value: "insulin", label: "Insulin dose", icon: "water-outline" },
   { value: "ketone", label: "Ketones", icon: "flask-outline" },
   { value: "note", label: "Note", icon: "document-text-outline" },
+  { value: "sensor-start", label: "New sensor", icon: "radio-outline" },
 ];
 
 function numberFromInput(value: string, label: string, locale: string) {
@@ -243,6 +244,7 @@ export function ManualContextCard({
   compact = false,
   editingEvent,
   editingInsulin,
+  glucoseSourceId,
   initialKind = "meal",
   initialTimestamp,
   launchRequest,
@@ -254,6 +256,7 @@ export function ManualContextCard({
   compact?: boolean;
   editingEvent?: HealthContextEvent;
   editingInsulin?: BolusDelivery;
+  glucoseSourceId?: string;
   initialKind?: ManualContextKind;
   initialTimestamp: number;
   launchRequest?: number;
@@ -292,6 +295,7 @@ export function ManualContextCard({
     useState<ManualUrineKetoneLevel>("negative");
   const [noteCategory, setNoteCategory] = useState<NoteCategory>("illness");
   const [noteDetail, setNoteDetail] = useState("");
+  const [sensorSourceId, setSensorSourceId] = useState<string>();
   const handledLaunchRequest = useRef(0);
 
   const selectedKind = useMemo(
@@ -321,6 +325,7 @@ export function ManualContextCard({
     setUrineKetones("negative");
     setNoteCategory("illness");
     setNoteDetail("");
+    setSensorSourceId(glucoseSourceId);
     setError(undefined);
   }
 
@@ -386,6 +391,9 @@ export function ManualContextCard({
       case "note":
         setNoteCategory(draft.category);
         setNoteDetail(draft.detail ?? "");
+        break;
+      case "sensor-start":
+        setSensorSourceId(draft.glucoseSourceId);
         break;
     }
   }
@@ -544,6 +552,8 @@ export function ManualContextCard({
     }
     const customTitle = title.trim() || undefined;
     switch (kind) {
+      case "sensor-start":
+        return { kind, timestamp, glucoseSourceId: sensorSourceId };
       case "meal":
         return {
           kind,
@@ -921,13 +931,13 @@ export function ManualContextCard({
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <Text style={[styles.helper, { color: colors.textSecondary }]}>
+              {kind !== "sensor-start" ? <Text style={[styles.helper, { color: colors.textSecondary }]}>
                 {editing
                   ? "Correct this entry without changing its source identity. T1 Arc will refresh any evidence built from it."
                   : "These entries add context to your evidence timeline. T1 Arc does not use them to recommend doses."}
-              </Text>
+              </Text> : null}
 
-              {editing ? (
+              {editing && kind !== "sensor-start" ? (
                 <View
                   accessibilityLabel={`${selectedKind.label} entry type, fixed while editing`}
                   style={[
@@ -977,7 +987,7 @@ export function ManualContextCard({
                     size={17}
                   />
                 </View>
-              ) : isFocusedLaunch ? null : (
+              ) : isFocusedLaunch || kind === "sensor-start" ? null : (
                 <>
                   <FieldLabel>What are you recording?</FieldLabel>
                   <View
@@ -1327,6 +1337,14 @@ export function ManualContextCard({
                 </>
               ) : null}
 
+              {kind === "sensor-start" ? (
+                <Text style={[styles.helper, { color: colors.textSecondary }]}>
+                  Records the change in your history. This does not start the
+                  sensor or change alerts. Readings return when your glucose
+                  source sends them; warm-up time varies by sensor.
+                </Text>
+              ) : null}
+
               {kind === "note" ? (
                 <>
                   <ChoiceChips<NoteCategory>
@@ -1358,6 +1376,7 @@ export function ManualContextCard({
 
               {kind !== "medication" &&
               kind !== "insulin" &&
+              kind !== "sensor-start" &&
               kind !== "ketone" ? (
                 <View style={styles.fieldGroup}>
                   <FieldLabel optional>Label</FieldLabel>

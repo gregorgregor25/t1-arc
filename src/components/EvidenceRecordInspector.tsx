@@ -1,4 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { AskTarvisButton } from './AskTarvisButton';
+import { createTarvisEventEntry, createTarvisPeriodEntry, createTarvisHealthEntry } from '@/domain/tarvisEntry';
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -477,6 +479,13 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                 },
               ]}
             >
+              <AskTarvisButton onOpen={onClose} entry={() => {
+                const selectedEvent = evidence.recordIds.length === 1 ? data?.context.find(event => evidence.recordIds[0] === event.id) : undefined;
+                if (selectedEvent) return createTarvisEventEntry(selectedEvent);
+                return evidence.calculation || evidence.examples.some(record => record.kind === 'glucose')
+                  ? createTarvisPeriodEntry(evidence.range, evidence.label)
+                  : createTarvisHealthEntry(evidence.range, evidence.label);
+              }} />
               <View style={styles.explainerTop}>
                 <View
                   style={[

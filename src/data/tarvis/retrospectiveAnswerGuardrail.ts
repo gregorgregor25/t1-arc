@@ -328,6 +328,9 @@ function normaliseConnectorText(
   if (typeof value !== "string" || FORBIDDEN_UNICODE.test(value)) {
     return undefined;
   }
+  // Optional framing must not force filler. Only an exact empty value bypasses
+  // prose checks; nonempty text retains the same closed vocabulary and guards.
+  if (value === "" && slot !== "closing") return "";
   const text = value
     .normalize("NFKC")
     .replace(/[\u2018\u2019]/g, "'")
@@ -496,12 +499,12 @@ function parseSelection(
         : undefined
       : normaliseConnectorText(parsed.closingText, "closing");
   if (
-    !leadText ||
+    leadText === undefined ||
     closingText === undefined ||
-    !validLeadText(leadText, parsed.leadStyle) ||
+    (leadText !== "" && !validLeadText(leadText, parsed.leadStyle)) ||
     (parsed.closingStyle !== "none" &&
       !validClosingText(closingText, parsed.closingStyle)) ||
-    connectorEchoesUntrustedData(leadText, packet, untrustedQuestion) ||
+    (leadText !== "" && connectorEchoesUntrustedData(leadText, packet, untrustedQuestion)) ||
     (closingText &&
       connectorEchoesUntrustedData(closingText, packet, untrustedQuestion))
   ) {
@@ -542,9 +545,9 @@ function parseSelection(
       seenClaims.has(claim.id) ||
       !evidenceIds ||
       !knowledgeIds ||
-      !bridgeText ||
-      !validBridgeText(bridgeText) ||
-      connectorEchoesUntrustedData(bridgeText, packet, untrustedQuestion) ||
+      bridgeText === undefined ||
+      (bridgeText !== "" && !validBridgeText(bridgeText)) ||
+      (bridgeText !== "" && connectorEchoesUntrustedData(bridgeText, packet, untrustedQuestion)) ||
       evidenceIds.length > MAX_MODEL_EVIDENCE_REFERENCES ||
       !sameIds(evidenceIds, claim.evidenceIds) ||
       !sameIds(knowledgeIds, claim.knowledgeIds)

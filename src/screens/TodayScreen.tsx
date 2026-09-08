@@ -23,8 +23,11 @@ import {
 import { SafetyNote } from "@/components/SafetyNote";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
+import { SensorChangeStatus } from '@/components/SensorChangeStatus';
+import { ConnectionSummary } from '@/components/ConnectionSummary';
 import { isManualKetoneEvent } from "@/data/manualContext";
 import { calculateGlucoseStats } from "@/domain/stats";
+import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
 import { dayRange } from "@/domain/time";
 import { assessGlucoseTrend } from "@/domain/trend";
@@ -43,7 +46,7 @@ const RANGE_HOURS: Record<TodayRange, number> = {
 export function TodayScreen() {
   const route = useRoute<RouteProp<RootTabParamList, "Today">>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
-  const { deleteManualContext, now, refreshData, sourceError, syncing, today } =
+  const { deleteManualContext, now, ownerIdentity, refreshData, sourceError, syncing, today } =
     useDataContext();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("6h");
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
@@ -151,6 +154,8 @@ export function TodayScreen() {
             }
           />
         )}
+        <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
+        <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
             <ErrorCard message={latest.error ?? sourceError!} />
@@ -168,12 +173,14 @@ export function TodayScreen() {
           onOpenTimeInRange={() =>
             navigation.navigate("History", {
               focus: "glucose",
+              selectedRange: createHistoryRangeSelection(range, ownerIdentity),
               request: String(Date.now()),
             })
           }
           onOpenInsulin={() =>
             navigation.navigate("History", {
               focus: "insulin",
+              selectedRange: undefined,
               request: String(Date.now()),
             })
           }
@@ -247,6 +254,7 @@ export function TodayScreen() {
         showLauncher={false}
       />
       <ManualContextCard
+        glucoseSourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)}
         initialKind={initialContextKind}
         initialTimestamp={now}
         launchRequest={contextLaunchRequest}

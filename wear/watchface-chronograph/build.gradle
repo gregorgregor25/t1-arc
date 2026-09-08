@@ -3,7 +3,9 @@ plugins {
 }
 
 apply from: rootProject.file('../scripts/gradle/t1arc-signing.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-face-signing.gradle')
 apply from: rootProject.file('../scripts/gradle/t1arc-watchface-provider.gradle')
+apply from: rootProject.file('../scripts/gradle/t1arc-watchface-artwork.gradle')
 
 android {
     namespace 'io.github.gregorgregor25.t1arc.watchface.chronograph'
@@ -13,8 +15,8 @@ android {
         applicationId t1ArcWatchFaceApplicationId('chronograph')
         minSdk 33
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 3
+        versionName '0.3.0'
     }
 
     signingConfigs {
@@ -26,10 +28,10 @@ android {
         }
         if (t1ArcProductionSigningConfigured) {
             production {
-                storeFile t1ArcProductionStoreFile
-                storePassword t1ArcProductionStorePassword
-                keyAlias t1ArcProductionKeyAlias
-                keyPassword t1ArcProductionKeyPassword
+                storeFile t1ArcFaceStoreFile
+                storePassword t1ArcFaceStorePassword
+                keyAlias t1ArcFaceKeyAlias
+                keyPassword t1ArcFaceKeyPassword
             }
         }
     }

@@ -16,6 +16,15 @@ class GlucoseSemanticsTest {
         )
 
     @Test
+    fun watchFaceCaptionsKeepUnitsAndFreshnessTogether() {
+        assertEquals("mmol/L · CURRENT", GlucoseSemantics.watchFaceStatusTitle(snapshot, GlucoseFreshness.CURRENT))
+        assertEquals("mg/dL · DELAY", GlucoseSemantics.watchFaceStatusTitle(snapshot.copy(glucoseUnit = "mgDl"), GlucoseFreshness.DELAYED))
+        assertEquals("mmol/L · LAST KNOWN", GlucoseSemantics.watchFaceStatusTitle(snapshot, GlucoseFreshness.STALE))
+        assertEquals("mmol/L · CURRENT · CALC", GlucoseSemantics.watchFaceStatusTitle(snapshot.copy(trendOrigin = "calculated"), GlucoseFreshness.CURRENT))
+        assertEquals("WAITING FOR GLUCOSE", GlucoseSemantics.watchFaceStatusTitle(null, GlucoseFreshness.MISSING))
+    }
+
+    @Test
     fun freshnessTransitionsAtDeterministicBoundaries() {
         assertEquals(GlucoseFreshness.CURRENT, GlucoseSemantics.freshness(snapshot, now + CURRENT_AFTER_MS))
         assertEquals(GlucoseFreshness.DELAYED, GlucoseSemantics.freshness(snapshot, now + CURRENT_AFTER_MS + 1))

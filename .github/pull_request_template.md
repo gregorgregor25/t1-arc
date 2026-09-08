@@ -1,6 +1,7 @@
 ## Problem and scope
 
 Describe the observed problem and the smallest scope of this change.
+Link the related issue if there is one. A draft PR is welcome for early feedback.
 
 ## Evidence
 
@@ -9,6 +10,8 @@ Distinguish implementation evidence from real-account, translated, clinical,
 licensed-dataset and physical-hardware validation.
 
 ## Privacy and compatibility checklist
+
+Explain any item that is not applicable, especially for a docs-only PR.
 
 - [ ] I included no credentials, account identifiers, personal health data,
       provider exports, backups/databases or identifying screenshots.
@@ -23,6 +26,10 @@ licensed-dataset and physical-hardware validation.
 - [ ] Documentation and capability claims match the evidence actually obtained.
 
 ## Verification
+
+For docs-only changes, list the rendered pages, links and wording checked.
+For code changes, record actual results below. Mark a check not run and explain
+why when it is unavailable; do not imply that a local fixture is device evidence.
 
 ```text
 npm run verify:public-source:

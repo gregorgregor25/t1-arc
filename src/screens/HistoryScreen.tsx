@@ -6,7 +6,7 @@ import {
   useRoute,
 } from "@react-navigation/native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
@@ -41,6 +41,7 @@ import {
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import { buildInsulinReconciliation } from "@/domain/dataCompleteness";
 import { calculateGlucoseStats } from "@/domain/stats";
+import { historySelectionForRequest, historySelectionLabel, isHistoryRangeSelection, type HistoryRangeSelection } from '@/domain/historySelection';
 import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
 import {
   addDays,
@@ -85,6 +86,8 @@ interface PopulatedHistoryContentProps {
   selectedDate: DateKey;
   timelineLayers: TimelineLayerVisibility;
   today: DateKey;
+  summaryLabel?: string;
+  multiDay?: boolean;
 }
 
 const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
@@ -103,6 +106,8 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   selectedDate,
   timelineLayers,
   today,
+  summaryLabel,
+  multiDay = days > 1,
 }: PopulatedHistoryContentProps) {
   const glucoseStats = useMemo(
     () => calculateGlucoseStats(data.glucose, data.range),
@@ -170,17 +175,17 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
         reconciliation={insulinReconciliation}
         summary={insulinSummary}
         label={
-          selectedDate === today && days === 1
+          summaryLabel ?? (selectedDate === today && days === 1
             ? "Today so far"
             : days === 1
               ? "Selected day"
-              : `${days}-day range`
+              : `${days}-day range`)
         }
       />
       {!insulinMissing ? (
         <InsulinEventList
           boluses={data.boluses}
-          multiDay={days > 1}
+          multiDay={multiDay}
           onDeleteManualInsulin={deleteManualInsulin}
           onEditManualInsulin={onEditManualInsulin}
         />
@@ -205,17 +210,21 @@ export function HistoryScreen() {
     earliestDate,
     getLatestGlookoReport,
     revision,
+    ownerIdentity,
   } = useDataContext();
   const [selectedDate, setSelectedDate] = useState<DateKey>(today);
+  const [explicitSelection, setExplicitSelection] = useState<HistoryRangeSelection>();
+  const activeSelection = isHistoryRangeSelection(explicitSelection, now, ownerIdentity) ? explicitSelection : undefined;
   const previousToday = useRef(today);
   useEffect(() => {
     const priorToday = previousToday.current;
     if (today === priorToday) return;
+    if (explicitSelection) { previousToday.current = today; return; }
     setSelectedDate((date) =>
       healthDateAfterTodayChange(date, priorToday, today),
     );
     previousToday.current = today;
-  }, [today]);
+  }, [explicitSelection, today]);
   const [rangeChoice, setRangeChoice] = useState<HistoryRange>("1d");
   const [timelineLayers, setTimelineLayers] = useState<TimelineLayerVisibility>(
     DEFAULT_TIMELINE_LAYERS,
@@ -232,13 +241,16 @@ export function HistoryScreen() {
   const [selectedFoodLogToEdit, setSelectedFoodLogToEdit] = useState<FoodLog>();
   const days = RANGE_DAYS[rangeChoice];
   const range = useMemo(
-    () => multiDayRange(selectedDate, days, now),
-    [days, now, selectedDate],
+    () => activeSelection ? { start: activeSelection.start, end: activeSelection.end } : multiDayRange(selectedDate, days, now),
+    [activeSelection, days, now, selectedDate],
   );
-  const rangeSelectionKey = `history:${selectedDate}:${rangeChoice}`;
+  const rangeSelectionKey = activeSelection
+    ? `history:selection:${activeSelection.start}:${activeSelection.end}:${activeSelection.ownerIdentity}`
+    : `history:${selectedDate}:${rangeChoice}`;
   const timeline = useTimeline(range, rangeSelectionKey);
   const foodHistory = useFoodLogs(range, rangeSelectionKey);
   const selectDailySummaryDate = useCallback((date: DateKey) => {
+    setExplicitSelection(undefined);
     setSelectedDate(date);
     setRangeChoice("1d");
   }, []);
@@ -284,16 +296,23 @@ export function HistoryScreen() {
     if (!route.params?.request || !route.params.focus) return;
     // Navigation request tokens are imperative commands. Applying the command
     // here resets all coupled timeline controls atomically before acknowledgement.
+    const selection = historySelectionForRequest(route.params.focus, route.params.selectedRange, now, ownerIdentity);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelectedDate(today);
+    setExplicitSelection(selection);
+    setSelectedDate(selection ? toDateKey(selection.end - 1) : today);
     setRangeChoice("1d");
     setTimelineLayers(
       route.params.focus === "glucose"
         ? GLUCOSE_ONLY_TIMELINE_LAYERS
         : INSULIN_ONLY_TIMELINE_LAYERS,
     );
-    navigation.setParams({ focus: undefined, request: undefined });
-  }, [navigation, route.params?.focus, route.params?.request, today]);
+    navigation.setParams({ focus: undefined, request: undefined, selectedRange: undefined });
+  }, [navigation, now, ownerIdentity, route.params?.focus, route.params?.request, route.params?.selectedRange, today]);
+
+  function chooseDate(date: DateKey) {
+    setExplicitSelection(undefined);
+    setSelectedDate(date);
+  }
 
   return (
     <>
@@ -303,19 +322,31 @@ export function HistoryScreen() {
         onRefresh={() => void refreshData()}
         trailing={<AppMenuButton />}
       >
-        <DateNavigator
+        {activeSelection ? (
+          <View style={[styles.selectionHeader, { backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
+            <Text style={[styles.selectionTitle, { color: colors.text }]}>Selected period</Text>
+            <Text style={[styles.selectionDescription, { color: colors.textSecondary }]}>
+              {historySelectionLabel(activeSelection, regional.locale, regional.timeZone)}
+            </Text>
+            <Pressable accessibilityRole="button" onPress={() => selectDailySummaryDate(selectedDate)}
+              style={styles.browseDays}>
+              <Ionicons accessibilityElementsHidden name="calendar-outline" size={18} color={colors.primary} />
+              <Text style={[styles.browseDaysLabel, { color: colors.primary }]}>Browse by day</Text>
+            </Pressable>
+          </View>
+        ) : <DateNavigator
           date={selectedDate}
           canGoBack={selectedDate > earliestDate}
           canGoForward={selectedDate < today}
-          onBack={() => setSelectedDate((date) => addDays(date, -1))}
-          onForward={() => setSelectedDate((date) => addDays(date, 1))}
-          onDateChange={setSelectedDate}
+          onBack={() => chooseDate(addDays(selectedDate, -1))}
+          onForward={() => chooseDate(addDays(selectedDate, 1))}
+          onDateChange={chooseDate}
           earliestDate={earliestDate}
           latestDate={today}
           todayDate={today}
           isToday={selectedDate === today}
-        />
-        <SegmentedControl
+        />}
+        <SegmentedControl<HistoryRange | 'selection'>
           accessibilityLabel="History range"
           options={[
             { value: "1d", label: "Day" },
@@ -332,8 +363,12 @@ export function HistoryScreen() {
               label: `${formatRegionalNumber(30, regional.locale, { maximumFractionDigits: 0 })}D`,
             },
           ]}
-          value={rangeChoice}
-          onChange={setRangeChoice}
+          value={activeSelection ? 'selection' : rangeChoice}
+          onChange={(choice) => {
+            if (choice === 'selection') return;
+            setExplicitSelection(undefined);
+            setRangeChoice(choice);
+          }}
         />
 
         {pumpStatesOutsideRange && pumpStateCoverage ? (
@@ -375,13 +410,13 @@ export function HistoryScreen() {
           </View>
         ) : null}
 
-        <Text style={[styles.rangeCaption, { color: colors.textSecondary }]}>
+        {!activeSelection ? <Text style={[styles.rangeCaption, { color: colors.textSecondary }]}>
           {days === 1
             ? selectedDate === today
               ? "Today so far"
               : "Selected day"
             : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`}
-        </Text>
+        </Text> : null}
         {timeline.error ? (
           <ErrorCard message={timeline.error} />
         ) : timeline.loading || !timeline.data ? (
@@ -402,7 +437,9 @@ export function HistoryScreen() {
         ) : (
           <PopulatedHistoryContent
             data={timeline.data}
-            days={days}
+            days={activeSelection ? 1 : days}
+            summaryLabel={activeSelection ? 'Selected period' : undefined}
+            multiDay={activeSelection ? toDateKey(range.start) !== toDateKey(range.end - 1) : days > 1}
             deleteManualContext={deleteManualContext}
             deleteManualInsulin={deleteManualInsulin}
             foodError={foodHistory.error}
@@ -444,6 +481,11 @@ export function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  selectionHeader: { paddingHorizontal: 16, paddingTop: 14, marginBottom: 12 },
+  selectionTitle: { fontSize: 17, fontWeight: '700' },
+  selectionDescription: { fontSize: 13, lineHeight: 20, marginTop: 5 },
+  browseDays: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 48 },
+  browseDaysLabel: { fontSize: 14, fontWeight: '600' },
   rangeCaption: {
     fontSize: 12,
     lineHeight: 18,
