@@ -43,6 +43,9 @@ See [Watch setup](WATCH_SETUP.md) for installation and compatibility.
 - Optional glucose alerts and an experimental Android Auto glance.
 - Regional units, formats and offline reference food catalogues.
 
+T1 Arc uses the same direct bring-your-own-key Tarv1s route for every user.
+There is no shared maintainer API key or separate hosted version.
+
 Reference food catalogues cover GB, US, Japan, Canada, France and Germany.
 An optional US branded catalogue adds 409,329 foods and uses about 151 MB of
 additional phone storage. See [Food logging](FOOD_LOGGING.md) and
