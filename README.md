@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="docs/RELEASE_STATUS.md">Check public APK availability</a></strong>
+  <strong><a href="https://github.com/gregorgregor25/t1-arc/releases/latest">Download for Android</a></strong>
   &nbsp;|&nbsp;
   <a href="docs/GETTING_STARTED.md">Installation guide</a>
   &nbsp;|&nbsp;
@@ -82,18 +82,14 @@ Music: *Signal Drift*, created with Suno. An edited walkthrough of the app,
 including the creator's own records, shared with permission.
 
 > [!IMPORTANT]
-> **No public APK has been published yet.** Old private drafts are not the
-> current T1 Arc app. See [Release status](docs/RELEASE_STATUS.md).
->
 > Install T1 Arc only from this repository's official
 > [Releases page](https://github.com/gregorgregor25/t1-arc/releases). The phone
 > app is the file named `T1-Arc-vX.Y.Z.apk`. The automatically generated source
-> archives are not Android apps. If the latest release has no APK attached,
-> there is no public build available yet.
+> archives are for contributors, not for installing the app.
 
 ## Install T1 Arc
 
-Once a public APK is available:
+You do not need to build anything or use a computer.
 
 1. Open the [latest release](https://github.com/gregorgregor25/t1-arc/releases/latest)
    on the Android phone.
@@ -187,8 +183,7 @@ watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit
 Browse the [watch collection](docs/design/WATCH_FACE_COLLECTION.md#the-collection).
 The companion
 needs a separate, one-time installation from the same GitHub Release.
-See [Watch setup](docs/WATCH_SETUP.md) and check the
-[release status](docs/RELEASE_STATUS.md) for the assets actually available.
+See [Watch setup](docs/WATCH_SETUP.md) for compatibility and installation.
 
 ## Regional support
 
@@ -196,8 +191,8 @@ T1 Arc stores health values in canonical units. Region and locale settings
 change display, input and provider choices without rewriting the underlying
 record.
 
-The food coverage below describes the current source. Check a downloaded
-APK's release notes for the catalogues and label-capture features it includes.
+Food coverage varies by country. Reference catalogues work offline; online
+product search can find additional packaged foods.
 
 | Area | UK | US | Japan | Other regions |
 | --- | --- | --- | --- | --- |
@@ -258,6 +253,8 @@ Read the detailed [privacy model](PRIVACY.md) before connecting personal data.
 - [Log food and scan barcodes](docs/FOOD_LOGGING.md)
 - [Choose a region and connect data sources](docs/CONNECTIONS_AND_REGIONS.md)
 - [Set up Tarv1s](docs/TARV1S_BYOK.md)
+- [Set up displays, alerts and widgets](docs/DISPLAY_AND_ALERTS.md)
+- [Connect a watch and choose a face](docs/WATCH_SETUP.md)
 - [Troubleshoot common problems](docs/TROUBLESHOOTING.md)
 - [Get help or report a problem](SUPPORT.md)
 - [Check current release support](docs/RELEASE_STATUS.md)

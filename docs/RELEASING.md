@@ -7,8 +7,8 @@ For the first public APK, complete the one-time
 [public launch checklist](PUBLIC_LAUNCH_CHECKLIST.md) as well as this repeatable
 procedure.
 
-Check the current [release status](RELEASE_STATUS.md) before starting. Preparing
-source, documentation or a draft announcement does not clear a release hold.
+Check the [launch checklist](PUBLIC_LAUNCH_CHECKLIST.md) before the first release.
+Preparing source, documentation or a draft announcement does not clear a release hold.
 Obtain the owner's explicit go-ahead before production signing, builds or
 release publication.
 
@@ -32,17 +32,16 @@ must block release.
 
 An environment named `production` is not, by itself, a protected release gate.
 Verify its effective deployment restrictions and approval rules before adding
-signing secrets or dispatching the release workflow. The current environment
-exists but is unprotected and has no signing secrets; see
-[release status](RELEASE_STATUS.md) for the current boundary.
+signing secrets or dispatching the release workflow. Record the effective
+settings in the release's acceptance evidence; do not infer them from this guide.
 
 Restrict deployment to the exact reviewed default branch, protect that branch
 with required quality checks, and configure required review and trusted
 maintainer access. Do not select "protected branches only" when no branch has
 protection: GitHub then allows every branch to deploy.
 
-GitHub currently blocks private branch protection and rulesets on this
-repository's plan. Private environment restrictions also depend on the plan;
+On a private repository, branch protections, rulesets and environment
+restrictions depend on the GitHub plan;
 required reviewers are public-only on Free, Pro and Team. A paid upgrade is not
 a launch prerequisite: after the separate source-publication audit and owner
 approval, the source can become public first, then public-repository protections

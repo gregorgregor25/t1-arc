@@ -1,5 +1,8 @@
 # Approved script and Signal Drift mix
 
+Historical mix record. Its silent ending and allowance figures were superseded
+by later editions. See [the current narration guide](README.md).
+
 Scope: the owner approved the latest seven-scene conversational script and
 supplied Signal Drift.mp3. Finish both film formats, leave every earlier export
 intact, keep all media local. No app or device work.

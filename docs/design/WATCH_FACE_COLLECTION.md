@@ -1,9 +1,10 @@
 # The T1 Arc watch collection
 
-The five-face collection is implemented and undergoing final release-candidate
-checks. The images below show real Wear OS emulator renders with synthetic data.
-They are not the owner's readings. Availability depends on the APK assets in
-your [GitHub Release](https://github.com/gregorgregor25/t1-arc/releases).
+Choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
+The images below show real Wear OS emulator renders with synthetic data.
+Download the companion and faces from the
+[latest release](https://github.com/gregorgregor25/t1-arc/releases/latest),
+then follow [Watch setup](../WATCH_SETUP.md) for your watch's Wear OS version.
 
 ## What informed the designs
 
@@ -39,7 +40,7 @@ design conventions. Their geometry, proportions and arrangement here are ours.
 | Pace | <img src="../../assets/watch-faces/pace-mmol.png" width="190" alt="Pace bold digital time, glucose and wide history strip"> | <img src="watch-faces/pace-ambient.png" width="190" alt="Pace high-contrast always-on time and glucose"> |
 | Summit | <img src="../../assets/watch-faces/summit-mmol.png" width="190" alt="Summit field-watch dial and separate glucose panel"> | <img src="watch-faces/summit-ambient.png" width="190" alt="Summit simplified digital always-on display"> |
 
-The gallery deliberately includes both mmol/L and mg/dL examples. The actual
+The active gallery images above use mmol/L examples. The actual
 reading and unit come from the matching phone companion. The phone chooser also
 has real screenshots for decimal-point, decimal-comma and mg/dL formats.
 
@@ -55,7 +56,8 @@ Time, glucose, direction and freshness take priority. Glucose formatting and
 range colours come from the existing companion, including mmol/L or mg/dL.
 Decorative accent choices must never change what a glucose colour means.
 
-The watch already has a three-hour glucose-history feed. Graphs use that feed,
+The watch retains up to six hours of glucose history. Dial graphs use a recent
+three-hour window from that feed,
 not a new provider connection. Tapping glucose or its graph opens the companion's
 detail screen. Missing readings show a waiting state; old readings retain an
 explicit stale status. A label printed into the dial must never claim a reading

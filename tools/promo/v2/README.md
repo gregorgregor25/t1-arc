@@ -1,5 +1,9 @@
 # A closer look at T1 Arc
 
+Historical V2 edition. For the current film and sharing conditions, use
+[the media page](../../../docs/media/README.md). This pipeline's private inputs
+and generated exports are not included in a fresh clone.
+
 This is the interaction-led revision of the original product film. It gives
 Tarv1s room to answer a useful question, then shows everyday phone workflows.
 Original Three.js device geometry is used for the short opening and closing.

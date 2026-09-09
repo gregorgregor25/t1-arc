@@ -1,7 +1,7 @@
 # T1 Arc architecture
 
 T1 Arc is a local-first React Native/Expo Android application with native
-Android modules, a Wear OS companion and three watch-face packages. Canonical
+Android modules, a Wear OS companion and five current watch-face designs. Canonical
 health values are stored locally; regional units and language belong at input
 boundaries or presentation boundaries.
 
@@ -15,7 +15,8 @@ boundaries or presentation boundaries.
 - `src/components/` and `src/screens/` render state and collect explicit user
   intent; they should not invent provider or persistence semantics.
 - `modules/` contains Expo native bridges for backup crypto, Glooko, glanceable
-  glucose surfaces, Health Connect and notification capture.
+  glucose surfaces, Health Connect, notification capture and on-device food-label
+  recognition.
 - `wear/` contains the companion, complications, tile and independently
   installed watch faces.
 - `plugins/` generates Android configuration during Expo prebuild.
@@ -61,7 +62,8 @@ audits enrollment's production dependencies, and syntax-checks every Expo
 prebuild plugin. CI also audits root production dependencies at high severity,
 regenerates Android, runs native unit/lint tasks, and enforces release-signing
 policy. The separate, explicit release workflow assembles and verifies only the
-production-signed phone APK, then creates a draft GitHub Release. Wear and
-watch-face projects are covered by source, unit and lint checks but are not
-currently distributed as release assets. Hardware and real regional-provider
+production-signed phone, Wear companion and five standalone face APKs, then creates
+a draft GitHub Release. The companion also bundles the five Watch Face Push
+variants. See [release support](docs/RELEASE_STATUS.md) and the
+[release procedure](docs/RELEASING.md). Hardware and real regional-provider
 claims require separate evidence documented in the capability matrices.

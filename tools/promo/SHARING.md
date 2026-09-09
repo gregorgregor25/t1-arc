@@ -9,8 +9,12 @@ Use its publication title with the required free-plan narration credit:
 
 ## Placement and permissions
 
-Use the selected poster as a link to the actual MP4. Do not expect Markdown image
-syntax to play a video. The local production delivery also includes landscape
+On GitHub, use the uploaded video attachment URL on its own line, as shown in
+[the media page](../../docs/media/README.md). This renders a native player.
+Do not link to the repository's MP4 `blob` page, which opens a source-file viewer.
+For sites that do not support video embeds, link a poster to the playable
+attachment. Markdown image syntax alone does not play video.
+The local production delivery also includes landscape
 and portrait web copies below 10 MB, alongside sharing and 4K masters; see the
 [current delivery guide](v4/narration/FOOD-REFRESH-DELIVERY.md).
 

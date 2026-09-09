@@ -29,7 +29,9 @@ explore the records available in T1 Arc.
 
 General AI explanations are not source-reviewed clinical guidance. Where T1 Arc
 has a reviewed guidance item, it shows that item and its source separately. It
-does not invent a guideline when the requested source is unavailable.
+does not invent a guideline when the requested source is unavailable. Here,
+"reviewed" identifies curated source-linked content with a recorded review date.
+It does not establish independent clinical certification of T1 Arc or its answers.
 
 Tarv1s must not diagnose, recommend treatment, provide doses or suggest medication
 or pump-setting changes. A pattern in the records does not prove what caused it.
@@ -111,6 +113,12 @@ preceding exchange so Tarv1s understands what you mean.
 
 The request goes directly from the Android app to the OpenAI Responses API. It
 is not sent through a T1 Arc server.
+
+Requests also include a random, locally stored safety identifier. It is not
+derived from your name, email or health readings, but it can associate requests
+from that stored identifier. OpenAI also receives normal connection metadata,
+such as the phone's public IP address. This is not an anonymous or zero-data
+connection.
 
 The request sets `store: false`. According to the official OpenAI documentation,
 this disables optional Responses API application-state storage. It does not mean

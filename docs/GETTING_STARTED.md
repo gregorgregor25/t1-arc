@@ -3,10 +3,6 @@
 You do not need to build T1 Arc. The official Android phone app is distributed
 as a signed APK on GitHub Releases.
 
-**The first public APK is not available yet.** These instructions describe the
-download and update process once it is published. Check [Release status](RELEASE_STATUS.md)
-before downloading; the old private test drafts are not the current app.
-
 ## Before installing
 
 - Use a phone running Android 8.0 or newer.
@@ -15,9 +11,6 @@ before downloading; the old private test drafts are not the current app.
 - The app file is named `T1-Arc-vX.Y.Z.apk`.
 - Files named **Source code** are for developers and cannot be installed as an
   Android app.
-
-If the latest release has no APK under **Assets**, no public build is available
-yet.
 
 ## Install on an Android phone
 
@@ -65,7 +58,7 @@ The check does not offer draft or GitHub prerelease builds. It also explains
 when a private or development package cannot be updated by the public APK.
 An unavailable update check does not change your installation.
 
-When a compatible public APK is available:
+To install an update:
 
 1. Create an encrypted T1 Arc backup first.
 2. Download the newer `T1-Arc-vX.Y.Z.apk` from the latest release.
@@ -111,10 +104,16 @@ On Windows PowerShell:
 Get-FileHash .\T1-Arc-vX.Y.Z.apk -Algorithm SHA256
 ```
 
-On macOS or Linux:
+On Linux:
 
 ```bash
 sha256sum T1-Arc-vX.Y.Z.apk
+```
+
+On macOS:
+
+```bash
+shasum -a 256 T1-Arc-vX.Y.Z.apk
 ```
 
 The value must exactly match the checksum file from the same release.

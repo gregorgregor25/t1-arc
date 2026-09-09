@@ -1,4 +1,9 @@
-# Real-data integration handoff
+# Data integration contracts
+
+This is a contributor reference for the current source, not an account setup
+guide or a request for personal exports. Start with
+[Connections and regions](CONNECTIONS_AND_REGIONS.md) for app setup. Examples
+below use invented values. Experimental designs are labelled separately.
 
 No live credentials or real health records belong in this repository. Never
 commit or send LibreLinkUp or Glooko passwords, auth tokens, session cookies,
@@ -8,8 +13,8 @@ Tailscale keys, device serials, or identifiable exports.
 
 T1 Arc keeps each input independent:
 
-1. **Current and historical glucose:** T1 Arc's direct LibreLinkUp,
-   Nightscout, xDrip-compatible and notification connectors write normalised
+1. **Current and historical glucose:** T1 Arc's direct LibreLinkUp, Dexcom Share,
+   Medtrum, Nightscout, xDrip-compatible and notification connectors write normalised
    readings to an encrypted local database through the same source contract.
    The direct LibreLinkUp route has no GDH runtime dependency.
 2. **Insulin:** an Omnipod 5 PDM can reach Glooko through its own delayed cloud
@@ -51,13 +56,13 @@ Personal mode never fills a missing real source with synthetic data.
 
 ## Direct LibreLinkUp
 
-The successful on-device connection test has already validated the response
-shape needed for this account. The saved connection is reused after an in-place
-APK update; no password needs to be sent to a developer or re-entered for each
-test.
+The UK personal-device check is a recorded regression baseline, not proof for
+every account or region. A compatible in-place APK update retains the saved
+connection. Never send a provider password to a developer. Moving to a different
+Android package requires a backup migration and a new connection.
 
-The connector implements the legacy v4 behaviour found in GDH's public
-MIT-licensed source:
+The connector's legacy v4 exchange was informed by inspection of GDH's public
+MIT-licensed source, not copied from it:
 
 1. Log in through the global LibreView endpoint.
 2. Follow the account's regional redirect.
@@ -102,14 +107,14 @@ The minimum accepted object is:
 }
 ```
 
-An array of the same objects is also accepted. For a separate VPS migration,
-provide 5–10 anonymised records plus:
+An array of the same objects is also accepted. A contributor fixture should use
+5–10 entirely invented records to demonstrate:
 
 - Whether the response is one object or an array.
 - The response shape for empty, delayed, and unavailable data.
 - Stable IDs, if the collector has them.
 - Source metadata containing `lastUpdatedAt` and `dataThrough`.
-- Confirmation that the desired glucose stale threshold is 12 minutes.
+- The app's fixed 12-minute stale boundary, where relevant.
 
 The normalised result is:
 
@@ -263,7 +268,7 @@ Those cases pause automatic CSV work with an explicit reason. Manual Glooko
 ZIP/CSV selection remains a fallback only when the export follows the selected
 regional time/date contract, such as after an authentication or protocol
 failure. It is not a locale converter and does not guess missing context.
-A sanctioned Glooko partnership is still being pursued. Glooko's documented
+No official Glooko partnership is claimed. Glooko's documented
 PDF endpoint is a clinical/EHR integration rather than a personal-account API.
 The Android implementation reuses the fresh in-memory consumer session
 established from the encrypted saved sign-in and mirrors Glooko's current web
@@ -306,12 +311,14 @@ are represented on both sides. A
 material mismatch becomes an evidence-linked Insights limitation and suppresses
 the detailed-row insulin comparison for that report.
 
-For an account's compatibility check, import a normal Glooko ZIP in
-T1 Arc first. If the preview reports an unrecognised file, provide only:
+For your own compatibility check, import a normal Glooko ZIP in
+T1 Arc locally. If the preview reports an unrecognised file, a public report
+should include only:
 
-- The exact filename and header row of that CSV.
-- Two or three anonymised data rows with names, account identifiers, serials,
-  notes, and exact dates shifted or removed.
+- A generic file category and non-identifying column names, never a personal
+  filename.
+- Two or three entirely invented rows preserving the relevant format. Removing
+  a name or shifting dates does not make a real health export safe to publish.
 - The account service region, selected IANA timezone and numeric date order,
   and whether displayed timestamps include an offset.
 - The preview warning text and counts.
@@ -319,12 +326,12 @@ T1 Arc first. If the preview reports an unrecognised file, provide only:
 No password, browser session, cookies, full identifiable export, or screenshot
 containing credentials should ever be sent to a developer.
 
-For a broader fixture, provide either option A or B.
+For a broader synthetic fixture, use either option A or B.
 
-### Option A: anonymised Glooko v3 export
+### Option A: synthetic Glooko-shaped archive
 
-Provide one ZIP covering two or three ordinary days and preserve the original
-filenames and unmodified header rows for:
+Construct a small fixture covering two or three invented days. Use generic
+filenames and non-identifying header rows for:
 
 - Basal delivery.
 - Bolus delivery.
@@ -334,10 +341,9 @@ filenames and unmodified header rows for:
 - At least one day crossing midnight. A UK daylight-saving transition is
   especially useful if available.
 
-Names, email addresses, device serials, account IDs, and notes may be removed.
-Times may be shifted by one consistent offset, but keep
-intervals, ordering, decimal precision, column names, empty cells, event IDs,
-and timezone offsets intact.
+Do not derive the fixture by lightly redacting a real export. Invent the values,
+identifiers, dates and notes, while reproducing the interval ordering, decimal
+precision, empty cells and timezone offsets needed to demonstrate the issue.
 
 ### Option B: normalised collector JSON
 
@@ -380,10 +386,11 @@ Snapshot metadata:
 All timestamps must be ISO 8601 with `Z` or an explicit offset. `dataThrough`
 means the newest pump record in the export, not the download time.
 
-## Preferred private collector API
+## Historical collector API sketch (not implemented)
 
-If the existing VPS remains the historical source of truth, the smallest useful
-read-only API is:
+An earlier design considered the following private collector API. These are
+illustrative endpoints, not supported T1 Arc connection settings, a deployed
+service or an app dependency:
 
 ```text
 GET /v1/glucose?from=<ISO-8601>&to=<ISO-8601>
@@ -538,9 +545,11 @@ Health Connect source-selection state and compatibility for retained Glooko
 report payloads from that older format. Version 13 adds Hevy workout records;
 version 14 adds portable Tarv1s conversation state; version 15 adds fibre,
 sugars and saturated-fat meal context without inventing those values while
-upgrading older rows; and the current version 16 adds canonical mmol/L values
-for imported meter-check context so display units can change safely. Versions
-1–15 remain readable through the same `.t1arc` picker.
+upgrading older rows; and version 16 adds canonical mmol/L values
+for imported meter-check context so display units can change safely. Current
+version 17 adds sensor-change notes and their glucose-source binding. Older
+backups do not invent sensor-change events. Versions 1–16 remain readable
+through the same `.t1arc` picker.
 
 Backups explicitly exclude:
 
@@ -548,6 +557,7 @@ Backups explicitly exclude:
 - Glooko email, password, native session material, WebView cookies and site storage
 - replaceable original import/download payloads, including Glooko ZIP and PDF files
 - SQLCipher database keys
+- OpenAI, Hevy and other provider API keys or secure connection credentials
 - device-specific background execution diagnostics
 - Health Connect change tokens, which must be reissued for the destination
   Android data store
@@ -607,8 +617,10 @@ snapshots, and imports supported context from Health Connect.
   range.
 - Every evidence block can resolve and open the complete normalised record set;
   missing referenced IDs are shown as an incomplete-evidence warning.
-- A glucose conclusion is withheld when either selected comparison window has under 70%
-  coverage or fewer than 100 readings.
+- The deterministic Insights comparison requires at least 70% coverage and
+  100 glucose readings in each window. This is not a universal threshold for
+  every Tarv1s factual answer; exact calculations have their own missing-data
+  and coverage disclosures.
 - Missing intervals remain gaps and reduce coverage.
 - Context is described as an association to inspect, not a cause.
 - Glooko insulin always remains delayed/not live.

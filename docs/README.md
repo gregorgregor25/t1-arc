@@ -8,6 +8,7 @@
 - [Log food and scan barcodes](FOOD_LOGGING.md)
 - [Choose a region and connect data sources](CONNECTIONS_AND_REGIONS.md)
 - [Set up Tarv1s with your own OpenAI key](TARV1S_BYOK.md)
+- [Set up displays, alerts and widgets](DISPLAY_AND_ALERTS.md)
 - [Set up your watch and choose a face](WATCH_SETUP.md)
 - [Troubleshoot common problems](TROUBLESHOOTING.md)
 - [Get help or report a problem](../SUPPORT.md)
@@ -16,6 +17,9 @@
 
 You do not need Git, Android Studio or any build tools to use T1 Arc. The
 official phone app is the APK attached to a GitHub Release.
+
+Start with the [latest release](https://github.com/gregorgregor25/t1-arc/releases/latest),
+then follow the installation guide above.
 
 ## For contributors
 

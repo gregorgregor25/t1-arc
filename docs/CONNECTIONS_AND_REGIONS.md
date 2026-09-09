@@ -65,6 +65,18 @@ strength-workout detail directly. Matching Health Connect and Hevy workouts
 are reconciled so a workout can keep the health context and the exercise detail
 without being counted twice. No Hevy key is needed for the separate Strava route.
 
+## File imports and pump reports
+
+For Dexcom export history, open **Settings > Dexcom** and the Clarity import
+section. Choose the export's date order and timezone before selecting its CSV,
+review the preview, then confirm the import. Share provides the current source;
+Clarity is a separate historical import, not a live reading.
+
+Glooko also accepts manual ZIP/CSV imports and supported Daily Overview reports.
+Use the timezone and date order of the export, not a guess based on where the
+phone is now. Pump-report activity and pauses describe the report's recorded
+period; they are not live pump status. Import files stay private on the phone.
+
 ## Large Glooko imports
 
 A first Glooko export can take several minutes to read and organize locally.

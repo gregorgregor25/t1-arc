@@ -71,12 +71,19 @@ error category. Do not attach the export.
 ## Food search or barcode scan returns nothing
 
 - Confirm the regional profile and search language.
-- Reference-food search for GB, US and Japan is bundled and works offline.
-- Packaged product and barcode search needs network access to Open Food Facts.
+- Reference-food search for GB, US, Japan, Canada, France and Germany is
+  bundled and works offline. Canada, France and Germany prepare their local
+  index on first use.
+- Saved personal foods and cached barcodes work offline. The optional US branded
+  catalogue also works offline once enabled.
+- For other packaged products, submit **Search** or scan with network access.
+  Typing searches local foods; it does not send a request on every keystroke.
 - Check the package label because public food records can be missing or wrong.
 - A US barcode miss may use a low-rate USDA fallback and can be throttled.
 
-Create a personal food when no suitable public record exists.
+If a barcode is missing, enter its label details and save it to **My Foods**.
+The same barcode can then find that food on this phone without a network request.
+See [Food logging](FOOD_LOGGING.md).
 
 ## Health Connect shows no records
 
@@ -84,8 +91,10 @@ Open T1 Arc's Health Connect permissions and allow only the record types you
 want to share. Confirm another app has written those records. Recent data can
 work without the optional older-history permission.
 
-The Health screen reports each record area separately. One empty or failed area
-should not erase data imported from another.
+In **Settings > Health Connect**, expand the data options to inspect sources
+and **Health refresh** status for each record area. **View imported data** opens
+the saved records. The Health tab presents daily summaries and trends instead.
+One empty or failed area should not erase data imported from another.
 
 ## Tarv1s rejects an OpenAI key
 

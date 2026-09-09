@@ -1,5 +1,8 @@
 # Cinematic studio V3
 
+Historical V3 edition. Its silent-film descriptions apply only to V3, not the
+current narrated demo. See [the current film](../../../docs/media/README.md).
+
 A separate Three.js pipeline for the T1 Arc product film. A graphite Android
 phone carries genuine recorded app footage through a dark studio. The camera
 moves closer for reading, settles, then pulls back for the next interaction.

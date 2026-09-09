@@ -60,7 +60,9 @@ colour.
 - Card titles: 16–18sp, 700–800 weight.
 - Body: 13–15sp with generous line height.
 - Metadata: 10–12sp, never used for essential actions or safety state.
-- Numbers and units stay together; use `mmol/L`, `U`, `g`, `kg` and London time.
+- Numbers and units stay together. Use the selected regional glucose,
+  measurement and energy formats, and the selected analysis timezone. Never
+  hard-code UK units or London time into a shared screen.
 
 ## Spacing and shape
 
@@ -89,7 +91,7 @@ colour.
 - Glooko freshness is stored and visible in sync details without dominating the
   private app’s everyday UI.
 - Charts support exact inspection and align glucose, basal, bolus and context in
-  Europe/London time.
+  the selected analysis timezone.
 - Insights name the period, calculation and evidence records. They never
   recommend insulin doses, correction boluses or pump-setting changes.
 - Health metric detail uses one current value, one seven-day chart and one

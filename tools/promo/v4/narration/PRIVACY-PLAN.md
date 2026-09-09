@@ -1,5 +1,9 @@
 # Privacy ending edition
 
+Historical production record. The privacy ending remains in the current film;
+the food scene was updated later. Allowance figures are not live account state.
+See [the current narration guide](README.md).
+
 Only replace 80-90 seconds of the approved music films. Preserve all previous
 exports, the first 80 seconds, George's settings and Signal Drift. Local files
 only. No app changes, device transfers or publication.

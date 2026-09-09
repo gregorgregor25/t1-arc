@@ -1,5 +1,9 @@
 # T1 Arc privacy ending
 
+Historical delivery record for the privacy-ending pass. A later edition updates
+the food scene and supplies the selected GitHub viewing copies. See
+[the current guide](README.md) for that edition and its media conditions.
+
 Completed 8 September 2026. Local files only. Nothing published or transferred
 to a phone. No app code, public API, installed app or watch face changed.
 

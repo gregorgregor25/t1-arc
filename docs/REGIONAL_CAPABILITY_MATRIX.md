@@ -1,11 +1,15 @@
 # T1 Arc regional capability matrix
 
-Updated: 8 September 2026 (food coverage)
+Updated: 9 September 2026 (documentation and backup contract)
 
 This is the authoritative status of the multi-region implementation. “Complete”
 means the behaviour is implemented and covered by local automated evidence.
 It does not mean that an external provider, national dataset, translation, or
 clinical pack has been approved in every country.
+
+"Reviewed" NICE content means curated, source-linked items with recorded review
+dates. It does not establish independent clinical certification of the app or
+its answers. Country-specific qualified review must be evidenced separately.
 
 The audit baseline records the state found before the regional work. Current
 status describes the current implementation; verification below
@@ -51,7 +55,7 @@ catalogue is included. Counts and source editions are recorded in the
 
 | Promised area | Audit baseline | Current status | Evidence and boundary |
 | --- | --- | --- | --- |
-| Regional profile, migration and backup | Partial | Complete | Independent country, locale, IANA timezone, glucose, measurement, energy, provider-region and clinical-jurisdiction preferences are current T1 Arc contracts. Portable backup v16 includes the weekly-review schedule, richer portable state and canonical imported meter-check glucose; readers for backup schemas v1–v15 remain. The one-time pre-release maintainer migration proved canonical values and regional state without making recovery-app private keys a public runtime dependency. Original ZIP/PDF/import downloads stay device-local rather than entering backups. |
+| Regional profile, migration and backup | Partial | Complete | Independent country, locale, IANA timezone, glucose, measurement, energy, provider-region and clinical-jurisdiction preferences are current T1 Arc contracts. Portable backup v17 adds sensor-change notes and their source binding, retaining the weekly-review schedule, richer portable state and canonical imported meter-check glucose; readers for backup schemas v1–v16 remain. The one-time pre-release maintainer migration proved canonical values and regional state without making recovery-app private keys a public runtime dependency. Original ZIP/PDF/import downloads stay device-local rather than entering backups. |
 | React Native glucose and measurement formatting | Partial | Complete | Glucose cards, profiles, chart ticks and evidence views format at the presentation boundary. Health, workout, weight, distance, height, elevation, speed, temperature, volume and energy values retain canonical storage and render through the regional formatter. |
 | Native Android, widget, persistent notification and Android Auto | Partial | Complete in code; physical Android Auto is externally untestable here | The phone passes unit, locale and timezone metadata to the native display module. Widget, notification and Auto choose their label and converted glucose value from that metadata. A car/head-unit check is still required. |
 | Wear companion, complications and watch faces | Partial | Complete in code; complete physical coverage is externally untestable here | Canonical mmol/L plus display metadata crosses the data layer. Companion, tile, complications and all five bundled faces format the value using frozen permanent T1 Arc wire/component identifiers. Current builds/tests cover the code; each face still needs a user-selected physical-device visual check. |

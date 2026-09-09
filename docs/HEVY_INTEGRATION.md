@@ -23,10 +23,12 @@ are left unchanged when a request fails.
 
 ## Storage and privacy
 
-- The API key and connected user identity use Expo SecureStore and are never
-  written to SQLite, logs, backups or UI status copy.
+- The API key and connected user identity use Expo SecureStore rather than the
+  health database or portable backup. The connected name is shown in the Hevy
+  card so the user can recognise the account; the key is not included in status
+  messages or diagnostics.
 - Workouts and exact exercise/set payloads use T1 Arc's encrypted database.
-- Portable backup schema version 13 includes the workout table, but never the
+- Portable backup schema version 13 introduced the workout table, but never the
   API key.
 - “Disconnect” deletes the secure credential and retains imported history.
 - “Remove workouts” separately deletes Hevy detail and Hevy-only activity

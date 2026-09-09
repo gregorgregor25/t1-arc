@@ -1,5 +1,9 @@
 # Full film delivery
 
+Historical delivery record for the silent base films. It is not the current
+viewing copy or a fresh-clone asset list. See [the current edition](README.md)
+and [media conditions](../../../docs/media/README.md).
+
 ## Status
 
 Both complete films, both sharing copies and both posters are rendered locally.

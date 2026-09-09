@@ -4,8 +4,7 @@ T1 Arc's watch companion shows glucose received from the phone. It does not
 connect to your glucose provider on its own. Keep the phone's T1 Arc connection
 working, and check the reading's age on the watch.
 
-Download the phone and watch APKs from the **same GitHub Release**. If that
-release has no watch APK in Assets, its watch companion is not available yet.
+Download the phone and watch APKs from the **same GitHub Release**.
 Do not substitute an old test APK or a file from a different project.
 
 ## What your watch supports
@@ -110,7 +109,7 @@ companion**, update the companion from the same release as the phone first.
 ## Older watches and separate face APKs
 
 The glucose companion does not require Watch Face Push. On Wear OS 4 or 5, use
-the separate face APKs if they are included in your release:
+the separate face APKs in the release's **Assets**:
 
 - `T1-Arc-Meridian-vX.Y.Z.apk`
 - `T1-Arc-Chronograph-vX.Y.Z.apk`

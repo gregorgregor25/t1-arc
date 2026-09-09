@@ -8,7 +8,9 @@ The production APK remains on hold for exact-artifact device acceptance,
 production signing and recovery, and verified GitHub release protections.
 Documentation, media and community drafts may be prepared, but none of those
 clears the hold or authorises production signing, an APK build, publication or a
-community post. See [release status](RELEASE_STATUS.md) for current test evidence.
+community post. Public-facing guides are written for launch; that wording does
+not mean these gates have passed. Record acceptance against the exact source
+commit and APK checksums, not a documentation revision.
 
 ## 1. Freeze the public source snapshot
 

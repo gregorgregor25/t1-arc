@@ -45,7 +45,7 @@ requires `elevenlabs.io` or `11.ai` in the title when publishing free-plan
 noncommercial content. That credit is included in this film's publication title.
 An end-screen credit alone is not a substitute for it.
 
-These links were checked on 8 September 2026. A later paid subscription should
+These links were checked on 9 September 2026. A later paid subscription should
 not be assumed to change the rights attached to an earlier free-plan recording.
 
 ## Privacy wording

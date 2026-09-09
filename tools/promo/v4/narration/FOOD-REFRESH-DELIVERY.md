@@ -102,7 +102,7 @@ placement. Personal non-monetising use must follow the applicable free-tier term
 this is distinct from a commercial licence. The publication title must include
 `elevenlabs.io` or `11.ai` for the free narration; the film retains its separate
 on-screen George/elevenlabs.io credit. A suitable title is
-**T1 Arc — product film — AI narration by elevenlabs.io**.
+**T1 Arc demo | AI narration: elevenlabs.io**.
 
 - [ElevenLabs publication guidance](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform)
 - [Suno free-plan rights guidance](https://help.suno.com/en/articles/9601601)

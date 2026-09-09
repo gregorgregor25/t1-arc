@@ -1,4 +1,10 @@
-# TARV1S lab backend
+# Archived Tarv1s lab backend
+
+This experiment is not shipped in the APK, deployed for app users or required
+for Tarv1s. The supported app path is [direct BYOK](../../docs/TARV1S_BYOK.md).
+The trial descriptions and model defaults below document this isolated code,
+not a current public service or guaranteed model entitlement. Use synthetic
+snapshots when reproducing it; private trial data is not distributed.
 
 This is an isolated, developer-only experiment for testing whether an AI-led TARV1S can answer natural-language questions across T1 Arc's real stored data shape. It does not replace the current in-app TARV1S path and is not a production health-data service.
 
@@ -23,7 +29,7 @@ Ephemeral storage is not the same as “no data processing”. The question and 
 
 ## Requirements
 
-- Node.js 22.5 or newer with `node:sqlite`; Node 24 is used by the container.
+- Node.js 24, matching the container and archived-service CI job.
 - An OpenAI API key supplied by one of:
   - `OPENAI_API_KEY`
   - `OPENAI_API_KEY_FILE`
@@ -34,10 +40,15 @@ The key is never written into a session. The optional client-key header is for t
 
 ## Run without Docker
 
+Run from `services/tarvis-lab`. Create a local `.env` from the example and edit
+it privately. Use a key-file path rather than putting a key in shell history.
+The ordinary `npm start` command reads the process environment; it does not
+load `.env` automatically. To load that file explicitly:
+
 ```powershell
 Copy-Item .env.example .env
-$env:OPENAI_API_KEY = "your-key"
-npm start
+# Edit .env privately before starting. Do not commit it.
+node --env-file=.env --disable-warning=ExperimentalWarning src/index.js
 ```
 
 The default address is `http://127.0.0.1:7313`. Set `HOST` and `PORT` to override it. The health endpoint is:
@@ -208,8 +219,11 @@ This returns `204 No Content`. Expired or unknown sessions return `404`.
 - Total validated rows: 1,000,000, with stricter per-table limits.
 - Question: 2,000 characters; optional history: 12 messages.
 - SQL: one 12,000-character `SELECT`; 200 result rows and about 60,000 JSON characters per call.
-- Model loop: six tool rounds and 18 total tool calls by default/hard cap.
-- Total model-analysis deadline: 60 seconds by default, shared across every model round.
+- OpenAI model loop: six tool rounds by default, configurable up to 12, with
+  at most 18 total tool calls.
+- OpenAI model-analysis deadline: 60 seconds by default, configurable up to
+  180 seconds and shared across model rounds. The separate phone-local LFM
+  experiment has its own timeout setting; these are not app response-time promises.
 
 ## Tests
 

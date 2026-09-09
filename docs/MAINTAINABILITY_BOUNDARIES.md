@@ -1,10 +1,9 @@
 # Maintainability boundaries
 
 T1 Arc has strong domain and persistence seams, but several composition roots
-remain large. The initial Phase 6 inventory found 130 tracked code/test files at
-or over 500 lines; 73 of those changed during the private technical-rebrand
-sequence. Removing unreachable app code reduced the current actual tree to 127,
-of which 72 are active `src` modules. Line count is a risk signal, not a quality
+remain large. File counts from earlier refactoring passes are not a measure of
+the current tree. Use the source and reachability check when planning an
+extraction. Line count is a risk signal, not a quality
 verdict. A large pure parser with bounded fixtures is different from a large UI
 owner with interleaved lifecycle state.
 

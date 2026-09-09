@@ -72,9 +72,10 @@ Health Connect is Android's permission-controlled bridge for supported health
 records. T1 Arc imports only the record types you allow. Availability depends on
 the apps and records on your phone.
 
-The Health screen shows the chosen source, freshness and import status by data
-type. Older-history permission is optional because recent records can work
-without it.
+The Health tab shows daily summaries and seven-day trends. For chosen sources,
+freshness and import status by data type, open **Settings > Health Connect** and
+expand its data options. **View imported data** opens the underlying records.
+Older-history permission is optional because recent records can work without it.
 
 Choose **Edit view** to hide sections you do not want to see. This does not
 delete records, revoke permissions or stop imports. **Show all sections** brings
@@ -125,6 +126,11 @@ Coverage appears beside each observation. An association is a pattern worth
 reviewing, not proof that one event caused another. The app should withhold a
 claim when coverage is too weak. Choose **Tarv1s** to return to questions.
 
+**Weekly evidence review** lets you choose the review day and time and turn its
+notification on or off. It uses local records, not an OpenAI request. Android
+decides the exact delivery time, so this is not an exact alarm. The notification
+contains no glucose value or health conclusion.
+
 ## Settings
 
 Settings contains:
@@ -145,12 +151,26 @@ Android keeps final control over notification, accessibility, lock-screen and
 Health Connect permissions. T1 Arc opens the relevant system page where Android
 does not allow an app to grant its own permission.
 
+### Display and alerts
+
+Open **Display and alerts** for appearance, the persistent notification,
+lock-screen display, glucose alerts, home-screen widget and Wear settings.
+These are separate choices. See [Display and alerts](DISPLAY_AND_ALERTS.md) for
+setup, test alerts and Android permission limits.
+
+### Diabetes profile
+
+**Diabetes profile** lets you record existing carbohydrate ratios by time of
+day. These are grams of carbohydrate per unit, not a suggested dose. Saving a
+profile does not change a pump or medication, and changing display units does
+not convert a carbohydrate ratio.
+
 ### Check for an APK update
 
 Open **About T1 Arc**, then **Check for updates**. This is a manual check against
 the official GitHub repository. It does not send health records or automatically
-download or install anything. If the repository is private or no suitable public
-release exists, the app says so.
+download or install anything. If the check cannot reach GitHub, your installed
+app and records are unchanged; you can try again later.
 
 When an update is offered, review **What's changed**, make an encrypted backup,
 then choose **Open release and download**. Android asks before installing and

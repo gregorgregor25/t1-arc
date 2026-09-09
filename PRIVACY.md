@@ -40,7 +40,10 @@ data directly from the device to the service the user selected:
   that provider, not to a T1 Arc server.
 - Tarv1s uses the same bring-your-own-key path for every build. The device sends
   the user's question and the bounded evidence needed to answer it directly to
-  OpenAI. The key is not supplied by or routed through the maintainer.
+  OpenAI. A random safety identifier stored on the phone accompanies those
+  requests; it is not derived from health readings or account details. OpenAI
+  also receives normal network metadata. The key is not supplied by or routed
+  through the maintainer. See [Tarv1s data handling](docs/TARV1S_BYOK.md#what-leaves-the-phone).
 - **About T1 Arc > Check for updates** makes a manual, unauthenticated request
   to GitHub for public release and build metadata. It does not send health
   records, provider credentials or a device identifier. GitHub still receives

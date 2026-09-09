@@ -1,5 +1,9 @@
 # Conversational narration and Signal Drift
 
+Historical delivery record. The current demo adds a spoken privacy ending and
+updated food scene. Counts, paths and permissions below record this earlier
+pass. Use [the current guide](README.md) and its linked media notice for sharing.
+
 The owner's approved seven-scene script is in `script-mixed.json`. George's
 British male voice narrates Today, Health, Tarv1s, the exact glucose question and
 answer, Timeline and Food. The ending has no speech and no rejected taglines.

@@ -8,9 +8,9 @@ Wear identities.
 
 ## Ownership basis
 
-The project has an authenticated private remote at
-`github.com/gregorgregor25/t1-arc`. No project-owned web domain was evidenced at
-the freeze point, so the Android namespace uses the controlled GitHub identity:
+The project's canonical repository is
+`github.com/gregorgregor25/t1-arc`. The Android namespace uses its GitHub identity
+rather than a separate web domain:
 `io.github.gregorgregor25.t1arc`.
 
 The phone and Wear companion deliberately share the same application ID because

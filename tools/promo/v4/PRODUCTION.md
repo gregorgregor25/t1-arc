@@ -2,7 +2,12 @@
 
 A local Remotion project, separate from the app and V1-V3.
 
-## Current delivery
+## Edition history
+
+The current viewing copy and media conditions are linked from [the workspace
+README](README.md). The silent and earlier audio editions below are historical
+outputs, not the current GitHub demo. Reproduction requires separately supplied
+authorised inputs; excluded local paths are not files provided by a fresh clone.
 
 Both 90-second films are rendered at native 3840x2160 and 2160x3840, 60 fps.
 Final delivery filenames start `T1-Arc-V4-full-` in `out/`. There are smaller
@@ -15,7 +20,7 @@ They do not replace the silent masters.
 
 The owner subsequently approved the conversational rewrite and supplied Signal
 Drift. Both mixed 4K films, sharing copies, stems and captions are now in
-`out/narration-mixed/`. See `narration/MIX-DELIVERY.md` for this latest edition.
+`out/narration-mixed/`. See `narration/MIX-DELIVERY.md` for that edition.
 The original silent and narration-only exports remain unchanged.
 
 The subsequent privacy edition lives in `out/narration-privacy/`. It replaces
@@ -24,8 +29,8 @@ message with a visible direct-OpenAI qualifier. It preserves the earlier films.
 See `narration/PRIVACY-DELIVERY.md` for files and verification.
 
 The subsequent current-food-UI edition lives in `out/food-refresh/`. It replaces
-only66–80s with genuine synthetic-emulator footage of the updated food logger,
-preserving the privacy ending and existing audio. It includes separate sub10MB
+only 66–80 seconds with genuine synthetic-emulator footage of the updated food logger,
+preserving the privacy ending and existing audio. It includes separate sub-10 MB
 web copies. See `narration/FOOD-REFRESH-DELIVERY.md`; earlier editions remain intact.
 
 The owner approved the visual treatment and requested both full films. See
@@ -79,7 +84,8 @@ hold, not invented app activity. Question and food clips preserve real timing;
 the last valid frame is held if the scene extends beyond the recording.
 
 The food clip shows a search and a draft selection, not a saved meal. The draft
-was discarded after filming. No sample health records were added for the film.
+was discarded after filming. No sample health records were added to the owner's
+phone for the film. The later food refresh uses a separate synthetic emulator profile.
 The corrected question clip was checked against History before inclusion.
 
 Private source provenance and app verification are in

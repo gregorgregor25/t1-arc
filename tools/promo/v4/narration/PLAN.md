@@ -1,5 +1,9 @@
 # British narration pass
 
+Historical voice-only production record. Allowance figures and outstanding
+approvals below describe that pass, not current account state or the selected
+film. See [the current narration guide](README.md).
+
 The owner requested a good British male voice while away, with results ready
 for review on return. Work is limited to narration and narrated review exports.
 Existing silent videos, app code, phone and watch remain untouched.
