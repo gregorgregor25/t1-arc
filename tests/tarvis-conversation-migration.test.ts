@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { rebindSerializedTarvisConversationToDatasetOwner } from "@/data/tarvis/conversationMigration";
+import { rebindSerializedTarvisConversationToDatasetOwner, rebindRecoveredTarvisConversationToDatasetOwner } from "@/data/tarvis/conversationMigration";
 import {
   serializeTarvisConversation,
   type StoredTarvisExchange,
@@ -62,6 +62,17 @@ function liveScope(ownerIdentity = SOURCE_OWNER): TarvisConversationScope {
 }
 
 describe("Tarv1s exact-migration conversation rebinding", () => {
+  it('recovers live threads but keeps demo and unbound legacy exchanges isolated', () => {
+    const demo = exchange('demo', { kind: 'live', identity: 'live:demo:demo-fixture-v1', dataMode: 'demo', ownerIdentity: 'demo-fixture-v1' });
+    const legacy = exchange('legacy', { kind: 'legacy-unknown', identity: 'legacy-unknown' });
+    const live = exchange('live', liveScope());
+    const original = serializeTarvisConversation([demo, legacy, live], UPDATED_AT);
+    const normalized = JSON.parse(original).exchanges;
+    const result = JSON.parse(rebindRecoveredTarvisConversationToDatasetOwner(original, TARGET_OWNER));
+    expect(result.exchanges[0]).toEqual(normalized[0]);
+    expect(result.exchanges[1]).toEqual(normalized[1]);
+    expect(result.exchanges[2]).toEqual({ ...normalized[2], scope: { kind: 'live', identity: `live:live:${TARGET_OWNER}`, dataMode: 'live', ownerIdentity: TARGET_OWNER } });
+  });
   it("recognises only canonical credential-free dataset-owner identities", () => {
     expect(isTarvisDatasetOwnerIdentity(SOURCE_OWNER)).toBe(true);
     expect(isTarvisDatasetOwnerIdentity(TARGET_OWNER)).toBe(true);

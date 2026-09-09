@@ -9,6 +9,7 @@ import {
 declare class T1ArcBackupCryptoModule extends NativeModule<
   Record<string, never>
 > {
+  createWorkingFileAsync(extension: '.container' | '.html'): Promise<string>;
   encryptJsonFileAsync(
     plaintextUri: string,
     passphrase: string,

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AskTarvisButton } from '@/components/AskTarvisButton';
 import { createTarvisPeriodEntry } from '@/domain/tarvisEntry';
+import { inspectionTimestampForRange, timelineTimestampAtX } from '@/domain/timelinePresentation';
 
 const state = vi.hoisted(() => ({ ownerIdentity: 'owner:current', navigate: vi.fn(), alert: vi.fn() }));
 vi.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: state.navigate }) }));
@@ -32,7 +33,7 @@ describe('contextual Tarv1s entry', () => {
     AskTarvisButton({ entry: () => { throw new Error('unusable provider record'); }, onOpen }).props.onPress();
     expect(state.navigate).not.toHaveBeenCalled();
     expect(onOpen).not.toHaveBeenCalled();
-    expect(state.alert).toHaveBeenCalledWith('These records are not available', expect.any(String));
+    expect(state.alert).toHaveBeenCalledWith('Could not prepare this question', expect.any(String));
   });
 
   it('does not navigate without a current data owner', () => {
@@ -40,5 +41,24 @@ describe('contextual Tarv1s entry', () => {
     AskTarvisButton({ entry: () => createTarvisPeriodEntry({ start: 1_783_000_000_000, end: 1_783_003_600_000 }) }).props.onPress();
     expect(state.navigate).not.toHaveBeenCalled();
     expect(state.alert).toHaveBeenCalledOnce();
+  });
+
+  it.each([0, 10, 10.25, 22.123, 55, 99.99, 100, 120])('opens a real chart selection at pixel %s without losing its scope', (location) => {
+    const range = { start: Date.parse('2026-09-06T23:00:00Z'), end: Date.parse('2026-09-09T07:09:00Z') };
+    const timestamp = timelineTimestampAtX({ location, plotLeft: 10, plotRight: 100, range });
+    expect(Number.isSafeInteger(timestamp)).toBe(true);
+    expect(inspectionTimestampForRange(timestamp, range)).toBe(timestamp);
+    const selected = { start: Math.max(range.start, timestamp - 3_600_000), end: Math.min(range.end, timestamp + 3_600_000) };
+    const onOpen = vi.fn();
+    AskTarvisButton({ entry: () => createTarvisPeriodEntry(selected, 'Around the selected time'), onOpen }).props.onPress();
+    expect(state.alert).not.toHaveBeenCalled();
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith('Insights', { entry: expect.objectContaining({ range: selected, ownerIdentity: state.ownerIdentity }) });
+    expect(onOpen.mock.invocationCallOrder[0]).toBeLessThan(state.navigate.mock.invocationCallOrder[0]!);
+  });
+
+  it('does not describe navigation failure as missing health records', () => {
+    state.navigate.mockImplementationOnce(() => { throw new Error('navigation unavailable'); });
+    AskTarvisButton({ entry: () => createTarvisPeriodEntry({ start: 1_783_000_000_000, end: 1_783_003_600_000 }) }).props.onPress();
+    expect(state.alert).toHaveBeenCalledWith('Could not open Tarv1s', expect.stringContaining('No question was sent'));
   });
 });

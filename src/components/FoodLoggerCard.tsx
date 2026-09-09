@@ -765,8 +765,6 @@ export function FoodLoggerCard({
       editingLog ||
       selected.length ||
       title.trim() ||
-      query.trim() ||
-      barcode ||
       quickCarbs.trim() ||
       quickCarbLabel.trim() ||
       customFoodChanged,

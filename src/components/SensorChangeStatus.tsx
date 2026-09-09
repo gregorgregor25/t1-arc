@@ -16,7 +16,7 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
   sourceId?: string;
   onRecord(): void;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, radius } = useAppTheme();
   const { demoMode, deleteManualContext, now, ownerIdentity, repository, revision } = useDataContext();
   const store = useMemo(() => new SqliteHealthRecordStore(), []);
   const [snapshot, setSnapshot] = useState<{
@@ -70,11 +70,15 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
         </Pressable>
       ) : null}
       <Pressable accessibilityRole="button" onPress={onRecord}
-        accessibilityLabel="Started a new sensor"
-        accessibilityHint="Record the start time without changing your sensor or alerts"
-        style={({ pressed }) => [styles.action, { opacity: pressed ? 0.65 : 1 }]}>
-        <Ionicons name="radio-outline" size={18} color={colors.textSecondary} accessibilityElementsHidden />
-        <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Started a new sensor</Text>
+        accessibilityLabel="Record sensor change"
+        accessibilityHint="Opens a form to record when you changed your sensor. Nothing is saved until you confirm. This does not start a sensor or change alerts."
+        style={({ pressed }) => [styles.action, {
+          backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
+          borderColor: colors.primary,
+          borderRadius: radius.md,
+        }]}>
+        <Ionicons name="add-outline" size={20} color={colors.primary} accessibilityElementsHidden />
+        <Text style={[styles.actionLabel, { color: colors.primary }]}>Record sensor change</Text>
       </Pressable>
       <ManualContextCard editingEvent={editingEvent} glucoseSourceId={sourceId}
         initialTimestamp={now} onEditEnd={() => setEditingEvent(undefined)} showLauncher={false} />
@@ -83,11 +87,11 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 2 },
+  container: { gap: 8 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, paddingHorizontal: 8 },
   copy: { flex: 1, gap: 2 },
   title: { fontSize: 14, fontWeight: '600' },
   detail: { fontSize: 13, lineHeight: 19 },
-  action: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 8, minHeight: 48, paddingHorizontal: 8 },
-  actionLabel: { fontSize: 13, fontWeight: '500' },
+  action: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 8, minHeight: 48, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1 },
+  actionLabel: { flexShrink: 1, fontSize: 14, fontWeight: '600' },
 });

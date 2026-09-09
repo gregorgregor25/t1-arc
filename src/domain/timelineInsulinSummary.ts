@@ -163,8 +163,13 @@ export function describeInsulinTimelineFidelity(
     return {
       kind: 'detailed-events',
       label: 'Detailed delivery events',
-      detail:
-        'Basal intervals and boluses are plotted from individual source records.',
+      detail: data.basal.length > 0 && data.boluses.length > 0
+        ? 'Basal intervals and boluses are plotted from individual source records.'
+        : data.boluses.length > 0
+          ? hasDailyTotals
+            ? 'Boluses are timed delivery records. Basal amounts, where available, are daily totals, not timed basal intervals.'
+            : 'Boluses are plotted from individual source records. No timed basal intervals are available in this range.'
+          : 'Basal intervals are plotted from individual source records. No timed boluses are available in this range.',
     };
   }
   if (hasDailyTotals && hasReportEvents) {

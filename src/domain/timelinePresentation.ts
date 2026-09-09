@@ -63,7 +63,9 @@ export function timelineTimestampAtX({
   const clamped = Math.max(plotLeft, Math.min(safeRight, location));
   const fraction = (clamped - plotLeft) / (safeRight - plotLeft);
   const lastInspectableTimestamp = Math.max(range.start, range.end - 1);
-  return range.start + fraction * (lastInspectableTimestamp - range.start);
+  // Touch positions are fractional pixels; dates passed to record queries and
+  // navigation must still be whole milliseconds. Do not snap across data gaps.
+  return Math.round(range.start + fraction * (lastInspectableTimestamp - range.start));
 }
 
 export function timelineTickTimestamp(
@@ -86,6 +88,17 @@ export function inspectionTimestampForRange(
     timestamp >= range.start &&
     timestamp < range.end
     ? timestamp
+    : undefined;
+}
+
+export function retainedTimelineInspection(
+  selection: { rangeStart: number; rangeEnd: number; timestamp: number } | undefined,
+  range: TimeRange,
+) {
+  // A live day's end advances with the clock. Keep the user's exact point
+  // while that same range grows; changing its start or shortening it resets it.
+  return selection?.rangeStart === range.start && selection.rangeEnd <= range.end
+    ? inspectionTimestampForRange(selection.timestamp, range)
     : undefined;
 }
 

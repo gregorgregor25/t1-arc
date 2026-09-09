@@ -104,6 +104,37 @@ function barcodeHarness(overrides: Record<string, unknown> = {}, extraHandlers: 
 }
 
 describe('food logger interactions', () => {
+  it.each([
+    { query: 'porridge', barcode: '' },
+    { query: '', barcode: '123' },
+  ])('closes search-only browsing without pretending an unsaved meal exists: %j', (lookup) => {
+    const alert = vi.fn();
+    const clearEditedDraft = vi.fn();
+    const flow = handlers(['close'], { ...lookup, saving: false, customSaving: false, recipeSaving: false,
+      customFood: { ...EMPTY_CUSTOM_FOOD }, EMPTY_CUSTOM_FOOD, editingLog: undefined, editingRecipeId: undefined,
+      selected: [], title: '', quickCarbs: '', quickCarbLabel: '', Alert: { alert }, clearEditedDraft,
+      barcodeRequestGeneration: { current: 1 }, barcodeLookupLock: { current: false }, open: true });
+    flow.call.close!();
+    expect(alert).not.toHaveBeenCalled();
+    expect(flow.scope.open).toBe(false);
+    expect(clearEditedDraft).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { selected: [{ food, amount: '100', unit: 'g' }] },
+    { quickCarbs: '15' },
+    { customFood: { ...EMPTY_CUSTOM_FOOD, name: 'Label to keep', carbs: '12' } },
+  ])('still protects actual unsaved food data: %j', (draft) => {
+    const alert = vi.fn();
+    const flow = handlers(['close'], { saving: false, customSaving: false, recipeSaving: false,
+      customFood: { ...EMPTY_CUSTOM_FOOD }, EMPTY_CUSTOM_FOOD, editingLog: undefined, editingRecipeId: undefined,
+      selected: [], title: '', query: '', barcode: '', quickCarbs: '', quickCarbLabel: '',
+      Alert: { alert }, open: true, ...draft });
+    flow.call.close!();
+    expect(alert).toHaveBeenCalledOnce();
+    expect(flow.scope.open).toBe(true);
+  });
+
   it('does not announce an incomplete food as found and opens label completion with no invented carbs', () => {
     const flow = handlers(['addFood'], { regional, customFoodFormFromCandidate, appendFoodSelection,
       invalidateDraftCopyUndo: vi.fn(), Keyboard: { dismiss: vi.fn() }, selected: [],

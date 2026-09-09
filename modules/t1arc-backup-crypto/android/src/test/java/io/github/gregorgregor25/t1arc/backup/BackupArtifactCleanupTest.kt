@@ -9,6 +9,27 @@ import org.junit.Test
 
 class BackupArtifactCleanupTest {
   @Test
+  fun workingBackupSurvivesCacheEviction() {
+    val root = Files.createTempDirectory("backup-cache-eviction").toFile()
+    try {
+      val cache = File(root, "cache").apply { mkdir() }
+      val directory = backupWorkspaceDirectory(File(root, "no_backup"))
+        .apply { mkdirs() }
+      val pendingExport = File(directory, "backup-pending.t1arc")
+        .apply { writeBytes(byteArrayOf(1, 2, 3)) }
+      val restorePreview = File(directory, "backup-preview.json")
+        .apply { writeBytes(byteArrayOf(4, 5, 6)) }
+      File(cache, "old-cache-entry").writeText("evictable")
+      cache.deleteRecursively()
+      assertEquals(File(root, "no_backup/encrypted-backups"), directory)
+      assertTrue(pendingExport.readBytes().contentEquals(byteArrayOf(1, 2, 3)))
+      assertTrue(restorePreview.readBytes().contentEquals(byteArrayOf(4, 5, 6)))
+    } finally {
+      root.deleteRecursively()
+    }
+  }
+
+  @Test
   fun cleanupDeletesOnlyExpiredOwnedPlaintextContainers() {
     val directory = Files.createTempDirectory("backup-plaintext-cleanup").toFile()
     try {

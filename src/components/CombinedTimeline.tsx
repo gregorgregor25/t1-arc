@@ -59,7 +59,7 @@ import {
 import {
   formatTimelineInspectionTimestamp,
   formatTimelineRange,
-  inspectionTimestampForRange,
+  retainedTimelineInspection,
   resolveTimelineLayerAvailability,
   timelineInspectorInsulinParts,
   timelineTickTimestamp,
@@ -443,11 +443,7 @@ export function CombinedTimeline({
     rangeStart: number;
     timestamp: number;
   }>();
-  const inspectedTimestamp =
-    selection?.rangeStart === data.range.start &&
-    selection.rangeEnd === data.range.end
-      ? inspectionTimestampForRange(selection.timestamp, data.range)
-      : undefined;
+  const inspectedTimestamp = retainedTimelineInspection(selection, data.range);
   const [showExpanded, setShowExpanded] = useState(false);
   const [localLayers, setLocalLayers] = useState<TimelineLayerVisibility>(
     DEFAULT_TIMELINE_LAYERS,

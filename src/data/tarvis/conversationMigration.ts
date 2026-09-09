@@ -114,3 +114,21 @@ export function rebindSerializedTarvisConversationToDatasetOwner(
     } satisfies PortableTarvisConversation),
   );
 }
+
+/** Empty-store recovery may include demo threads; they must remain demo-only. */
+export function rebindRecoveredTarvisConversationToDatasetOwner(
+  value: unknown,
+  targetOwnerIdentity: string,
+) {
+  const document = JSON.parse(validateSerializedTarvisConversation(value)) as PortableTarvisConversation;
+  const liveExchanges = document.exchanges.filter(exchange =>
+    exchange.scope?.kind !== 'legacy-unknown' && exchange.scope?.dataMode === 'live');
+  const rebound = JSON.parse(rebindSerializedTarvisConversationToDatasetOwner(
+    JSON.stringify({ ...document, exchanges: liveExchanges }), targetOwnerIdentity,
+  )) as PortableTarvisConversation;
+  const byId = new Map(rebound.exchanges.map(exchange => [exchange.id, exchange]));
+  return validateSerializedTarvisConversation(JSON.stringify({
+    ...document,
+    exchanges: document.exchanges.map(exchange => byId.get(exchange.id) ?? exchange),
+  }));
+}

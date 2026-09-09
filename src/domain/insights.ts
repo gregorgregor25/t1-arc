@@ -2565,10 +2565,10 @@ export function buildInsightReport(
       id: "sleep-context",
       kind: "context-clue",
       category: "sleep",
-      title: `Recorded sleep changed by ${signed(sleepDelta, " min/night")}`,
-      summary: `Average recorded sleep was ${regionalNumber(round(current.sleepMinutesPerNight / 60, 1), 1)} hours recently versus ${regionalNumber(round(previous.sleepMinutesPerNight / 60, 1), 1)} hours previously.`,
+      title: `Average sleep session changed by ${signed(sleepDelta, " min")}`,
+      summary: `Recorded sleep sessions averaged ${regionalNumber(round(current.sleepMinutesPerNight / 60, 1), 1)} hours in the selected period versus ${regionalNumber(round(previous.sleepMinutesPerNight / 60, 1), 1)} hours in the preceding period.`,
       caveat:
-        "Sleep is shown as a possible context signal only; this comparison does not establish causation.",
+        "This compares whole recorded sessions, including time outside the selected dates. Health's daily chart counts only sleep within each day. This comparison does not establish causation.",
       evidence: [
         contextEvidence(
           "current-sleep",

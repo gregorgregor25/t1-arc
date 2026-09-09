@@ -28,6 +28,7 @@ vi.mock('@/data/persistence/t1arcDatabase', () => ({
 }));
 vi.mock('@/data/privacy/localDataWriteEpoch', () => ({
   acquireLocalDataWriteLease: async () => ({ epoch: 4 }),
+  readLocalDataWriteEpochFromDatabase: async () => 4,
   assertLocalDataWriteLeaseInTransaction: async () => undefined,
 }));
 vi.mock('@/data/backup/portablePreferences', () => ({ capturePortablePreferences: async () => undefined }));
@@ -143,7 +144,9 @@ describe('food metadata through backup serialization and restore', () => {
     const beforeRows = foodRows(original);
     const beforeRecipes = (await getFoodRecipePage()).items;
     if (format === 'stream') {
-      const exported = await createHealthBackupFile();
+      const workingFileUri = 'file:///private/no_backup/encrypted-backups/backup-test.container';
+      const exported = await createHealthBackupFile(workingFileUri);
+      expect(exported.file.uri).toBe(workingFileUri);
       expect(exported.summary.counts.food_catalog_cache).toBe(2);
       // This is precisely the opaque container handed to native compression /
       // encryption and returned by decryption. Native crypto is not mocked as

@@ -53,6 +53,7 @@ import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
 
 import { SectionCard } from "./SectionCard";
+import { DeleteManualEntryButton } from "./DeleteManualEntryButton";
 import {
   dateKeyFromPickerDate,
   pickerDateForZonedTimestamp,
@@ -270,6 +271,7 @@ export function ManualContextCard({
   const { saveManualContext, saveManualInsulin } = useDataContext();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string>();
   const [savedMessage, setSavedMessage] = useState<string>();
   const [kind, setKind] = useState<ContextKind>("meal");
@@ -459,7 +461,7 @@ export function ManualContextCard({
   }, [editingEvent, editingInsulin]);
 
   function close() {
-    if (saving) return;
+    if (saving || deleting) return;
     setOpen(false);
     if (editing) onEditEnd?.();
   }
@@ -650,6 +652,7 @@ export function ManualContextCard({
   }
 
   async function save() {
+    if (saving || deleting) return;
     setError(undefined);
     setSaving(true);
     try {
@@ -905,7 +908,7 @@ export function ManualContextCard({
               <Pressable
                 accessibilityLabel={`Close ${editing || isFocusedLaunch ? kindLabel(kind).toLowerCase() : "context"} form`}
                 accessibilityRole="button"
-                disabled={saving}
+                disabled={saving || deleting}
                 hitSlop={6}
                 onPress={close}
                 style={({ pressed }) => [
@@ -1389,6 +1392,22 @@ export function ManualContextCard({
                 </View>
               ) : null}
 
+              {editingEvent?.sourceId === MANUAL_CONTEXT_SOURCE_ID || (editingInsulin && isManualInsulinDelivery(editingInsulin)) ? (
+                <DeleteManualEntryButton
+                  key={editingEvent?.id ?? editingInsulin!.id}
+                  id={editingEvent?.id ?? editingInsulin!.id}
+                  insulin={Boolean(editingInsulin)}
+                  disabled={saving}
+                  onBusyChange={setDeleting}
+                  onDeleted={() => {
+                    setDeleting(false);
+                    setOpen(false);
+                    onEditEnd?.();
+                    resetForm(initialTimestamp);
+                  }}
+                />
+              ) : null}
+
               {error ? (
                 <View
                   accessibilityLiveRegion="assertive"
@@ -1425,14 +1444,14 @@ export function ManualContextCard({
             >
               <Pressable
                 accessibilityRole="button"
-                disabled={saving}
+                disabled={saving || deleting}
                 onPress={() => void save()}
                 style={({ pressed }) => [
                   styles.saveButton,
                   {
                     backgroundColor: colors.primary,
                     borderRadius: radius.md,
-                    opacity: pressed || saving ? 0.72 : 1,
+                    opacity: pressed || saving || deleting ? 0.72 : 1,
                   },
                 ]}
               >

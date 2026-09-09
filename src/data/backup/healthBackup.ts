@@ -15,7 +15,8 @@ import {
   TARVIS_CONVERSATION_STORAGE_KEY,
   validateSerializedTarvisConversation,
 } from '@/data/tarvis/conversationStore';
-import { rebindSerializedTarvisConversationToDatasetOwner } from '@/data/tarvis/conversationMigration';
+import { rebindSerializedTarvisConversationToDatasetOwner, rebindRecoveredTarvisConversationToDatasetOwner } from '@/data/tarvis/conversationMigration';
+import { OWNED_GLUCOSE_SOURCE_IDS, readSourceConnectionOwnershipStateInTransaction } from '@/data/live/sourceConnectionOwnership';
 import { resolveTarvisDatasetOwnerIdentity, isTarvisDatasetOwnerIdentity } from '@/data/tarvis/conversationScope';
 import { NOTEBOOK_STORAGE_KEY, mergeSerializedNotebooks, parseNotebook, validateSerializedNotebook } from '@/domain/personalNotebook';
 import { DISPLAY_PREFERENCES_STORAGE_KEY, validateSerializedDisplayPreferences } from '@/domain/displayPreferences';
@@ -694,9 +695,10 @@ function normalizedPortableConversation(value: unknown) {
   return { serialized, updatedAt };
 }
 
-function rebindPortableState(row: BackupRow, targetOwnerIdentity: string): BackupRow {
+function rebindPortableState(row: BackupRow, targetOwnerIdentity: string, recovery = false): BackupRow {
   if (row.key === TARVIS_CONVERSATION_STORAGE_KEY) {
-    return { ...row, value: rebindSerializedTarvisConversationToDatasetOwner(row.value, targetOwnerIdentity) };
+    const rebind = recovery ? rebindRecoveredTarvisConversationToDatasetOwner : rebindSerializedTarvisConversationToDatasetOwner;
+    return { ...row, value: rebind(row.value, targetOwnerIdentity) };
   }
   if (row.key !== NOTEBOOK_STORAGE_KEY) return row;
   const notebook = parseNotebook(JSON.parse(validateSerializedNotebook(String(row.value))));
@@ -709,6 +711,34 @@ function rebindPortableState(row: BackupRow, targetOwnerIdentity: string): Backu
     entries: notebook.entries.map(entry => entry.dataMode === 'live'
       ? { ...entry, ownerIdentity: targetOwnerIdentity } : entry),
   })) };
+}
+
+/**
+ * A user-confirmed restore into an empty, unconnected installation recovers the
+ * backup's dataset under the destination's current erase epoch. Additive merges
+ * into an existing dataset must never adopt another account's conversations.
+ * Check inside the same transaction as the merge, before inserting any rows.
+ */
+async function emptyRecoveryOwner(database: BackupTransaction) {
+  const counts = await countRows(database, { includeNonExported: true });
+  if (BACKUP_TABLE_NAMES.some(table => table !== PORTABLE_APP_STATE_TABLE && counts[table] > 0)) return undefined;
+  for (const key of [TARVIS_CONVERSATION_STORAGE_KEY, NOTEBOOK_STORAGE_KEY]) {
+    if (await database.getFirstAsync('SELECT value FROM app_metadata WHERE key = ?', key)) return undefined;
+  }
+  for (const sourceId of OWNED_GLUCOSE_SOURCE_IDS) {
+    if ((await readSourceConnectionOwnershipStateInTransaction(database, sourceId))?.connected) return undefined;
+  }
+  const glooko = await database.getFirstAsync<{ value: string }>('SELECT value FROM app_metadata WHERE key = ?', 'glooko-sync-state-v1');
+  if (glooko) {
+    // Corrupt/ambiguous connection state is not evidence of an empty account.
+    try {
+      const state: unknown = JSON.parse(glooko.value);
+      if (!isPlainObject(state) || state.verifiedAccountFingerprint != null) return undefined;
+    } catch { return undefined; }
+  }
+  return resolveTarvisDatasetOwnerIdentity({
+    dataMode: 'live', localDataEpoch: await readLocalDataWriteEpochFromDatabase(database), ownedSources: [],
+  });
 }
 
 /**
@@ -1792,17 +1822,12 @@ async function countRows(
   return counts;
 }
 
-export async function createHealthBackupFile(): Promise<PreparedHealthBackup> {
+export async function createHealthBackupFile(workingFileUri: string): Promise<PreparedHealthBackup> {
   const createdAt = Date.now();
   const preferences = await import('@/data/backup/portablePreferences')
     .then(({ capturePortablePreferences }) => capturePortablePreferences())
     .catch(() => undefined);
-  const file = new File(
-    Paths.cache,
-    `health-backup-${createdAt}-${Math.random()
-      .toString(36)
-      .slice(2)}.container`,
-  );
+  const file = new File(workingFileUri);
   file.create({ overwrite: true });
   const handle = file.open(FileMode.Truncate);
   const encoder = new TextEncoder();
@@ -1992,6 +2017,7 @@ async function mergeHealthBackupUnlocked(
   backup: HealthBackupDocument,
 ): Promise<HealthBackupMergeResult> {
   const byTable = await withT1ArcTransaction(async (database) => {
+    const recoveryOwner = await emptyRecoveryOwner(database);
     // This object belongs to one SQLite transaction attempt. The transaction
     // runner may roll back and invoke this callback again after SQLITE_LOCKED;
     // never retain counters from an attempt whose COMMIT did not succeed.
@@ -2009,7 +2035,7 @@ async function mergeHealthBackupUnlocked(
         for (const row of rows) {
           attemptByTable[table].inserted += await mergePortableAppStateRow(
             database,
-            row,
+            recoveryOwner ? rebindPortableState(row, recoveryOwner, true) : row,
           );
         }
         attemptByTable[table].duplicates =
@@ -2085,6 +2111,7 @@ async function restorePreparedHealthBackupRows(
   options: {
     finalize: boolean;
     rebindTarvisConversationToOwner?: string;
+    recovery?: boolean;
   } = { finalize: true },
 ) {
   const attemptByTable = Object.fromEntries(
@@ -2104,7 +2131,7 @@ async function restorePreparedHealthBackupRows(
       attemptByTable[table].attempted += rows.length;
       for (const row of rows) {
         const portableRow = options.rebindTarvisConversationToOwner
-          ? rebindPortableState(row, options.rebindTarvisConversationToOwner)
+          ? rebindPortableState(row, options.rebindTarvisConversationToOwner, options.recovery)
           : row;
         attemptByTable[table].inserted += await mergePortableAppStateRow(
           database,
@@ -2203,8 +2230,11 @@ async function mergePreparedHealthBackupUnlocked(
     return mergeHealthBackupUnlocked(backup.document);
   }
 
-  const byTable = await withT1ArcTransaction((database) =>
-    restorePreparedHealthBackupRows(database, backup),
+  const byTable = await withT1ArcTransaction(async (database) =>
+    restorePreparedHealthBackupRows(database, backup, {
+      finalize: true, recovery: true,
+      rebindTarvisConversationToOwner: await emptyRecoveryOwner(database),
+    }),
   );
 
   for (const table of BACKUP_TABLE_NAMES) {

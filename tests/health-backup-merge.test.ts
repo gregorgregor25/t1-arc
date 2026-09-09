@@ -677,6 +677,7 @@ describe('health backup additive merge', () => {
   });
 
   it('does not rebind a Tarv1s owner during an ordinary additive backup restore', async () => {
+    mocks.metadata.set(TARVIS_CONVERSATION_STORAGE_KEY, conversation(100));
     const sourceOwner = resolveTarvisDatasetOwnerIdentity({
       dataMode: 'live',
       localDataEpoch: 9,
@@ -704,6 +705,44 @@ describe('health backup additive merge', () => {
       ownerIdentity: sourceOwner,
       accountId: 'recovery-account',
     });
+  });
+
+  it.each(['legacy', 'stream'] as const)('recovers conversation ownership into an empty store after erase (%s)', async kind => {
+    const sourceOwner = resolveTarvisDatasetOwnerIdentity({ dataMode: 'live', localDataEpoch: 0, ownedSources: [] });
+    const targetOwner = resolveTarvisDatasetOwnerIdentity({ dataMode: 'live', localDataEpoch: 7, ownedSources: [] });
+    mocks.metadata.set(LOCAL_DATA_WRITE_EPOCH_KEY, '7');
+    const value = scopedConversation(200, sourceOwner);
+    if (kind === 'stream') {
+      await mergePreparedHealthBackup(streamedPortableConversationMigration(value));
+    } else {
+      const backup = emptyBackup();
+      backup.tables.portable_app_state = [{ key: TARVIS_CONVERSATION_STORAGE_KEY, value }];
+      backup.manifest.counts.portable_app_state = backup.manifest.totalRecords = 1;
+      await mergeHealthBackup(validateHealthBackupDocument(backup));
+    }
+    const stored = JSON.parse(mocks.metadata.get(TARVIS_CONVERSATION_STORAGE_KEY)!);
+    expect(stored.exchanges[0]).toMatchObject({ question: 'What happened yesterday?', answer: { answer: 'A preserved answer.' }, scope: { ownerIdentity: targetOwner } });
+    expect(stored.exchanges[0].scope).not.toHaveProperty('accountId');
+  });
+
+  it.each(['health', 'source', 'glooko'] as const)('does not adopt backup conversations into a destination with existing %s', async occupied => {
+    const sourceOwner = resolveTarvisDatasetOwnerIdentity({ dataMode: 'live', localDataEpoch: 9, ownedSources: [] });
+    if (occupied === 'health') mocks.notificationEvents.set('existing', { id: 'existing' });
+    if (occupied === 'source') mocks.metadata.set('glucose-source-connection-ownership-v1:nightscout', JSON.stringify({ version: 1, changeGeneration: 1, ownerGeneration: 1, connected: true, identityDigest: 'b'.repeat(64) }));
+    if (occupied === 'glooko') mocks.metadata.set('glooko-sync-state-v1', JSON.stringify({ verifiedAccountFingerprint: `af1_${'c'.repeat(64)}` }));
+    await mergePreparedHealthBackup(streamedPortableConversationMigration(scopedConversation(200, sourceOwner)));
+    expect(JSON.parse(mocks.metadata.get(TARVIS_CONVERSATION_STORAGE_KEY)!).exchanges[0].scope.ownerIdentity).toBe(sourceOwner);
+  });
+
+  it('recovers a notebook into the new erase epoch without changing its content', async () => {
+    const sourceOwner = resolveTarvisDatasetOwnerIdentity({ dataMode: 'live', localDataEpoch: 0, ownedSources: [] });
+    mocks.metadata.set(LOCAL_DATA_WRITE_EPOCH_KEY, '7');
+    const entry = { id: 'note', ownerIdentity: sourceOwner, dataMode: 'live', createdAt: 1_750_000_000_000, title: 'Saved observation', answer: 'Keep this answer', note: 'My note', limitations: [], evidence: [] };
+    const backup = emptyBackup();
+    backup.tables.portable_app_state = [{ key: NOTEBOOK_STORAGE_KEY, value: JSON.stringify({ version: 1, entries: [entry] }) }];
+    backup.manifest.counts.portable_app_state = backup.manifest.totalRecords = 1;
+    await mergeHealthBackup(validateHealthBackupDocument(backup));
+    expect(JSON.parse(mocks.metadata.get(NOTEBOOK_STORAGE_KEY)!).entries).toEqual([{ ...entry, ownerIdentity: 'dataset-owner-v1|epoch:7|glooko:none' }]);
   });
 
   it('preserves a newer or equally recent local Tarv1s conversation', async () => {

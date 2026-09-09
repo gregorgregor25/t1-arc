@@ -7,6 +7,10 @@ import {
 } from './T1ArcBackupCrypto.types';
 
 class T1ArcBackupCryptoModule extends NativeModule<Record<string, never>> {
+  async createWorkingFileAsync(_extension: '.container' | '.html'): Promise<string> {
+    throw new Error('Encrypted health backups require Android.');
+  }
+
   async encryptJsonFileAsync(
     _plaintextUri: string,
     _passphrase: string,

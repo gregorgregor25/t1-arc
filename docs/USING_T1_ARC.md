@@ -37,7 +37,7 @@ successful history import is not presented as a broken connection.
 
 ### When you start a new sensor
 
-Choose **Started a new sensor** beside the glucose area, or **New sensor** from
+Choose **Record sensor change** beside the glucose area, or **New sensor** from
 the logging menu. Check the start time and save it. No extra journal entry is
 required.
 
@@ -56,6 +56,10 @@ to use your sensor's official app for its actual warm-up status.
 History supports day, 3-day, 7-day and 30-day views. Use the arrows or date
 picker to move through time. Glucose and insulin remain on separate scales and
 each imported record keeps its source and timestamp.
+
+For an entry you recorded manually, open its edit form to correct it or choose
+**Delete entry**. Deletion asks for confirmation and cannot be undone. This
+control does not remove records imported from a connected provider.
 
 ## Food
 

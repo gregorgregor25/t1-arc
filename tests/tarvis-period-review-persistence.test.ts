@@ -4,7 +4,7 @@ import { buildInsightReport } from "@/domain/insights";
 import { buildTarvisEvidencePacket, selectTarvisEvidencePacket } from "@/data/tarvis/evidencePacket";
 import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacket";
 import { localTarvisEvidenceFallback } from "@/data/tarvis/evidenceAnswerGuardrail";
-import { serializeTarvisConversation } from "@/data/tarvis/conversationStore";
+import { serializeTarvisConversation, validateSerializedTarvisConversation } from "@/data/tarvis/conversationStore";
 
 vi.mock("expo-sqlite", () => ({}));
 vi.mock("expo-crypto", () => ({}));
@@ -31,6 +31,8 @@ describe("period review persistence", () => {
     const evidence = answer.evidenceIds.map((id) => lookup.references.get(id)!);
     expect(evidence.some(({ examples }) => examples.some(({ id }) => id === "crossing-sleep"))).toBe(true);
     expect(() => serializeTarvisConversation([{ id: "period-review", question, answer, evidence }], now)).not.toThrow();
+    const serialized = serializeTarvisConversation([{ id: "period-review", question, answer, evidence }], now);
+    expect(() => validateSerializedTarvisConversation(serialized)).not.toThrow();
     expect(lookup.references.get("current-sleep")?.examples.find(({ id }) => id === "crossing-sleep")?.timestamp).toBe(currentRange.start - 3600000);
   });
 });

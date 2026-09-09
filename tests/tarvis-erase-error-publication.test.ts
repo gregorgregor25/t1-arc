@@ -198,4 +198,33 @@ describe("Tarv1s erase-safe error publication", () => {
       vi.useRealTimers();
     }
   });
+
+  it("releases the single-flight slot after a network failure so the same question can retry", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("network disconnected"))
+      .mockRejectedValueOnce(new Error("retry reached network"));
+    const question = "What is time in range?";
+    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("network disconnected");
+    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("retry reached network");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("propagates screen cancellation to fetch and releases the slot for the next question", async () => {
+    const controller = new AbortController();
+    const started = deferred();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementationOnce((_url, options) => {
+      started.resolve();
+      return new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new Error("request cancelled")), { once: true });
+      });
+    });
+    const pending = askTarvis("What is time in range?", undefined, [], { epoch: 3 }, { signal: controller.signal });
+    const rejected = expect(pending).rejects.toMatchObject({ name: "TarvisConnectionRequestAbortedError" });
+    await started.promise;
+    controller.abort();
+    await rejected;
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    fetchSpy.mockRejectedValueOnce(new Error("next question reached network"));
+    await expect(askTarvis("What is time in range?", undefined, [], { epoch: 3 })).rejects.toThrow("next question reached network");
+  });
 });

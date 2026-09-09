@@ -58,6 +58,11 @@ describe("evidence-backed insights", () => {
     expect(
       report.findings.some((finding) => finding.category === "sleep"),
     ).toBe(true);
+    const sleepComparison = report.findings.find((finding) => finding.id === 'sleep-context')!;
+    expect(sleepComparison.title).toContain('Average sleep session');
+    expect(sleepComparison.title).not.toContain('/night');
+    expect(sleepComparison.caveat).toContain('whole recorded sessions');
+    expect(sleepComparison.caveat).toContain("Health's daily chart");
     expect(
       report.findings.some((finding) => finding.id === "glucose-variability"),
     ).toBe(true);

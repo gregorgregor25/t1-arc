@@ -6,6 +6,7 @@ import {
   formatTimelineInspectionTimestamp,
   formatTimelineRange,
   inspectionTimestampForRange,
+  retainedTimelineInspection,
   rangeSpansMultipleDates,
   resolveTimelineLayerAvailability,
   timelineInspectorInsulinParts,
@@ -15,6 +16,14 @@ import {
 import { zonedDateTimeToTimestamp } from "@/domain/time";
 
 describe("timeline presentation", () => {
+  it("preserves a selected point when the live day's end advances", () => {
+    const selection = { rangeStart: 1_000, rangeEnd: 121_000, timestamp: 60_000 };
+    expect(retainedTimelineInspection(selection, { start: 1_000, end: 121_000 })).toBe(60_000);
+    expect(retainedTimelineInspection(selection, { start: 1_000, end: 181_000 })).toBe(60_000);
+    expect(retainedTimelineInspection(selection, { start: 2_000, end: 181_000 })).toBeUndefined();
+    expect(retainedTimelineInspection(selection, { start: 1_000, end: 120_000 })).toBeUndefined();
+    expect(retainedTimelineInspection(undefined, { start: 1_000, end: 181_000 })).toBeUndefined();
+  });
   it("clears an inspected timestamp when a disjoint range is selected", () => {
     expect(
       inspectionTimestampForRange(1_500, { start: 1_000, end: 2_000 }),
@@ -36,7 +45,7 @@ describe("timeline presentation", () => {
         plotRight: 100,
         range: { start, end },
       }),
-    ).toBe(zonedDateTimeToTimestamp("2026-08-19", 3) - 0.5);
+    ).toBe(zonedDateTimeToTimestamp("2026-08-19", 3));
     expect(
       timelineTimestampAtX({
         location: 100,

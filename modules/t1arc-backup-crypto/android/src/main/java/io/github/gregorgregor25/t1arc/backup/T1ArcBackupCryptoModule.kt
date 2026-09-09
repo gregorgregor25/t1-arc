@@ -4,8 +4,12 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import expo.modules.kotlin.activityresult.AppContextActivityResultContract
-import expo.modules.kotlin.activityresult.AppContextActivityResultLauncher
+import android.provider.DocumentsContract
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -17,7 +21,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
-import java.io.Serializable
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
@@ -31,10 +34,18 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal const val PLAINTEXT_BACKUP_PREFIX = "health-backup-"
 internal const val PLAINTEXT_BACKUP_SUFFIX = ".container"
+
+// A file picker can keep the app in the background for minutes. Cache files
+// may be evicted during that time, including a backup the user is saving.
+internal fun backupWorkspaceDirectory(noBackupFilesDir: File): File =
+  File(noBackupFilesDir, "encrypted-backups")
 private const val ENCRYPTED_BACKUP_EXTENSION = ".t1arc"
 private const val ENCRYPTED_MIGRATION_EXTENSION = ".t1arc-migration"
 internal const val MAX_BACKUP_PLAINTEXT_BYTES = 512L * 1024L * 1024L
@@ -191,43 +202,61 @@ internal fun deleteExpiredPlaintextBackupArtifacts(
 }
 
 private data class SaveRequest(
-  val sourceUri: String,
   val fileName: String,
   val mimeType: String,
-) : Serializable
+)
 
 private data class SavePickerResult(
   val destinationUri: String?,
 )
 
-private class SaveBackupContract :
-  AppContextActivityResultContract<SaveRequest, SavePickerResult> {
-  override fun createIntent(context: Context, input: SaveRequest): Intent =
-    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-      addCategory(Intent.CATEGORY_OPENABLE)
-      type = input.mimeType.ifBlank { "application/octet-stream" }
-      putExtra(Intent.EXTRA_TITLE, input.fileName)
+private suspend fun launchBackupSavePicker(
+  activity: ComponentActivity,
+  request: SaveRequest,
+): SavePickerResult = withContext(Dispatchers.Main.immediate) {
+  var launcher: ActivityResultLauncher<Intent>? = null
+  var observer: LifecycleEventObserver? = null
+  try {
+    suspendCancellableCoroutine { continuation ->
+      // Bind to the current Activity at the moment of the user's action, not
+      // an Expo registry whose previous host may already have been destroyed.
+      launcher = activity.activityResultRegistry.register(
+        "t1arc-backup-save-${UUID.randomUUID()}",
+        ActivityResultContracts.StartActivityForResult(),
+      ) { result ->
+        if (continuation.isActive) {
+          continuation.resume(SavePickerResult(
+            result.data?.data?.takeIf { result.resultCode == Activity.RESULT_OK }?.toString(),
+          ))
+        }
+      }
+      observer = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_DESTROY && continuation.isActive) {
+          continuation.resumeWithException(IllegalStateException("The file picker was interrupted. Try saving again."))
+        }
+      }
+      activity.lifecycle.addObserver(requireNotNull(observer))
+      if (activity.lifecycle.currentState == Lifecycle.State.DESTROYED) {
+        if (continuation.isActive) {
+          continuation.resumeWithException(IllegalStateException("The file picker is no longer available."))
+        }
+      } else {
+        launcher?.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+          addCategory(Intent.CATEGORY_OPENABLE)
+          type = request.mimeType.ifBlank { "application/octet-stream" }
+          putExtra(Intent.EXTRA_TITLE, request.fileName)
+        })
+      }
     }
-
-  override fun parseResult(
-    input: SaveRequest,
-    resultCode: Int,
-    intent: Intent?,
-  ): SavePickerResult =
-    SavePickerResult(
-      destinationUri =
-        intent?.data
-          ?.takeIf { resultCode == Activity.RESULT_OK }
-          ?.toString(),
-    )
+  } finally {
+    observer?.let { activity.lifecycle.removeObserver(it) }
+    launcher?.unregister()
+  }
 }
 
 class T1ArcBackupCryptoModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T1ArcBackupCrypto")
-
-    lateinit var saveLauncher:
-      AppContextActivityResultLauncher<SaveRequest, SavePickerResult>
 
     OnCreate {
       appContext.reactContext?.let(::sweepInterruptedBackupArtifacts)
@@ -237,10 +266,6 @@ class T1ArcBackupCryptoModule : Module() {
       // OnCreate can run before a React context is available. Foreground and
       // next-use sweeps also retry any deletion the OS temporarily refused.
       appContext.reactContext?.let(::sweepInterruptedBackupArtifacts)
-    }
-
-    RegisterActivityContracts {
-      saveLauncher = registerForActivityResult(SaveBackupContract())
     }
 
     AsyncFunction("encryptJsonFileAsync") Coroutine {
@@ -301,6 +326,17 @@ class T1ArcBackupCryptoModule : Module() {
       }
     }
 
+    AsyncFunction("createWorkingFileAsync") Coroutine { extension: String ->
+      require(extension in setOf(".container", ".html")) { "Unsupported working file type." }
+      withContext(Dispatchers.IO) {
+        val file = newTemporaryFile(requireNotNull(appContext.reactContext), extension)
+        // Expo FileSystem can access existing writable no_backup files, but
+        // cannot create new paths outside its files/cache directory allowlist.
+        check(file.createNewFile()) { "A private working file could not be created." }
+        Uri.fromFile(file).toString()
+      }
+    }
+
     AsyncFunction("saveTemporaryFileAsync") Coroutine {
         sourceUri: String,
         fileName: String,
@@ -313,9 +349,11 @@ class T1ArcBackupCryptoModule : Module() {
         internalFileForUri(sourceUri)
           ?: throw IllegalArgumentException("The temporary backup file is unavailable.")
       val picked =
-        saveLauncher.launch(
+        launchBackupSavePicker(
+          requireNotNull(appContext.currentActivity as? ComponentActivity) {
+            "Open T1 Arc before saving a backup."
+          },
           SaveRequest(
-            sourceUri = sourceUri,
             fileName = fileName,
             mimeType = mimeType,
           ),
@@ -346,7 +384,7 @@ class T1ArcBackupCryptoModule : Module() {
             "byteLength" to source.length().toDouble(),
           )
         } catch (error: Exception) {
-          runCatching { context.contentResolver.delete(destination, null, null) }
+          runCatching { DocumentsContract.deleteDocument(context.contentResolver, destination) }
           throw IllegalStateException(
             error.message ?: "The encrypted backup could not be saved.",
             error,
@@ -681,9 +719,12 @@ class T1ArcBackupCryptoModule : Module() {
     val uri = Uri.parse(uriValue)
     if (uri.scheme != "file") return null
     val candidate = File(uri.path ?: return null).canonicalFile
-    val directory = backupDirectory(context).canonicalFile
+    val directories = setOf(
+      backupDirectory(context).canonicalFile,
+      File(context.cacheDir, "encrypted-backups").canonicalFile,
+    )
     return candidate.takeIf {
-      it.parentFile == directory && it.name.startsWith("backup-")
+      it.parentFile in directories && it.name.startsWith("backup-")
     }
   }
 
@@ -694,7 +735,7 @@ class T1ArcBackupCryptoModule : Module() {
   }
 
   private fun backupDirectory(context: Context): File {
-    val directory = File(context.cacheDir, "encrypted-backups")
+    val directory = backupWorkspaceDirectory(context.noBackupFilesDir)
     if (!directory.exists() && !directory.mkdirs()) {
       throw IllegalStateException("A private backup workspace could not be created.")
     }
@@ -703,6 +744,8 @@ class T1ArcBackupCryptoModule : Module() {
 
   private fun sweepInterruptedBackupArtifacts(context: Context) {
     cleanOldTemporaryFiles(backupDirectory(context))
+    // Keep cleaning interrupted exports from installations using the old path.
+    cleanOldTemporaryFiles(File(context.cacheDir, "encrypted-backups"))
     deleteExpiredPlaintextBackupArtifacts(
       context.cacheDir,
       maximumAgeMs = TEMPORARY_FILE_LIFETIME_MS,
@@ -712,7 +755,9 @@ class T1ArcBackupCryptoModule : Module() {
   private fun cleanOldTemporaryFiles(directory: File) {
     val cutoff = System.currentTimeMillis() - TEMPORARY_FILE_LIFETIME_MS
     directory.listFiles()?.forEach { file ->
-      if (file.lastModified() < cutoff) file.delete()
+      if (file.isFile && (file.name.startsWith("backup-") ||
+          (file.name.startsWith(PLAINTEXT_BACKUP_PREFIX) && file.name.endsWith(PLAINTEXT_BACKUP_SUFFIX))) &&
+          file.lastModified() < cutoff) file.delete()
     }
   }
 

@@ -264,7 +264,9 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
     let encryptedUri: string | undefined;
     try {
       const backupLease = await acquireLocalDataWriteLease();
-      const prepared = await createHealthBackupFile();
+      const prepared = await createHealthBackupFile(
+        await T1ArcBackupCrypto.createWorkingFileAsync('.container'),
+      );
       plaintextUri = prepared.file.uri;
       setWorkingLabel("Compressing and encrypting with your passphrase…");
       const encrypted = await T1ArcBackupCrypto.encryptJsonFileAsync(

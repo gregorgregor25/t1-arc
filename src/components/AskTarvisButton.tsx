@@ -11,12 +11,18 @@ export function AskTarvisButton({ entry, onOpen, label = 'Ask Tarv1s about this'
   const { ownerIdentity } = useDataContext();
   const { colors } = useAppTheme();
   return <Pressable accessibilityRole="button" accessibilityHint="Opens an editable question. Nothing is sent until you tap Send." onPress={() => {
+    let context: TarvisEntry;
     try {
-      const context = bindTarvisEntryToOwner(entry(), ownerIdentity);
+      context = bindTarvisEntryToOwner(entry(), ownerIdentity);
+    } catch {
+      Alert.alert('Could not prepare this question', 'Select the period or record again and retry. Your saved health data has not been changed.');
+      return;
+    }
+    try {
       onOpen?.();
       navigation.navigate('Insights', { entry: context });
     } catch {
-      Alert.alert('These records are not available', 'Reopen this period and try again. You can still write a question in Tarv1s.');
+      Alert.alert('Could not open Tarv1s', 'Please open the Tarv1s tab and try again. No question was sent.');
     }
   }} style={({ pressed }) => [styles.button, { opacity: pressed ? 0.65 : 1 }]}>
     <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primary} accessibilityElementsHidden />
