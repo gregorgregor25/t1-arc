@@ -25,6 +25,20 @@
   <a href="docs/SCREENSHOTS.md">Screenshots</a>
 </p>
 
+## Why I built it
+
+I have lived with Type 1 diabetes for nearly 20 years. The problem I kept
+running into was not a lack of data. It was that the data was split across
+diabetes apps, health apps and reports that were hard to compare.
+
+I wanted one place where I could look at glucose, insulin, meals, activity,
+sleep and the rest of the day together. I also wanted to ask useful questions
+without losing the evidence behind the answer. T1 Arc is the result.
+
+The aim is simple: make personal records easier to understand, show where the
+information came from, and say when the available data is not good enough to
+support a conclusion.
+
 <table>
   <tr>
     <td align="center" width="50%"><img src="docs/screenshots/tarvis.png" alt="Tarv1s question screen with suggested questions based on T1 Arc records"><br><strong>Ask Tarv1s</strong><br>Explore patterns across the records you already keep</td>
@@ -93,20 +107,6 @@ the newer APK and install it over the existing app. Do not uninstall first,
 because uninstalling removes local app data. Read the full
 [installation and update guide](docs/GETTING_STARTED.md) before replacing an
 established installation.
-
-## Why I built it
-
-I have lived with Type 1 diabetes for nearly 20 years. The problem I kept
-running into was not a lack of data. It was that the data was split across
-diabetes apps, health apps and reports that were hard to compare.
-
-I wanted one place where I could look at glucose, insulin, meals, activity,
-sleep and the rest of the day together. I also wanted to ask useful questions
-without losing the evidence behind the answer. T1 Arc is the result.
-
-The aim is simple: make personal records easier to understand, show where the
-information came from, and say when the available data is not good enough to
-support a conclusion.
 
 ## A look at the app
 
