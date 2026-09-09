@@ -36,7 +36,7 @@
     "expo-system-ui": "~57.0.3",
     "expo-task-manager": "~57.0.16",
     "fflate": "^0.8.3",
-    "react": "19.2.3",
+    "react": "19.2.8",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@types/react": "~19.2.2",
+    "@types/react": "~19.2.18",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.2",
     "expo-doctor": "1.20.4",
