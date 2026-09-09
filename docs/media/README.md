@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/a29cddd8-b0d1-493c-8360-f941f451c322
 
 https://github.com/user-attachments/assets/5c124fa3-41d9-42f7-ab2c-f0b4fca52514
 
-[Open portrait film](https://github.com/user-attachments/assets/5c124fa3-41d9-42f7-ab2c-f0b4fca52514)
+Prefer a separate player? [Open portrait film](https://github.com/user-attachments/assets/5c124fa3-41d9-42f7-ab2c-f0b4fca52514).
 
 Both films are 90-second web copies with the updated food demonstration and
 privacy ending. Use the player above rather than GitHub's source-file viewer.
