@@ -1,7 +1,20 @@
 # T1 Arc demo | AI narration: elevenlabs.io
 
-[Watch the 90-second film](t1-arc-demo.mp4) and
-[download the optional subtitles](t1-arc-demo.vtt).
+## Landscape
+
+https://github.com/user-attachments/assets/a29cddd8-b0d1-493c-8360-f941f451c322
+
+[Open landscape film](https://github.com/user-attachments/assets/a29cddd8-b0d1-493c-8360-f941f451c322) ·
+[Optional subtitles](t1-arc-demo.vtt)
+
+## Portrait
+
+https://github.com/user-attachments/assets/5c124fa3-41d9-42f7-ab2c-f0b4fca52514
+
+[Open portrait film](https://github.com/user-attachments/assets/5c124fa3-41d9-42f7-ab2c-f0b4fca52514)
+
+Both films are 90-second web copies with the updated food demonstration and
+privacy ending. Use the player above rather than GitHub's source-file viewer.
 
 This is an edited demonstration, not a real-time performance benchmark. Some
 scenes show the creator's own records with permission. The food scene uses a

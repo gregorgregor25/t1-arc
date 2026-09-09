@@ -3,6 +3,10 @@
 You do not need to build T1 Arc. The official Android phone app is distributed
 as a signed APK on GitHub Releases.
 
+**The first public APK is not available yet.** These instructions describe the
+download and update process once it is published. Check [Release status](RELEASE_STATUS.md)
+before downloading; the old private test drafts are not the current app.
+
 ## Before installing
 
 - Use a phone running Android 8.0 or newer.
@@ -87,6 +91,13 @@ If two icons have the same name, open each app and compare its package. Keep
 both until you know where your records are. A private test package and an
 official package have separate storage; installing one does not move data from
 the other. Older test builds may not have an About page.
+
+A package ending in `.sideload` is a private test installation, not the official
+public package. Renaming its APK file does not turn it into an official update.
+Keep it installed until an encrypted backup has been verified and restored into
+the official app. Review the restored records, reconnect sources and the
+optional OpenAI key, and grant Android permissions again. Phone and Wear
+companion package IDs and signing certificates must match for their data link.
 
 ## Verify a download
 

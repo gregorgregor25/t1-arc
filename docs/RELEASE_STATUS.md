@@ -9,6 +9,21 @@ regressions have passed local calculation and Android 17 interface checks. Sourc
 preparation can continue, but this is not an announcement that a new public APK
 is ready.
 
+### Which version is which?
+
+Checked on 9 September 2026:
+
+| Item | Status |
+| --- | --- |
+| Current development source | `codex/product-review`, the repository's default branch. It includes the September phone, food and Tarv1s work. |
+| Old release entries | `v1.4.1` and `v1.5.0` are private legacy drafts, with unchanged pre-rename binaries. Neither is the current app. |
+| Latest local test candidate | Version 1.7.1 (28), private-test signed, with package ID `io.github.gregorgregor25.t1arc.sideload`. Not a public release asset. |
+| First public APK | Not built with a permanent production signer or published yet. |
+
+The default branch and a Releases asset are different things. A source change
+does not update an APK already on a phone or attach a new APK to Releases.
+The older `master` and preparation branches are not the release source.
+
 The [GitHub Releases page](https://github.com/gregorgregor25/t1-arc/releases) is
 the authority for public builds. A release is available only when it contains a
 signed asset named `T1-Arc-vX.Y.Z.apk`, its checksum and its APK build record.
@@ -69,13 +84,33 @@ On 8 September 2026, Android 17 app checks confirmed the following:
   average-glucose question still retains its calculation and records.
 - Existing conversations on the emulator remained readable after a cold reopen.
 
-The completed local full quality run passed 4,972 tests across 364 files,
+That 8 September local full quality run passed 4,972 tests across 364 files,
 including lint and type checks. It also covers explicitly requested unsupported
 nutrient and episode-duration statistics, which must not be silently omitted
 from a compound answer. Automated test counts
 refer to the PC test suite, not thousands of emulator interactions. Hosted CI
 must also pass on the exact pushed commit. These checks are not full
 physical-device acceptance.
+
+On 9 September, a grouped repair passed the local quality gate with 4,996 tests
+and was tested on a Pixel running Android 17. This covered the reported
+chart-to-Tarv1s handoff, conversation recovery and the corrected comparisons.
+Synthetic empty-store backup recovery and notebook export were checked on the
+emulator, not by erasing the owner's phone.
+
+The subsequent targeted gap pass passed lint, TypeScript and 5,009 tests across
+366 files. Phone and isolated emulator APK builds and Android lint passed.
+The emulator checks covered the clearer **Record sensor change** button,
+confirmed manual-entry deletion, cold persistence, light/dark themes,
+double-size text, widget updates, a test alert and a bounded source interruption
+and recovery. Tarv1s cancellation and network-retry checks used mocked requests,
+not a new live API conversation. This later candidate has not been installed on
+the physical phone.
+
+These are development-build results, not acceptance of a production-signed
+release. Test counts are PC automated tests, not emulator interaction counts.
+Overnight battery behaviour, physical alert sound/vibration and every provider
+or watch combination are not established by this pass.
 
 Physical-phone acceptance must use the exact draft release APK. Testing an
 earlier build does not establish that a new candidate works on that phone.

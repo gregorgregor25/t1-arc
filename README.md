@@ -57,9 +57,10 @@ Tarv1s is not an insulin-dose calculator, medical device or emergency service.
 
 ### T1 Arc demo | AI narration: elevenlabs.io
 
-[![Watch the 90-second T1 Arc demo](docs/media/t1-arc-demo-poster.png)](docs/media/t1-arc-demo.mp4)
+https://github.com/user-attachments/assets/a29cddd8-b0d1-493c-8360-f941f451c322
 
-[Watch the film](docs/media/t1-arc-demo.mp4) ·
+[Open the film](https://github.com/user-attachments/assets/a29cddd8-b0d1-493c-8360-f941f451c322) ·
+[Portrait version](docs/media/README.md#portrait) ·
 [Subtitles](docs/media/t1-arc-demo.vtt) ·
 [Credits and media use](docs/media/README.md)
 
@@ -67,6 +68,9 @@ Music: *Signal Drift*, created with Suno. An edited walkthrough of the app,
 including the creator's own records, shared with permission.
 
 > [!IMPORTANT]
+> **No public APK has been published yet.** Old private drafts are not the
+> current T1 Arc app. See [Release status](docs/RELEASE_STATUS.md).
+>
 > Install T1 Arc only from this repository's official
 > [Releases page](https://github.com/gregorgregor25/t1-arc/releases). The phone
 > app is the file named `T1-Arc-vX.Y.Z.apk`. The automatically generated source
