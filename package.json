@@ -49,7 +49,7 @@
     "eslint-config-expo": "~57.0.2",
     "expo-doctor": "1.20.4",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "metro": "0.84.5",
