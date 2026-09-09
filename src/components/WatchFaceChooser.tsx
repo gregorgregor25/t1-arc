@@ -8,7 +8,7 @@ import { useAppTheme } from '@/theme/theme';
 
 import { WatchFacePreview } from './WatchFacePreview';
 
-const GUIDE = 'https://github.com/gregorgregor25/t1-arc/blob/codex/public-release-snapshot/docs/WATCH_SETUP.md';
+const GUIDE = 'https://github.com/gregorgregor25/t1-arc/blob/HEAD/docs/WATCH_SETUP.md';
 
 export function WatchFaceChooser() {
   const { colors, radius } = useAppTheme();
