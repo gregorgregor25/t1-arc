@@ -94,6 +94,12 @@ through the protected maintainer procedure in
 
 ## Pull requests
 
+Target `main`, the project's only permanent development branch. Work in a
+short-lived branch in your fork; there is no separate `develop` branch. The
+project owner reviews contributions before merging. Passing automated checks
+does not grant permission to merge. Completed branches can be deleted after
+the merge; their changes remain in the repository history.
+
 Keep one concern per PR and explain the observed problem, the invariant being
 preserved and the evidence for the result. Include tests proportional to risk.
 Provider/region changes need sanitized fixtures or public contract references;

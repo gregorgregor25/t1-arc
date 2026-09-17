@@ -19,6 +19,16 @@ outside the public repository.
 - Preserve the official phone/companion signer and separate watch-face signer.
 - Verify independently recoverable encrypted key copies and compare certificates.
 - Confirm effective branch and production-environment protections before adding secrets.
+- Require pull requests, the owner's code review, current quality checks and
+  resolved discussions on `main`; reject force pushes and branch deletion.
+- Verify that only the owner has write access, automatic merging is disabled,
+  workflow tokens default to read-only and workflows cannot approve PRs.
+- Require approval before running outside contributors' fork workflows. Review
+  workflow changes before approving them; never expose signing secrets to PR jobs.
+- GitHub Free cannot enforce branch protection while this repository is private.
+  Verify these settings after authorised source publication and before announcing
+  the project or publishing binaries. A checklist or CODEOWNERS file alone does
+  not enforce the rules.
 - Keep signing secrets out of repository files, logs and release metadata.
 - Prepare the draft through the protected workflow with build and checksum records.
 
