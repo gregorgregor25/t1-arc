@@ -10,6 +10,9 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types"
   },
+  "overrides": {
+    "sharp": "0.35.4"
+  },
   "devDependencies": {
     "wrangler": "4.130.0"
   }

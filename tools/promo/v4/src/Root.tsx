@@ -17,6 +17,8 @@ export const RemotionRoot: React.FC = () => {
         <Composition id="T1Arc-Music-Closing-Portrait" component={MusicClosing} width={2160} height={3840} fps={60} durationInFrames={600} />
       </Folder>
       <Folder name="Privacy-edition-ending">
+        {/* This composition exports a listing still at its exact aspect ratio, not H.264 video. */}
+        {/* eslint-disable-next-line @remotion/even-dimensions */}
         <Composition id="T1Arc-Play-Feature" component={PrivacyClosing} width={3840} height={1875} fps={60} durationInFrames={600} defaultProps={{ listingStill: true }} />
         <Composition id="T1Arc-Privacy-Closing-Landscape" component={PrivacyClosing} width={3840} height={2160} fps={60} durationInFrames={600} />
         <Composition id="T1Arc-Privacy-Closing-Portrait" component={PrivacyClosing} width={2160} height={3840} fps={60} durationInFrames={600} />
