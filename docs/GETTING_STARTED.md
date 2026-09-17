@@ -3,7 +3,7 @@
 You do not need to build T1 Arc. The official Android phone app is distributed
 as a signed APK on GitHub Releases.
 
-The first public APK has not been published yet. See [release status](RELEASE_STATUS.md).
+See [downloads and release support](RELEASE_STATUS.md) for compatibility and known limitations.
 
 ## Before installing
 

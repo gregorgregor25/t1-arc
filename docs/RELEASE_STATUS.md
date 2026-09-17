@@ -2,9 +2,6 @@
 
 ## Download T1 Arc
 
-The first public APK has not been published yet. The download route below
-becomes available when the first release is published.
-
 Open the [latest GitHub Release](https://github.com/gregorgregor25/t1-arc/releases/latest)
 on your Android phone. Under **Assets**, choose the **phone APK**: its name
 starts with `T1-Arc-v` and ends with `.apk`. The number between them changes with

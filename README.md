@@ -25,7 +25,7 @@
   <a href="docs/SCREENSHOTS.md">Screenshots</a>
 </p>
 
-> The first public APK has not been published yet. [Release status](docs/RELEASE_STATUS.md).
+> Free to use on Android 8.0 and newer. [Downloads and release support](docs/RELEASE_STATUS.md).
 
 ## Why I built it
 
@@ -93,10 +93,6 @@ including the creator's own records, shared with permission.
 > archives are for contributors, not for installing the app.
 
 ## Install T1 Arc
-
-**Before launch:** the first public APK has not been published yet. The download links
-below become available when that release is published. Source access and
-installable releases are separate; no public APK is available yet.
 
 You do not need to build anything or use a computer.
 
