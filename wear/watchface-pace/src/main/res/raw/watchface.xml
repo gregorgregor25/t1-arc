@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from wear/designs. Edit the design source and regenerate. -->
+<WatchFace width="450" height="450">
+    <Metadata key="CLOCK_TYPE" value="DIGITAL"/>
+    <Metadata key="PREVIEW_TIME" value="10:08:30"/>
+    <UserConfigurations>
+        <ColorConfiguration id="accent" displayName="accent_label" defaultValue="lime">
+            <ColorOption id="silver" colors="#FFD9DEE0" displayName="accent_silver"/>
+            <ColorOption id="champagne" colors="#FFE3C999" displayName="accent_champagne"/>
+            <ColorOption id="lime" colors="#FFD3F47A" displayName="accent_lime"/>
+            <ColorOption id="amber" colors="#FFF3B568" displayName="accent_amber"/>
+        </ColorConfiguration>
+    </UserConfigurations>
+    <Scene backgroundColor="#FF000000">
+        <Group name="pace_sports_frame" x="0" y="0" width="450" height="450" alpha="255">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <PartDraw x="0" y="0" width="450" height="450">
+                <RoundRectangle x="34" y="131" width="382" height="123" cornerRadiusX="26" cornerRadiusY="26">
+                    <Fill color="#FF0B1216"/>
+                </RoundRectangle>
+                <RoundRectangle x="53" y="145" width="4" height="86" cornerRadiusX="2" cornerRadiusY="2">
+                    <Fill color="[CONFIGURATION.accent]"/>
+                </RoundRectangle>
+                <RoundRectangle x="393" y="145" width="4" height="86" cornerRadiusX="2" cornerRadiusY="2">
+                    <Fill color="[CONFIGURATION.accent]"/>
+                </RoundRectangle>
+                <Line startX="75" startY="343" endX="375" endY="343">
+                    <Stroke color="#FF36434A" thickness="1"/>
+                </Line>
+                <Line startX="225" startY="353" endX="225" endY="399">
+                    <Stroke color="#FF36434A" thickness="1"/>
+                </Line>
+            </PartDraw>
+            <PartText x="60" y="25" width="330" height="23" tintColor="[CONFIGURATION.accent]">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="14" weight="MEDIUM">T 1  A R C   /   P A C E</Font>
+                </Text>
+            </PartText>
+            <PartText x="55" y="111" width="340" height="20" tintColor="#FFBBC7CB">
+                <Text align="CENTER">
+                    <Font family="SYNC_TO_DEVICE" size="15" weight="NORMAL">
+                        <Template>%s  %s<Parameter expression="[DAY_OF_WEEK_S]"/>
+                            <Parameter expression="[DAY_Z]"/>
+                        </Template>
+                    </Font>
+                </Text>
+            </PartText>
+        </Group>
+        <DigitalClock x="44" y="44" width="362" height="72">
+            <TimeText x="0" y="0" width="362" height="72" format="hh:mm" hourFormat="SYNC_TO_DEVICE" align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="70" weight="BOLD" color="#FFFFFFFF"/>
+            </TimeText>
+        </DigitalClock>
+        <ComplicationSlot x="67" y="140" width="316" height="105" slotId="500" displayName="glucose_slot_label" isCustomizable="FALSE" supportedTypes="RANGED_VALUE SHORT_TEXT EMPTY">
+            <DefaultProviderPolicy primaryProvider="io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcWatchFaceGlucoseComplicationService" primaryProviderType="RANGED_VALUE" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
+            <BoundingRoundBox x="0" y="0" width="316" height="105" cornerRadius="8" outlinePadding="2"/>
+            <Complication type="RANGED_VALUE">
+                <Group name="glucose_active" x="0" y="0" width="316" height="105" alpha="255">
+                    <Variant mode="AMBIENT" target="alpha" value="0"/>
+                    <Condition>
+                        <Expressions>
+                            <Expression name="rose">[COMPLICATION.RANGED_VALUE_VALUE] &lt; 0.5</Expression>
+                            <Expression name="amber">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 0.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 1.5</Expression>
+                            <Expression name="orange">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 1.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 2.5</Expression>
+                            <Expression name="cyan">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 2.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 3.5</Expression>
+                            <Expression name="green">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 3.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 4.5</Expression>
+                            <Expression name="blue">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 4.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 5.5</Expression>
+                            <Expression name="purple">[COMPLICATION.RANGED_VALUE_VALUE] &gt;= 5.5 &amp;&amp; [COMPLICATION.RANGED_VALUE_VALUE] &lt; 6.5</Expression>
+                        </Expressions>
+                        <Compare expression="rose">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FFFF9BAE">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="amber">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FFF1B66F">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="orange">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FFFFB066">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="cyan">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FF65D2E7">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="green">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FF69D5AC">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="blue">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FF82B7FF">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Compare expression="purple">
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FFC2A9FF">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Compare>
+                        <Default>
+                            <PartText x="0" y="0" width="316" height="81" tintColor="#FFA9BDC2">
+                                <Text align="CENTER">
+                                    <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                        <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                        </Template>
+                                    </Font>
+                                </Text>
+                            </PartText>
+                        </Default>
+                    </Condition>
+                </Group>
+                <Group name="glucose_ambient" x="0" y="0" width="316" height="105" alpha="0">
+                    <Variant mode="AMBIENT" target="alpha" value="255"/>
+                    <PartText x="0" y="0" width="316" height="81" tintColor="#FFE0E5E8">
+                        <Text align="CENTER">
+                            <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                                <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                                </Template>
+                            </Font>
+                        </Text>
+                    </PartText>
+                </Group>
+                <PartText x="0" y="81" width="316" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL">
+                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+            <Complication type="SHORT_TEXT">
+                <PartText x="0" y="0" width="316" height="81" tintColor="#FFA9BDC2">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="75" weight="BOLD">
+                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <PartText x="0" y="81" width="316" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL">
+                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+            </Complication>
+            <Complication type="EMPTY">
+                <PartText x="0" y="0" width="316" height="81" tintColor="#FFA9BDC2">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="75" weight="NORMAL">--</Font>
+                    </Text>
+                </PartText>
+                <PartText x="0" y="81" width="316" height="24" tintColor="#FFBBC6CC">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL">WAITING FOR GLUCOSE</Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+        <ComplicationSlot x="38" y="257" width="374" height="83" slotId="510" displayName="graph_slot_label" isCustomizable="FALSE" supportedTypes="PHOTO_IMAGE EMPTY">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <DefaultProviderPolicy primaryProvider="io.github.gregorgregor25.t1arc/io.github.gregorgregor25.t1arc.wear.complication.T1ArcGraphComplicationService" primaryProviderType="PHOTO_IMAGE" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY"/>
+            <BoundingRoundBox x="0" y="0" width="374" height="83" cornerRadius="2"/>
+            <Complication type="PHOTO_IMAGE">
+                <PartImage x="0" y="0" width="374" height="83">
+                    <Image resource="[COMPLICATION.PHOTO_IMAGE]"/>
+                </PartImage>
+            </Complication>
+            <Complication type="EMPTY">
+                <PartText x="0" y="20" width="374" height="30" tintColor="#FF9EAFB6">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL">HISTORY IS SYNCING</Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+        <ComplicationSlot x="63" y="350" width="144" height="58" slotId="502" displayName="secondary_slot_label" isCustomizable="TRUE" supportedTypes="SHORT_TEXT EMPTY">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT"/>
+            <BoundingRoundBox x="0" y="0" width="144" height="58" cornerRadius="6"/>
+            <Complication type="SHORT_TEXT">
+                <PartText x="0" y="2" width="144" height="30" tintColor="#FFEAECEF">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="24" weight="MEDIUM">
+                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <Condition>
+                    <Expressions>
+                        <Expression name="has_title">[COMPLICATION.TITLE] != &quot;&quot;</Expression>
+                    </Expressions>
+                    <Compare expression="has_title">
+                        <PartText x="0" y="33" width="144" height="22" tintColor="#FFAFBDC5">
+                            <Text align="CENTER">
+                                <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL">
+                                    <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                                    </Template>
+                                </Font>
+                            </Text>
+                        </PartText>
+                    </Compare>
+                    <Default>
+                        <PartImage x="61" y="33" width="22" height="22" tintColor="#FFAFBDC5">
+                            <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
+                        </PartImage>
+                    </Default>
+                </Condition>
+            </Complication>
+            <Complication type="EMPTY">
+                <PartText x="0" y="15" width="144" height="22" tintColor="#FFAFBDC5">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL">ADD DATA</Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+        <ComplicationSlot x="243" y="350" width="144" height="58" slotId="503" displayName="secondary_slot_label" isCustomizable="TRUE" supportedTypes="SHORT_TEXT EMPTY">
+            <Variant mode="AMBIENT" target="alpha" value="0"/>
+            <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="SHORT_TEXT"/>
+            <BoundingRoundBox x="0" y="0" width="144" height="58" cornerRadius="6"/>
+            <Complication type="SHORT_TEXT">
+                <PartText x="0" y="2" width="144" height="30" tintColor="#FFEAECEF">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="24" weight="MEDIUM">
+                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]"/>
+                            </Template>
+                        </Font>
+                    </Text>
+                </PartText>
+                <Condition>
+                    <Expressions>
+                        <Expression name="has_title">[COMPLICATION.TITLE] != &quot;&quot;</Expression>
+                    </Expressions>
+                    <Compare expression="has_title">
+                        <PartText x="0" y="33" width="144" height="22" tintColor="#FFAFBDC5">
+                            <Text align="CENTER">
+                                <Font family="SYNC_TO_DEVICE" size="16" weight="NORMAL">
+                                    <Template>%s<Parameter expression="[COMPLICATION.TITLE]"/>
+                                    </Template>
+                                </Font>
+                            </Text>
+                        </PartText>
+                    </Compare>
+                    <Default>
+                        <PartImage x="61" y="33" width="22" height="22" tintColor="#FFAFBDC5">
+                            <Image resource="[COMPLICATION.MONOCHROMATIC_IMAGE]"/>
+                        </PartImage>
+                    </Default>
+                </Condition>
+            </Complication>
+            <Complication type="EMPTY">
+                <PartText x="0" y="15" width="144" height="22" tintColor="#FFAFBDC5">
+                    <Text align="CENTER">
+                        <Font family="SYNC_TO_DEVICE" size="14" weight="NORMAL">ADD DATA</Font>
+                    </Text>
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+    </Scene>
+</WatchFace>

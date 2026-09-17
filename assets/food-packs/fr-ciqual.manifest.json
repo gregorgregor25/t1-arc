@@ -1,0 +1,30 @@
+{
+  "id": "fr-ciqual",
+  "provider": "ciqual",
+  "countryCode": "FR",
+  "version": "2025",
+  "label": "Anses Ciqual 2025",
+  "sourceUrl": "https://doi.org/10.57745/RDMHWY",
+  "licence": "Etalab Open Licence 2.0",
+  "licenceUrl": "https://www.etalab.gouv.fr/licence-ouverte-open-licence/",
+  "attribution": "Anses. 2025. Table de composition nutritionnelle des aliments Ciqual. Processed subset; not an official Anses product.",
+  "carbohydrateDefinition": "available",
+  "carbohydrateNote": "Available carbohydrate, as reported by Ciqual; no subtraction of fibre.",
+  "bundled": true,
+  "schemaVersion": 1,
+  "foodCount": 3483,
+  "sourceSha256": "5555c572fa3735991298d832d0427788fa69a11b4fd20a5d580d58942369fbb0",
+  "sourceFile": "ciqual-2025.xlsx",
+  "basisAmount": 100,
+  "basisUnit": "g",
+  "transformation": "T1 Arc selected nutrients; missing/trace/LOQ and contradictory same-nutrient observations kept non-numeric; no inferred nutrition or density. Source g/GRM and ml/MLT units normalized. Names normalized for whitespace; search removes accents. Stable source IDs retained.",
+  "fileName": "fr-ciqual-2025.db",
+  "sizeBytes": 1183744,
+  "sha256": "aa3b377e905e915fdd99e3be28c5d4879020a81084a21ad85dc89d40c3166ab1",
+  "chunkSize": 1048576,
+  "chunkSha256": [
+    "73fc9d23964357b7abf195678b64ecba0b5bbadc564461f549c8e3b53d47b919",
+    "d8266ccbb5a76e6292fa4ceffb9c7a0dde01f1c23bcb156f3e69a39f4e344527"
+  ],
+  "compressedBytes": 263508
+}

@@ -1,0 +1,267 @@
+name: Prepare signed Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag matching app.json, for example v1.7.0
+        required: true
+        type: string
+      confirmation:
+        description: Type PREPARE SIGNED RELEASE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t1arc-production-release
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Check the exact release source before production access
+    if: inputs.confirmation == 'PREPARE SIGNED RELEASE' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+
+  prepare-release:
+    name: Build and draft the signed phone and watch APKs
+    env:
+      T1ARC_WATCH_INSTALLER: '1'
+    needs: quality
+    if: inputs.confirmation == 'PREPARE SIGNED RELEASE' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - name: Confirm protected signing secrets are configured
+        shell: bash
+        env:
+          T1ARC_RELEASE_KEYSTORE_BASE64: ${{ secrets.T1ARC_RELEASE_KEYSTORE_BASE64 }}
+          T1ARC_RELEASE_STORE_PASSWORD: ${{ secrets.T1ARC_RELEASE_STORE_PASSWORD }}
+          T1ARC_RELEASE_KEY_ALIAS: ${{ secrets.T1ARC_RELEASE_KEY_ALIAS }}
+          T1ARC_RELEASE_KEY_PASSWORD: ${{ secrets.T1ARC_RELEASE_KEY_PASSWORD }}
+          T1ARC_FACE_KEYSTORE_BASE64: ${{ secrets.T1ARC_FACE_KEYSTORE_BASE64 }}
+          T1ARC_FACE_STORE_PASSWORD: ${{ secrets.T1ARC_FACE_STORE_PASSWORD }}
+          T1ARC_FACE_KEY_ALIAS: ${{ secrets.T1ARC_FACE_KEY_ALIAS }}
+          T1ARC_FACE_KEY_PASSWORD: ${{ secrets.T1ARC_FACE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$T1ARC_RELEASE_KEYSTORE_BASE64" ]] || missing+=(T1ARC_RELEASE_KEYSTORE_BASE64)
+          [[ -n "$T1ARC_RELEASE_STORE_PASSWORD" ]] || missing+=(T1ARC_RELEASE_STORE_PASSWORD)
+          [[ -n "$T1ARC_RELEASE_KEY_ALIAS" ]] || missing+=(T1ARC_RELEASE_KEY_ALIAS)
+          [[ -n "$T1ARC_RELEASE_KEY_PASSWORD" ]] || missing+=(T1ARC_RELEASE_KEY_PASSWORD)
+          [[ -n "$T1ARC_FACE_KEYSTORE_BASE64" ]] || missing+=(T1ARC_FACE_KEYSTORE_BASE64)
+          [[ -n "$T1ARC_FACE_STORE_PASSWORD" ]] || missing+=(T1ARC_FACE_STORE_PASSWORD)
+          [[ -n "$T1ARC_FACE_KEY_ALIAS" ]] || missing+=(T1ARC_FACE_KEY_ALIAS)
+          [[ -n "$T1ARC_FACE_KEY_PASSWORD" ]] || missing+=(T1ARC_FACE_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            printf 'Missing production environment secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+      - name: Validate version and release inputs
+        id: version
+        shell: pwsh
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          $app = Get-Content -Raw app.json | ConvertFrom-Json
+          $package = Get-Content -Raw package.json | ConvertFrom-Json
+          $lock = Get-Content -Raw package-lock.json | ConvertFrom-Json
+          $version = [string]$app.expo.version
+          $expectedTag = "v$version"
+          if ($env:REQUESTED_TAG -cne $expectedTag) {
+            throw "Requested tag $($env:REQUESTED_TAG) does not match app.json $expectedTag."
+          }
+          if ([string]$package.version -cne $version) {
+            throw "package.json version does not match app.json."
+          }
+          if ([string]$lock.version -cne $version -or [string]$lock.packages.''.version -cne $version) {
+            throw "package-lock.json version does not match app.json."
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Unsupported release version: $version"
+          }
+          $revision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $revision -cne $env:GITHUB_SHA) {
+            throw "Checkout does not match the workflow source commit."
+          }
+          git show-ref --verify --quiet "refs/tags/$expectedTag"
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release tag already exists. Use a new version; do not attach a different APK to an old source tag."
+          }
+          if ($LASTEXITCODE -ne 1) { throw "Could not check release tags." }
+          $global:LASTEXITCODE = 0
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$expectedTag" >> $env:GITHUB_OUTPUT
+          "apk=T1-Arc-v$version.apk" >> $env:GITHUB_OUTPUT
+      - run: npm ci
+      - name: Check public source
+        run: npm run verify:public-source
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo project
+        run: |
+          npx expo install --check
+          npx --no-install expo-doctor
+      - name: Run application quality suite
+        run: npm run quality
+      - name: Generate the native Android project
+        env:
+          NODE_ENV: production
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Confirm clean source before signing
+        run: |
+          node -e 'const source = require("./scripts/build-source.cjs").readBuildSource(process.cwd()); if (source.commit !== process.env.GITHUB_SHA || source.modified !== false) { throw new Error("Signing requires the exact clean workflow commit."); }'
+      - name: Decode the protected app and face keystores
+        shell: bash
+        env:
+          T1ARC_RELEASE_KEYSTORE_BASE64: ${{ secrets.T1ARC_RELEASE_KEYSTORE_BASE64 }}
+          T1ARC_FACE_KEYSTORE_BASE64: ${{ secrets.T1ARC_FACE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$T1ARC_RELEASE_KEYSTORE_BASE64" ]]; then
+            echo "The production keystore secret is missing."
+            exit 1
+          fi
+          printf '%s' "$T1ARC_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/t1arc-release.jks"
+          chmod 600 "$RUNNER_TEMP/t1arc-release.jks"
+          test -s "$RUNNER_TEMP/t1arc-release.jks"
+          printf '%s' "$T1ARC_FACE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/t1arc-faces.p12"
+          chmod 600 "$RUNNER_TEMP/t1arc-faces.p12"
+          test -s "$RUNNER_TEMP/t1arc-faces.p12"
+      - name: Build and check the production-signed APK set
+        working-directory: android
+        env:
+          T1ARC_RELEASE_STORE_FILE: ${{ runner.temp }}/t1arc-release.jks
+          T1ARC_FACE_STORE_FILE: ${{ runner.temp }}/t1arc-faces.p12
+          T1ARC_FACE_STORE_PASSWORD: ${{ secrets.T1ARC_FACE_STORE_PASSWORD }}
+          T1ARC_FACE_KEY_ALIAS: ${{ secrets.T1ARC_FACE_KEY_ALIAS }}
+          T1ARC_FACE_KEY_PASSWORD: ${{ secrets.T1ARC_FACE_KEY_PASSWORD }}
+          T1ARC_RELEASE_STORE_PASSWORD: ${{ secrets.T1ARC_RELEASE_STORE_PASSWORD }}
+          T1ARC_RELEASE_KEY_ALIAS: ${{ secrets.T1ARC_RELEASE_KEY_ALIAS }}
+          T1ARC_RELEASE_KEY_PASSWORD: ${{ secrets.T1ARC_RELEASE_KEY_PASSWORD }}
+          NODE_ENV: production
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease :app:lintRelease \
+            :wear:assembleRelease :wear:testReleaseUnitTest :wear:lintRelease \
+            :watchface-meridian:assembleRelease :watchface-meridian:lintRelease \
+            :watchface-chronograph:assembleRelease :watchface-chronograph:lintRelease \
+            :watchface-atelier:assembleRelease :watchface-atelier:lintRelease \
+            :watchface-pace:assembleRelease :watchface-pace:lintRelease \
+            :watchface-summit:assembleRelease :watchface-summit:lintRelease \
+            :watchface-push:lintMeridianRelease \
+            :watchface-push:lintChronographRelease \
+            :watchface-push:lintAtelierRelease \
+            :watchface-push:lintPaceRelease \
+            :watchface-push:lintSummitRelease --no-daemon
+      - name: Verify and name the public APK set
+        shell: pwsh
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          ./scripts/verify-android-apk.ps1 `
+            -ApkPath ./android/app/build/outputs/apk/release/app-release.apk `
+            -ExpectedApplicationId io.github.gregorgregor25.t1arc `
+            -ExpectedSourceCommit $env:GITHUB_SHA `
+            -RequireCleanSource
+          python scripts/verify-watch-installer.py ./android/app/build/outputs/apk/release/app-release.apk --enabled
+          if ($LASTEXITCODE -ne 0) { throw "Bundled watch installer verification failed." }
+          Copy-Item ./android/app/build/outputs/apk/release/app-release.apk "./release/$env:APK_NAME"
+          $hash = (Get-FileHash "./release/$env:APK_NAME" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:APK_NAME" | Set-Content -NoNewline "./release/$env:APK_NAME.sha256"
+          $source = node -e "console.log(JSON.stringify(require('./scripts/build-source.cjs').readBuildSource(process.cwd())))" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $source.commit -cne $env:GITHUB_SHA -or $source.modified -ne $false) {
+            throw "Release source must be a clean, recorded checkout of the workflow commit."
+          }
+          $app = Get-Content -Raw app.json | ConvertFrom-Json
+          ./scripts/verify-wear-apks.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Wear APK set verification failed." }
+          $wearArtifacts = @()
+          $wearSources = @{
+            Wear = 'wear/companion/build/outputs/apk/release/wear-release.apk'
+            Meridian = 'wear/watchface-meridian/build/outputs/apk/release/watchface-meridian-release.apk'
+            Chronograph = 'wear/watchface-chronograph/build/outputs/apk/release/watchface-chronograph-release.apk'
+            Atelier = 'wear/watchface-atelier/build/outputs/apk/release/watchface-atelier-release.apk'
+            Pace = 'wear/watchface-pace/build/outputs/apk/release/watchface-pace-release.apk'
+            Summit = 'wear/watchface-summit/build/outputs/apk/release/watchface-summit-release.apk'
+          }
+          foreach ($kind in @('Wear', 'Meridian', 'Chronograph', 'Atelier', 'Pace', 'Summit')) {
+            $name = "T1-Arc-$kind-v$($app.expo.version).apk"
+            Copy-Item -LiteralPath $wearSources[$kind] -Destination "./release/$name"
+            $digest = (Get-FileHash -LiteralPath "./release/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $name" | Set-Content -NoNewline "./release/$name.sha256"
+            $wearArtifacts += @{ apk = $name; sha256 = $digest }
+          }
+          @{
+            sourceCommit = $source.commit
+            applicationId = $app.expo.android.package
+            version = $app.expo.version
+            versionCode = $app.expo.android.versionCode
+            apk = $env:APK_NAME
+            sha256 = $hash
+            wearArtifacts = $wearArtifacts
+          } | ConvertTo-Json -Depth 6 | Set-Content "./release/$env:APK_NAME.build.json"
+      - name: Remove the decoded keystores
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/t1arc-release.jks" "$RUNNER_TEMP/t1arc-faces.p12"
+      - name: Prepare user-readable draft notes
+        env:
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: node scripts/prepare-release-notes.cjs "release/$APK_NAME.build.json" "$RUNNER_TEMP/t1arc-release-notes.md"
+      - name: Create a draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        run: |
+          set -euo pipefail
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq '.[] | select(.ref == "refs/tags/" + env.RELEASE_TAG) | .ref')
+          if [[ -n "$existing" ]]; then
+            echo "Release tag was created during the build. Stop and review it before retrying."
+            exit 1
+          fi
+          # Creating a ref is atomic: fail if another actor claimed this tag.
+          # Never update an existing ref or rely on release creation's auto-tagging.
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" > /dev/null
+          gh release create "$RELEASE_TAG" \
+            "release/$APK_NAME" \
+            "release/$APK_NAME.sha256" \
+            "release/$APK_NAME.build.json" \
+            release/T1-Arc-Wear-*.apk release/T1-Arc-Wear-*.apk.sha256 \
+            release/T1-Arc-Meridian-*.apk release/T1-Arc-Meridian-*.apk.sha256 \
+            release/T1-Arc-Chronograph-*.apk release/T1-Arc-Chronograph-*.apk.sha256 \
+            release/T1-Arc-Atelier-*.apk release/T1-Arc-Atelier-*.apk.sha256 \
+            release/T1-Arc-Pace-*.apk release/T1-Arc-Pace-*.apk.sha256 \
+            release/T1-Arc-Summit-*.apk release/T1-Arc-Summit-*.apk.sha256 \
+            --draft \
+            --verify-tag \
+            --notes-file "$RUNNER_TEMP/t1arc-release-notes.md" \
+            --target "$GITHUB_SHA" \
+            --title "T1 Arc $RELEASE_VERSION"

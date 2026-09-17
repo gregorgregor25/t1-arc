@@ -1,0 +1,510 @@
+import {
+  TarvisAnswer,
+  TarvisConversationTurn,
+  TarvisEvidencePacket,
+  TarvisInsightWindowSummary,
+} from "./types";
+import {
+  formatGlucose,
+  glucoseFromMmolL,
+  glucoseUnitLabel,
+} from "@/domain/regionalFormat";
+import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
+import {
+  formatTarvisFixedNumber,
+  formatTarvisNumber,
+} from "./regionalNumberPresentation";
+
+export type TarvisEvidenceMetricId =
+  | "average-glucose"
+  | "median-glucose"
+  | "minimum-glucose"
+  | "maximum-glucose"
+  | "glucose-standard-deviation"
+  | "glucose-coefficient-of-variation"
+  | "glucose-management-indicator"
+  | "low-readings"
+  | "high-readings"
+  | "low-events"
+  | "high-events"
+  | "time-below-range"
+  | "time-in-range"
+  | "time-above-range"
+  | "current-glucose"
+  | "insulin-total"
+  | "basal-insulin"
+  | "bolus-insulin"
+  | "carbohydrates"
+  | "activity-duration"
+  | "sleep-duration"
+  | "sensor-coverage"
+  | "sensor-gaps";
+
+export interface TarvisEvidenceMetric {
+  id: TarvisEvidenceMetricId;
+  label: string;
+  value: number | null;
+  decimals: 0 | 1;
+  unit?: "mmol/L" | "mg/dL" | "%" | "U" | "g" | "min" | "gaps";
+}
+
+export interface TarvisEvidenceWindowPresentation {
+  label: string;
+  range: { start: number; end: number };
+  recordCount: number;
+  /** Present only when coverage is a meaningful, measured property. */
+  coveragePercent?: number;
+  coverageStatus: "sufficient" | "limited" | "unavailable";
+  recordLabel?: string;
+  metrics: TarvisEvidenceMetric[];
+}
+
+export interface TarvisEvidencePresentation {
+  kind:
+    | "average-glucose"
+    | "glucose-statistic"
+    | "glucose-reading-count"
+    | "low-events"
+    | "high-events"
+    | "glucose-events"
+    | "time-in-range"
+    | "glucose-summary"
+    | "current-glucose"
+    | "personal-data";
+  title: string;
+  detail: string;
+  windows: TarvisEvidenceWindowPresentation[];
+}
+
+interface QuestionSignals {
+  average: boolean;
+  lowEvents: boolean;
+  highEvents: boolean;
+  timeInRange: boolean;
+  comparison: boolean;
+}
+
+const MIN_SUMMARY_COVERAGE_PERCENT = 70;
+
+function coverageStatus(summary: TarvisInsightWindowSummary) {
+  if (summary.glucoseReadings === 0) return "unavailable" as const;
+  return summary.coveragePercent < MIN_SUMMARY_COVERAGE_PERCENT
+    ? ("limited" as const)
+    : ("sufficient" as const);
+}
+
+function questionSignals(question: string): QuestionSignals {
+  const normalized = question.trim().toLocaleLowerCase("en-GB");
+  const mentionsGlucose =
+    /\b(glucose|blood sugar|sugar|cgm|sensor|readings?|levels?|numbers?)\b/.test(
+      normalized,
+    );
+  return {
+    average: mentionsGlucose && /\b(average|mean|avg)\b/.test(normalized),
+    lowEvents:
+      /\b(lows|low(?:[- ]glucose)? events?|hypos?|hypoglyc(?:aemia|emia)(?: events?)?)\b/.test(
+        normalized,
+      ),
+    highEvents:
+      /\b(highs|high(?:[- ]glucose)? events?|hypers?|hyperglyc(?:aemia|emia)(?: events?)?)\b/.test(
+        normalized,
+      ),
+    timeInRange: /\b(time in range|tir|timing range)\b/.test(normalized),
+    comparison:
+      /\b(compare|compared|comparison|versus|vs\.?|previous|prior|change|changed|different|difference)\b/.test(
+        normalized,
+      ),
+  };
+}
+
+function hasMetricSignal(signals: QuestionSignals) {
+  return (
+    signals.average ||
+    signals.lowEvents ||
+    signals.highEvents ||
+    signals.timeInRange
+  );
+}
+
+// Only a genuinely compact follow-up may inherit a prior metric. In
+// particular, a complete standalone question containing the ordinary word
+// "and" must never inherit the previous answer's metric.
+const CONTEXTUAL_METRIC_FOLLOW_UP =
+  /^(?:(?:what|how) about(?: (?:that|it|them|the (?:previous|prior|earlier|recent|current) period))?|and (?:that|it|them|the (?:previous|prior|earlier|recent|current) period)|compare (?:it|that|them)|(?:the )?(?:previous|prior|earlier|recent|current) period)[?.! ]*$/i;
+
+function resolvedQuestionSignals(
+  question: string,
+  history: TarvisConversationTurn[] = [],
+): QuestionSignals {
+  const current = questionSignals(question);
+  if (hasMetricSignal(current) || !CONTEXTUAL_METRIC_FOLLOW_UP.test(question)) {
+    return current;
+  }
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const turn = history[index];
+    if (turn?.role !== "user") continue;
+    const previous = questionSignals(turn.text);
+    if (!hasMetricSignal(previous)) continue;
+    return {
+      ...previous,
+      comparison: current.comparison || previous.comparison,
+    };
+  }
+  return current;
+}
+
+function metricsFor(
+  summary: TarvisInsightWindowSummary,
+  signals: QuestionSignals,
+): TarvisEvidenceMetric[] {
+  const metrics: TarvisEvidenceMetric[] = [];
+  const status = coverageStatus(summary);
+  const observedLabel = (label: string) =>
+    status === "limited" ? `Observed ${label.toLowerCase()}` : label;
+  if (signals.average) {
+    const regional = getRuntimeRegionalDefaults();
+    metrics.push({
+      id: "average-glucose",
+      label: observedLabel("Average glucose"),
+      value:
+        status === "unavailable" || summary.glucoseAverage === null
+          ? null
+          : glucoseFromMmolL(summary.glucoseAverage, regional.glucoseUnit),
+      decimals: regional.glucoseUnit === "mgDl" ? 0 : 1,
+      unit: glucoseUnitLabel(regional.glucoseUnit),
+    });
+  }
+  if (signals.lowEvents) {
+    metrics.push({
+      id: "low-events",
+      label: observedLabel("Sustained lows"),
+      value: status === "unavailable" ? null : summary.lowGlucoseRuns,
+      decimals: 0,
+    });
+  }
+  if (signals.highEvents) {
+    metrics.push({
+      id: "high-events",
+      label: observedLabel("Sustained highs"),
+      value: status === "unavailable" ? null : summary.highGlucoseRuns,
+      decimals: 0,
+    });
+  }
+  if (signals.timeInRange) {
+    metrics.push(
+      {
+        id: "time-below-range",
+        label: observedLabel("Below range"),
+        value: status === "unavailable" ? null : summary.timeBelowPercent,
+        decimals: 1,
+        unit: "%",
+      },
+      {
+        id: "time-in-range",
+        label: observedLabel("In range"),
+        value: status === "unavailable" ? null : summary.timeInRangePercent,
+        decimals: 1,
+        unit: "%",
+      },
+      {
+        id: "time-above-range",
+        label: observedLabel("Above range"),
+        value: status === "unavailable" ? null : summary.timeAbovePercent,
+        decimals: 1,
+        unit: "%",
+      },
+    );
+  }
+  return metrics;
+}
+
+function presentationKind(signals: QuestionSignals) {
+  const selected = [
+    signals.average,
+    signals.lowEvents,
+    signals.highEvents,
+    signals.timeInRange,
+  ].filter(Boolean).length;
+  if (selected > 1) return "glucose-summary" as const;
+  if (signals.average) return "average-glucose" as const;
+  if (signals.lowEvents) return "low-events" as const;
+  if (signals.highEvents) return "high-events" as const;
+  return "time-in-range" as const;
+}
+
+function presentationTitle(signals: QuestionSignals) {
+  const kind = presentationKind(signals);
+  switch (kind) {
+    case "average-glucose":
+      return "Average glucose for this period";
+    case "low-events":
+      return "Low-glucose events in this period";
+    case "high-events":
+      return "High-glucose events in this period";
+    case "time-in-range":
+      return "Time in range for this period";
+    default:
+      return "Glucose summary for this period";
+  }
+}
+
+function presentationDetail(signals: QuestionSignals) {
+  const details: string[] = [];
+  if (signals.average) {
+    details.push("The average accounts for the time covered by each reading");
+  }
+  if (signals.lowEvents || signals.highEvents) {
+    const thresholds = [
+      signals.lowEvents
+        ? `below ${formatGlucose(3.9, getRuntimeRegionalDefaults())}`
+        : "",
+      signals.highEvents
+        ? `above ${formatGlucose(10, getRuntimeRegionalDefaults())}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" or ");
+    details.push(
+      `A sustained event starts after readings stay ${thresholds} for at least 15 minutes and ends after they stay back across the level for at least 15 minutes. A gap longer than 12 minutes ends the event`,
+    );
+  }
+  if (signals.timeInRange) {
+    details.push(
+      `Range percentages use the time covered by readings between ${formatGlucose(3.9, getRuntimeRegionalDefaults())} and ${formatGlucose(10, getRuntimeRegionalDefaults())}`,
+    );
+  }
+  return `${details.join(". ")}.`;
+}
+
+function windowsFor(
+  packet: TarvisEvidencePacket,
+  signals: QuestionSignals,
+): TarvisEvidenceWindowPresentation[] {
+  const windowFor = (
+    label: string,
+    range: { start: number; end: number },
+    summary: TarvisInsightWindowSummary,
+  ): TarvisEvidenceWindowPresentation => ({
+    label,
+    range,
+    recordCount: summary.glucoseReadings,
+    coveragePercent: summary.coveragePercent,
+    coverageStatus: coverageStatus(summary),
+    metrics: metricsFor(summary, signals),
+  });
+  const windows = [
+    windowFor(
+      signals.comparison ? "Recent period" : "Requested period",
+      packet.comparison.currentRange,
+      packet.comparison.current,
+    ),
+  ];
+  if (signals.comparison) {
+    windows.push(
+      windowFor(
+        "Previous period",
+        packet.comparison.previousRange,
+        packet.comparison.previous,
+      ),
+    );
+  }
+  return windows;
+}
+
+function metricAnswer(metric: TarvisEvidenceMetric) {
+  if (metric.value === null) return undefined;
+  const value = formatTarvisFixedNumber(metric.value, metric.decimals);
+  switch (metric.id) {
+    case "average-glucose":
+      return `average glucose was ${value} ${metric.unit}`;
+    case "low-events":
+      return `${value} sustained low-glucose event${metric.value === 1 ? " was" : "s were"} observed`;
+    case "high-events":
+      return `${value} sustained high-glucose event${metric.value === 1 ? " was" : "s were"} observed`;
+    case "time-below-range":
+      return `${value}% of observed sensor time was below range`;
+    case "time-in-range":
+      return `${value}% was in range`;
+    case "time-above-range":
+      return `${value}% was above range`;
+  }
+}
+
+function guardedWindowAnswer(window: TarvisEvidenceWindowPresentation) {
+  if (window.coverageStatus === "unavailable") {
+    return `${window.label} has no glucose readings, so the requested glucose result is unavailable.`;
+  }
+  const values = window.metrics.flatMap((metric) => {
+    const copy = metricAnswer(metric);
+    return copy ? [copy] : [];
+  });
+  if (window.coverageStatus === "limited") {
+    return `${window.label} has ${formatTarvisNumber(window.coveragePercent!, { maximumFractionDigits: 1 })}% sensor coverage. In the available readings, ${values.join(", ")}. These are observed values, not complete-period estimates.`;
+  }
+  return `${window.label} has ${formatTarvisNumber(window.coveragePercent!, { maximumFractionDigits: 1 })}% sensor coverage; ${values.join(", ")}.`;
+}
+
+function relevantCoverageEvidenceIds(
+  packet: TarvisEvidencePacket,
+  signals: QuestionSignals,
+) {
+  const ranges = [
+    { preferredId: "current-glucose", range: packet.comparison.currentRange },
+    ...(signals.comparison
+      ? [
+          {
+            preferredId: "previous-glucose",
+            range: packet.comparison.previousRange,
+          },
+        ]
+      : []),
+  ];
+  return ranges.flatMap(({ preferredId, range }) => {
+    const preferred = packet.evidence.find(
+      (evidence) => evidence.id === preferredId,
+    );
+    if (preferred) return [preferred.id];
+    const fallback = packet.evidence.find(
+      (evidence) =>
+        evidence.range.start === range.start &&
+        evidence.range.end === range.end &&
+        /glucose|sensor|cgm/i.test(
+          `${evidence.id} ${evidence.label} ${evidence.description}`,
+        ),
+    );
+    return fallback ? [fallback.id] : [];
+  });
+}
+
+/**
+ * Low-coverage metric answers use deterministic packet values so the model
+ * cannot turn an observed partial-window value into a complete-period claim.
+ */
+export function applyTarvisCoverageGuardrailResult(
+  question: string,
+  packet: TarvisEvidencePacket,
+  answer: TarvisAnswer,
+  history: TarvisConversationTurn[] = [],
+  answerProvenance: "hosted" | "local" = "hosted",
+): { answer: TarvisAnswer; replacedHostedProse: boolean } {
+  const signals = resolvedQuestionSignals(question, history);
+  if (!hasMetricSignal(signals)) {
+    return { answer, replacedHostedProse: false };
+  }
+  const windows = windowsFor(packet, signals);
+  const limitedWindows = windows.filter(
+    (window) => window.coverageStatus !== "sufficient",
+  );
+  if (!limitedWindows.length) {
+    return { answer, replacedHostedProse: false };
+  }
+  const unavailable = limitedWindows.some(
+    (window) => window.coverageStatus === "unavailable",
+  );
+  const limitation = unavailable
+    ? "No glucose readings were available for at least one requested period."
+    : `At least one requested period had less than ${MIN_SUMMARY_COVERAGE_PERCENT}% sensor coverage, so its values describe observed readings only.`;
+  return {
+    replacedHostedProse: true,
+    answer: {
+      ...answer,
+      headline: unavailable
+        ? signals.comparison
+          ? "Glucose comparison incomplete"
+          : "Glucose result unavailable"
+        : "Observed glucose results",
+      answer: windows.map(guardedWindowAnswer).join(" "),
+      confidence: "limited",
+      evidenceIds: [
+        ...new Set([
+          ...relevantCoverageEvidenceIds(packet, signals),
+          ...(answerProvenance === "local" ? answer.evidenceIds : []),
+        ]),
+      ].slice(0, 5),
+      limitations: [
+        limitation,
+        ...(answerProvenance === "local"
+          ? answer.limitations.filter((item) => item !== limitation)
+          : []),
+      ].slice(0, 5),
+    },
+  };
+}
+
+export function applyTarvisCoverageGuardrail(
+  question: string,
+  packet: TarvisEvidencePacket,
+  answer: TarvisAnswer,
+  history: TarvisConversationTurn[] = [],
+): TarvisAnswer {
+  return applyTarvisCoverageGuardrailResult(question, packet, answer, history)
+    .answer;
+}
+
+/**
+ * Builds a small, deterministic summary for the response card. Values come
+ * from the same on-device report sent to Tarv1s, never from model-written text
+ * or sparse evidence previews.
+ */
+export function buildTarvisEvidencePresentation(
+  question: string,
+  packet: TarvisEvidencePacket,
+  answer: TarvisAnswer,
+  history: TarvisConversationTurn[] = [],
+): TarvisEvidencePresentation | undefined {
+  const signals = resolvedQuestionSignals(question, history);
+  if (
+    !answer.evidenceIds.some((id) =>
+      packet.evidence.some((evidence) => evidence.id === id),
+    ) ||
+    !hasMetricSignal(signals)
+  ) {
+    return undefined;
+  }
+
+  const windows = windowsFor(packet, signals);
+  if (!windows[0]?.metrics.length) return undefined;
+
+  return {
+    kind: presentationKind(signals),
+    title: presentationTitle(signals),
+    detail: presentationDetail(signals),
+    windows,
+  };
+}
+
+export function isTarvisEvidencePresentation(
+  value: unknown,
+): value is TarvisEvidencePresentation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const presentation = value as Partial<TarvisEvidencePresentation>;
+  return (
+    typeof presentation.kind === "string" &&
+    typeof presentation.title === "string" &&
+    typeof presentation.detail === "string" &&
+    Array.isArray(presentation.windows) &&
+    presentation.windows.length > 0 &&
+    presentation.windows.every(
+      (window) =>
+        window &&
+        typeof window.label === "string" &&
+        Number.isFinite(window.range?.start) &&
+        Number.isFinite(window.range?.end) &&
+        typeof window.recordCount === "number" &&
+        (window.coveragePercent === undefined ||
+          typeof window.coveragePercent === "number") &&
+        (window.coverageStatus === "sufficient" ||
+          window.coverageStatus === "limited" ||
+          window.coverageStatus === "unavailable") &&
+        Array.isArray(window.metrics) &&
+        window.metrics.every(
+          (metric) =>
+            metric &&
+            typeof metric.id === "string" &&
+            typeof metric.label === "string" &&
+            (metric.value === null || Number.isFinite(metric.value)) &&
+            (metric.decimals === 0 || metric.decimals === 1),
+        ),
+    )
+  );
+}

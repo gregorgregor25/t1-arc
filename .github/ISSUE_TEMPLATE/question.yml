@@ -1,0 +1,29 @@
+name: Usage question
+description: Ask about a T1 Arc screen or guide without sharing private health or account data.
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        T1 Arc cannot provide treatment advice or emergency support. Use this form for an app or guide question. Never post credentials, health readings, account details, databases, backups, exports, or identifying screenshots. Report security vulnerabilities privately under SECURITY.md.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Name the screen or guide step that is unclear. Use invented examples.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: App and Android version, if relevant
+      description: Find build details under About T1 Arc. Do not include device serial numbers or account details.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I included no personal health data, credentials, account identifiers or private files.
+          required: true
+        - label: This is an app-use question, not medical advice or a security vulnerability.
+          required: true

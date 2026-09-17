@@ -1,0 +1,39 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <queries>
+    <package android:name="com.camdiab.camapsfx" />
+    <package android:name="com.camdiab.camapsfx.mgdl" />
+    <package android:name="com.dexcom.cgm" />
+    <package android:name="com.dexcom.g7" />
+    <package android:name="com.dexcom.one.region1" />
+    <package android:name="com.dexcom.one.region2" />
+    <package android:name="com.gluroo.gluroo" />
+    <package android:name="com.insulet.myblue.pdm" />
+    <package android:name="com.isens.csair" />
+    <package android:name="com.medtronic.diabetes.minimedmobile.eu" />
+    <package android:name="com.medtronic.diabetes.minimedmobile.usa" />
+    <package android:name="com.medtrum.easycare" />
+    <package android:name="com.microtech.aidexx.cgm" />
+    <package android:name="com.microtech.aidexx.diaexport.mmoll" />
+    <package android:name="com.microtechmd.cgms" />
+    <package android:name="com.microtechmd.cgms.mgdl" />
+    <package android:name="com.microtechmd.cgms.mmol" />
+    <package android:name="com.senseonics.gen2.plus" />
+    <package android:name="com.signos.core" />
+    <package android:name="com.signos.signos" />
+    <package android:name="com.sinocare.ican.health" />
+    <package android:name="esel.esel" />
+  </queries>
+
+  <application>
+    <service
+      android:name=".T1ArcNotificationListenerService"
+      android:enabled="true"
+      android:exported="true"
+      android:label="@string/t1arc_notification_source_service_name"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

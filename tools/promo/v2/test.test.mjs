@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { validateEdit, durationOf, FORMATS, FPS } from './edit.mjs';
+import { allowedPath } from './server.mjs';
+const sample=()=>({approvedRealCaptures:true,scenes:[{id:'question',duration:8,source:'capture.mp4',in:0,title:'Ask Tarv1s',eyebrow:'YOUR RECORDS',provenance:'Owner-approved capture'}]});
+test('edit requires explicit real-capture approval',()=>{assert.throws(()=>validateEdit({...sample(),approvedRealCaptures:false}));});
+test('valid source timing and duration',()=>{assert.equal(durationOf(validateEdit(sample())),8);assert.equal(FPS,30);});
+test('reject duplicate IDs and unsafe filenames',()=>{let e=sample();e.scenes.push({...e.scenes[0]});assert.throws(()=>validateEdit(e));e=sample();e.scenes[0].id='../private';assert.throws(()=>validateEdit(e));});
+test('reject misleading demo captions and em dashes',()=>{for(const detail of ['Example data','A\u2014B']){const e=sample();e.scenes[0].detail=detail;assert.throws(()=>validateEdit(e));}});
+test('screen fits both formats and retains captured aspect ratio',()=>{for(const f of Object.values(FORMATS)){const r=f.screen;assert.ok(r.x>0&&r.y>0&&r.x+r.width<f.width&&r.y+r.height<f.height);assert.ok(Math.abs(r.width/r.height-1080/2124)<.001);}});
+test('preview only serves explicit media and renderer files',()=>{for(const p of ['../.env','../../.qa/key.json','media/../edit.json','media/a.mp4','node_modules/three/../../secret.js','.qa/a.png','C:\\private'])assert.equal(allowedPath(p),null);assert.ok(allowedPath('media/question.png'));assert.ok(allowedPath('edit.json'));});

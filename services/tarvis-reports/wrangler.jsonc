@@ -1,0 +1,22 @@
+{
+  "name": "t1arc-tarvis-reports",
+  "account_id": "250f64af9e24a9b96c779141aefa24c9",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-09-09",
+  "workers_dev": false,
+  "routes": [{"pattern": "reports.t1arc.com", "custom_domain": true}],
+  "preview_urls": false,
+  "send_email": [{
+    "name": "SUPPORT_EMAIL",
+    "destination_address": "t1arc.support@gmail.com"
+  }],
+  "ratelimits": [
+    {"name": "REPORT_LIMIT", "namespace_id": "2026090901", "simple": {"limit": 5, "period": 60}},
+    {"name": "TOTAL_LIMIT", "namespace_id": "2026090902", "simple": {"limit": 30, "period": 60}}
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {"enabled": true, "invocation_logs": false, "head_sampling_rate": 1},
+    "traces": {"enabled": true, "head_sampling_rate": 0.01}
+  }
+}

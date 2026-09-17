@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.gregorgregor25.t1arc.glooko'
+version = '0.1.0'
+
+android {
+  namespace "io.github.gregorgregor25.t1arc.glooko"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+  lintOptions {
+    abortOnError true
+  }
+}
+
+dependencies {
+  implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+  implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'com.squareup.okhttp3:mockwebserver:4.9.2'
+  testImplementation 'org.json:json:20250517'
+}

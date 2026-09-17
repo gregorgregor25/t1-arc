@@ -1,0 +1,103 @@
+{
+  "capturedOn": "2026-09-07",
+  "phoneVersion": "1.7.1 (28), private-test candidate",
+  "watchFaceVersion": "0.3.0 (3), private-test candidate",
+  "personalData": false,
+  "method": "Unmodified adb screencap PNGs mapped onto original procedural 3D geometry.",
+  "phoneData": "Built-in example repository in a fresh emulator profile. No connected accounts or AI key.",
+  "foodData": "Demo yoghurt bowl is a fictional custom food: 100 g, 24 g carbohydrate, 210 kcal, 12 g protein, 7 g fat. Not nutrition reference data.",
+  "watchData": "Separate synthetic capture session, 6.8 mmol/L with current status. Times and step totals are not a live paired-device session.",
+  "aiContent": "The real Tarv1s home screen is shown. No AI answer or medical outcome is fabricated.",
+  "files": [
+    {
+      "file": "tarv1s.png",
+      "width": 1080,
+      "height": 2400,
+      "bytes": 306512,
+      "sha256": "935b53d15edba93cdcb8720d256b1a917431346c05281618d449efe4f82ce39c",
+      "source": "Android 17 emulator, isolated demo profile",
+      "synthetic": true
+    },
+    {
+      "file": "today.png",
+      "width": 1080,
+      "height": 2400,
+      "bytes": 876767,
+      "sha256": "541cebed5d711c89046f7d10ecc0ceb4f799bc2262d09e661fc675525ae16607",
+      "source": "Android 17 emulator, isolated demo profile",
+      "synthetic": true
+    },
+    {
+      "file": "history.png",
+      "width": 1080,
+      "height": 2400,
+      "bytes": 640836,
+      "sha256": "ae70f3c643c20bafc8e54390a52852dc15a5c4c2bb04dd269e4f38e2d36591b6",
+      "source": "Android 17 emulator, isolated demo profile",
+      "synthetic": true
+    },
+    {
+      "file": "health.png",
+      "width": 1080,
+      "height": 2400,
+      "bytes": 779611,
+      "sha256": "7ce26253ff55d0e106b5df78ce733ff5bfc24e484957771cf78fe1bcc883d8b3",
+      "source": "Android 17 emulator, isolated demo profile",
+      "synthetic": true
+    },
+    {
+      "file": "food.png",
+      "width": 1080,
+      "height": 2400,
+      "bytes": 208308,
+      "sha256": "85c268ec42d041926c171a29cf705706245170603424aab582920215ca4bbbc7",
+      "source": "Android 17 emulator, isolated demo profile",
+      "synthetic": true
+    },
+    {
+      "file": "meridian.png",
+      "width": 454,
+      "height": 454,
+      "bytes": 42123,
+      "sha256": "3aa8874fe5eb0050c0337344d81d48459f352e81d35602cfa25d288820e2cee8",
+      "source": "Wear OS 6 emulator, synthetic complication fixture",
+      "synthetic": true
+    },
+    {
+      "file": "chronograph.png",
+      "width": 454,
+      "height": 454,
+      "bytes": 73345,
+      "sha256": "479be37922400aa0ec66620c9776bae043333d2ec14f1532b4260bcb9ce033c6",
+      "source": "Wear OS 6 emulator, synthetic complication fixture",
+      "synthetic": true
+    },
+    {
+      "file": "atelier.png",
+      "width": 454,
+      "height": 454,
+      "bytes": 65619,
+      "sha256": "5d38fa98676789a56bc055b45a625bae0613c8987b2e12901f6504bdbcc56645",
+      "source": "Wear OS 6 emulator, synthetic complication fixture",
+      "synthetic": true
+    },
+    {
+      "file": "pace.png",
+      "width": 454,
+      "height": 454,
+      "bytes": 40781,
+      "sha256": "5573f24bb34b2a7a5154d5b28352afac1b1ad1c9640a28ab943f682960982c5b",
+      "source": "Wear OS 6 emulator, synthetic complication fixture",
+      "synthetic": true
+    },
+    {
+      "file": "summit.png",
+      "width": 454,
+      "height": 454,
+      "bytes": 43010,
+      "sha256": "7939fd8a14029c5640f9222a281d223eec4995d42f198a6902920b37484d8eee",
+      "source": "Wear OS 6 emulator, synthetic complication fixture",
+      "synthetic": true
+    }
+  ]
+}

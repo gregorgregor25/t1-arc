@@ -1,0 +1,66 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.gregorgregor25.t1arc.foodlabel'
+version = '0.1.0'
+
+android {
+  namespace 'io.github.gregorgregor25.t1arc.foodlabel'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+    consumerProguardFiles 'consumer-rules.pro'
+    testInstrumentationRunner 'io.github.gregorgregor25.t1arc.foodlabel.FoodLabelSmokeInstrumentation'
+  }
+  sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/foodOcrAssets'))
+}
+
+// Bundled at build time: no user download, account, API key or OCR service.
+def modelSha256 = 'e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318'
+def modelOutput = layout.buildDirectory.file('generated/foodOcrAssets/t1arc-ocr/en-v4.onnx')
+tasks.register('prepareFoodLabelModel') {
+  outputs.file(modelOutput)
+  // Verify even an existing build-cache copy before packaging it.
+  outputs.upToDateWhen { false }
+  doLast {
+    def target = modelOutput.get().asFile
+    def digest = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+    if (!target.exists()) {
+      target.parentFile.mkdirs()
+      def connection = new URI('https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx').toURL().openConnection()
+      connection.connectTimeout = 30000
+      connection.readTimeout = 30000
+      def temporary = new File(target.parentFile, 'en-v4.download')
+      try {
+        connection.inputStream.withCloseable { input ->
+          temporary.withOutputStream { output ->
+            byte[] buffer = new byte[65536]
+            long total = 0
+            int count
+            while ((count = input.read(buffer)) != -1) {
+              total += count
+              if (total > 8000000) throw new GradleException('Nutrition OCR model exceeds its pinned size bound.')
+              output.write(buffer, 0, count)
+            }
+          }
+        }
+        if (digest(temporary) != modelSha256) throw new GradleException('Nutrition OCR model checksum mismatch.')
+        java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+      } finally { temporary.delete() }
+    }
+    if (digest(target) != modelSha256) throw new GradleException('Nutrition OCR model checksum mismatch.')
+  }
+}
+tasks.named('preBuild').configure { dependsOn('prepareFoodLabelModel') }
+
+dependencies {
+  // Bundled Latin model: recognition works offline, including first use.
+  // https://developers.google.com/ml-kit/vision/text-recognition/v2/android
+  implementation 'com.google.mlkit:text-recognition:16.0.1'
+  implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.24.3'
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.exifinterface:exifinterface:1.4.2'
+  testImplementation 'junit:junit:4.13.2'
+}

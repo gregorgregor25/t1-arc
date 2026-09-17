@@ -1,0 +1,51 @@
+// The APK is a generated, verified asset, never a checked-in binary.
+abstract class GenerateCompanionInstallerAsset extends DefaultTask {
+    @Input abstract Property<String> getExpectedPackage()
+    @Input abstract Property<String> getExpectedCertificate()
+    @Input abstract Property<Integer> getExpectedVersion()
+    @Input abstract Property<String> getExpectedVersionName()
+    @InputFile abstract RegularFileProperty getCompanionApk()
+    @InputFile abstract RegularFileProperty getScriptFile()
+    @InputFile abstract RegularFileProperty getAnalyzerJar()
+    @InputFile abstract RegularFileProperty getSignerJar()
+    @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+    @Inject abstract ExecOperations getExecOperations()
+
+    @TaskAction void generate() {
+        execOperations.exec {
+            commandLine('node', scriptFile.get().asFile.absolutePath,
+                '--apk', companionApk.get().asFile.absolutePath,
+                '--package', expectedPackage.get(), '--certificate', expectedCertificate.get(),
+                '--version', expectedVersion.get().toString(),
+                '--version-name', expectedVersionName.get(),
+                '--analyzer', analyzerJar.get().asFile.absolutePath,
+                '--signer', signerJar.get().asFile.absolutePath,
+                '--output', outputDirectory.get().asFile.absolutePath)
+        }.assertNormalExitValue()
+    }
+}
+
+if (System.getenv('T1ARC_WATCH_INSTALLER') == '1') {
+    androidComponents {
+        onVariants(selector().all()) { variant ->
+            def signing = android.buildTypes.getByName(variant.buildType).signingConfig
+            def generator = tasks.register('generate' + variant.name.capitalize() + 'CompanionInstaller', GenerateCompanionInstallerAsset) {
+                dependsOn(':wear:assemble' + variant.buildType.capitalize())
+                expectedPackage.set(variant.applicationId)
+                expectedVersion.set((new groovy.json.JsonSlurper().parse(rootProject.file('../app.json')).expo.android.versionCode as int) + 1)
+                expectedVersionName.set(new groovy.json.JsonSlurper().parse(rootProject.file('../app.json')).expo.version as String)
+                expectedCertificate.set(providers.provider {
+                    if (signing?.storeFile == null) throw new GradleException('Watch installer requires explicit matching signing.')
+                    def store = java.security.KeyStore.getInstance(signing.storeFile, signing.storePassword.toCharArray())
+                    java.security.MessageDigest.getInstance('SHA-256').digest(store.getCertificate(signing.keyAlias).encoded).encodeHex().toString()
+                })
+                companionApk.set(rootProject.layout.projectDirectory.file('../wear/companion/build/outputs/apk/' + variant.buildType + '/wear-' + variant.buildType + '.apk'))
+                scriptFile.set(rootProject.layout.projectDirectory.file('../scripts/prepare-companion-installer.mjs'))
+                analyzerJar.set(new File(android.sdkDirectory, 'cmdline-tools/latest/lib/apkanalyzer-classpath.jar'))
+                signerJar.set(new File(android.sdkDirectory, 'build-tools/' + rootProject.ext.buildToolsVersion + '/lib/apksigner.jar'))
+                outputDirectory.set(layout.buildDirectory.dir('generated/companionInstaller/' + variant.name))
+            }
+            variant.sources.assets.addGeneratedSourceDirectory(generator) { it.outputDirectory }
+        }
+    }
+}

@@ -1,0 +1,153 @@
+import { MealEvent } from '@/domain/models';
+
+export type FoodProviderId =
+  | 'cofid'
+  | 'cnf'
+  | 'ciqual'
+  | 'bls'
+  | 'fineli'
+  | 'mext-jp'
+  | 'open-food-facts'
+  | 'usda-fdc'
+  | 'user';
+export type FoodBasisUnit = 'g' | 'ml';
+export type NutrientQuality = 'reported' | 'trace' | 'missing';
+
+export interface FoodNutrition {
+  carbohydrateGrams?: number;
+  energyKcal?: number;
+  proteinGrams?: number;
+  fatGrams?: number;
+  fibreGrams?: number;
+  sugarsGrams?: number;
+  saturatedFatGrams?: number;
+}
+
+export interface FoodNutritionQuality {
+  carbohydrate: NutrientQuality;
+  energy: NutrientQuality;
+  protein: NutrientQuality;
+  fat: NutrientQuality;
+  fibre: NutrientQuality;
+  sugars: NutrientQuality;
+  saturatedFat: NutrientQuality;
+}
+
+export interface FoodCandidate {
+  id: string;
+  provider: FoodProviderId;
+  externalId: string;
+  name: string;
+  brand?: string;
+  barcode?: string;
+  imageUrl?: string;
+  basisAmount: number;
+  basisUnit: FoodBasisUnit;
+  nutritionPerBasis: FoodNutrition;
+  nutritionQuality: FoodNutritionQuality;
+  defaultServingAmount?: number;
+  defaultServingUnit?: FoodBasisUnit;
+  /** Source-provided portion wording, for example "1 twist (85 g)". */
+  servingLabel?: string;
+  lastPortionAmount?: number;
+  lastPortionUnit?: FoodBasisUnit;
+  /** User-defined portion, in canonical units; never a mass/volume conversion. */
+  personalServingAmount?: number;
+  personalServingUnit?: FoodBasisUnit;
+  personalServingLabel?: string;
+  /** Original source semantics; absent for legacy or unspecified sources. */
+  nutrientDefinitions?: {
+    carbohydrate?: 'available' | 'total' | 'by-difference' | 'unknown';
+    energy?: 'reported' | 'atwater-specific' | 'atwater-general';
+    note?: string;
+  };
+  sourceLabel: string;
+  sourceUrl?: string;
+  /** When mutable provider catalogue values were last fetched, not last used. */
+  catalogueObservedAt?: number;
+  catalogueStatus?: 'fresh' | 'stale';
+  rawPayload?: unknown;
+}
+
+export interface FoodLogItemDraft {
+  food: FoodCandidate;
+  amount: number;
+  unit: FoodBasisUnit;
+}
+
+export interface FoodLogDraft {
+  photoData?: string | null;
+  timestamp: number;
+  mealType: MealEvent['mealType'];
+  title?: string;
+  items: FoodLogItemDraft[];
+}
+
+export interface FoodLogItemSnapshot {
+  id: string;
+  foodId: string;
+  provider: FoodProviderId;
+  externalId: string;
+  name: string;
+  brand?: string;
+  barcode?: string;
+  amount: number;
+  unit: FoodBasisUnit;
+  nutrition: FoodNutrition;
+  sourceLabel: string;
+  sourceUrl?: string;
+}
+
+export interface FoodLog {
+  /** Included in transactional replacement/undo snapshots, not ordinary lists. */
+  photoData?: string;
+  id: string;
+  contextEventId: string;
+  timestamp: number;
+  mealType: MealEvent['mealType'];
+  title: string;
+  nutrition: FoodNutrition;
+  items: FoodLogItemSnapshot[];
+  createdAt: number;
+  isFavorite?: boolean;
+}
+
+export interface FoodMealPreset {
+  id: string;
+  title: string;
+  mealType: MealEvent['mealType'];
+  nutrition: FoodNutrition;
+  items: FoodLogItemDraft[];
+  isFavorite: boolean;
+}
+
+export interface FoodRecipe {
+  id: string;
+  name: string;
+  mealType: MealEvent['mealType'];
+  servings: number;
+  nutrition: FoodNutrition;
+  ingredients: FoodLogItemDraft[];
+  isFavorite: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FoodRecipeDraft {
+  photoData?: string | null;
+  name: string;
+  mealType: MealEvent['mealType'];
+  servings: number;
+  ingredients: FoodLogItemDraft[];
+}
+
+export interface UserFoodDraft {
+  photoData?: string | null;
+  labelConvention?: import('./labelConvention').LabelConvention;
+  name: string;
+  brand?: string;
+  barcode?: string;
+  servingAmount: number;
+  servingUnit: FoodBasisUnit;
+  nutritionPerServing: FoodNutrition;
+}

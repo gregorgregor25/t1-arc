@@ -1,0 +1,1 @@
+# Intentionally no environment variables. Local media render needs no API keys.

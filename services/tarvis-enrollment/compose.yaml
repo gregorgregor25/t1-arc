@@ -1,0 +1,48 @@
+services:
+  tarvis-enrollment:
+    build:
+      context: .
+    image: t1arc/tarvis-enrollment:poc
+    restart: unless-stopped
+    init: true
+    network_mode: bridge
+    ports:
+      - "${TARVIS_ENROLLMENT_BIND_IP:-127.0.0.1}:${TARVIS_ENROLLMENT_PORT:-7314}:7314"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 7314
+      TARVIS_ENROLLMENT_BEARER_TOKEN: ${TARVIS_ENROLLMENT_BEARER_TOKEN:?Set a private bearer token}
+      TARVIS_ENROLLMENT_CA_CERT_FILE: /run/tarvis-enrollment-secrets/ca-certificate.pem
+      TARVIS_ENROLLMENT_CA_KEY_FILE: /run/tarvis-enrollment-secrets/ca-private-key.pem
+      TARVIS_ALLOWED_ATTESTATION_ROOT_SHA256: ${TARVIS_ALLOWED_ATTESTATION_ROOT_SHA256:?Allowlist the reviewed Android attestation root}
+      TARVIS_ALLOWED_ANDROID_PACKAGES: ${TARVIS_ALLOWED_ANDROID_PACKAGES:?Allowlist the T1 Arc Android package}
+      TARVIS_ALLOWED_ANDROID_SIGNING_CERT_SHA256: ${TARVIS_ALLOWED_ANDROID_SIGNING_CERT_SHA256:?Allowlist the T1 Arc Android signing certificate}
+      TARVIS_ENROLLMENT_CHALLENGE_TTL_MS: ${TARVIS_ENROLLMENT_CHALLENGE_TTL_MS:-120000}
+      TARVIS_ENROLLMENT_CERTIFICATE_TTL_MS: ${TARVIS_ENROLLMENT_CERTIFICATE_TTL_MS:-300000}
+      TARVIS_ENROLLMENT_MAX_CHALLENGES: ${TARVIS_ENROLLMENT_MAX_CHALLENGES:-1024}
+    volumes:
+      - "${TARVIS_ENROLLMENT_SECRET_DIR:?Point to the private development CA directory}:/run/tarvis-enrollment-secrets:ro"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 80
+    mem_limit: 256m
+    memswap_limit: 256m
+    mem_swappiness: 0
+    cpus: 0.5
+    ulimits:
+      core: 0
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7314/poc/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

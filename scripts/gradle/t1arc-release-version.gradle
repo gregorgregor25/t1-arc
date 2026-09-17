@@ -1,0 +1,10 @@
+/* One release name; disjoint increasing phone/Wear codes for the shared listing. */
+def releaseApp = new groovy.json.JsonSlurper().parse(rootProject.file('../app.json')).expo
+def phoneCode = releaseApp.android.versionCode as int
+if (phoneCode < 30 || phoneCode % 2 != 0 || phoneCode >= 2100000000) {
+    throw new GradleException('Starting at release 1.7.3, use an even phone versionCode >= 30 and reserve the next odd code for Wear.')
+}
+ext.t1ArcReleaseVersionName = releaseApp.version.toString()
+ext.t1ArcWearReleaseVersionCode = phoneCode + 1
+// Standalone/Push faces have separate package IDs, so they can reuse the phone code.
+ext.t1ArcFaceReleaseVersionCode = phoneCode

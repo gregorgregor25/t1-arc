@@ -1,0 +1,8 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": [
+      "io.github.gregorgregor25.t1arc.notificationsource.T1ArcNotificationSourceModule"
+    ]
+  }
+}

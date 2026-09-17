@@ -1,0 +1,95 @@
+/*
+ * WFF image assets must be bitmap resources. Retain the original editable
+ * vector paths and rasterise them at build time, identically for both packages.
+ * This deliberately supports only our straight-line hand artwork. New vector
+ * features must be implemented and tested, never silently dropped.
+ */
+abstract class GenerateWatchHands extends DefaultTask {
+    @InputDirectory abstract DirectoryProperty getArtworkDirectory()
+    @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+
+    @TaskAction void generate() {
+        def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        factory.setNamespaceAware(true)
+        factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+        def namespace = 'http://schemas.android.com/apk/res/android'
+        def output = new File(outputDirectory.get().asFile, 'drawable-nodpi')
+        output.mkdirs()
+        artworkDirectory.get().asFile.listFiles().findAll { it.name.endsWith('.xml') }.sort { it.name }.each { artwork ->
+            if (!(artwork.name ==~ /[a-z_]+\.xml/)) throw new GradleException('Unexpected hand artwork name.')
+            def name = artwork.name.substring(0, artwork.name.length() - 4)
+            def vector = factory.newDocumentBuilder().parse(
+                artwork).documentElement
+            if (vector.tagName != 'vector') throw new GradleException('Expected a vector hand.')
+            float width = Float.parseFloat(vector.getAttributeNS(namespace, 'viewportWidth'))
+            float height = Float.parseFloat(vector.getAttributeNS(namespace, 'viewportHeight'))
+            def image = new java.awt.image.BufferedImage(
+                (int) Math.round(width * 4), (int) Math.round(height * 4), java.awt.image.BufferedImage.TYPE_INT_ARGB)
+            def graphics = image.createGraphics()
+            try {
+                graphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+                graphics.scale(4, 4)
+                for (int i = 0; i < vector.childNodes.length; i++) {
+                    def element = vector.childNodes.item(i)
+                    if (element.nodeType != org.w3c.dom.Node.ELEMENT_NODE) continue
+                    if (element.tagName != 'path') throw new GradleException('Unsupported hand vector element.')
+                    def allowed = ['fillColor', 'strokeColor', 'strokeWidth', 'pathData']
+                    for (int j = 0; j < element.attributes.length; j++) {
+                        if (!allowed.contains(element.attributes.item(j).localName)) {
+                            throw new GradleException('Unsupported hand vector attribute.')
+                        }
+                    }
+                    def data = element.getAttributeNS(namespace, 'pathData')
+                    def tokenPattern = ~/[MLZ]|-?(?:\d+\.?\d*|\.\d+)/
+                    if (!data.replaceAll(tokenPattern, '').replaceAll(/[\s,]/, '').isEmpty()) {
+                        throw new GradleException('Only straight-line hand paths are supported.')
+                    }
+                    def tokens = (data =~ tokenPattern).collect { it }
+                    def path = new java.awt.geom.Path2D.Float()
+                    int index = 0
+                    while (index < tokens.size()) {
+                        def command = tokens[index++]
+                        if (command == 'Z') { path.closePath(); continue }
+                        if (!(command in ['M', 'L']) || index + 1 >= tokens.size()) {
+                            throw new GradleException('Malformed hand path.')
+                        }
+                        float x = Float.parseFloat(tokens[index++])
+                        float y = Float.parseFloat(tokens[index++])
+                        if (command == 'M') path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    def parseColor = { value ->
+                        if (!(value ==~ /#[0-9A-Fa-f]{8}/)) throw new GradleException('Expected an ARGB hand colour.')
+                        new java.awt.Color((int) Long.parseLong(value.substring(1), 16), true)
+                    }
+                    graphics.setColor(parseColor(element.getAttributeNS(namespace, 'fillColor')))
+                    graphics.fill(path)
+                    def stroke = element.getAttributeNS(namespace, 'strokeColor')
+                    if (!stroke.isEmpty()) {
+                        graphics.setColor(parseColor(stroke))
+                        graphics.setStroke(new java.awt.BasicStroke(
+                            Float.parseFloat(element.getAttributeNS(namespace, 'strokeWidth')),
+                            java.awt.BasicStroke.CAP_BUTT, java.awt.BasicStroke.JOIN_MITER))
+                        graphics.draw(path)
+                    }
+                }
+            } finally { graphics.dispose() }
+            javax.imageio.ImageIO.write(image, 'png', new File(output, name + '.png'))
+        }
+    }
+}
+
+['chronograph', 'atelier', 'summit'].each { face ->
+    def handResources = tasks.register('generate' + face.capitalize() + 'HandResources', GenerateWatchHands) {
+        artworkDirectory.set(rootProject.layout.projectDirectory.dir('../wear/watchface-' + face + '/artwork'))
+        outputDirectory.set(layout.buildDirectory.dir('generated/' + face + '-hands'))
+    }
+    androidComponents {
+        onVariants(selector().all()) { variant ->
+            if (project.name == 'watchface-' + face ||
+                variant.productFlavors.any { it.first == 'face' && it.second == face }) {
+                variant.sources.res.addGeneratedSourceDirectory(handResources) { it.outputDirectory }
+            }
+        }
+    }
+}

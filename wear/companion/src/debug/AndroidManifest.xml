@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name=".GraphActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <receiver
+            android:name=".debug.DebugSnapshotReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="io.github.gregorgregor25.t1arc.wear.DEBUG_SET_GLUCOSE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

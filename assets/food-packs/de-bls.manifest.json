@@ -1,0 +1,31 @@
+{
+  "id": "de-bls",
+  "provider": "bls",
+  "countryCode": "DE",
+  "version": "4.0-2025",
+  "label": "Bundeslebensmittelschlüssel 4.0",
+  "sourceUrl": "https://blsdb.de/assets/uploads/BLS_4_0_2025_DE.zip",
+  "licence": "CC BY 4.0",
+  "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Max Rubner-Institut (2025): Bundeslebensmittelschlüssel (BLS), Version 4.0 – Deutsche Nährstoffdatenbank. Karlsruhe. DOI: 10.25826/Data20251217-134202-0. Processed subset.",
+  "carbohydrateDefinition": "available",
+  "carbohydrateNote": "Available carbohydrate, including polyols (BLS CHO); not total carbohydrate including fibre.",
+  "bundled": true,
+  "schemaVersion": 1,
+  "foodCount": 7140,
+  "sourceSha256": "12b7a6ba62807ec9b301eb276f897dc85f99b2292311618dec3749a12d984c91",
+  "sourceFile": "bls-4.0.zip",
+  "basisAmount": 100,
+  "basisUnit": "g",
+  "transformation": "T1 Arc selected nutrients; missing/trace/LOQ and contradictory same-nutrient observations kept non-numeric; no inferred nutrition or density. Source g/GRM and ml/MLT units normalized. Names normalized for whitespace; search removes accents. Stable source IDs retained.",
+  "fileName": "de-bls-4.0-2025.db",
+  "sizeBytes": 2387968,
+  "sha256": "50e24dda91761ef3659d5cc4ec28cbb8b85bbc704399dff1259ea90a6282ae38",
+  "chunkSize": 1048576,
+  "chunkSha256": [
+    "dd1d38ea1c8ccf38833885d7668a7f3f760187fa90418f26bfabd8f53bb464cc",
+    "0c8a93b35205a15c4de2fbf03feec9d18ed603f223ad38854393bdbd680ea708",
+    "ad79988b2d6d9e6a9d85ce7f7e8ae5d7806247dd39e7f032e45210416c3db2f0"
+  ],
+  "compressedBytes": 676725
+}

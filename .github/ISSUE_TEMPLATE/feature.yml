@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused T1 Arc improvement and explain its evidence and privacy impact.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the need without sharing personal health information or account data. A feature request is not evidence of clinical safety, provider permission, dataset licensing, translation quality, or regional availability.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need is not met today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful outcome, not only a UI shape.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or public contract
+      description: Link public specifications or explain what external validation would still be required.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: I included no credentials, personal health data, provider exports, backups/databases or identifying screenshots.
+          required: true
+        - label: I understand that T1 Arc must not provide insulin dosing advice.
+          required: true
+        - label: I considered offline behavior, accessibility, regional units/timezones and upgrade compatibility where relevant.
+          required: true

@@ -1,0 +1,65 @@
+{
+  "direction": "Approved conversational walkthrough. British George, normal sentence endings and no dramatic brand emphasis. No spoken closing tagline. Existing nine-second question scene preserves a pause before the answer.",
+  "durationSeconds": 90,
+  "voiceSettings": { "stability": 0.55, "similarity_boost": 0.75, "style": 0, "use_speaker_boost": true, "speed": 1 },
+  "voices": [{ "name": "George", "id": "JBFqnCBsd6RMkjVDRZzb" }],
+  "cues": [
+    {
+      "id": "today", "start": 0.55, "latestEnd": 9.9,
+      "phrases": [
+        { "text": "Open T1 Arc and you can check your latest glucose reading,", "spoken": "Open Tee One Arc and you can check your latest glucose reading," },
+        { "text": "see which way it's moving," },
+        { "text": "and how recently it was updated." }
+      ]
+    },
+    {
+      "id": "health", "start": 10.3, "latestEnd": 21.6,
+      "phrases": [
+        { "text": "Then you can look at what else has been happening." },
+        { "text": "How you slept, your workouts, your heart rate." },
+        { "text": "Information from your connected apps," },
+        { "text": "available here alongside your glucose." }
+      ]
+    },
+    {
+      "id": "tarvis", "start": 22.2, "latestEnd": 27.7,
+      "phrases": [
+        { "text": "You can also ask Tarv1s about that data,", "spoken": "You can also ask Tarvis about that data," },
+        { "text": "in your own words." }
+      ]
+    },
+    {
+      "id": "question", "start": 28.1, "latestEnd": 37.65,
+      "phrases": [
+        { "text": "Say you want to check how yesterday went." },
+        { "text": "You could start with a simple question:" },
+        { "text": "What was my average glucose yesterday?" }
+      ]
+    },
+    {
+      "id": "answer", "start": 38.8, "latestEnd": 53.5,
+      "phrases": [
+        { "text": "Here, the average was six point six millimoles per litre." },
+        { "text": "You can open the readings behind the answer" },
+        { "text": "and check what it used." },
+        { "text": "It helps explain your records, not recommend treatment." }
+      ]
+    },
+    {
+      "id": "timeline", "start": 54.3, "latestEnd": 65.8,
+      "phrases": [
+        { "text": "To look more closely, open the timeline." },
+        { "text": "You can see glucose alongside meals, insulin and activity," },
+        { "text": "and follow what happened through the day." }
+      ]
+    },
+    {
+      "id": "food", "start": 66.4, "latestEnd": 79.4,
+      "phrases": [
+        { "text": "And you can keep adding to that record as you go." },
+        { "text": "Search for a food, choose your portion," },
+        { "text": "and check the nutritional details before you save." }
+      ]
+    }
+  ]
+}

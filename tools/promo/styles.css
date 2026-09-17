@@ -1,0 +1,49 @@
+:root { color-scheme: dark; font-family: "Segoe UI", Arial, sans-serif; color: #f2f4f7; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #080d17; overflow: hidden; }
+#film { position: relative; width: 100vw; height: 100vh; overflow: hidden; isolation: isolate; }
+.background-glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 76% 30%, #1b3042 0%, #111c30 24%, #080d17 60%); z-index: -2; }
+#scene { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+.masthead { position: absolute; top: 5.5%; left: 5.7%; right: 5.7%; display: flex; align-items: center; justify-content: space-between; }
+.wordmark { display: flex; align-items: center; font-size: 2vw; font-weight: 650; letter-spacing: -.055em; }
+.wordmark svg { width: 2.8vw; height: 1.95vw; margin-right: .75vw; fill: none; stroke: #90a8ff; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.8; }
+.brand-dot { color: #90a8ff; }
+.edition { color: #8895aa; font-size: .68vw; letter-spacing: .20em; font-weight: 650; }
+#copy { position: absolute; top: 26%; left: 5.8%; width: 46%; }
+#copy.right { left: 54%; width: 42%; }
+#eyebrow { font-size: .77vw; font-weight: 700; letter-spacing: .18em; color: #87c9c4; margin: 0 0 1.35vw; }
+h1 { margin: 0; font-size: 4.3vw; line-height: 1.07; font-weight: 630; letter-spacing: -.047em; }
+h1 span, #detail span { display: block; }
+#detail { margin: 2.1vw 0 0; color: #b6c2d1; font-size: 1.22vw; line-height: 1.63; font-weight: 400; letter-spacing: -.01em; }
+#copy.center { left: 5%; top: 14.5%; width: 90%; text-align: center; }
+#copy.center h1 { font-size: 3vw; }
+#copy.center #eyebrow { margin-bottom: .8vw; }
+#copy.center #detail { margin-top: .8vw; font-size: 1.05vw; }
+#note { position: absolute; left: 5.8%; bottom: 15%; color: #95a7bd; font-size: .94vw; letter-spacing: .01em; max-width: 45%; }
+#note.right { left: 54%; }
+#face-names { position: absolute; left: 0; right: 0; top: 82%; display: flex; justify-content: center; gap: 0; font-size: 1.08vw; font-weight: 600; letter-spacing: .01em; }
+#face-names span { position: absolute; transform: translateX(-50%); padding-top: .7vw; }
+#face-names span::before { content: ""; display: block; width: 1.7vw; height: 1px; margin: 0 auto .75vw; background: #6a879c; }
+footer { position: absolute; left: 5.8%; right: 5.8%; bottom: 5.5%; display: flex; align-items: center; justify-content: space-between; color: #7c8c9f; font-size: .67vw; letter-spacing: .01em; }
+footer span:first-child { font-weight: 650; letter-spacing: .15em; color: #95a6bb; }
+.progress-track { position: absolute; left: 5.8%; right: 5.8%; bottom: 3.5%; height: 1px; background: #263246; }
+#progress { height: 1px; background: #718fd4; transform-origin: left; }
+#controls { position: fixed; z-index: 5; bottom: 8px; left: 50%; transform: translateX(-50%); background: #202937f2; border: 1px solid #50627a; border-radius: 12px; padding: 10px 16px; display: flex; align-items: center; gap: 20px; font-size: 13px; }
+#controls label { display: flex; align-items: center; gap: 10px; }
+#controls input { width: 260px; accent-color: #91aaff; }
+#controls button { border: 0; border-radius: 6px; padding: 9px 14px; color: #111b2e; background: #b5c7ff; font-weight: 700; min-width: 90px; }
+body.capture #controls { display: none; }
+body.portrait .masthead { top: 4.1%; left: 7%; right: 7%; }
+body.portrait .wordmark { font-size: 4.2vw; }
+body.portrait .wordmark svg { width: 5.8vw; height: 4vw; margin-right: 1.5vw; }
+body.portrait .edition { font-size: 1.55vw; max-width: 42%; text-align: right; line-height: 1.5; }
+body.portrait #copy, body.portrait #copy.right, body.portrait #copy.center { left: 7%; width: 86%; top: 10.4%; text-align: left; }
+body.portrait #eyebrow { font-size: 1.75vw; margin-bottom: 2.4vw; }
+body.portrait h1, body.portrait #copy.center h1 { font-size: 8.5vw; line-height: 1.06; }
+body.portrait #detail, body.portrait #copy.center #detail { font-size: 2.85vw; margin-top: 3.2vw; line-height: 1.5; }
+body.portrait #note, body.portrait #note.right { left: 7%; right: 7%; bottom: 8.4%; font-size: 2.14vw; max-width: none; text-align: center; }
+body.portrait footer { left: 7%; right: 7%; bottom: 3.4%; display: block; text-align: center; font-size: 1.78vw; line-height: 1.9; }
+body.portrait footer span { display: block; }
+body.portrait .progress-track { left: 7%; right: 7%; bottom: 2.1%; }
+body.portrait #face-names { top: 86%; font-size: 3.7vw; }
+body.portrait #face-names span::before { width: 8vw; margin-bottom: 1.3vw; }

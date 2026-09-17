@@ -1,0 +1,16 @@
+{
+  "id": "fr-ciqual",
+  "received": 3484,
+  "rejected": 1,
+  "duplicateBarcodes": 0,
+  "foodCount": 3483,
+  "barcodeCount": 0,
+  "installedBytes": 1183744,
+  "gzipBytes": 263508,
+  "buildSeconds": 3.15,
+  "queryMedianMs": 0.32,
+  "queryP95Ms": 0.607,
+  "benchmarkEnvironment": "Desktop Python SQLite; warm queries, not Android memory/latency evidence",
+  "sha256": "aa3b377e905e915fdd99e3be28c5d4879020a81084a21ad85dc89d40c3166ab1",
+  "sqliteVersion": "3.53.1"
+}

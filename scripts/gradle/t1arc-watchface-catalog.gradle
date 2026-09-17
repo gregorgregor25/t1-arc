@@ -1,0 +1,76 @@
+/* Exact, signed, validator-approved face APKs are generated assets, never source. */
+def faceValidator = configurations.create('t1ArcWatchFaceValidator') {
+    canBeConsumed = false
+    transitive = false
+}
+dependencies.add(faceValidator.name,
+    'com.google.android.wearable.watchface.validator:validator-push-cli:1.1.0-alpha01')
+
+abstract class GenerateWatchFaceCatalog extends DefaultTask {
+    @Input abstract Property<String> getCompanionPackage()
+    @Input abstract Property<String> getCompanionCertificate()
+    @InputFile abstract RegularFileProperty getValidatorJar()
+    @InputFile abstract RegularFileProperty getScriptFile()
+    @InputFile abstract RegularFileProperty getAnalyzerJar()
+    @InputFile abstract RegularFileProperty getSignerJar()
+    @InputFiles abstract ConfigurableFileCollection getFaceApks()
+    @Input abstract Property<String> getBuildTypeName()
+    @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+    @Inject abstract ExecOperations getExecOperations()
+
+    @TaskAction void generate() {
+        def isWindows = System.getProperty('os.name').startsWith('Windows')
+        def java = new File(System.getProperty('java.home'), 'bin/java' + (isWindows ? '.exe' : ''))
+        def arguments = [
+            'node', scriptFile.get().asFile.absolutePath,
+            '--java', java.absolutePath,
+            '--analyzer', analyzerJar.get().asFile.absolutePath,
+            '--signer', signerJar.get().asFile.absolutePath,
+            '--validator', validatorJar.get().asFile.absolutePath,
+            '--companion-package', companionPackage.get(),
+            '--companion-certificate', companionCertificate.get(),
+            '--output', outputDirectory.get().asFile.absolutePath,
+        ]
+        ['meridian', 'chronograph', 'atelier', 'pace', 'summit'].each { id ->
+            def name = 'watchface-push-' + id + '-' + buildTypeName.get() + '.apk'
+            def apk = faceApks.files.find { it.name == name }
+            if (apk == null) throw new GradleException('Missing Push face ' + id)
+            arguments.addAll(['--' + id, apk.absolutePath])
+        }
+        execOperations.exec {
+            workingDir(scriptFile.get().asFile.parentFile.parentFile)
+            commandLine(arguments)
+        }.assertNormalExitValue()
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def buildType = variant.buildType
+        def signing = android.buildTypes.getByName(buildType).signingConfig
+        def generator = tasks.register('generate' + variant.name.capitalize() + 'WatchFaceCatalog', GenerateWatchFaceCatalog) {
+            companionPackage.set(variant.applicationId)
+            companionCertificate.set(providers.provider {
+                if (signing == null || signing.storeFile == null) {
+                    throw new GradleException('The companion needs an explicit signer before bundling Push faces.')
+                }
+                def store = java.security.KeyStore.getInstance(signing.storeFile, signing.storePassword.toCharArray())
+                def certificate = store.getCertificate(signing.keyAlias)
+                if (certificate == null) throw new GradleException('Companion signing certificate not found.')
+                java.security.MessageDigest.getInstance('SHA-256').digest(certificate.encoded).encodeHex().toString()
+            })
+            validatorJar.set(layout.file(providers.provider { faceValidator.singleFile }))
+            scriptFile.set(rootProject.layout.projectDirectory.file('../scripts/prepare-watch-face-catalog.mjs'))
+            analyzerJar.set(new File(android.sdkDirectory, 'cmdline-tools/latest/lib/apkanalyzer-classpath.jar'))
+            signerJar.set(new File(android.sdkDirectory, 'build-tools/' + rootProject.ext.buildToolsVersion + '/lib/apksigner.jar'))
+            buildTypeName.set(buildType)
+            ['meridian', 'chronograph', 'atelier', 'pace', 'summit'].each { id ->
+                dependsOn(':watchface-push:assemble' + id.capitalize() + buildType.capitalize())
+                faceApks.from(rootProject.layout.projectDirectory.file('../wear/watchface-push/build/outputs/apk/' +
+                    id + '/' + buildType + '/watchface-push-' + id + '-' + buildType + '.apk'))
+            }
+            outputDirectory.set(layout.buildDirectory.dir('generated/watchfaces/' + variant.name))
+        }
+        variant.sources.assets.addGeneratedSourceDirectory(generator) { it.outputDirectory }
+    }
+}

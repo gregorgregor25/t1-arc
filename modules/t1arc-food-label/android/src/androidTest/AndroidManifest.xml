@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+  <!-- Prove that first-use bundled OCR succeeds without any test-process network access. -->
+  <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+</manifest>

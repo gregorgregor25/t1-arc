@@ -1,0 +1,11 @@
+<resources>
+    <string name="watch_face_name">T1 Arc Pace</string>
+    <string name="glucose_slot_label">T1 Arc glucose</string>
+    <string name="graph_slot_label">Glucose history</string>
+    <string name="secondary_slot_label">Secondary data</string>
+    <string name="accent_label">Dial accent</string>
+    <string name="accent_silver">Silver</string>
+    <string name="accent_champagne">Champagne</string>
+    <string name="accent_lime">Lime</string>
+    <string name="accent_amber">Amber</string>
+</resources>

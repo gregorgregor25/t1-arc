@@ -1,0 +1,17 @@
+{
+  "name": "t1-arc-product-film",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Original 3D product film using real, synthetic-data T1 Arc screens. Separate from the Android app.",
+  "license": "MIT",
+  "scripts": {
+    "preview": "node server.mjs",
+    "render": "node render.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.62.1",
+    "three": "0.185.1"
+  }
+}

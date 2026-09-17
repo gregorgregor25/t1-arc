@@ -1,0 +1,2666 @@
+{
+  "sourceUrl": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_branded_food_json_2026-04-30.zip",
+  "sourceSha256": "57b0f122e61cf2840f03c11e9520275d0d2018dc036e16273fcd3cd370db2256",
+  "foods": [
+    {
+      "foodClass": "Branded",
+      "description": "Cheerios Cereal",
+      "foodNutrients": [
+        {
+          "type": "FoodNutrient",
+          "id": 31233708,
+          "nutrient": {
+            "id": 1003,
+            "number": "203",
+            "name": "Protein",
+            "rank": 600,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 12.8
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233709,
+          "nutrient": {
+            "id": 1004,
+            "number": "204",
+            "name": "Total lipid (fat)",
+            "rank": 800,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 6.41
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233710,
+          "nutrient": {
+            "id": 1005,
+            "number": "205",
+            "name": "Carbohydrate, by difference",
+            "rank": 1110,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 74.4
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233711,
+          "nutrient": {
+            "id": 1008,
+            "number": "208",
+            "name": "Energy",
+            "rank": 300,
+            "unitName": "kcal"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 359
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233712,
+          "nutrient": {
+            "id": 2000,
+            "number": "269",
+            "name": "Total Sugars",
+            "rank": 1510,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.13
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233713,
+          "nutrient": {
+            "id": 1079,
+            "number": "291",
+            "name": "Fiber, total dietary",
+            "rank": 1200,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 10.3
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233714,
+          "nutrient": {
+            "id": 1082,
+            "number": "295",
+            "name": "Fiber, soluble",
+            "rank": 1240,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGL",
+            "description": "Given by information provider as a less than value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233715,
+          "nutrient": {
+            "id": 1087,
+            "number": "301",
+            "name": "Calcium, Ca",
+            "rank": 5300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 333
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233716,
+          "nutrient": {
+            "id": 1089,
+            "number": "303",
+            "name": "Iron, Fe",
+            "rank": 5400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 32.3
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233717,
+          "nutrient": {
+            "id": 1090,
+            "number": "304",
+            "name": "Magnesium, Mg",
+            "rank": 5500,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 700
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233718,
+          "nutrient": {
+            "id": 1091,
+            "number": "305",
+            "name": "Phosphorus, P",
+            "rank": 5600,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 750
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233719,
+          "nutrient": {
+            "id": 1092,
+            "number": "306",
+            "name": "Potassium, K",
+            "rank": 5700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 641
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233720,
+          "nutrient": {
+            "id": 1093,
+            "number": "307",
+            "name": "Sodium, Na",
+            "rank": 5800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 487
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233721,
+          "nutrient": {
+            "id": 1095,
+            "number": "309",
+            "name": "Zinc, Zn",
+            "rank": 5900,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 26.2
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233722,
+          "nutrient": {
+            "id": 1104,
+            "number": "318",
+            "name": "Vitamin A, IU",
+            "rank": 7500,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3750.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233723,
+          "nutrient": {
+            "id": 1110,
+            "number": "324",
+            "name": "Vitamin D (D2 + D3), International Units",
+            "rank": 8650,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 205
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233724,
+          "nutrient": {
+            "id": 1162,
+            "number": "401",
+            "name": "Vitamin C, total ascorbic acid",
+            "rank": 6300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 90.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233725,
+          "nutrient": {
+            "id": 1165,
+            "number": "404",
+            "name": "Thiamin",
+            "rank": 6400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233726,
+          "nutrient": {
+            "id": 1175,
+            "number": "415",
+            "name": "Vitamin B-6",
+            "rank": 6800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233727,
+          "nutrient": {
+            "id": 1177,
+            "number": "417",
+            "name": "Folate, total",
+            "rank": 6900,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 500
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233728,
+          "nutrient": {
+            "id": 1178,
+            "number": "418",
+            "name": "Vitamin B-12",
+            "rank": 7300,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 7.5
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233729,
+          "nutrient": {
+            "id": 1186,
+            "number": "431",
+            "name": "Folic acid",
+            "rank": 7000,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 115
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233730,
+          "nutrient": {
+            "id": 1235,
+            "number": "539",
+            "name": "Sugars, added",
+            "rank": 1540,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.1
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233731,
+          "nutrient": {
+            "id": 1253,
+            "number": "601",
+            "name": "Cholesterol",
+            "rank": 15700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233732,
+          "nutrient": {
+            "id": 1257,
+            "number": "605",
+            "name": "Fatty acids, total trans",
+            "rank": 15400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233733,
+          "nutrient": {
+            "id": 1258,
+            "number": "606",
+            "name": "Fatty acids, total saturated",
+            "rank": 9700,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.28
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233734,
+          "nutrient": {
+            "id": 1292,
+            "number": "645",
+            "name": "Fatty acids, total monounsaturated",
+            "rank": 11400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.56
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233735,
+          "nutrient": {
+            "id": 1293,
+            "number": "646",
+            "name": "Fatty acids, total polyunsaturated",
+            "rank": 12900,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.56
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233736,
+          "nutrient": {
+            "id": 1003,
+            "number": "203",
+            "name": "Protein",
+            "rank": 600,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 12.8
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233737,
+          "nutrient": {
+            "id": 1004,
+            "number": "204",
+            "name": "Total lipid (fat)",
+            "rank": 800,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 6.41
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233738,
+          "nutrient": {
+            "id": 1005,
+            "number": "205",
+            "name": "Carbohydrate, by difference",
+            "rank": 1110,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 74.4
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233739,
+          "nutrient": {
+            "id": 1008,
+            "number": "208",
+            "name": "Energy",
+            "rank": 300,
+            "unitName": "kcal"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 359
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233740,
+          "nutrient": {
+            "id": 2000,
+            "number": "269",
+            "name": "Total Sugars",
+            "rank": 1510,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.13
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233741,
+          "nutrient": {
+            "id": 1079,
+            "number": "291",
+            "name": "Fiber, total dietary",
+            "rank": 1200,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 10.3
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233742,
+          "nutrient": {
+            "id": 1082,
+            "number": "295",
+            "name": "Fiber, soluble",
+            "rank": 1240,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233743,
+          "nutrient": {
+            "id": 1087,
+            "number": "301",
+            "name": "Calcium, Ca",
+            "rank": 5300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 333
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233744,
+          "nutrient": {
+            "id": 1089,
+            "number": "303",
+            "name": "Iron, Fe",
+            "rank": 5400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 32.3
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233745,
+          "nutrient": {
+            "id": 1090,
+            "number": "304",
+            "name": "Magnesium, Mg",
+            "rank": 5500,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 154
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233746,
+          "nutrient": {
+            "id": 1091,
+            "number": "305",
+            "name": "Phosphorus, P",
+            "rank": 5600,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 256
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233747,
+          "nutrient": {
+            "id": 1092,
+            "number": "306",
+            "name": "Potassium, K",
+            "rank": 5700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 641
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233748,
+          "nutrient": {
+            "id": 1093,
+            "number": "307",
+            "name": "Sodium, Na",
+            "rank": 5800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 487
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233749,
+          "nutrient": {
+            "id": 1095,
+            "number": "309",
+            "name": "Zinc, Zn",
+            "rank": 5900,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 7.69
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233750,
+          "nutrient": {
+            "id": 1104,
+            "number": "318",
+            "name": "Vitamin A, IU",
+            "rank": 7500,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1280.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233751,
+          "nutrient": {
+            "id": 1110,
+            "number": "324",
+            "name": "Vitamin D (D2 + D3), International Units",
+            "rank": 8650,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 205
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233752,
+          "nutrient": {
+            "id": 1162,
+            "number": "401",
+            "name": "Vitamin C, total ascorbic acid",
+            "rank": 6300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 15.4
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233753,
+          "nutrient": {
+            "id": 1165,
+            "number": "404",
+            "name": "Thiamin",
+            "rank": 6400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233754,
+          "nutrient": {
+            "id": 1175,
+            "number": "415",
+            "name": "Vitamin B-6",
+            "rank": 6800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.03
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233755,
+          "nutrient": {
+            "id": 1177,
+            "number": "417",
+            "name": "Folate, total",
+            "rank": 6900,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 205
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233756,
+          "nutrient": {
+            "id": 1178,
+            "number": "418",
+            "name": "Vitamin B-12",
+            "rank": 7300,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.08
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233757,
+          "nutrient": {
+            "id": 1186,
+            "number": "431",
+            "name": "Folic acid",
+            "rank": 7000,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 115
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233758,
+          "nutrient": {
+            "id": 1235,
+            "number": "539",
+            "name": "Sugars, added",
+            "rank": 1540,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.1
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233759,
+          "nutrient": {
+            "id": 1253,
+            "number": "601",
+            "name": "Cholesterol",
+            "rank": 15700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233760,
+          "nutrient": {
+            "id": 1257,
+            "number": "605",
+            "name": "Fatty acids, total trans",
+            "rank": 15400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233761,
+          "nutrient": {
+            "id": 1258,
+            "number": "606",
+            "name": "Fatty acids, total saturated",
+            "rank": 9700,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.28
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233762,
+          "nutrient": {
+            "id": 1292,
+            "number": "645",
+            "name": "Fatty acids, total monounsaturated",
+            "rank": 11400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.56
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233763,
+          "nutrient": {
+            "id": 1293,
+            "number": "646",
+            "name": "Fatty acids, total polyunsaturated",
+            "rank": 12900,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCGA",
+            "description": "Given by information provider as an approximate value per 100 unit measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.56
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233764,
+          "nutrient": {
+            "id": 1003,
+            "number": "203",
+            "name": "Protein",
+            "rank": 600,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.56
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233765,
+          "nutrient": {
+            "id": 1004,
+            "number": "204",
+            "name": "Total lipid (fat)",
+            "rank": 800,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.85
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233766,
+          "nutrient": {
+            "id": 1005,
+            "number": "205",
+            "name": "Carbohydrate, by difference",
+            "rank": 1110,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 21.6
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233767,
+          "nutrient": {
+            "id": 1008,
+            "number": "208",
+            "name": "Energy",
+            "rank": 300,
+            "unitName": "kcal"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 117
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233768,
+          "nutrient": {
+            "id": 2000,
+            "number": "269",
+            "name": "Total Sugars",
+            "rank": 1510,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 4.94
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233769,
+          "nutrient": {
+            "id": 1079,
+            "number": "291",
+            "name": "Fiber, total dietary",
+            "rank": 1200,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.5
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233770,
+          "nutrient": {
+            "id": 1082,
+            "number": "295",
+            "name": "Fiber, soluble",
+            "rank": 1240,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233771,
+          "nutrient": {
+            "id": 1087,
+            "number": "301",
+            "name": "Calcium, Ca",
+            "rank": 5300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 160
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233772,
+          "nutrient": {
+            "id": 1089,
+            "number": "303",
+            "name": "Iron, Fe",
+            "rank": 5400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 7.78
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233773,
+          "nutrient": {
+            "id": 1090,
+            "number": "304",
+            "name": "Magnesium, Mg",
+            "rank": 5500,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 37.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233774,
+          "nutrient": {
+            "id": 1091,
+            "number": "305",
+            "name": "Phosphorus, P",
+            "rank": 5600,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 123
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233775,
+          "nutrient": {
+            "id": 1092,
+            "number": "306",
+            "name": "Potassium, K",
+            "rank": 5700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 278
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233776,
+          "nutrient": {
+            "id": 1093,
+            "number": "307",
+            "name": "Sodium, Na",
+            "rank": 5800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 154
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233777,
+          "nutrient": {
+            "id": 1095,
+            "number": "309",
+            "name": "Zinc, Zn",
+            "rank": 5900,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.85
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233778,
+          "nutrient": {
+            "id": 1104,
+            "number": "318",
+            "name": "Vitamin A, IU",
+            "rank": 7500,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 617
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233779,
+          "nutrient": {
+            "id": 1110,
+            "number": "324",
+            "name": "Vitamin D (D2 + D3), International Units",
+            "rank": 8650,
+            "unitName": "IU"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 74.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233780,
+          "nutrient": {
+            "id": 1162,
+            "number": "401",
+            "name": "Vitamin C, total ascorbic acid",
+            "rank": 6300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.7
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233781,
+          "nutrient": {
+            "id": 1165,
+            "number": "404",
+            "name": "Thiamin",
+            "rank": 6400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233782,
+          "nutrient": {
+            "id": 1175,
+            "number": "415",
+            "name": "Vitamin B-6",
+            "rank": 6800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.247
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233783,
+          "nutrient": {
+            "id": 1177,
+            "number": "417",
+            "name": "Folate, total",
+            "rank": 6900,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 49.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233784,
+          "nutrient": {
+            "id": 1178,
+            "number": "418",
+            "name": "Vitamin B-12",
+            "rank": 7300,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.11
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233785,
+          "nutrient": {
+            "id": 1186,
+            "number": "431",
+            "name": "Folic acid",
+            "rank": 7000,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 28.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233786,
+          "nutrient": {
+            "id": 1235,
+            "number": "539",
+            "name": "Sugars, added",
+            "rank": 1540,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.2
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233787,
+          "nutrient": {
+            "id": 1253,
+            "number": "601",
+            "name": "Cholesterol",
+            "rank": 15700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSL",
+            "description": "Calculated from a less than value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233788,
+          "nutrient": {
+            "id": 1257,
+            "number": "605",
+            "name": "Fatty acids, total trans",
+            "rank": 15400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233789,
+          "nutrient": {
+            "id": 1258,
+            "number": "606",
+            "name": "Fatty acids, total saturated",
+            "rank": 9700,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.62
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233790,
+          "nutrient": {
+            "id": 1292,
+            "number": "645",
+            "name": "Fatty acids, total monounsaturated",
+            "rank": 11400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.62
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 31233791,
+          "nutrient": {
+            "id": 1293,
+            "number": "646",
+            "name": "Fatty acids, total polyunsaturated",
+            "rank": 12900,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.62
+        }
+      ],
+      "foodAttributes": [],
+      "modifiedDate": "4/24/2019",
+      "availableDate": "4/24/2019",
+      "marketCountry": "United States",
+      "brandOwner": "General Mills",
+      "brandName": "Cheerios",
+      "gtinUpc": "00016000275287",
+      "dataSource": "GDSN",
+      "ingredients": "WHOLE GRAIN OATS, CORN STARCH, SUGAR, SALT, TRIPOTASSIUM PHOSPHATE. VITAMIN E (MIXED TOCOPHEROLS) ADDED TO PRESERVE FRESHNESS.VITAMINS AND MINERALS: CALCIUM CARBONATE, IRON AND ZINC (MINERAL NUTRIENTS), VITAMIN C (SODIUM ASCORBATE), A B VITAMIN (NIACINAMIDE), VITAMIN B6 (PYRIDOXINE HYDROCHLORIDE), VITAMIN A (PALMITATE), VITAMIN B1 (THIAMIN MONONITRATE), A B VITAMIN (FOLIC ACID), VITAMIN B12, VITAMIN D3.",
+      "servingSize": 20,
+      "servingSizeUnit": "GRM",
+      "householdServingFullText": "3/4 cup (20g) (age 1-3 years)",
+      "labelNutrients": {},
+      "packageWeight": "18 ONZ",
+      "tradeChannels": [
+        "NO_TRADE_CHANNEL"
+      ],
+      "microbes": [],
+      "gpcClassCode": 50221200,
+      "preparationStateCode": "UNPREPARED",
+      "shortDescription": "Cheerios Cereal",
+      "brandedFoodCategory": "Processed Cereal Products",
+      "fdcId": 2517161,
+      "dataType": "Branded",
+      "publicationDate": "4/27/2023",
+      "foodUpdateLog": [
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 2947958,
+              "name": "Nutrient Added",
+              "value": "5",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2947959,
+              "name": "Analytical Flag Added or Updated",
+              "value": "12",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2517161,
+          "dataType": "Branded",
+          "publicationDate": "4/27/2023"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Whole Grain Oats Gluten Free Breakfast Cereal Family Size",
+          "foodAttributes": [
+            {
+              "id": 2492434,
+              "name": "Analytical Flag Added or Updated",
+              "value": "12",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2492436,
+              "name": "Short Description Added or Updated",
+              "value": "14",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2492435,
+              "name": "Preparation State Code Added or Updated",
+              "value": "15",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2234116,
+          "dataType": "Branded",
+          "publicationDate": "4/1/2022"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Whole Grain Oats Gluten Free Breakfast Cereal Family Size",
+          "foodAttributes": [
+            {
+              "id": 2478342,
+              "name": "Preparation State Code Added or Updated",
+              "value": "15",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2478341,
+              "name": "Analytical Flag Added or Updated",
+              "value": "12",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2478343,
+              "name": "Short Description Added or Updated",
+              "value": "14",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2230201,
+          "dataType": "Branded",
+          "publicationDate": "3/11/2022"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Whole Grain Oats Gluten Free Breakfast Cereal Family Size",
+          "foodAttributes": [
+            {
+              "id": 2469777,
+              "name": "Analytical Flag Added or Updated",
+              "value": "12",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 2469776,
+              "name": "Preparation State Code Added or Updated",
+              "value": "15",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2226559,
+          "dataType": "Branded",
+          "publicationDate": "3/11/2022"
+        }
+      ]
+    },
+    {
+      "foodClass": "Branded",
+      "description": "Cheerios Cereal",
+      "foodNutrients": [
+        {
+          "type": "FoodNutrient",
+          "id": 34789656,
+          "nutrient": {
+            "id": 1003,
+            "number": "203",
+            "name": "Protein",
+            "rank": 600,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 14.3
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789657,
+          "nutrient": {
+            "id": 1004,
+            "number": "204",
+            "name": "Total lipid (fat)",
+            "rank": 800,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 7.14
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789658,
+          "nutrient": {
+            "id": 1005,
+            "number": "205",
+            "name": "Carbohydrate, by difference",
+            "rank": 1110,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 75.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789659,
+          "nutrient": {
+            "id": 1008,
+            "number": "208",
+            "name": "Energy",
+            "rank": 300,
+            "unitName": "kcal"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 357
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789660,
+          "nutrient": {
+            "id": 2000,
+            "number": "269",
+            "name": "Total Sugars",
+            "rank": 1510,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.57
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789661,
+          "nutrient": {
+            "id": 1079,
+            "number": "291",
+            "name": "Fiber, total dietary",
+            "rank": 1200,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 10.7
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789662,
+          "nutrient": {
+            "id": 1082,
+            "number": "295",
+            "name": "Fiber, soluble",
+            "rank": 1240,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 4.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789663,
+          "nutrient": {
+            "id": 1087,
+            "number": "301",
+            "name": "Calcium, Ca",
+            "rank": 5300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 321
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789664,
+          "nutrient": {
+            "id": 1089,
+            "number": "303",
+            "name": "Iron, Fe",
+            "rank": 5400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 32.1
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789665,
+          "nutrient": {
+            "id": 1092,
+            "number": "306",
+            "name": "Potassium, K",
+            "rank": 5700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 643
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789666,
+          "nutrient": {
+            "id": 1093,
+            "number": "307",
+            "name": "Sodium, Na",
+            "rank": 5800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 500
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789667,
+          "nutrient": {
+            "id": 1095,
+            "number": "309",
+            "name": "Zinc, Zn",
+            "rank": 5900,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 5.36
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789668,
+          "nutrient": {
+            "id": 1106,
+            "number": "320",
+            "name": "Vitamin A, RAE",
+            "rank": 7420,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 193
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789669,
+          "nutrient": {
+            "id": 1114,
+            "number": "328",
+            "name": "Vitamin D (D2 + D3)",
+            "rank": 8700,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 10.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789670,
+          "nutrient": {
+            "id": 1162,
+            "number": "401",
+            "name": "Vitamin C, total ascorbic acid",
+            "rank": 6300,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 12.9
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789671,
+          "nutrient": {
+            "id": 1165,
+            "number": "404",
+            "name": "Thiamin",
+            "rank": 6400,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 1.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789672,
+          "nutrient": {
+            "id": 1167,
+            "number": "406",
+            "name": "Niacin",
+            "rank": 6600,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 4.29
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789673,
+          "nutrient": {
+            "id": 1175,
+            "number": "415",
+            "name": "Vitamin B-6",
+            "rank": 6800,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.714
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789674,
+          "nutrient": {
+            "id": 1177,
+            "number": "417",
+            "name": "Folate, total",
+            "rank": 6900,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 143
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789675,
+          "nutrient": {
+            "id": 1178,
+            "number": "418",
+            "name": "Vitamin B-12",
+            "rank": 7300,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCCD",
+            "description": "Calculated from a daily value percentage per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 2.14
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789676,
+          "nutrient": {
+            "id": 1186,
+            "number": "431",
+            "name": "Folic acid",
+            "rank": 7000,
+            "unitName": "µg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 89.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789677,
+          "nutrient": {
+            "id": 1235,
+            "number": "539",
+            "name": "Sugars, added",
+            "rank": 1540,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 3.6
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789678,
+          "nutrient": {
+            "id": 1253,
+            "number": "601",
+            "name": "Cholesterol",
+            "rank": 15700,
+            "unitName": "mg"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789679,
+          "nutrient": {
+            "id": 1257,
+            "number": "605",
+            "name": "Fatty acids, total trans",
+            "rank": 15400,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        },
+        {
+          "type": "FoodNutrient",
+          "id": 34789680,
+          "nutrient": {
+            "id": 1258,
+            "number": "606",
+            "name": "Fatty acids, total saturated",
+            "rank": 9700,
+            "unitName": "g"
+          },
+          "foodNutrientDerivation": {
+            "code": "LCSA",
+            "description": "Calculated from an approximate value per serving size measure",
+            "foodNutrientSource": {
+              "id": 9,
+              "code": "12",
+              "description": "Manufacturer's analytical; partial documentation"
+            }
+          },
+          "amount": 0.0
+        }
+      ],
+      "foodAttributes": [],
+      "modifiedDate": "5/16/2025",
+      "availableDate": "5/16/2025",
+      "marketCountry": "United States",
+      "brandOwner": "GENERAL MILLS SALES INC.",
+      "brandName": "Cheerios",
+      "gtinUpc": "00016000322622",
+      "dataSource": "GDSN",
+      "ingredients": "Whole Grain Oats, Corn Starch, Sugar, Salt, Tripotassium Phosphate. Vitamin E (mixed tocopherols) Added to Preserve Freshness.Vitamins and Minerals: Calcium Carbonate, Iron and Zinc (mineral nutrients), Vitamin C (sodium ascorbate), A B Vitamin (niacinamide), Vitamin B6 (pyridoxine hydrochloride), Vitamin A (palmitate), Vitamin B1 (thiamin mononitrate), A B Vitamin (folic acid), Vitamin B12, Vitamin D3.",
+      "servingSize": 28,
+      "servingSizeUnit": "GRM",
+      "householdServingFullText": "1 bowl",
+      "labelNutrients": {
+        "fat": {
+          "value": 2.0
+        },
+        "saturatedFat": {
+          "value": 0.0
+        },
+        "transFat": {
+          "value": 0.0
+        },
+        "cholesterol": {
+          "value": 0.0
+        },
+        "sodium": {
+          "value": 140
+        },
+        "carbohydrates": {
+          "value": 21.0
+        },
+        "fiber": {
+          "value": 3.0
+        },
+        "sugars": {
+          "value": 1.0
+        },
+        "protein": {
+          "value": 4.0
+        },
+        "vitaminD": {
+          "value": 2.8
+        },
+        "calcium": {
+          "value": 89.9
+        },
+        "iron": {
+          "value": 8.99
+        },
+        "potassium": {
+          "value": 180
+        },
+        "addedSugar": {
+          "value": 1.01
+        },
+        "calories": {
+          "value": 100
+        }
+      },
+      "packageWeight": "1 ONZ",
+      "tradeChannels": [
+        "NO_TRADE_CHANNEL"
+      ],
+      "microbes": [],
+      "gpcClassCode": 50221200,
+      "preparationStateCode": "UNPREPARED",
+      "shortDescription": "Cheerios Cereal",
+      "brandedFoodCategory": "Processed Cereal Products",
+      "fdcId": 2738631,
+      "dataType": "Branded",
+      "publicationDate": "7/24/2025",
+      "foodUpdateLog": [
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3377592,
+              "name": "Nutrient Updated",
+              "value": "4",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 3377591,
+              "name": "Serving Size",
+              "value": "7",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2738631,
+          "dataType": "Branded",
+          "publicationDate": "7/24/2025"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3373420,
+              "name": "Ingredients",
+              "value": "3",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 3373419,
+              "name": "Nutrient Updated",
+              "value": "4",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2735227,
+          "dataType": "Branded",
+          "publicationDate": "6/19/2025"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3354268,
+              "name": "Nutrient Updated",
+              "value": "4",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2719901,
+          "dataType": "Branded",
+          "publicationDate": "12/19/2024"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3326781,
+              "name": "Nutrient Added",
+              "value": "5",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2716470,
+          "dataType": "Branded",
+          "publicationDate": "10/31/2024"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3296309,
+              "name": "Nutrient Removed",
+              "value": "6",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2704683,
+          "dataType": "Branded",
+          "publicationDate": "9/13/2024"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3287364,
+              "name": "Nutrient Added",
+              "value": "5",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2702368,
+          "dataType": "Branded",
+          "publicationDate": "8/15/2024"
+        },
+        {
+          "foodClass": "Branded",
+          "description": "Cheerios Cereal",
+          "foodAttributes": [
+            {
+              "id": 3263649,
+              "name": "Nutrient Removed",
+              "value": "6",
+              "foodAttributeType": {
+                "id": 998
+              }
+            },
+            {
+              "id": 3263651,
+              "name": "Ingredients",
+              "value": "3",
+              "foodAttributeType": {
+                "id": 998
+              }
+            }
+          ],
+          "fdcId": 2683082,
+          "dataType": "Branded",
+          "publicationDate": "2/1/2024"
+        }
+      ]
+    }
+  ]
+}

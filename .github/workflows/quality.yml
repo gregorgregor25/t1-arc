@@ -1,0 +1,200 @@
+name: T1 Arc quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t1arc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-report-service:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/tarvis-reports/package-lock.json
+      - run: npm ci
+        working-directory: services/tarvis-reports
+      - run: npm test
+        working-directory: services/tarvis-reports
+      - run: npm run types
+        working-directory: services/tarvis-reports
+      - run: npx wrangler deploy --dry-run
+        working-directory: services/tarvis-reports
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Reserve disk space for Android native checks
+        run: |
+          # These hosted-runner toolchains are not used by this Android job.
+          # Retain the Android SDK, NDK, Java and all project build outputs.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost
+          df -h /
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Check public-source artifacts, secrets and licence metadata
+        run: npm run verify:public-source
+      - name: Audit production dependencies for high-severity advisories
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo dependency parity
+        run: npx expo install --check
+      - name: Check Expo project health
+        run: npx --no-install expo-doctor
+      - name: Generate the native Android project for identity checks
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Link generated Android resources
+        working-directory: android
+        env:
+          NODE_ENV: production
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :app:processDebugResources \
+            :app:processDebugOptimizedResources \
+            :app:processReleaseResources \
+            -PreactNativeArchitectures=arm64-v8a --no-daemon
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --run
+      - name: Test and lint native Android modules
+        working-directory: android
+        env:
+          NODE_ENV: production
+          T1ARC_PRIVATE_TEST_BUILD: '1'
+          T1ARC_FACE_STORE_FILE: ${{ runner.temp }}/t1arc-ci-faces.p12
+          T1ARC_FACE_STORE_PASSWORD: ephemeral-ci-only
+          T1ARC_FACE_KEY_ALIAS: ci-faces
+          T1ARC_FACE_KEY_PASSWORD: ephemeral-ci-only
+        run: |
+          # Lint checks the actual bundled faces. This temporary signer is never
+          # published, and cannot update any user-installed release.
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$T1ARC_FACE_STORE_FILE" \
+            -storepass:env T1ARC_FACE_STORE_PASSWORD \
+            -keypass:env T1ARC_FACE_KEY_PASSWORD \
+            -alias "$T1ARC_FACE_KEY_ALIAS" -keyalg RSA -keysize 3072 \
+            -validity 2 -dname 'CN=T1 Arc CI only'
+          chmod +x gradlew
+          ./gradlew \
+            :app:testDebugUnitTest \
+            :t1arc-backup-crypto:testDebugUnitTest \
+            :t1arc-food-label:testDebugUnitTest \
+            :t1arc-glooko-export:testDebugUnitTest \
+            :t1arc-glucose-display:testDebugUnitTest \
+            :t1arc-health-connect:testDebugUnitTest \
+            :t1arc-notification-source:testDebugUnitTest \
+            :t1arc-watch-installer:testDebugUnitTest \
+            :wear:testDebugUnitTest \
+            :watchface-meridian:testDebugUnitTest \
+            :watchface-chronograph:testDebugUnitTest \
+            :watchface-atelier:testDebugUnitTest \
+            :watchface-pace:testDebugUnitTest \
+            :watchface-summit:testDebugUnitTest \
+            :watchface-push:testMeridianDebugUnitTest \
+            :watchface-push:testChronographDebugUnitTest \
+            :watchface-push:testAtelierDebugUnitTest \
+            :watchface-push:testPaceDebugUnitTest \
+            :watchface-push:testSummitDebugUnitTest \
+            :app:lintRelease \
+            :t1arc-backup-crypto:lintRelease \
+            :t1arc-food-label:lintRelease \
+            :t1arc-glooko-export:lintRelease \
+            :t1arc-glucose-display:lintRelease \
+            :t1arc-health-connect:lintRelease \
+            :t1arc-notification-source:lintRelease \
+            :t1arc-watch-installer:lintRelease \
+            :wear:lintRelease \
+            :watchface-meridian:lintRelease \
+            :watchface-chronograph:lintRelease \
+            :watchface-atelier:lintRelease \
+            :watchface-pace:lintRelease \
+            :watchface-summit:lintRelease \
+            :watchface-push:lintMeridianRelease \
+            :watchface-push:lintChronographRelease \
+            :watchface-push:lintAtelierRelease \
+            :watchface-push:lintPaceRelease \
+            :watchface-push:lintSummitRelease \
+            -PreactNativeArchitectures=arm64-v8a --no-daemon
+      - name: Test enabled watch installer transport
+        working-directory: android
+        env:
+          T1ARC_WATCH_INSTALLER: '1'
+          NODE_ENV: production
+        # JVM unit tests need one native dependency ABI, not four copies.
+        # Release APK verification separately checks the shipped architectures.
+        run: ./gradlew :t1arc-watch-installer:testDebugUnitTest :t1arc-watch-installer:lintDebug -PreactNativeArchitectures=arm64-v8a --no-daemon
+      - name: Verify release packaging fails closed without an explicit signer
+        working-directory: android
+        env:
+          NODE_ENV: production
+        run: |
+          if ./gradlew :app:packageRelease --dry-run --no-daemon > signing-policy.log 2>&1; then
+            cat signing-policy.log
+            echo "Release packaging unexpectedly accepted implicit signing."
+            exit 1
+          fi
+          grep -q "refuses an implicitly debug-signed release APK" signing-policy.log
+
+  archived-node-services:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/tarvis-enrollment/package-lock.json
+      - name: Check Tarv1s lab service syntax
+        working-directory: services/tarvis-lab
+        run: npm run check
+      - name: Test Tarv1s lab service
+        working-directory: services/tarvis-lab
+        run: npm test
+      - name: Install enrollment service dependencies
+        working-directory: services/tarvis-enrollment
+        run: npm ci
+      - name: Test enrollment service
+        working-directory: services/tarvis-enrollment
+        run: npm test
+      - name: Check enrollment service syntax
+        working-directory: services/tarvis-enrollment
+        run: npm run check
+      - name: Audit enrollment production dependencies
+        working-directory: services/tarvis-enrollment
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check Expo prebuild plugin syntax
+        run: |
+          for plugin in plugins/*.js; do
+            node --check "$plugin"
+          done

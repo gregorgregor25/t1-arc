@@ -1,0 +1,11 @@
+.env
+.git
+node_modules
+secrets
+test
+*.log
+*.jsonl
+*.sqlite
+*.sqlite3
+*.t1arc
+*.container

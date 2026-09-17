@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WatchFaceInfo>
+    <Preview value="@drawable/chronograph_preview" />
+    <Category value="CATEGORY_HEALTH" />
+    <AvailableInRetail value="false" />
+    <MultipleInstancesAllowed value="true" />
+    <Editable value="true" />
+</WatchFaceInfo>

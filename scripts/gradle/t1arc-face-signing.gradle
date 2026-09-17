@@ -1,0 +1,28 @@
+/*
+ * Push faces require a signer different from the companion. Both local private
+ * Push builds and production use explicit face credentials. Gradle never
+ * generates keys or silently substitutes the phone signer.
+ */
+def faceKeys = ['STORE_FILE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']
+def faceValues = faceKeys.collectEntries { suffix -> [(suffix): System.getenv('T1ARC_FACE_' + suffix)] }
+def supplied = faceValues.values().count { it != null && !it.trim().isEmpty() }
+if (supplied > 0 && supplied < faceKeys.size()) {
+  throw new GradleException('Supply all four T1ARC_FACE_* signing values.')
+}
+ext.t1ArcFaceSigningConfigured = supplied == faceKeys.size()
+ext.t1ArcFaceStoreFile = t1ArcFaceSigningConfigured ? rootProject.file(faceValues.STORE_FILE) : null
+ext.t1ArcFaceStorePassword = faceValues.STORE_PASSWORD
+ext.t1ArcFaceKeyAlias = faceValues.KEY_ALIAS
+ext.t1ArcFaceKeyPassword = faceValues.KEY_PASSWORD
+if (t1ArcFaceStoreFile != null && !t1ArcFaceStoreFile.isFile()) {
+  throw new GradleException('The T1 Arc face keystore does not exist.')
+}
+gradle.taskGraph.whenReady { graph ->
+  def signingTask = graph.allTasks.any { task ->
+    task.project == project && task.name ==~ /(?i)(assemble|package|bundle|install).*release$/
+  }
+  if (signingTask && !project.ext.t1ArcFaceSigningConfigured &&
+      (project.name == 'watchface-push' || project.ext.t1ArcProductionSigningConfigured)) {
+    throw new GradleException('Configure T1ARC_FACE_* signing before packaging watch faces.')
+  }
+}

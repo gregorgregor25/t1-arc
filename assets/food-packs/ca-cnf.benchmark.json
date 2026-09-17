@@ -1,0 +1,16 @@
+{
+  "id": "ca-cnf",
+  "received": 5993,
+  "rejected": 0,
+  "duplicateBarcodes": 0,
+  "foodCount": 5993,
+  "barcodeCount": 0,
+  "installedBytes": 2506752,
+  "gzipBytes": 648588,
+  "buildSeconds": 2.17,
+  "queryMedianMs": 0.5,
+  "queryP95Ms": 0.745,
+  "benchmarkEnvironment": "Desktop Python SQLite; warm queries, not Android memory/latency evidence",
+  "sha256": "0a0156167c75f150d3029483b0815a2bd377035728c4188ecf7171bd5171e1e6",
+  "sqliteVersion": "3.53.1"
+}
