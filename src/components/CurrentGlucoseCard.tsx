@@ -1,6 +1,7 @@
+import cardSpec from '../../modules/t1arc-glucose-display/shared/current-glucose-card.json';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -140,6 +141,7 @@ export function CurrentGlucoseCard({
   source,
   now,
   trendAssessment,
+  trendDetailsRequest = 0,
   onChooseSource,
 }: {
   reading?: GlucoseReading;
@@ -147,6 +149,7 @@ export function CurrentGlucoseCard({
   source?: DataSourceStatus;
   now: number;
   trendAssessment?: GlucoseTrendAssessment;
+  trendDetailsRequest?: number;
   onChooseSource?(): void;
 }) {
   const { colors, dark, radius } = useAppTheme();
@@ -154,6 +157,13 @@ export function CurrentGlucoseCard({
   const { settings: appearance } = useGlucoseAppearance();
   const { defaults: regional } = useRegionalProfile();
   const [trendDetailsVisible, setTrendDetailsVisible] = useState(false);
+  useEffect(() => {
+    if (trendDetailsRequest > 0) {
+      // A widget deep link is a one-shot request to open the existing evidence.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTrendDetailsVisible(true);
+    }
+  }, [trendDetailsRequest]);
   const layout = currentGlucoseCardLayout(fontScale);
   // The value and its timestamp are one observation. Source status is loaded
   // independently and can briefly describe the row that preceded a headless
@@ -523,8 +533,8 @@ export function CurrentGlucoseCard({
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 238,
-    padding: 20,
+    minHeight: cardSpec.minHeight,
+    padding: cardSpec.padding,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     shadowOffset: { width: 0, height: 8 },
@@ -534,11 +544,11 @@ const styles = StyleSheet.create({
   },
   trace: {
     position: 'absolute',
-    left: 18,
-    right: 18,
-    top: 78,
-    height: 92,
-    opacity: 0.72,
+    left: cardSpec.traceInset,
+    right: cardSpec.traceInset,
+    top: cardSpec.traceTop,
+    height: cardSpec.traceHeight,
+    opacity: cardSpec.traceOpacity,
   },
   tracePeriod: {
     position: 'absolute',
@@ -576,10 +586,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   value: {
-    fontSize: 78,
-    lineHeight: 82,
+    fontSize: cardSpec.valueSize,
+    lineHeight: cardSpec.valueLineHeight,
     fontWeight: '700',
-    letterSpacing: -4,
+    letterSpacing: cardSpec.valueLetterSpacing,
     fontVariant: ['tabular-nums'],
   },
   unitBlock: {
@@ -587,8 +597,8 @@ const styles = StyleSheet.create({
     paddingTop: 7,
   },
   arrow: {
-    fontSize: 32,
-    lineHeight: 34,
+    fontSize: cardSpec.arrowSize,
+    lineHeight: cardSpec.arrowLineHeight,
     fontWeight: '700',
   },
   unit: {

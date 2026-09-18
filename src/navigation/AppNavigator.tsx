@@ -41,7 +41,7 @@ import type { TarvisEntry } from '@/domain/tarvisEntry';
 import type { HistoryRangeSelection } from '@/domain/historySelection';
 
 export type RootTabParamList = {
-  Today: { action?: "log-food" | "log-context"; request?: string } | undefined;
+  Today: { action?: "log-food" | "log-context" | "trend-details"; request?: string } | undefined;
   History: { focus?: "glucose" | "insulin"; request?: string; selectedRange?: HistoryRangeSelection } | undefined;
   Health: undefined;
   Insights: { entry?: TarvisEntry; settings?: boolean } | undefined;

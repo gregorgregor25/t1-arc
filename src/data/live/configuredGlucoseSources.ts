@@ -27,6 +27,7 @@ import {
 
 export interface ConfiguredGlucoseRefreshOptions {
   reason?: DirectLibreRefreshReason;
+  includeUnconfiguredNotification?: boolean;
   signal?: AbortSignal;
   /** Captured by a task owner before credentials or external work. */
   writeLease?: LocalDataWriteLease;
@@ -53,7 +54,7 @@ export async function configuredGlucoseSources(
   const notificationConfigured = await notification
     .isConfigured()
     .catch(() => false);
-  const sources: GlucoseSource[] = notificationConfigured
+  const sources: GlucoseSource[] = notificationConfigured || options.includeUnconfiguredNotification
     ? [notification]
     : [];
   const credentials = libre.values.credentials;

@@ -7,20 +7,21 @@ class GlucoseWidgetTest {
   private val end = 20_000_000L
   private fun point(minutesAgo: Int, value: Double = 6.9) = GlucoseHistoryPoint(value, end - minutesAgo * 60_000L)
 
-  @Test fun `small widgets retain reading while tall widgets expose chart`() {
-    val tiny = GlucoseWidgetLayout.forSize(150f, 80f, 1f)
-    assertFalse(tiny.details)
-    assertFalse(tiny.chart)
-    assertFalse(GlucoseWidgetLayout.forSize(220f, 190f, 1f).source)
-    assertTrue(GlucoseWidgetLayout.forSize(250f, 200f, 1f).source)
-    assertFalse(GlucoseWidgetLayout.forSize(250f, 200f, 1f).chart)
-    assertTrue(GlucoseWidgetLayout.forSize(250f, 320f, 1f).chart)
-    assertFalse(GlucoseWidgetLayout.forSize(150f, 400f, 1f).source)
+  @Test fun `age and freshness agree at future and stale boundaries`() {
+    val locale = java.util.Locale.UK
+    assertEquals("2 min ago", GlucoseWidgetCard.age(end - 120_000, end, locale))
+    assertEquals("2 days ago", GlucoseWidgetCard.age(end - 2 * 86_400_000, end, locale))
+    assertEquals("3 min ahead", GlucoseWidgetCard.age(end + 121_000, end, locale))
+    assertEquals(DisplayFreshness.STALE, DisplayFreshnessPolicy.resolve(end + 121_000, end, false))
+    assertEquals(DisplayFreshness.CURRENT, DisplayFreshnessPolicy.resolve(end + 120_000, end, false))
   }
 
-  @Test fun `large text reserves space before showing history`() {
-    assertFalse(GlucoseWidgetLayout.forSize(250f, 300f, 1.5f).chart)
-    assertTrue(GlucoseWidgetLayout.forSize(250f, 400f, 1.5f).chart)
+  @Test fun `minute history retains the full Today window`() {
+    val trace = glucoseWidgetTrace((0..240).map { point(it) }, end)!!
+    assertEquals(241, trace.runs.flatten().size)
+    assertEquals("4h history", GlucoseWidgetCard.period(trace, false))
+    assertEquals("3h 55m history", GlucoseWidgetCard.period(glucoseWidgetTrace(listOf(point(235),point(0)),end)!!,false))
+    assertEquals("1h to last reading", GlucoseWidgetCard.period(glucoseWidgetTrace(listOf(point(65),point(0)),end)!!,true))
   }
 
   @Test fun `trace breaks across missing and conflicting observations`() {
@@ -39,8 +40,8 @@ class GlucoseWidgetTest {
 
   @Test fun `missing and simultaneous readings do not invent a history trace`() {
     assertNull(glucoseWidgetTrace(emptyList(), end))
-    assertNull(glucoseWidgetTrace(listOf(point(0)), end))
-    assertNull(glucoseWidgetTrace(listOf(point(0), point(0, 8.0)), end))
+    assertEquals("1 reading", GlucoseWidgetCard.period(glucoseWidgetTrace(listOf(point(0)), end)!!, false))
+    assertEquals(listOf(1, 1), glucoseWidgetTrace(listOf(point(0), point(0, 8.0)), end)!!.runs.map { it.size })
   }
 
   @Test fun `extreme and flat traces remain inside the bitmap`() {

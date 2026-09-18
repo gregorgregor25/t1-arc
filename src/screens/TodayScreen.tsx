@@ -50,6 +50,7 @@ export function TodayScreen() {
   const { deleteManualContext, now, ownerIdentity, refreshData, sourceError, syncing, today } =
     useDataContext();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("6h");
+  const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
   const [logLauncherVisible, setLogLauncherVisible] = useState(false);
@@ -97,6 +98,8 @@ export function TodayScreen() {
       // child launch token is its intentional effect on the mounted Today screen.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFoodLaunchRequest((value) => value + 1);
+    } else if (route.params.action === "trend-details") {
+      setTrendDetailsRequest((value) => value + 1);
     } else if (route.params.action === "log-context") {
       setInitialContextKind("meal");
       setContextKindLocked(false);
@@ -142,6 +145,7 @@ export function TodayScreen() {
           <LoadingCard label="Loading saved glucose…" />
         ) : (
           <CurrentGlucoseCard
+            trendDetailsRequest={trendDetailsRequest}
             history={heroTimeline.data?.glucose}
             reading={latest.reading}
             source={glucoseSource}

@@ -1,0 +1,50 @@
+{
+  "rose": {
+    "label": "Rose",
+    "light": "#B4233A",
+    "dark": "#FF9BAE",
+    "aod": "#FF9BAE"
+  },
+  "amber": {
+    "label": "Amber",
+    "light": "#8A4B08",
+    "dark": "#F1B66F",
+    "aod": "#F1B66F"
+  },
+  "orange": {
+    "label": "Orange",
+    "light": "#98520A",
+    "dark": "#FFB066",
+    "aod": "#FFB066"
+  },
+  "cyan": {
+    "label": "Cyan",
+    "light": "#087F99",
+    "dark": "#65D2E7",
+    "aod": "#65D2E7"
+  },
+  "green": {
+    "label": "Green",
+    "light": "#087A5C",
+    "dark": "#69D5AC",
+    "aod": "#69D5AC"
+  },
+  "blue": {
+    "label": "Blue",
+    "light": "#3156B8",
+    "dark": "#8EA7FF",
+    "aod": "#8EA7FF"
+  },
+  "purple": {
+    "label": "Purple",
+    "light": "#6844A5",
+    "dark": "#C2A9FF",
+    "aod": "#C2A9FF"
+  },
+  "slate": {
+    "label": "Slate",
+    "light": "#526A72",
+    "dark": "#A9BDC2",
+    "aod": "#A9BDC2"
+  }
+}

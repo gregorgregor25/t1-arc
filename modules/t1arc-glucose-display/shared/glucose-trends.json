@@ -1,0 +1,34 @@
+{
+  "doubleDown": {
+    "arrow": "⇊",
+    "label": "falling quickly"
+  },
+  "down": {
+    "arrow": "↓",
+    "label": "falling"
+  },
+  "slightDown": {
+    "arrow": "↘",
+    "label": "gently falling"
+  },
+  "flat": {
+    "arrow": "→",
+    "label": "steady"
+  },
+  "slightUp": {
+    "arrow": "↗",
+    "label": "gently rising"
+  },
+  "up": {
+    "arrow": "↑",
+    "label": "rising"
+  },
+  "doubleUp": {
+    "arrow": "⇈",
+    "label": "rising quickly"
+  },
+  "unknown": {
+    "arrow": "—",
+    "label": "trend unavailable"
+  }
+}

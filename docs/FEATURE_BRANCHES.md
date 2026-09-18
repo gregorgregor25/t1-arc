@@ -34,7 +34,7 @@ path described in [Releasing](RELEASING.md).
 
 ## Widget validation
 
-Check compact, medium and tall widgets; resize an existing instance and rotate
+Check the default four-by-two card and larger sizes; resize an existing instance and rotate
 the launcher. Verify mmol/L and mg/dL, large text, calculated trends, configured
 range colours, delayed/stale/missing readings, tap-to-open, and data clearing.
 The history trace uses up to four hours of observed readings, with gaps over
@@ -46,3 +46,9 @@ snapshots without history remain readable; a subsequent glucose sync supplies
 the trace. Clearing the snapshot clears its history too. Validate recovery
 after process death and reboot, as well as a launcher update over the previous
 official widget, before releasing.
+
+The native card uses the same JSON design, theme, glucose-colour and trend
+presentation definitions as Today. Widget history is supplied before the Wear
+payload limit, so a minute-by-minute source retains the full four-hour trace.
+The widget collector uses the existing privacy epoch and encrypted snapshot;
+adding a widget does not enable the prominent glucose notification or AOD.

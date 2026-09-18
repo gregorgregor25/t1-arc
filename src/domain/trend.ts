@@ -1,3 +1,4 @@
+import sharedTrends from '../../modules/t1arc-glucose-display/shared/glucose-trends.json';
 import { GlucoseReading, TrendDirection } from './models';
 
 export interface TrendPresentation {
@@ -5,16 +6,7 @@ export interface TrendPresentation {
   label: string;
 }
 
-const TREND_PRESENTATION: Record<TrendDirection, TrendPresentation> = {
-  doubleDown: { arrow: '⇊', label: 'falling quickly' },
-  down: { arrow: '↓', label: 'falling' },
-  slightDown: { arrow: '↘', label: 'gently falling' },
-  flat: { arrow: '→', label: 'steady' },
-  slightUp: { arrow: '↗', label: 'gently rising' },
-  up: { arrow: '↑', label: 'rising' },
-  doubleUp: { arrow: '⇈', label: 'rising quickly' },
-  unknown: { arrow: '—', label: 'trend unavailable' },
-};
+const TREND_PRESENTATION: Record<TrendDirection, TrendPresentation> = sharedTrends;
 
 export function presentTrend(trend: TrendDirection) {
   return TREND_PRESENTATION[trend];

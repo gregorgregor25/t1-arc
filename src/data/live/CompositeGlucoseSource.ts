@@ -70,6 +70,11 @@ export class CompositeGlucoseSource implements GlucoseSource {
     // Rendering is cache-first. Explicit repository refresh lanes own all
     // network work, so a slow/offline source can never hide saved history.
     const readings = await this.history.getReadings(range);
+    return this.selectReadings(readings);
+  }
+
+  /** Shared by Today and native display publication. */
+  selectReadings(readings: GlucoseReading[]) {
     return this.preferLiveOverHistoricalDuplicates(
       this.preferOneReadingPerExactTimestamp(readings),
     );
