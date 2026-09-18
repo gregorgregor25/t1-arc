@@ -7,7 +7,7 @@
     android:id="@+id/t1arc_widget_card"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:scaleType="fitXY"
+    android:scaleType="fitCenter"
     android:importantForAccessibility="no"
     android:src="@drawable/t1arc_widget_background" />
   <FrameLayout

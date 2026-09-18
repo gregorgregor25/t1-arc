@@ -1114,6 +1114,7 @@ private object T1ArcGlucoseAlertOwnershipGate {
 }
 
 internal object T1ArcGlucoseWidget {
+  private val reportedSizes = mutableMapOf<Int, WidgetSizes>()
   private fun pendingIntent(context: Context, details: Boolean = false, missing: Boolean = false): PendingIntent {
     val link = if (missing) T1ArcAppLinks.SOURCES else if (details) "t1arc://today/trend-details" else T1ArcAppLinks.TODAY
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(context.packageName)
@@ -1142,25 +1143,26 @@ internal object T1ArcGlucoseWidget {
     }
   }
 
-  fun update(context: Context, ids: IntArray) {
+  fun update(context: Context, ids: IntArray, changedOptions: Bundle? = null) {
     val manager = AppWidgetManager.getInstance(context)
     ids.forEach { id ->
-      val options = manager.getAppWidgetOptions(id)
-      val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      val options = changedOptions ?: manager.getAppWidgetOptions(id)
+      val exact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         @Suppress("DEPRECATION")
-        val sizes = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
-        val layouts = (sizes?.takeIf { it.isNotEmpty() } ?: arrayListOf(
-          SizeF(300f, 220f), SizeF(380f, 238f),
-        )).distinct().take(4).associateWith { render(context, it.width, it.height) }
-        RemoteViews(layouts)
-      } else {
-        val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250)
-        val maxWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, minWidth)
-        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
-        val maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minHeight)
-        RemoteViews(render(context, maxWidth.toFloat(), minHeight.toFloat()),
-          render(context, minWidth.toFloat(), maxHeight.toFloat()))
-      }
+        val supplied = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+        supplied.orEmpty().map { WidgetSize(it.width, it.height) }
+      } else emptyList()
+      val sizes = glucoseWidgetSizes(exact,
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT))
+      if (reportedSizes.put(id, sizes) != sizes) Log.i("T1ArcWidgetSize", "Widget $id: $sizes")
+      // Some hosts supply exact sizes but inflate a size-map's smallest-area fallback,
+      // including a landscape bitmap in a portrait widget. Orientation RemoteViews work
+      // in those hosts as well as modern launchers; keep precise reported dimensions.
+      val views = RemoteViews(render(context, sizes.landscape.width, sizes.landscape.height),
+        render(context, sizes.portrait.width, sizes.portrait.height))
       manager.updateAppWidget(id, views)
     }
   }
@@ -1209,7 +1211,7 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
     newOptions: Bundle,
   ) {
     T1ArcGlucosePhoneSurfaceGate.mutate {
-      T1ArcGlucoseWidget.update(context, intArrayOf(appWidgetId))
+      T1ArcGlucoseWidget.update(context, intArrayOf(appWidgetId), newOptions)
     }
   }
 

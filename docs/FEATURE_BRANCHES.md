@@ -52,3 +52,11 @@ presentation definitions as Today. Widget history is supplied before the Wear
 payload limit, so a minute-by-minute source retains the full four-hour trace.
 The widget collector uses the existing privacy epoch and encrypted snapshot;
 adding a widget does not enable the prominent glucose notification or AOD.
+
+Launcher compatibility must include Pixel and Nova, with an existing widget
+resized vertically and horizontally. Use orientation-specific RemoteViews:
+some launchers report modern exact sizes but inflate the smallest-area entry
+from a size map, which can select the landscape bitmap while in portrait.
+Prefer precise reported dimensions matching each orientation; fall back to
+the legacy min/max dimensions when exact sizes are absent or invalid. Preserve
+the image aspect ratio if a host's allocated bounds differ from its report.

@@ -49,9 +49,10 @@ internal object GlucoseWidgetCard {
 
   fun draw(context: Context, requestedWidth: Float, requestedHeight: Float,
     snapshot: GlucoseDisplaySnapshot?, now: Long): WidgetCardImage {
-    val width = requestedWidth.coerceIn(150f, 1000f)
-    val height = requestedHeight.coerceIn(80f, 1000f)
-    // Share the launcher bitmap budget across at most four layouts, retaining crisp device-density text.
+    // Keep the host's aspect ratio. Bound bitmap pixels below, not each dimension independently.
+    val width = requestedWidth.takeIf { it.isFinite() && it > 0 } ?: 380f
+    val height = requestedHeight.takeIf { it.isFinite() && it > 0 } ?: 238f
+    // Bound launcher bitmap memory while retaining crisp device-density text.
     val metrics = context.resources.displayMetrics
     val pixelBudget = min(600_000f, metrics.widthPixels.toFloat() * metrics.heightPixels * .35f)
     val pixelScale = min(metrics.density.coerceAtMost(3f), sqrt(pixelBudget / (width * height)))
