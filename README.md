@@ -1,5 +1,7 @@
 # T1 Arc
 
+> **Garmin development branch:** [Download the Garmin hardware beta 0.4 tester pack](https://github.com/gregorgregor25/t1-arc/releases/tag/garmin-beta-0.4) and read the [setup guide](garmin/TESTER-GUIDE.md). This experimental branch uses the T1 Arc 1.6.9 phone baseline; the main release is newer. It installs as a separate Android app and has not been tested on a real Garmin watch.
+
 <p align="center">
   <img src="assets/icon.png" width="112" alt="T1 Arc app icon">
 </p>
@@ -9,7 +11,7 @@
 <p align="center">
   <img alt="Status: active development" src="https://img.shields.io/badge/status-active_development-0A839B">
   <img alt="Platform: Android" src="https://img.shields.io/badge/platform-Android-3DDC84">
-  <img alt="Licence: PolyForm Noncommercial" src="https://img.shields.io/badge/licence-PolyForm_Noncommercial-E6A55A">
+  <img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-E6A55A">
 </p>
 
 T1 Arc is a local-first Android app for bringing glucose, insulin, food, activity and wider health context into one place. It is built to help people inspect their own records, understand what changed and find the evidence behind an observation.
@@ -141,9 +143,9 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) before starting a larger change. 
 
 ## Licence
 
-T1 Arc is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may inspect, fork, modify and redistribute it for permitted noncommercial purposes. Commercial use is not permitted without separate written permission from the licensor.
+T1 Arc is open source under the [MIT License](LICENSE), matching the current public repository.
 
-Because the licence restricts commercial use, it does not meet the Open Source Initiative definition of open source. The distinction matters, and the repository uses the more accurate term source-available.
+
 
 ## Important notice
 

@@ -1,0 +1,72 @@
+[
+  {
+    "device": "venu2plus",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "57dd01ef956879935f5f4cee927d301da90fe2821fb3a58639c8245d8aea403f"
+  },
+  {
+    "device": "venu2s",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "72c299d2fa25140b37dcf5890f829720a465505ad89d7ea5b2d2334d4851b8d5"
+  },
+  {
+    "device": "venu3",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "3e84e55befb7c60bb6a638ce73a3f01077f0b85bf1e0f5d092328d871dc6ac82"
+  },
+  {
+    "device": "venusq2",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "86e4455201d203c1b1e6b757170de9621d2f6aac735505c6aba3034e625161b7"
+  },
+  {
+    "device": "vivoactive5",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "536227b0c899d3495da54bf8d4d52a06073c27c4d395a73e8158069b997aa394"
+  },
+  {
+    "device": "fr255",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "04809e9550926dff077d80b626fdaec40fa6c03ca4771a437e40cc7dfdcb94ff"
+  },
+  {
+    "device": "fr265",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "06b1262bdf9dd05a62cb86ee4273404ce57147db607f4fa0ebf0f7592246ce4b"
+  },
+  {
+    "device": "fr965",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "a3d0750a88aa4277a7243182e4efcd30c80e4096fa8bc05f49db42ccade2551d"
+  },
+  {
+    "device": "fenix7",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "8635e88ebef877d43ef51ab95edfb4d3c7c63d3cef82e941b44894225573a193"
+  },
+  {
+    "device": "epix2",
+    "compiled": true,
+    "runtimeLogicTests": "2 passed",
+    "hardwareTested": false,
+    "sha256": "5e2b6f9d5075539cc0dd001cd440da4b72a49591211e15b3fc2c12591a52f78e"
+  }
+]

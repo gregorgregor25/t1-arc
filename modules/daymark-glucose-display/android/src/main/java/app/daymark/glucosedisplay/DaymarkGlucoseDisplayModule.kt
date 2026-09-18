@@ -2090,6 +2090,27 @@ class DaymarkGlucoseDisplayModule : Module() {
       status(requireNotNull(appContext.reactContext))
     }
 
+    AsyncFunction("getGarminStatusAsync") Coroutine { ->
+      DaymarkGarminSync.status(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("selectGarminDeviceAsync") Coroutine { deviceId: String, units: String ->
+      DaymarkGarminSync.select(requireNotNull(appContext.reactContext), deviceId, units)
+    }
+    AsyncFunction("retryGarminAsync") Coroutine { ->
+      DaymarkGarminSync.retry(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("shareGarminDiagnosticsAsync") Coroutine { ->
+      val context = requireNotNull(appContext.reactContext)
+      val activity = requireNotNull(appContext.currentActivity) { "Open T1 Arc to share a report." }
+      val file = DaymarkGarminDiagnostics.create(context, DaymarkGarminSync.diagnosticSnapshot(context))
+      val result = java.util.concurrent.CompletableFuture<Boolean>()
+      activity.runOnUiThread {
+        try { DaymarkGarminDiagnostics.share(activity, file); result.complete(true) }
+        catch (e: Exception) { result.completeExceptionally(e) }
+      }
+      result.get(8, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
     AsyncFunction("getWearStatusAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)
       try {
@@ -2275,6 +2296,7 @@ class DaymarkGlucoseDisplayModule : Module() {
         DaymarkGlucoseNotification.notify(context)
       }
       DaymarkGlucoseWidget.updateAll(context)
+      DaymarkGarminSync.changed(context)
       status(context)
     }
 
@@ -2283,6 +2305,7 @@ class DaymarkGlucoseDisplayModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       DaymarkGlucoseDisplayState.clearSnapshot(context)
       DaymarkWearSync.publishMissing(context, sourceLabel)
+      DaymarkGarminSync.changed(context)
       DaymarkAndroidAuto.refresh(context)
       DaymarkGlucoseNotification.notify(context)
       DaymarkGlucoseWidget.updateAll(context)

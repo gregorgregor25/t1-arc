@@ -4,10 +4,12 @@ import {
   statSync,
 } from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
+const loadConfig = createRequire(import.meta.url)(path.join(root, 'app.config.js'));
 
 function filesUnder(directory: string): string[] {
   if (!statSync(directory, { throwIfNoEntry: false })) return [];
@@ -59,8 +61,30 @@ describe('T1 Arc product identity', () => {
     expect(appConfig.expo.name).toBe('T1 Arc');
     expect(appConfig.expo.description).toContain('Type 1 diabetes');
     expect(androidStrings).toContain(
-      '<string name="app_name">T1 Arc</string>',
+      `<string name="app_name">${process.env.T1ARC_GARMIN_BETA === '1' ? 'T1 Arc Garmin Beta' : 'T1 Arc'}</string>`,
     );
+    const resolved = loadConfig();
+    const nativeGradle = text(path.join(root, 'android', 'app', 'build.gradle'));
+    expect(nativeGradle).toContain(`applicationId '${resolved.android.package}'`);
+  });
+
+  it('keeps the Garmin beta identity separate and explicitly opt-in', () => {
+    const previous = process.env.T1ARC_GARMIN_BETA;
+    try {
+      delete process.env.T1ARC_GARMIN_BETA;
+      const regular = loadConfig();
+      expect(regular).toEqual(JSON.parse(text(path.join(root, 'app.json'))).expo);
+      process.env.T1ARC_GARMIN_BETA = '1';
+      const beta = loadConfig();
+      expect(beta.name).toBe('T1 Arc Garmin Beta');
+      expect(beta.android.package).toBe('app.daymark.garminbeta');
+      expect(beta.android.package).not.toBe(regular.android.package);
+      expect(beta.scheme).not.toBe(regular.scheme);
+      expect(beta.version).toBe(regular.version);
+    } finally {
+      if (previous === undefined) delete process.env.T1ARC_GARMIN_BETA;
+      else process.env.T1ARC_GARMIN_BETA = previous;
+    }
   });
 
   it('keeps Expo, npm and native Android release versions aligned', () => {

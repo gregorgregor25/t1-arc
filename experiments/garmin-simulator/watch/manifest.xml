@@ -1,0 +1,11 @@
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+  <iq:application id="d8285c0afe7d4945892e9600a5b108e5" type="watch-app" name="@Strings.AppName" entry="ProbeApp" launcherIcon="@Drawables.Icon" minApiLevel="4.2.0">
+    <iq:products><iq:product id="venu2plus"/></iq:products>
+    <iq:permissions>
+      <iq:uses-permission id="Communications"/>
+      <iq:uses-permission id="Background"/>
+      <iq:uses-permission id="ComplicationPublisher"/>
+    </iq:permissions>
+    <iq:languages><iq:language>eng</iq:language></iq:languages>
+  </iq:application>
+</iq:manifest>

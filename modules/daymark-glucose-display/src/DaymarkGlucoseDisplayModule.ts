@@ -10,11 +10,16 @@ import {
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
   WearCompanionStatus,
+  GarminCompanionStatus,
 } from './DaymarkGlucoseDisplay.types';
 
 declare class DaymarkGlucoseDisplayModule extends NativeModule<Record<string, never>> {
   getStatusAsync(): Promise<GlucoseDisplayStatus>;
   getWearStatusAsync(): Promise<WearCompanionStatus>;
+  getGarminStatusAsync(): Promise<GarminCompanionStatus>;
+  selectGarminDeviceAsync(deviceId: string, units: 'mmol/L' | 'mg/dL'): Promise<{ enabled: boolean }>;
+  retryGarminAsync(): Promise<boolean>;
+  shareGarminDiagnosticsAsync(): Promise<boolean>;
   getHomeWidgetStatusAsync(): Promise<HomeWidgetStatus>;
   requestPinHomeWidgetAsync(): Promise<boolean>;
   enableAsync(showOnLockScreen: boolean): Promise<GlucoseDisplayStatus>;

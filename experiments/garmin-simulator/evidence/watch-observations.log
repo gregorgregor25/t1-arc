@@ -1,0 +1,33 @@
+Observed simulator stdout excerpts, copied from tool output on 2026-09-17.
+This is a collated observation record, not a continuous raw log.
+
+Foreground publisher:
+PROBE_PUBLISH value=6.8
+PROBE_RECEIVE route=foreground revision=1789677897066
+PROBE_ACK failed
+
+Separate consumer launched first with publisher loaded second:
+CONSUMER_VALUE --
+Android revision=1789678044773 reported SUCCESS, but no matching background receive or consumer change was observed.
+
+Publisher foreground, consumer loaded second:
+PROBE_PUBLISH value=OLD
+PROBE_RECEIVE route=foreground revision=1789678216698
+PROBE_ACK failed
+
+PROBE_PUBLISH value=--
+PROBE_RECEIVE route=foreground revision=1789678266408
+PROBE_ACK failed
+
+Temporal background publication observed:
+appStarted D8285C0AFE7D4945892E9600A5B108E5 bkgdEvts:4096
+Background: PROBE_PUBLISH value=--
+appTerminated D8285C0AFE7D4945892E9600A5B108E5 bkgdEvts:4096|backgroundApp
+
+PROBE_PUBLISH value=6.8 D
+PROBE_RECEIVE route=foreground revision=1789678298293
+PROBE_ACK failed
+
+PROBE_PUBLISH value=6.8
+PROBE_RECEIVE route=foreground revision=1789678377851
+PROBE_ACK failed

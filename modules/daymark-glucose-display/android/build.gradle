@@ -18,6 +18,7 @@ android {
 }
 
 dependencies {
+  implementation "com.garmin.connectiq:ciq-companion-app-sdk:2.4.0"
   implementation "androidx.car.app:app:1.7.0"
   implementation "androidx.core:core-ktx:1.17.0"
   implementation "androidx.media:media:1.8.0"

@@ -1,0 +1,7 @@
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+  <iq:application id="0455978caeac469b91a75f8f4d825f1d" type="watchface" name="@Strings.AppName" entry="ProbeFaceApp" launcherIcon="@Drawables.Icon" minApiLevel="4.2.0">
+    <iq:products><iq:product id="venu2plus"/></iq:products>
+    <iq:permissions><iq:uses-permission id="ComplicationSubscriber"/></iq:permissions>
+    <iq:languages><iq:language>eng</iq:language></iq:languages>
+  </iq:application>
+</iq:manifest>

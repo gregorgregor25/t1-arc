@@ -1,0 +1,12 @@
+<resources>
+  <string id="AppName">T1 Arc Test</string>
+  <string id="GlucoseName">T1 Arc synthetic glucose</string>
+  <string id="GlucoseShort">TEST</string>
+  <bitmap id="Icon" filename="icon.svg"/>
+  <bitmap id="ComplicationIcon" filename="icon.svg"/>
+  <complications>
+    <complication id="0" access="public" longLabel="@Strings.GlucoseName" shortLabel="@Strings.GlucoseShort" icon="@Drawables.ComplicationIcon">
+      <faceIt defaultText="@Strings.GlucoseName"/>
+    </complication>
+  </complications>
+</resources>

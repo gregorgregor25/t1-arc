@@ -1,0 +1,72 @@
+--------- beginning of main
+09-17 21:39:08.216  3983  3983 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789677548215, timestampMs=1789677548215, trendOrigin=source}
+09-17 21:39:08.251  3983  3983 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 21:39:08.343  3983  3983 I GarminProbe: DEVICE Simulator id=12345
+09-17 21:39:08.345  3983  3983 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 21:43:46.367  3983  3983 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 21:43:47.693  3983  3983 I GarminProbe: POLL_ERROR android.os.NetworkOnMainThreadException
+09-17 21:44:57.067  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789677897066, timestampMs=1789677897066, trendOrigin=source}
+09-17 21:44:57.085  5676  5676 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 21:44:57.162  5676  5676 I GarminProbe: DEVICE Simulator id=12345
+09-17 21:44:57.163  5676  5676 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 21:45:27.826  5676  5676 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 21:45:30.210  5676  5792 I GarminProbe: SEND_RESULT revision=1789677897066 SUCCESS
+09-17 21:47:24.774  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678044773, timestampMs=1789678044773, trendOrigin=source}
+09-17 21:47:27.360  5676  5792 I GarminProbe: SEND_RESULT revision=1789678044773 SUCCESS
+09-17 21:50:16.698  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678216698, timestampMs=1789677436698, trendOrigin=source}
+09-17 21:50:18.589  5676  5792 I GarminProbe: SEND_RESULT revision=1789678216698 SUCCESS
+09-17 21:51:06.408  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=false, sourceHasError=false, mmolL=6.8, revision=1789678266408, timestampMs=1789678266408, trendOrigin=source}
+09-17 21:51:06.653  5676  5792 I GarminProbe: SEND_RESULT revision=1789678266408 SUCCESS
+09-17 21:51:38.293  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=true, mmolL=6.8, revision=1789678298293, timestampMs=1789678298293, trendOrigin=source}
+09-17 21:51:39.690  5676  5792 I GarminProbe: SEND_RESULT revision=1789678298293 SUCCESS
+09-17 21:52:57.851  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678377851, timestampMs=1789678377851, trendOrigin=source}
+09-17 21:53:00.801  5676  5792 I GarminProbe: SEND_RESULT revision=1789678377851 SUCCESS
+09-17 22:13:43.593  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789679623593, timestampMs=1789679623593, trendOrigin=source}
+09-17 22:13:44.469  5676  5792 I GarminProbe: SEND_RESULT revision=1789679623593 SUCCESS
+09-17 22:15:22.465  6103  6103 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789679722465, timestampMs=1789679722465, trendOrigin=source}
+09-17 22:15:22.546  6103  6103 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 22:15:22.640  6103  6103 I GarminProbe: DEVICE Simulator id=12345
+09-17 22:15:22.642  6103  6103 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 22:16:05.209  6103  6103 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 22:16:07.707  6103  6166 I GarminProbe: SEND_RESULT revision=1789679722465 SUCCESS
+09-17 22:16:41.982  6103  6103 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789679801982, timestampMs=1789679801982, trendOrigin=source}
+09-17 22:16:43.750  6103  6166 I GarminProbe: SEND_RESULT revision=1789679801982 SUCCESS
+09-17 22:18:06.899  6103  6103 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=true, mmolL=6.8, revision=1789679886899, timestampMs=1789679886899, trendOrigin=source}
+09-17 22:18:07.860  6103  6166 I GarminProbe: SEND_RESULT revision=1789679886899 SUCCESS
+09-17 22:19:30.305  6103  6103 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 22:20:42.250  6103  6103 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 22:20:44.071  6103  6166 I GarminProbe: SEND_RESULT revision=1789679886899 SUCCESS
+--------- beginning of crash
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: FATAL EXCEPTION: main
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: Process: app.t1arc.garminprobe, PID: 6103
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: java.lang.NoClassDefFoundError: Failed resolution of: Lkotlin/jvm/internal/Intrinsics;
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at com.garmin.android.connectiq.IQMessageHelper.convertToJava(Unknown Source:2)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at com.garmin.android.connectiq.IQMessageReceiver.onReceive(IQMessageReceiver.java:139)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.app.LoadedApk$ReceiverDispatcher$Args.lambda$getRunnable$0(LoadedApk.java:1839)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.app.LoadedApk$ReceiverDispatcher$Args.$r8$lambda$mcNAAl1SQ4MyJPyDg8TJ2x2h0Rk(Unknown Source:0)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.app.LoadedApk$ReceiverDispatcher$Args$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.os.Handler.handleCallback(Handler.java:995)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:103)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:248)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:338)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:9067)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: Caused by: java.lang.ClassNotFoundException: Didn't find class "kotlin.jvm.internal.Intrinsics" on path: DexPathList[[zip file "/data/app/~~0eJjpif6CAgHbr79idyWyw==/app.t1arc.garminprobe-mxc88HIX82oU2paqFqUqKg==/base.apk"],nativeLibraryDirectories=[/data/app/~~0eJjpif6CAgHbr79idyWyw==/app.t1arc.garminprobe-mxc88HIX82oU2paqFqUqKg==/lib/x86_64, /system/lib64, /system_ext/lib64]]
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+09-17 22:20:44.108  6103  6103 E AndroidRuntime: 	... 13 more
+09-17 22:23:14.023  6302  6302 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789680194023, timestampMs=1789680194023, trendOrigin=source}
+09-17 22:23:14.039  6302  6302 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 22:23:14.111  6302  6302 I GarminProbe: DEVICE Simulator id=12345
+09-17 22:23:14.112  6302  6302 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 22:25:02.897  6449  6449 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.800000190734863, revision=1789680302887, timestampMs=1789679522887, trendOrigin=source}
+09-17 22:25:02.916  6449  6449 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 22:25:02.980  6449  6449 I GarminProbe: DEVICE Simulator id=12345
+09-17 22:25:02.981  6449  6449 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 22:25:05.287  6498  6498 I GarminProbe: RESTORED {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.800000190734863, revision=1789680302887, timestampMs=1789679522887, trendOrigin=source}
+09-17 22:25:05.298  6498  6498 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 22:25:05.351  6498  6498 I GarminProbe: DEVICE Simulator id=12345
+09-17 22:25:05.354  6498  6498 I GarminProbe: DEVICE_STATUS NOT_CONNECTED

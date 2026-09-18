@@ -60,4 +60,4 @@ Please read [the privacy model](docs/PRIVACY.md) before changing storage, networ
 
 ## Licence
 
-By contributing, you agree that your contribution may be distributed under the repository's [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use is not permitted without separate written permission from the licensor.
+By contributing, you agree that your contribution may be distributed under the repository's [MIT License](LICENSE).

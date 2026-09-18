@@ -18,6 +18,14 @@ const unavailable: GlucoseDisplayStatus = {
 };
 
 export default {
+  async getGarminStatusAsync() {
+    return { supported: false, enabled: false, ready: false, backgroundSyncEnabled: false,
+      selectedDeviceId: null, units: 'mmol/L' as const, state: 'unavailable',
+      confirmedAt: 0, route: '', devices: [] };
+  },
+  async selectGarminDeviceAsync() { return { enabled: false }; },
+  async retryGarminAsync() { return false; },
+  async shareGarminDiagnosticsAsync() { return false; },
   async getStatusAsync() {
     return unavailable;
   },

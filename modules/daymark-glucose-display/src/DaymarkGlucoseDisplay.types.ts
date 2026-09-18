@@ -59,6 +59,20 @@ export interface WearCompanionStatus {
   error?: string;
 }
 
+export interface GarminCompanionStatus {
+  supported: boolean;
+  enabled: boolean;
+  ready: boolean;
+  backgroundSyncEnabled: boolean;
+  selectedDeviceId: string | null;
+  units: 'mmol/L' | 'mg/dL';
+  state: string;
+  error?: string | null;
+  confirmedAt: number;
+  route: string;
+  devices: { id: string; name: string; connected: boolean }[];
+}
+
 export interface HomeWidgetStatus {
   supported: boolean;
   pinningSupported: boolean;

@@ -1,0 +1,23 @@
+--------- beginning of main
+09-17 21:39:08.216  3983  3983 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789677548215, timestampMs=1789677548215, trendOrigin=source}
+09-17 21:39:08.251  3983  3983 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 21:39:08.343  3983  3983 I GarminProbe: DEVICE Simulator id=12345
+09-17 21:39:08.345  3983  3983 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 21:43:46.367  3983  3983 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 21:43:47.693  3983  3983 I GarminProbe: POLL_ERROR android.os.NetworkOnMainThreadException
+09-17 21:44:57.067  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789677897066, timestampMs=1789677897066, trendOrigin=source}
+09-17 21:44:57.085  5676  5676 I GarminProbe: SDK_READY (no Garmin Connect required for this tethered test)
+09-17 21:44:57.162  5676  5676 I GarminProbe: DEVICE Simulator id=12345
+09-17 21:44:57.163  5676  5676 I GarminProbe: DEVICE_STATUS NOT_CONNECTED
+09-17 21:45:27.826  5676  5676 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 21:45:30.210  5676  5792 I GarminProbe: SEND_RESULT revision=1789677897066 SUCCESS
+09-17 21:47:24.774  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678044773, timestampMs=1789678044773, trendOrigin=source}
+09-17 21:47:27.360  5676  5792 I GarminProbe: SEND_RESULT revision=1789678044773 SUCCESS
+09-17 21:50:16.698  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678216698, timestampMs=1789677436698, trendOrigin=source}
+09-17 21:50:18.589  5676  5792 I GarminProbe: SEND_RESULT revision=1789678216698 SUCCESS
+09-17 21:51:06.408  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=false, sourceHasError=false, mmolL=6.8, revision=1789678266408, timestampMs=1789678266408, trendOrigin=source}
+09-17 21:51:06.653  5676  5792 I GarminProbe: SEND_RESULT revision=1789678266408 SUCCESS
+09-17 21:51:38.293  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=true, mmolL=6.8, revision=1789678298293, timestampMs=1789678298293, trendOrigin=source}
+09-17 21:51:39.690  5676  5792 I GarminProbe: SEND_RESULT revision=1789678298293 SUCCESS
+09-17 21:52:57.851  5676  5676 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789678377851, timestampMs=1789678377851, trendOrigin=source}
+09-17 21:53:00.801  5676  5792 I GarminProbe: SEND_RESULT revision=1789678377851 SUCCESS

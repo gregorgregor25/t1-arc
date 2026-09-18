@@ -1,0 +1,4 @@
+<resources>
+  <string id="AppName">T1 Arc Test Consumer</string>
+  <bitmap id="Icon" filename="../../watch/resources/icon.svg"/>
+</resources>

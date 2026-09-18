@@ -1,0 +1,6 @@
+PROBE_PUBLISH value=--
+Background: PROBE_PUBLISH value=--
+PROBE_PUBLISH value=6.8 D
+PROBE_RECEIVE route=foreground revision=1789679886899
+PROBE_ACK sent
+Background: PROBE_PUBLISH value=6.8 D

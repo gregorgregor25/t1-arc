@@ -16,6 +16,7 @@ expo-env.d.ts
 *.p8
 *.p12
 *.key
+*.der
 *.mobileprovision
 
 # Metro
@@ -38,6 +39,9 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Local feasibility toolchains and generated test artifacts
+.local/
 
 # generated native folders
 /ios

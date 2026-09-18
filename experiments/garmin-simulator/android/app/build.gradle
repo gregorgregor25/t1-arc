@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'app.t1arc.garminprobe'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'app.t1arc.garminprobe'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-probe'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation 'com.garmin.connectiq:ciq-companion-app-sdk:2.4.0'
+    // Garmin's POM omits this runtime dependency used by inbound message decoding.
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.21'
+}

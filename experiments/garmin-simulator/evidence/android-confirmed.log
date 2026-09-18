@@ -1,0 +1,31 @@
+--------- beginning of main
+09-17 22:51:50.630  6570  6570 I GarminProbe: DEVICE_STATUS CONNECTED
+09-17 22:51:51.718  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789680302887 attempt=1
+09-17 22:51:51.728  6570  6738 I GarminProbe: SEND_RESULT revision=1789680302887 SUCCESS
+09-17 22:51:51.768  6570  6570 I GarminProbe: WATCH_ACK SUCCESS [{route=foreground, value=OLD, revision=1789680302887}]
+09-17 22:51:51.771  6570  6570 I GarminProbe: CONFIRMED revision=1789680302887 route=foreground value=OLD
+09-17 22:51:52.073  6570  6570 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789681912070, timestampMs=1789681912070, trendOrigin=source}
+09-17 22:51:54.723  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789681912070 attempt=1
+09-17 22:51:54.726  6570  6738 I GarminProbe: SEND_RESULT revision=1789681912070 SUCCESS
+09-17 22:51:54.754  6570  6570 I GarminProbe: WATCH_ACK SUCCESS [{route=foreground, value=6.8, revision=1789681912070}]
+09-17 22:51:54.756  6570  6570 I GarminProbe: CONFIRMED revision=1789681912070 route=foreground value=6.8
+09-17 22:52:30.670  6570  6570 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=7.199999809265137, revision=1789681950670, timestampMs=1789681950670, trendOrigin=source}
+09-17 22:52:30.762  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789681950670 attempt=1
+09-17 22:52:30.765  6570  6738 I GarminProbe: SEND_RESULT revision=1789681950670 SUCCESS
+09-17 22:52:42.781  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789681950670 attempt=2
+09-17 22:52:42.783  6570  6738 I GarminProbe: SEND_RESULT revision=1789681950670 SUCCESS
+09-17 22:52:54.799  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789681950670 attempt=3
+09-17 22:52:54.802  6570  6738 I GarminProbe: SEND_RESULT revision=1789681950670 SUCCESS
+09-17 22:53:06.816  6570  6570 I GarminProbe: UNCONFIRMED revision=1789681950670 after 3 attempts; waiting for reconnect or newer data
+09-17 22:58:24.300  6570  6570 I GarminProbe: WATCH_ACK SUCCESS [{route=background, value=7.2, revision=1789681950670}]
+09-17 22:58:24.302  6570  6570 I GarminProbe: CONFIRMED revision=1789681950670 route=background value=7.2
+09-17 22:59:04.017  6570  6570 I GarminProbe: REPLAY revision=1789681950670
+09-17 22:59:04.307  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789681950670 attempt=1
+09-17 22:59:04.310  6570  6738 I GarminProbe: SEND_RESULT revision=1789681950670 SUCCESS
+09-17 22:59:04.337  6570  6570 I GarminProbe: WATCH_ACK SUCCESS [{route=foreground, value=7.2 D, revision=1789681950670}]
+09-17 22:59:04.339  6570  6570 I GarminProbe: CONFIRMED revision=1789681950670 route=foreground value=7.2 D
+09-17 22:59:21.525  6570  6570 I GarminProbe: SCENARIO {synthetic=true, schemaVersion=1, trend=flat, available=true, sourceHasError=false, mmolL=6.8, revision=1789682361524, timestampMs=1789681651524, trendOrigin=source}
+09-17 22:59:22.331  6570  6570 I GarminProbe: SEND_ATTEMPT revision=1789682361524 attempt=1
+09-17 22:59:22.334  6570  6738 I GarminProbe: SEND_RESULT revision=1789682361524 SUCCESS
+09-17 22:59:22.374  6570  6570 I GarminProbe: WATCH_ACK SUCCESS [{route=foreground, value=6.8 D, revision=1789682361524}]
+09-17 22:59:22.376  6570  6570 I GarminProbe: CONFIRMED revision=1789682361524 route=foreground value=6.8 D

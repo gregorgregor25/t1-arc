@@ -25,6 +25,7 @@ import { NightscoutSourceCard } from '@/components/NightscoutSourceCard';
 import { NotificationSourceCard } from '@/components/NotificationSourceCard';
 import { SectionCard } from '@/components/SectionCard';
 import { WearCompanionCard } from '@/components/WearCompanionCard';
+import { GarminCompanionCard } from '@/components/GarminCompanionCard';
 import { XdripSourceCard } from '@/components/XdripSourceCard';
 import { connectLibreLinkUp } from '@/data/libreLinkUp/connectLibreLinkUp';
 import { disableGlucoseDisplay } from '@/data/glucoseDisplay/glucoseDisplayCoordinator';
@@ -647,6 +648,8 @@ export function SourcesScreen({
             detail="Current glucose and explicit freshness on your wrist."
           />
           <WearCompanionCard />
+          <SectionHeading title="Garmin" detail="Complications for compatible Garmin faces. Hardware beta." />
+          <GarminCompanionCard />
         </View>
       ) : null}
 
