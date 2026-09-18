@@ -55,8 +55,17 @@ Open **Home screen widget > Add to home screen**. If the launcher cannot show
 the picker, long-press the home screen, choose **Widgets**, then **T1 Arc**.
 The settings preview is illustrative, not a live reading.
 
-The widget reads the app's saved display snapshot. It updates with the app;
-with **Keep glucose visible** active, the collector also refreshes its age.
+The widget uses Today's card design: the value and direction, reading age,
+four-hour glucose trace, observed history duration, trend and range badge.
+It follows the app's theme, units and configured glucose colours. Tap the card
+to open Today; the calculated-trend button opens its supporting readings.
+The default is four columns by two rows, subject to your launcher's grid.
+
+The widget reads the encrypted display snapshot published from the same saved
+reading selection and history as Today. A pinned widget keeps the existing
+collector active, even with **Keep glucose visible** off. New source readings
+refresh the card immediately; the collector also checks its age each minute.
+Android can defer background work, so updates are not a hard real-time guarantee.
 Force-stopping the app or restricting its background work can stop updates.
 Check timestamps rather than assuming a visible value is current.
 

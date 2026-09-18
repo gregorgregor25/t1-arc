@@ -1,3 +1,4 @@
+import { CompositeGlucoseSource } from '@/data/live/CompositeGlucoseSource';
 import T1ArcGlucoseDisplay, {
   type GlucoseDisplayStatus,
 } from '../../../modules/t1arc-glucose-display';
@@ -12,7 +13,7 @@ import {
   DIRECT_LIBRE_VALIDATED_NETWORK_REASON,
   DirectLibreRefreshReason,
 } from '@/data/libreLinkUp/refreshPolicy';
-import { refreshConfiguredGlucoseSources } from '@/data/live/configuredGlucoseSources';
+import { configuredGlucoseSources, refreshConfiguredGlucoseSources } from '@/data/live/configuredGlucoseSources';
 import { NOTIFICATION_SOURCE_ID } from '@/data/notification/types';
 import { NIGHTSCOUT_SOURCE_ID } from '@/data/nightscout/types';
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
@@ -42,7 +43,6 @@ export const GLUCOSE_DISPLAY_HEADLESS_TASK =
   'T1ArcLibreForegroundSync';
 
 const WEAR_HISTORY_WINDOW_MS = 6 * 60 * 60_000;
-const MAX_WEAR_HISTORY_POINTS = 144;
 const GLUCOSE_TRENDS = [
   'doubleDown',
   'down',
@@ -179,16 +179,21 @@ type PreparedGlucoseDisplayPublication =
   | { kind: 'missing' }
   | {
       kind: 'unchanged';
+      sourceIds: string[];
       reading: GlucoseReading;
       trend: GlucoseReading['trend'];
       latestIdentity: string;
     }
   | {
       kind: 'reading';
+      sourceIds: string[];
+      widgetHistory: { mmolL: number; timestampMs: number }[];
       reading: GlucoseReading;
       trend: ReturnType<typeof assessGlucoseTrend>;
       sourceLabel: string;
       sourceHasError: boolean;
+      sourceIsLive: boolean;
+      sourceCheckedAt?: number;
       history: { mmolL: number; timestampMs: number }[];
       latestIdentity: string;
       historyIdentity: string;
@@ -256,6 +261,7 @@ function publicationHistoryIdentity(readings: readonly GlucoseReading[]) {
 /** Performs potentially long reads and trend calculation before taking a writer lock. */
 async function prepareGlucoseDisplayPublication(
   options: UpdateGlucoseDisplayOptions = {},
+  lease?: LocalDataWriteLease,
 ): Promise<PreparedGlucoseDisplayPublication> {
   const display = await T1ArcGlucoseDisplay.getStatusAsync();
   // The native snapshot also feeds Wear OS. Watch sync must not depend on
@@ -264,7 +270,10 @@ async function prepareGlucoseDisplayPublication(
 
   const store = new SqliteGlucoseHistoryStore();
   await store.initialize();
-  const reading = await store.getLatestReading();
+  const sources = await configuredGlucoseSources(store, { writeLease: lease, includeUnconfiguredNotification: true });
+  const sourceIds = sources.map((source) => source.sourceId);
+  const composite = new CompositeGlucoseSource(sources, store);
+  const reading = await composite.getLatestReading();
   if (!reading) {
     return { kind: 'missing' };
   }
@@ -280,6 +289,7 @@ async function prepareGlucoseDisplayPublication(
     // reconcile so stale and repeat policies continue to advance with wall time.
     return {
       kind: 'unchanged',
+      sourceIds,
       reading,
       trend: displayTrendOrReadingTrend(display.latestTrend, reading.trend),
       latestIdentity: publicationReadingIdentity(reading),
@@ -291,11 +301,11 @@ async function prepareGlucoseDisplayPublication(
       start: reading.timestamp - WEAR_HISTORY_WINDOW_MS,
       end: reading.timestamp + 1,
     },
-    reading.sourceId,
   );
+  const cardReadings = composite.selectReadings(historyReadings);
   const recentReadings =
     reading.trend === 'unknown'
-      ? historyReadings.filter(
+      ? cardReadings.filter(
           (candidate) =>
             candidate.timestamp >= reading.timestamp - 20 * 60_000,
         )
@@ -303,13 +313,17 @@ async function prepareGlucoseDisplayPublication(
   const trend = assessGlucoseTrend(reading, recentReadings);
   return {
     kind: 'reading',
+    sourceIds,
+    widgetHistory: cardReadings.map((point) => ({ mmolL: point.mmolL, timestampMs: point.timestamp })),
     reading,
     trend,
     sourceLabel,
     sourceHasError: Boolean(syncState?.lastErrorCode),
+    sourceIsLive: sourceIds.includes(reading.sourceId),
+    sourceCheckedAt: syncState?.lastSuccessAt,
     history: historyReadings
+      .filter((point) => point.sourceId === reading.sourceId)
       .sort((left, right) => left.timestamp - right.timestamp)
-      .slice(-MAX_WEAR_HISTORY_POINTS)
       .map((candidate) => ({
         mmolL: candidate.mmolL,
         timestampMs: candidate.timestamp,
@@ -324,13 +338,17 @@ async function preparedPublicationStillCurrent(
   prepared: PreparedGlucoseDisplayPublication,
 ) {
   if (prepared.kind === 'unsupported') return true;
+  const ids = prepared.kind === 'missing' ? [] : prepared.sourceIds;
+  const preferred = ids.length ? `CASE WHEN source_id IN (${ids.map(() => '?').join(',')}) THEN 0 ELSE 1 END,` : '';
+  const priority = ids.length ? `CASE source_id ${ids.map((_, index) => `WHEN ? THEN ${index}`).join(' ')} ELSE ${ids.length} END,` : '';
   const latest = await transaction.getFirstAsync<PublicationIdentityRow>(
     `SELECT id, source_id, timestamp_ms, received_at_ms, mmol_l, trend,
             source_device_id
        FROM glucose_readings
-      ORDER BY timestamp_ms DESC, received_at_ms DESC,
+      ORDER BY ${preferred} timestamp_ms DESC, ${priority} received_at_ms DESC,
                source_device_id ASC, id ASC
       LIMIT 1`,
+    ...ids, ...ids,
   );
   if (prepared.kind === 'missing') return !latest;
   if (!latest || rowPublicationIdentity(latest) !== prepared.latestIdentity) {
@@ -353,11 +371,10 @@ async function preparedPublicationStillCurrent(
     `SELECT id, source_id, timestamp_ms, received_at_ms, mmol_l, trend,
             source_device_id
        FROM glucose_readings
-      WHERE timestamp_ms >= ? AND timestamp_ms < ? AND source_id = ?
+      WHERE timestamp_ms >= ? AND timestamp_ms < ?
       ORDER BY timestamp_ms ASC, source_device_id ASC, id ASC`,
     prepared.reading.timestamp - WEAR_HISTORY_WINDOW_MS,
     prepared.reading.timestamp + 1,
-    prepared.reading.sourceId,
   );
   return (
     JSON.stringify(history.map(rowPublicationIdentity)) ===
@@ -396,7 +413,10 @@ async function commitPreparedGlucoseDisplayPublication(
         timestampMs: prepared.reading.timestamp,
         sourceLabel: prepared.sourceLabel,
         sourceHasError: prepared.sourceHasError,
+        sourceIsLive: prepared.sourceIsLive,
+        sourceCheckedAt: prepared.sourceCheckedAt,
         trendOrigin: prepared.trend.origin,
+        widgetHistory: prepared.widgetHistory,
       },
       prepared.history,
       'No personal glucose reading',
@@ -438,7 +458,7 @@ export async function updateGlucoseDisplayFromHistoryWithLease(
   beforePublication?: () => void,
   sourceWriteLease?: SourceConnectionWriteLease,
 ) {
-  let prepared = await prepareGlucoseDisplayPublication(options);
+  let prepared = await prepareGlucoseDisplayPublication(options, lease);
   let hookPending = true;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const outcome = await withLocalDataWriteLeaseTransaction(
@@ -465,7 +485,7 @@ export async function updateGlucoseDisplayFromHistoryWithLease(
       },
     );
     if (!outcome.retry) return outcome.value;
-    prepared = await prepareGlucoseDisplayPublication(options);
+    prepared = await prepareGlucoseDisplayPublication(options, lease);
   }
   // A continuously moving latest row is benign supersession. Do not publish,
   // alert, or surface an error using a snapshot that has already been replaced.

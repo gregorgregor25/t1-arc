@@ -9,6 +9,7 @@ version = '0.1.0'
 android {
   namespace "io.github.gregorgregor25.t1arc.glucosedisplay"
   sourceSets.main.java.srcDir('../../../wear/shared/src/main/java')
+  sourceSets.main.assets.srcDir('../shared')
   defaultConfig {
     versionCode 1
     versionName "0.1.0"

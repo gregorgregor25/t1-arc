@@ -32,6 +32,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -45,6 +46,7 @@ import android.text.Spanned
 import android.text.style.StrikethroughSpan
 import android.util.Base64
 import android.util.Log
+import android.util.SizeF
 import android.view.Display
 import android.view.Gravity
 import android.view.View
@@ -79,6 +81,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import org.json.JSONObject
+import org.json.JSONArray
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -332,6 +335,9 @@ internal data class GlucoseDisplaySnapshot(
   val timestampMs: Long,
   val sourceLabel: String,
   val sourceHasError: Boolean,
+  val widgetHistory: List<GlucoseHistoryPoint> = emptyList(),
+  val sourceIsLive: Boolean = true,
+  val sourceCheckedAt: Long = 0,
 )
 
 internal data class GlucoseHistoryPoint(
@@ -373,7 +379,17 @@ private fun snapshotFromBridgeMap(value: Map<String, Any?>?): GlucoseDisplaySnap
     sourceLabel = value["sourceLabel"] as? String ?: "Personal glucose source",
     sourceHasError = value["sourceHasError"] as? Boolean ?: false,
     trendOrigin = value["trendOrigin"] as? String ?: "unavailable",
-  )
+  ).let { snapshot ->
+    val points = (value["widgetHistory"] as? List<*>)?.mapNotNull { row ->
+      val fields = row as? Map<*, *> ?: return@mapNotNull null
+      val mmolL = (fields["mmolL"] as? Number)?.toDouble() ?: return@mapNotNull null
+      val timestamp = (fields["timestampMs"] as? Number)?.toLong() ?: return@mapNotNull null
+      GlucoseHistoryPoint(mmolL, timestamp)
+    } ?: emptyList()
+    snapshot.copy(widgetHistory = glucoseWidgetHistory(points, snapshot.timestampMs),
+      sourceIsLive = value["sourceIsLive"] as? Boolean ?: true,
+      sourceCheckedAt = (value["sourceCheckedAt"] as? Number)?.toLong() ?: 0)
+  }
 }
 
 private fun historyFromBridgeMaps(
@@ -429,6 +445,11 @@ private object T1ArcSnapshotCipher {
         .put("timestampMs", value.timestampMs)
         .put("sourceLabel", value.sourceLabel)
         .put("sourceHasError", value.sourceHasError)
+        .put("sourceIsLive", value.sourceIsLive)
+        .put("sourceCheckedAt", value.sourceCheckedAt)
+        .put("widgetHistory", JSONArray(value.widgetHistory.map {
+          JSONObject().put("mmolL", it.mmolL).put("timestampMs", it.timestampMs)
+        }))
         .toString()
         .toByteArray(Charsets.UTF_8)
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -458,6 +479,18 @@ private object T1ArcSnapshotCipher {
         timestampMs = json.getLong("timestampMs"),
         sourceLabel = json.optString("sourceLabel", "Saved glucose"),
         sourceHasError = json.optBoolean("sourceHasError", false),
+        sourceIsLive = json.optBoolean("sourceIsLive", true),
+        sourceCheckedAt = json.optLong("sourceCheckedAt", 0),
+        widgetHistory = json.optJSONArray("widgetHistory")?.let { rows ->
+          (0 until min(rows.length(), 480)).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            val value = row.optDouble("mmolL", Double.NaN)
+            val timestamp = row.optLong("timestampMs", 0)
+            if (value.isFinite() && value in 0.5..40.0 && timestamp > 0) {
+              GlucoseHistoryPoint(value, timestamp)
+            } else null
+          }
+        } ?: emptyList(),
       )
     } catch (_: Exception) {
       null
@@ -484,6 +517,7 @@ internal object DisplayFreshnessPolicy {
     // about the reading timestamp only.
     val age = max(0L, now - timestampMs)
     return when {
+      timestampMs - now > 2 * 60_000L -> DisplayFreshness.STALE
       age <= CURRENT_AFTER_MS -> DisplayFreshness.CURRENT
       age <= STALE_AFTER_MS -> DisplayFreshness.DELAYED
       else -> DisplayFreshness.STALE
@@ -676,7 +710,7 @@ internal object T1ArcGlucoseDisplayState {
   fun collectorMode(context: Context) =
     GlucoseCollectorOwnershipPolicy.resolve(
       displayEnabled = enabled(context),
-      alertMonitoringEnabled = alertMonitoringEnabled(context),
+      alertMonitoringEnabled = alertMonitoringEnabled(context) || T1ArcGlucoseWidget.installed(context),
     )
 
   fun collectorEnabled(context: Context) =
@@ -1079,110 +1113,58 @@ private object T1ArcGlucoseAlertOwnershipGate {
   }
 }
 
-private object T1ArcGlucoseWidget {
-  private fun pendingIntent(context: Context): PendingIntent? {
-    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      ?: return null
-    launch.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-    return PendingIntent.getActivity(
-      context,
-      6420,
-      launch,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
+internal object T1ArcGlucoseWidget {
+  private val reportedSizes = mutableMapOf<Int, WidgetSizes>()
+  private fun pendingIntent(context: Context, details: Boolean = false, missing: Boolean = false): PendingIntent {
+    val link = if (missing) T1ArcAppLinks.SOURCES else if (details) "t1arc://today/trend-details" else T1ArcAppLinks.TODAY
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(context.packageName)
+      .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    return PendingIntent.getActivity(context, if (details) 6421 else if (missing) 6422 else 6420, intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   }
 
-  private fun trendPresentation(trend: String): Pair<String, String> =
-    when (trend) {
-      "doubleDown" -> "⇊" to "Falling quickly"
-      "down" -> "↓" to "Falling"
-      "slightDown" -> "↘" to "Falling slowly"
-      "flat" -> "→" to "Steady"
-      "slightUp" -> "↗" to "Rising slowly"
-      "up" -> "↑" to "Rising"
-      "doubleUp" -> "⇈" to "Rising quickly"
-      else -> "?" to "Direction unavailable"
-    }
-
-  private fun ageCopy(timestampMs: Long, now: Long, locale: Locale): String {
-    val minutes = floor(max(0L, now - timestampMs) / 60_000.0).toInt()
-    return when (minutes) {
-      0 -> "JUST NOW"
-      1 -> "${RegionalNumberFormatter.integer(1L, locale)} MIN AGO"
-      in 2..59 -> "${RegionalNumberFormatter.integer(minutes.toLong(), locale)} MIN AGO"
-      else -> "${RegionalNumberFormatter.integer((minutes / 60).toLong(), locale)} HR AGO"
-    }
-  }
-
-  fun render(context: Context): RemoteViews {
-    val views = RemoteViews(context.packageName, R.layout.t1arc_glucose_widget)
+  fun render(context: Context, width: Float = 380f, height: Float = 238f): RemoteViews {
     val snapshot = T1ArcGlucoseDisplayState.snapshot(context)
-    val now = System.currentTimeMillis()
-    val freshness = T1ArcGlucoseDisplayState.freshness(context, now)
-    val color =
-      T1ArcGlucoseDisplayState.displayColor(context, snapshot, freshness)
-    views.setTextViewText(
-      R.id.t1arc_widget_unit,
-      T1ArcGlucoseDisplayState.displayGlucoseUnit(context),
-    )
-    if (snapshot == null) {
-      views.setTextViewText(R.id.t1arc_widget_value, "—")
-      views.setInt(R.id.t1arc_widget_value, "setPaintFlags", Paint.ANTI_ALIAS_FLAG)
-      views.setTextViewText(R.id.t1arc_widget_trend, "")
-      views.setInt(R.id.t1arc_widget_trend, "setPaintFlags", Paint.ANTI_ALIAS_FLAG)
-      views.setTextViewText(R.id.t1arc_widget_age, "NO DATA")
-      views.setTextViewText(
-        R.id.t1arc_widget_status,
-        "Waiting for personal glucose",
-      )
-      views.setContentDescription(
-        R.id.t1arc_widget_root,
-        "T1 Arc. No personal glucose available.",
-      )
-    } else {
-      val (arrow, direction) = trendPresentation(snapshot.trend)
-      val directionCopy =
-        if (snapshot.trendOrigin == "calculated") "$direction (calculated)" else direction
-      val value = T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL)
-      views.setTextViewText(R.id.t1arc_widget_value, value)
-      val readingPaintFlags =
-        Paint.ANTI_ALIAS_FLAG or
-          (if (freshness == DisplayFreshness.STALE) Paint.STRIKE_THRU_TEXT_FLAG else 0)
-      views.setInt(R.id.t1arc_widget_value, "setPaintFlags", readingPaintFlags)
-      views.setTextViewText(R.id.t1arc_widget_trend, arrow)
-      views.setInt(R.id.t1arc_widget_trend, "setPaintFlags", readingPaintFlags)
-      views.setTextViewText(
-        R.id.t1arc_widget_age,
-        ageCopy(snapshot.timestampMs, now, T1ArcGlucoseDisplayState.displayLocale(context)),
-      )
-      views.setTextViewText(
-        R.id.t1arc_widget_status,
-        if (freshness == DisplayFreshness.STALE) {
-          "Last known · Stale · ${snapshot.sourceLabel}"
-        } else {
-          "$directionCopy · ${freshness.label} · ${snapshot.sourceLabel}"
-        },
-      )
-      views.setContentDescription(
-        R.id.t1arc_widget_root,
-        if (freshness == DisplayFreshness.STALE) {
-          "Last known stale glucose, $value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}, shown struck through. ${ageCopy(snapshot.timestampMs, now, T1ArcGlucoseDisplayState.displayLocale(context)).lowercase(T1ArcGlucoseDisplayState.displayLocale(context))}."
-        } else {
-          "$value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}. $directionCopy. ${freshness.label}. ${ageCopy(snapshot.timestampMs, now, T1ArcGlucoseDisplayState.displayLocale(context)).lowercase(T1ArcGlucoseDisplayState.displayLocale(context))}."
-        },
-      )
+    val card = GlucoseWidgetCard.draw(context, width, height, snapshot, System.currentTimeMillis())
+    return RemoteViews(context.packageName, R.layout.t1arc_glucose_widget).apply {
+      setImageViewBitmap(R.id.t1arc_widget_card, card.bitmap)
+      setContentDescription(R.id.t1arc_widget_root, card.description)
+      setOnClickPendingIntent(R.id.t1arc_widget_root, pendingIntent(context, missing = snapshot == null))
+      val details = card.details
+      setViewVisibility(R.id.t1arc_widget_details, if (details == null) View.GONE else View.VISIBLE)
+      if (details != null) {
+        val density = context.resources.displayMetrics.density
+        setViewPadding(R.id.t1arc_widget_details_slot,
+          (details.left * density).roundToInt(), (details.top * density).roundToInt(),
+          ((width - details.right) * density).roundToInt().coerceAtLeast(0),
+          ((height - details.bottom) * density).roundToInt().coerceAtLeast(0))
+        setOnClickPendingIntent(R.id.t1arc_widget_details, pendingIntent(context, true))
+      }
     }
-    views.setTextColor(R.id.t1arc_widget_value, color)
-    views.setTextColor(R.id.t1arc_widget_trend, color)
-    pendingIntent(context)?.let {
-      views.setOnClickPendingIntent(R.id.t1arc_widget_root, it)
-    }
-    return views
   }
 
-  fun update(context: Context, ids: IntArray) {
+  fun update(context: Context, ids: IntArray, changedOptions: Bundle? = null) {
     val manager = AppWidgetManager.getInstance(context)
-    ids.forEach { id -> manager.updateAppWidget(id, render(context)) }
+    ids.forEach { id ->
+      val options = changedOptions ?: manager.getAppWidgetOptions(id)
+      val exact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        @Suppress("DEPRECATION")
+        val supplied = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+        supplied.orEmpty().map { WidgetSize(it.width, it.height) }
+      } else emptyList()
+      val sizes = glucoseWidgetSizes(exact,
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT),
+        options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT))
+      if (reportedSizes.put(id, sizes) != sizes) Log.i("T1ArcWidgetSize", "Widget $id: $sizes")
+      // Some hosts supply exact sizes but inflate a size-map's smallest-area fallback,
+      // including a landscape bitmap in a portrait widget. Orientation RemoteViews work
+      // in those hosts as well as modern launchers; keep precise reported dimensions.
+      val views = RemoteViews(render(context, sizes.landscape.width, sizes.landscape.height),
+        render(context, sizes.portrait.width, sizes.portrait.height))
+      manager.updateAppWidget(id, views)
+    }
   }
 
   fun updateAll(context: Context) {
@@ -1193,6 +1175,9 @@ private object T1ArcGlucoseWidget {
       )
     if (ids.isNotEmpty()) update(context, ids)
   }
+
+  fun installed(context: Context): Boolean = AppWidgetManager.getInstance(context)
+    .getAppWidgetIds(ComponentName(context, T1ArcGlucoseWidgetProvider::class.java)).isNotEmpty()
 
   fun status(context: Context): Map<String, Any> {
     val manager = AppWidgetManager.getInstance(context)
@@ -1219,6 +1204,17 @@ private object T1ArcGlucoseWidget {
 }
 
 class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: Bundle,
+  ) {
+    T1ArcGlucosePhoneSurfaceGate.mutate {
+      T1ArcGlucoseWidget.update(context, intArrayOf(appWidgetId), newOptions)
+    }
+  }
+
   override fun onUpdate(
     context: Context,
     appWidgetManager: AppWidgetManager,
@@ -1229,7 +1225,12 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
     }
   }
 
+  override fun onDisabled(context: Context) {
+    runCatching { T1ArcGlucoseDisplayService.reconcile(context) }
+  }
+
   override fun onEnabled(context: Context) {
+    runCatching { T1ArcGlucoseDisplayService.reconcile(context) }
     T1ArcGlucosePhoneSurfaceGate.mutate {
       T1ArcGlucoseWidget.updateAll(context)
     }
@@ -1406,7 +1407,9 @@ private fun applyPrivateGlucosePublication(
     if (snapshot == null) {
       T1ArcGlucoseDisplayState.clearSnapshot(context)
     } else {
-      T1ArcGlucoseDisplayState.setSnapshot(context, snapshot)
+      T1ArcGlucoseDisplayState.setSnapshot(context, snapshot.copy(
+        widgetHistory = snapshot.widgetHistory.ifEmpty { glucoseWidgetHistory(history, snapshot.timestampMs) },
+      ))
     }
     // The phone and Android Auto are authoritative even when Wearable Play
     // Services is slow or unavailable. Refresh them before any bounded await.
@@ -1880,7 +1883,9 @@ private object T1ArcGlucoseNotification {
       builder(context)
         .setSmallIcon(R.drawable.t1arc_notification_pulse)
         .setContentTitle("T1 Arc private monitoring")
-        .setContentText("Your chosen alerts are being checked on this phone.")
+        .setContentText(if (T1ArcGlucoseDisplayState.alertMonitoringEnabled(context))
+          "Your chosen alerts are being checked on this phone."
+          else "Your home screen glucose widget is being kept up to date.")
         .setContentIntent(pendingIntent(context))
         .setCategory(Notification.CATEGORY_SERVICE)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
@@ -2558,12 +2563,15 @@ class T1ArcGlucoseDisplayService : Service() {
     object : Runnable {
       override fun run() {
         if (
-          T1ArcGlucoseDisplayState.collectorMode(this@T1ArcGlucoseDisplayService) !=
-            GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY
+          !T1ArcGlucoseDisplayState.collectorEnabled(this@T1ArcGlucoseDisplayService)
         ) {
           return
         }
-        T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
+        if (T1ArcGlucoseDisplayState.enabled(this@T1ArcGlucoseDisplayService)) {
+          T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
+        } else {
+          T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
+        }
         handler.postDelayed(this, DISPLAY_REFRESH_INTERVAL_MS)
       }
     }
@@ -2635,9 +2643,7 @@ class T1ArcGlucoseDisplayService : Service() {
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)
-    if (foregroundMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY) {
-      handler.post(renderRunnable)
-    }
+    handler.post(renderRunnable)
     if (T1ArcGlucoseNotification.notificationsAllowed(this)) {
       // Avoid racing a React context that exists but is not fully active while
       // the app UI is starting. Cold boot still initializes Headless JS itself.
@@ -3374,6 +3380,16 @@ class T1ArcGlucoseDisplayModule : Module() {
       }
     }
 
+    AsyncFunction("setWidgetThemeAsync") Coroutine { mode: String, palette: String ->
+      require(mode in setOf("system", "dark", "light"))
+      require(palette in setOf("editorial", "mineral"))
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucoseDisplayState.preferences(context).edit()
+        .putString("widget_theme", mode).putString("widget_palette", palette).apply()
+      T1ArcGlucoseWidget.updateAll(context)
+      true
+    }
+
     AsyncFunction("getHomeWidgetStatusAsync") Coroutine { ->
       T1ArcGlucoseWidget.status(requireNotNull(appContext.reactContext))
     }
@@ -3606,6 +3622,14 @@ class T1ArcGlucoseDisplayModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       val history = historyFromBridgeMaps(readings)
       T1ArcGlucosePublicationGate.mutateLegacy(context) { writeEpoch ->
+        T1ArcGlucosePhoneSurfaceGate.mutate {
+          T1ArcGlucoseDisplayState.snapshot(context)?.let { snapshot ->
+            T1ArcGlucoseDisplayState.setSnapshot(context, snapshot.copy(
+              widgetHistory = snapshot.widgetHistory.ifEmpty { glucoseWidgetHistory(history, snapshot.timestampMs) },
+            ))
+          }
+          T1ArcGlucoseWidget.updateAll(context)
+        }
         // A phone without Wearable Play Services, or a temporarily disconnected
         // watch, must not turn a successful glucose refresh into a failed
         // background job. The latest phone snapshot remains authoritative and

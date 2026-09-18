@@ -1,3 +1,5 @@
+import T1ArcGlucoseDisplay from '../../modules/t1arc-glucose-display';
+import sharedColors from '../../modules/t1arc-glucose-display/shared/app-colors.json';
 import {
   useCallback,
   createContext,
@@ -72,141 +74,13 @@ export interface AppTheme {
   };
 }
 
-const mineralLightColors: AppColors = {
-  background: '#F1F8FA',
-  backgroundGlow: '#E1F1F3',
-  surface: '#FFFFFF',
-  surfaceElevated: '#FAFDFD',
-  surfaceMuted: '#E8F1F3',
-  surfaceGradientStart: '#FFFFFF',
-  surfaceGradientMiddle: '#F9FCFC',
-  surfaceGradientEnd: '#F2F8F9',
-  surfaceBorder: '#D5E4E7',
-  surfaceShadow: '#0C3340',
-  text: '#102B34',
-  textSecondary: '#46636D',
-  textTertiary: '#5C727A',
-  primary: '#087F99',
-  primaryStrong: '#06667B',
-  onPrimary: '#FFFFFF',
-  accent: '#087A5C',
-  glucose: '#087F99',
-  insulin: '#255DA8',
-  insulinSoft: '#E7EFFA',
-  targetBand: '#DDF2F5',
-  low: '#B74F64',
-  high: '#98520A',
-  warning: '#8A4B08',
-  danger: '#B4233A',
-  border: '#D8E3E6',
-  divider: '#E5EEF0',
-  grid: '#D6E2E5',
-  tabBar: '#F9FCFD',
-  shadow: '#0F2B33',
-  overlay: 'rgba(4, 24, 30, 0.58)',
-};
+const mineralLightColors: AppColors = sharedColors.mineralLight;
 
-const mineralDarkColors: AppColors = {
-  background: '#071519',
-  backgroundGlow: '#0A3038',
-  surface: '#102328',
-  surfaceElevated: '#153038',
-  surfaceMuted: '#193137',
-  surfaceGradientStart: '#173239',
-  surfaceGradientMiddle: '#10262B',
-  surfaceGradientEnd: '#0C1D21',
-  surfaceBorder: '#29454C',
-  surfaceShadow: '#000000',
-  text: '#F2FAFB',
-  textSecondary: '#B7CDD2',
-  textTertiary: '#86A3AA',
-  primary: '#65D2E7',
-  primaryStrong: '#8AE2EF',
-  onPrimary: '#071519',
-  accent: '#69D5AC',
-  glucose: '#65D2E7',
-  insulin: '#82B7FF',
-  insulinSoft: '#172F49',
-  targetBand: '#12373D',
-  low: '#FF9BAE',
-  high: '#F1B66F',
-  warning: '#F1B66F',
-  danger: '#FF9BAE',
-  border: '#29454C',
-  divider: '#1D363C',
-  grid: '#274149',
-  tabBar: '#08171B',
-  shadow: '#000000',
-  overlay: 'rgba(0, 0, 0, 0.76)',
-};
+const mineralDarkColors: AppColors = sharedColors.mineralDark;
 
-const editorialLightColors: AppColors = {
-  background: '#F5F1EA',
-  backgroundGlow: '#E5E9F8',
-  surface: '#FFFDF9',
-  surfaceElevated: '#FFFFFF',
-  surfaceMuted: '#ECE7DE',
-  surfaceGradientStart: '#FFFFFF',
-  surfaceGradientMiddle: '#FCF9F4',
-  surfaceGradientEnd: '#F4EFE7',
-  surfaceBorder: '#DDD4C8',
-  surfaceShadow: '#322A24',
-  text: '#1B1D24',
-  textSecondary: '#50535E',
-  textTertiary: '#6A6C75',
-  primary: '#3156B8',
-  primaryStrong: '#24449A',
-  onPrimary: '#FFFFFF',
-  accent: '#527038',
-  glucose: '#3156B8',
-  insulin: '#B85A2A',
-  insulinSoft: '#F5E2D4',
-  targetBand: '#E1E7FA',
-  low: '#B72D4B',
-  high: '#92520B',
-  warning: '#8A4B07',
-  danger: '#B4233E',
-  border: '#DDD5CB',
-  divider: '#E8E1D8',
-  grid: '#DAD3CA',
-  tabBar: '#FAF7F1',
-  shadow: '#2D2925',
-  overlay: 'rgba(23, 21, 24, 0.62)',
-};
+const editorialLightColors: AppColors = sharedColors.editorialLight;
 
-const editorialDarkColors: AppColors = {
-  background: '#111217',
-  backgroundGlow: '#202B59',
-  surface: '#1B1D24',
-  surfaceElevated: '#252731',
-  surfaceMuted: '#2D303A',
-  surfaceGradientStart: '#292C36',
-  surfaceGradientMiddle: '#20222A',
-  surfaceGradientEnd: '#181A20',
-  surfaceBorder: '#3F424E',
-  surfaceShadow: '#000000',
-  text: '#F8F5EE',
-  textSecondary: '#C4C1BC',
-  textTertiary: '#9B9AA0',
-  primary: '#8EA7FF',
-  primaryStrong: '#B8C7FF',
-  onPrimary: '#141826',
-  accent: '#A7C978',
-  glucose: '#8EA7FF',
-  insulin: '#F0A06A',
-  insulinSoft: '#392A23',
-  targetBand: '#26345A',
-  low: '#FF8DA2',
-  high: '#F2B66E',
-  warning: '#F2B66E',
-  danger: '#FF8DA2',
-  border: '#3F424E',
-  divider: '#30323B',
-  grid: '#3A3D47',
-  tabBar: '#15161B',
-  shadow: '#000000',
-  overlay: 'rgba(0, 0, 0, 0.78)',
-};
+const editorialDarkColors: AppColors = sharedColors.editorialDark;
 
 const colorPalettes = {
   editorial: {
@@ -266,6 +140,9 @@ export function AppThemeProvider({ children }: PropsWithChildren) {
     () => makeTheme(scheme, mode, setMode),
     [mode, scheme, setMode],
   );
+  useEffect(() => {
+    void T1ArcGlucoseDisplay.setWidgetThemeAsync?.(mode, ACTIVE_COLOR_PALETTE).catch(() => undefined);
+  }, [mode]);
   return <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>;
 }
 

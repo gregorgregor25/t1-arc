@@ -26,6 +26,7 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<
   getWatchFaceStatusAsync(): Promise<WatchFaceDeviceStatus[]>;
   installBundledWatchFaceAsync(nodeId: string, faceId: WatchFaceId): Promise<WatchFaceResult>;
   openWatchFaceActivationAsync(nodeId: string): Promise<boolean>;
+  setWidgetThemeAsync?(mode: string, palette: string): Promise<boolean>;
   getHomeWidgetStatusAsync(): Promise<HomeWidgetStatus>;
   requestPinHomeWidgetAsync(): Promise<boolean>;
   enableAsync(): Promise<GlucoseDisplayStatus>;

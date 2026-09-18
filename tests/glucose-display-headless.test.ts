@@ -64,6 +64,7 @@ vi.mock('@/data/privacy/localDataWriteEpoch', () => ({
 }));
 
 vi.mock('@/data/live/configuredGlucoseSources', () => ({
+  configuredGlucoseSources: vi.fn().mockResolvedValue([]),
   refreshConfiguredGlucoseSources: mocks.refreshConfiguredSources,
 }));
 
@@ -233,6 +234,25 @@ describe('glucose display Headless JS settlement', () => {
       reading,
       'slightDown',
     );
+  });
+
+  it('publishes the full four-hour minute history to the widget', async () => {
+    const end = 1_800_000_000_000;
+    const rows = Array.from({ length: 241 }, (_, index) => ({
+      id: `minute-${index}`, sourceId: 't1arc-librelinkup',
+      timestamp: end - (240 - index) * 60_000, receivedAt: end,
+      mmolL: 6.7, trend: 'flat' as const, quality: 'measured' as const,
+    }));
+    mocks.getDisplayStatus.mockResolvedValue({ supported: true });
+    mocks.getLatestReading.mockResolvedValue(rows.at(-1));
+    mocks.getReadings.mockResolvedValue(rows);
+    mocks.transactionLatest = rows.at(-1);
+    mocks.transactionHistory = rows;
+    await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+    const snapshot = mocks.updatePrivate.mock.calls[0]![1];
+    expect(snapshot.widgetHistory).toHaveLength(241);
+    expect(snapshot.widgetHistory[0].timestampMs).toBe(end - 4 * 3_600_000);
+    expect(snapshot.widgetHistory.at(-1).timestampMs).toBe(end);
   });
 
   it('reprepares instead of publishing an older row after the DB advances', async () => {

@@ -113,6 +113,9 @@ export interface GlucoseDisplayHistoryPoint {
 }
 
 export interface GlucoseDisplayPublicationSnapshot {
+  widgetHistory?: GlucoseDisplayHistoryPoint[];
+  sourceIsLive?: boolean;
+  sourceCheckedAt?: number;
   mmolL: number;
   trend: string;
   timestampMs: number;

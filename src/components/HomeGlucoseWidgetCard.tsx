@@ -13,10 +13,22 @@ import T1ArcGlucoseDisplay, {
   HomeWidgetStatus,
 } from '../../modules/t1arc-glucose-display';
 import { useAppTheme } from '@/theme/theme';
-import { formatGlucose, glucoseUnitLabel } from '@/domain/regionalFormat';
+import { formatGlucoseAccessible } from '@/domain/regionalFormat';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 
 import { SectionCard } from './SectionCard';
+import { CurrentGlucoseCard } from './CurrentGlucoseCard';
+
+const PREVIEW_END = 1_800_000_000_000;
+const PREVIEW_HISTORY = Array.from({ length: 48 }, (_, index) => ({
+  id: `widget-example-${index}`,
+  sourceId: 'illustration',
+  timestamp: PREVIEW_END - (47 - index) * 5 * 60_000,
+  receivedAt: PREVIEW_END,
+  mmolL: index === 47 ? 6.7 : 6.7 + 3.5 * Math.exp(-index / 15),
+  trend: 'flat' as const,
+  quality: 'measured' as const,
+}));
 
 export function HomeGlucoseWidgetCard() {
   const { colors, radius } = useAppTheme();
@@ -101,7 +113,7 @@ export function HomeGlucoseWidgetCard() {
             Home-screen glucose
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Value, direction, age and source at a glance
+            Your Today glucose card, on your home screen
           </Text>
         </View>
         {status?.installedCount ? (
@@ -122,40 +134,24 @@ export function HomeGlucoseWidgetCard() {
         ) : null}
       </View>
 
-      <View
-        accessibilityLabel="Preview of the T1 Arc home-screen glucose widget"
-        style={[
-          styles.preview,
-          {
-            backgroundColor: '#102328',
-            borderColor: '#29454C',
-            borderRadius: radius.lg,
-          },
-        ]}
-      >
-        <View style={styles.previewTop}>
-          <Text style={styles.previewBrand}>T1 ARC</Text>
-          <Text style={styles.previewAge}>JUST NOW</Text>
+      <View style={styles.preview}>
+        <View accessible accessibilityLabel={`Example widget with invented glucose readings, ${formatGlucoseAccessible(6.7, regional)}, steady and in range`}>
+          <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+            <CurrentGlucoseCard
+              reading={PREVIEW_HISTORY.at(-1)}
+              history={PREVIEW_HISTORY}
+              now={PREVIEW_END + 2 * 60_000}
+            />
+          </View>
         </View>
-        <View style={styles.previewValueRow}>
-          <Text style={styles.previewValue}>
-            {formatGlucose(6.8, regional, { withUnit: false })}
-          </Text>
-          <Text style={styles.previewArrow}>→</Text>
-          <Text style={styles.previewUnit}>
-            {glucoseUnitLabel(regional.glucoseUnit)}
-          </Text>
-        </View>
-        <Text style={styles.previewStatus}>
-          Steady · Current · personal glucose
-        </Text>
-        <Text style={styles.previewLabel}>PREVIEW</Text>
+        <Text style={[styles.previewLabel, { color: colors.textTertiary }]}>EXAMPLE · INVENTED READINGS</Text>
       </View>
 
       <Text style={[styles.detail, { color: colors.textSecondary }]}>
-        The widget reads only T1 Arc’s encrypted display snapshot. It updates
-        with the app and, when glucose at a glance is active, refreshes its age
-        every minute.
+        Your glucose reading, direction, range and recent history use the same
+        presentation as Today. Tap the card to open Today, or the calculated-trend
+        button to inspect its supporting readings. New readings update the card;
+        the background collector also refreshes its age while a widget is added.
       </Text>
 
       <Pressable
@@ -257,72 +253,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.55,
   },
-  preview: {
-    minHeight: 138,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 16,
-    paddingHorizontal: 17,
-    paddingVertical: 14,
-  },
-  previewTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  previewBrand: {
-    color: '#8FABB2',
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  previewAge: {
-    color: '#8FABB2',
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '700',
-  },
-  previewValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 7,
-  },
-  previewValue: {
-    color: '#65D2E7',
-    fontSize: 37,
-    lineHeight: 43,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  previewArrow: {
-    color: '#65D2E7',
-    fontSize: 25,
-    lineHeight: 31,
-    fontWeight: '800',
-    marginLeft: 9,
-  },
-  previewUnit: {
-    color: '#B7CDD2',
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '700',
-    marginLeft: 7,
-  },
-  previewStatus: {
-    color: '#B7CDD2',
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  previewLabel: {
-    position: 'absolute',
-    right: 14,
-    bottom: 11,
-    color: '#607E86',
-    fontSize: 7,
-    lineHeight: 10,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-  },
+  preview: { marginTop: 16 },
+  previewLabel: { fontSize: 9, textAlign: 'right', marginTop: 8 },
   detail: {
     fontSize: 13,
     lineHeight: 19,
