@@ -43,6 +43,9 @@ fix does not require the Android build tools.
 
 ## Run a development build
 
+For concurrent features and independent releases, see
+[Developing features independently](FEATURE_BRANCHES.md).
+
 Start an emulator or connect a device that you are authorised to use, then run:
 
 ```powershell

@@ -1,4 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +15,7 @@ import T1ArcGlucoseDisplay, {
   HomeWidgetStatus,
 } from '../../modules/t1arc-glucose-display';
 import { useAppTheme } from '@/theme/theme';
-import { formatGlucose, glucoseUnitLabel } from '@/domain/regionalFormat';
+import { formatGlucose, formatGlucoseAccessible, glucoseUnitLabel } from '@/domain/regionalFormat';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 
 import { SectionCard } from './SectionCard';
@@ -101,7 +103,7 @@ export function HomeGlucoseWidgetCard() {
             Home-screen glucose
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Value, direction, age and source at a glance
+            Your Today glucose card, on your home screen
           </Text>
         </View>
         {status?.installedCount ? (
@@ -122,40 +124,47 @@ export function HomeGlucoseWidgetCard() {
         ) : null}
       </View>
 
-      <View
-        accessibilityLabel="Preview of the T1 Arc home-screen glucose widget"
-        style={[
-          styles.preview,
-          {
-            backgroundColor: '#102328',
-            borderColor: '#29454C',
-            borderRadius: radius.lg,
-          },
-        ]}
+      <LinearGradient
+        accessibilityLabel={`Example widget with invented glucose readings, ${formatGlucoseAccessible(6.8, regional)}, steady and in range`}
+        colors={['#173239', '#10262B', '#0C1D21']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={[styles.preview, { borderRadius: radius.lg }]}
       >
         <View style={styles.previewTop}>
-          <Text style={styles.previewBrand}>T1 ARC</Text>
+          <Text style={styles.previewBrand}>Now</Text>
           <Text style={styles.previewAge}>JUST NOW</Text>
         </View>
         <View style={styles.previewValueRow}>
           <Text style={styles.previewValue}>
             {formatGlucose(6.8, regional, { withUnit: false })}
           </Text>
-          <Text style={styles.previewArrow}>→</Text>
-          <Text style={styles.previewUnit}>
-            {glucoseUnitLabel(regional.glucoseUnit)}
-          </Text>
+          <View style={styles.previewUnitBlock}>
+            <Text style={styles.previewArrow}>→</Text>
+            <Text style={styles.previewUnit}>
+              {glucoseUnitLabel(regional.glucoseUnit)}
+            </Text>
+          </View>
         </View>
-        <Text style={styles.previewStatus}>
-          Steady · Current · personal glucose
-        </Text>
-        <Text style={styles.previewLabel}>PREVIEW</Text>
-      </View>
+        <Text style={styles.previewStatus}>Steady</Text>
+        <Text style={styles.previewRange}>●  In range</Text>
+        <Svg accessibilityElementsHidden height={64} width="100%" viewBox="0 0 300 64" preserveAspectRatio="none">
+          <Defs>
+            <SvgGradient id="widgetPreviewArea" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#69D5AC" stopOpacity={0.3} />
+              <Stop offset="1" stopColor="#69D5AC" stopOpacity={0} />
+            </SvgGradient>
+          </Defs>
+          <Path d="M 0 38 C 20 38 20 20 40 20 S 65 44 85 44 S 115 12 140 12 S 180 34 210 34 S 250 24 270 24 S 290 28 300 28 L 300 64 L 0 64 Z" fill="url(#widgetPreviewArea)" />
+          <Path d="M 0 38 C 20 38 20 20 40 20 S 65 44 85 44 S 115 12 140 12 S 180 34 210 34 S 250 24 270 24 S 290 28 300 28" fill="none" stroke="#69D5AC" strokeWidth={1.5} />
+        </Svg>
+        <Text style={styles.previewLabel}>EXAMPLE · INVENTED READINGS</Text>
+      </LinearGradient>
 
       <Text style={[styles.detail, { color: colors.textSecondary }]}>
-        The widget reads only T1 Arc’s encrypted display snapshot. It updates
-        with the app and, when glucose at a glance is active, refreshes its age
-        every minute.
+        Resize to show your recent glucose history alongside the reading,
+        direction and range. Smaller widgets keep the reading easy to see.
+        Tap the widget to open T1 Arc. It refreshes with new readings and, when
+        glucose at a glance is active, updates its age every minute.
       </Text>
 
       <Pressable
@@ -258,71 +267,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.55,
   },
   preview: {
-    minHeight: 138,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#29454C',
     marginTop: 16,
-    paddingHorizontal: 17,
-    paddingVertical: 14,
+    padding: 18,
   },
-  previewTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  previewBrand: {
-    color: '#8FABB2',
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  previewAge: {
-    color: '#8FABB2',
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '700',
-  },
-  previewValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 7,
-  },
+  previewTop: { flexDirection: 'row', justifyContent: 'space-between' },
+  previewBrand: { color: '#B7CDD2', fontSize: 16, fontWeight: '600' },
+  previewAge: { color: '#B7CDD2', fontSize: 10, fontWeight: '600' },
+  previewValueRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   previewValue: {
-    color: '#65D2E7',
-    fontSize: 37,
-    lineHeight: 43,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
+    color: '#69D5AC', fontSize: 64, lineHeight: 72, fontWeight: '700',
+    letterSpacing: -2, fontVariant: ['tabular-nums'],
   },
-  previewArrow: {
-    color: '#65D2E7',
-    fontSize: 25,
-    lineHeight: 31,
-    fontWeight: '800',
-    marginLeft: 9,
+  previewUnitBlock: { marginLeft: 12 },
+  previewArrow: { color: '#69D5AC', fontSize: 30, lineHeight: 34, fontWeight: '700' },
+  previewUnit: { color: '#B7CDD2', fontSize: 12, fontWeight: '600' },
+  previewStatus: { color: '#E6F1F3', fontSize: 13, fontWeight: '600', marginTop: 6 },
+  previewRange: {
+    alignSelf: 'flex-start', color: '#69D5AC', backgroundColor: '#183F47',
+    borderColor: '#365961', borderWidth: 1, borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 5, fontSize: 11, marginTop: 8,
   },
-  previewUnit: {
-    color: '#B7CDD2',
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '700',
-    marginLeft: 7,
-  },
-  previewStatus: {
-    color: '#B7CDD2',
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  previewLabel: {
-    position: 'absolute',
-    right: 14,
-    bottom: 11,
-    color: '#607E86',
-    fontSize: 7,
-    lineHeight: 10,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-  },
+  previewLabel: { color: '#8FABB2', fontSize: 9, textAlign: 'right', marginTop: 4 },
   detail: {
     fontSize: 13,
     lineHeight: 19,
