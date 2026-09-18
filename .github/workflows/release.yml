@@ -87,7 +87,7 @@ jobs:
         run: |
           $app = Get-Content -Raw app.json | ConvertFrom-Json
           $package = Get-Content -Raw package.json | ConvertFrom-Json
-          $lock = Get-Content -Raw package-lock.json | ConvertFrom-Json
+          $lock = Get-Content -Raw package-lock.json | ConvertFrom-Json -AsHashtable
           $version = [string]$app.expo.version
           $expectedTag = "v$version"
           if ($env:REQUESTED_TAG -cne $expectedTag) {
@@ -96,7 +96,7 @@ jobs:
           if ([string]$package.version -cne $version) {
             throw "package.json version does not match app.json."
           }
-          if ([string]$lock.version -cne $version -or [string]$lock.packages.''.version -cne $version) {
+          if ([string]$lock.version -cne $version -or [string]$lock.packages[''].version -cne $version) {
             throw "package-lock.json version does not match app.json."
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
