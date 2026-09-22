@@ -24,6 +24,11 @@ GitHub remains an optional **public** route for non-sensitive issues and feature
 requests. Do not paste a private support report into a public issue without
 checking it first.
 
+For everyday questions, feedback and updates, you can also join the
+[T1 Arc community on Reddit](https://www.reddit.com/r/T1Arc/).
+No technical knowledge or GitHub account is needed. Reddit posts are public:
+keep personal health records, account details and support reports private.
+
 Start with the [installation guide](docs/GETTING_STARTED.md) and
 [troubleshooting guide](docs/TROUBLESHOOTING.md). Use the official GitHub phone
 APK, not a source archive. Source archives cannot be installed as Android apps.
