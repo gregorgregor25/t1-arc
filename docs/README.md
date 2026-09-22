@@ -2,6 +2,10 @@
 
 ## For people using the app
 
+- [Website setup and help guide](https://t1arc.com/guide/)
+- [Step-by-step watch setup on the website](https://t1arc.com/watch/)
+- [Step-by-step Android Auto setup on the website](https://t1arc.com/android-auto/)
+- [T1 Arc community, questions and updates](https://www.reddit.com/r/T1Arc/)
 - [Download, install and update T1 Arc](GETTING_STARTED.md)
 - [See the app](SCREENSHOTS.md)
 - [Learn the main screens](USING_T1_ARC.md)
