@@ -29,7 +29,7 @@ export function buildTarvisTreatmentProfileAnswer(
       confidence: "limited",
       evidenceIds: [],
       limitations: [
-        "No OpenAI request was made.",
+        "No AI provider request was made.",
         "Tarv1s did not calculate a dose or recommend a ratio.",
       ],
     };
@@ -46,7 +46,7 @@ export function buildTarvisTreatmentProfileAnswer(
     evidenceIds: [],
     limitations: [
       "These values were entered manually in T1 Arc and were not verified against a pump or care-team record.",
-      "No OpenAI request was made.",
+      "No AI provider request was made.",
     ],
   };
 }
@@ -59,7 +59,7 @@ export function treatmentProfileLoadFailureAnswer(): TarvisAnswer {
     confidence: "limited",
     evidenceIds: [],
     limitations: [
-      "No OpenAI request was made.",
+      "No AI provider request was made.",
       "Tarv1s did not calculate a dose or recommend a ratio.",
     ],
   };

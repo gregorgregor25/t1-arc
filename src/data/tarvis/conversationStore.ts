@@ -546,8 +546,7 @@ function validRequestMetrics(value: unknown): value is TarvisRequestMetrics {
     value.outputTokens >= 0 &&
     finite(value.totalTokens) &&
     value.totalTokens === value.inputTokens + value.outputTokens &&
-    finite(value.estimatedCostUsd) &&
-    value.estimatedCostUsd >= 0 &&
+    optionalNonNegativeFinite(value.estimatedCostUsd) &&
     finite(value.evidenceCharacters) &&
     value.evidenceCharacters >= 0 &&
     optionalNonNegativeFinite(value.durationMs) &&

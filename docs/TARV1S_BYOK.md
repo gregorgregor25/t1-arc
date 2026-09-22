@@ -1,17 +1,63 @@
-# Tarv1s and your OpenAI API key
+# Tarv1s and your AI provider API key
 
-Broader Tarv1s questions can use your own OpenAI API key. The maintainer and every other user follow the
+Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic Claude API key. The maintainer and every other user follow the
 same setup. There is no bundled maintainer key, hidden free allowance or relay
 server in the normal app path.
 
-## What works without OpenAI
+## Choose a provider
+
+In Tarv1s settings, select OpenAI, Google Gemini or Anthropic Claude. Read the
+selected provider's data-use notice, enter its API key and choose **Save key on
+this phone**. If a key is already saved, choose **Use selected provider**.
+Saving checks the key's format and stores it locally; the first question checks
+actual API access. It does not silently send a test prompt.
+
+Existing installations keep their OpenAI key and default provider. Each provider
+has a separate secure key. Switching never substitutes another provider after an
+error, and replacing or removing a key cancels outstanding model requests. Remove
+saved key applies to the provider selected in settings; privacy erase removes all
+three keys, the selected provider, safety identifier and usage counters.
+
+The defaults are GPT-5.6 Luna, Gemini 3.8 Flash and Claude Sonnet 5. Token usage is
+recorded for all providers. The existing cost estimate applies only to OpenAI;
+no Gemini or Claude price is inferred from OpenAI rates. Check provider billing.
+ChatGPT, Gemini and Claude chat subscriptions are separate from API billing.
+
+Requests go directly from the phone to the selected provider. The same bounded
+evidence planner, local calculations, output validation and treatment boundaries
+apply to every provider. General education sends no health records. Switching
+providers can send recent previously shared conversation to the new provider on
+the next question; start a new conversation to omit that history.
+
+Use a billing-enabled Gemini API project for health information. Google's
+[API terms](https://ai.google.dev/gemini-api/terms) prohibit sensitive or personal
+information under unpaid-service terms and impose paid-service requirements for
+apps in the UK, EEA and Switzerland. They also contain age, regional and use
+restrictions. Review the terms for your account. Claude's
+[API data policies](https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-data)
+apply to Claude; OpenAI's storage controls below do not describe other providers.
+
+On authentication failures, use **API settings** in the error message. Rate-limit
+errors keep the question and impose a cooldown (at least 30 seconds, respecting
+Retry-After up to 24 hours). Requests are never retried automatically. Network
+failures, timeouts, safety blocks and incomplete responses do not add blank
+assistant messages. A verified local fallback may still be displayed alongside
+the provider error; the draft remains available for retry.
+
+Implementation references: [Gemini generateContent](https://ai.google.dev/api/generate-content),
+[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+and [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+Native provider requests and failures have mocked coverage. Live-key and phone
+testing of Gemini and Claude remain required before release.
+
+## What works without an AI provider
 
 Some exact questions can be answered locally from records already on the
-phone. Questions that need broader language reasoning show the OpenAI setup and
+phone. Questions that need broader language reasoning show the provider setup and
 require the user to choose whether to send them.
 
 Opening Tarv1s, seeing starter questions, saving an answer in your notebook or
-preparing appointment notes does not make an OpenAI request. Exact local
+preparing appointment notes does not make a provider request. Exact local
 calculations do not become paid AI requests just because a key is saved.
 
 ## What you can ask
@@ -74,9 +120,9 @@ to assemble them, and T1 Arc does not send them automatically.
 
 Deleting a notebook item does not delete the original conversation or health
 history. Portable encrypted backups include supported notebook records but never
-include your OpenAI key.
+include any provider API key.
 
-## What does it cost?
+## OpenAI cost example
 
 **T1 Arc is free. Local factual answers are free.** The optional OpenAI
 connection is paid directly to OpenAI using your own API key; there is no

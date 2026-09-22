@@ -4,6 +4,7 @@ import { applyTarvisCoverageGuardrailResult } from "./evidencePresentation";
 import {
   getTarvisSafetyIdentifier,
   loadTarvisApiKey,
+  loadTarvisProvider,
   loadTarvisUsage,
   saveTarvisUsage,
 } from "./secureStore";
@@ -13,6 +14,8 @@ import {
   isTarvisDependentFollowUp,
 } from "./scope";
 import { estimateTarvisCostUsd } from "./cost";
+import { TARVIS_PROVIDERS } from "./providers";
+import { assertTarvisProviderReady, fetchTarvisProviderResponse, TarvisProviderError } from "./providerTransport";
 import { classifyTarvisSafety } from "./safety";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import { TARVIS_SYSTEM_PROMPT } from "./prompt";
@@ -79,6 +82,8 @@ let requestInFlight = false;
 
 export interface TarvisRequestFailureDetails {
   modelRequestSent: boolean;
+  settingsRequired?: boolean;
+  retryAt?: number;
   requestMetrics?: TarvisResponse["requestMetrics"];
   usage?: TarvisUsage;
 }
@@ -268,22 +273,6 @@ function extractOutputText(body: OpenAiResponseBody) {
   throw new Error("OpenAI returned no answer.");
 }
 
-function openAiError(status: number, body: OpenAiResponseBody) {
-  if (status === 401) {
-    return "OpenAI rejected this key. Open TARV1S settings and replace it.";
-  }
-  if (status === 403) {
-    return "This key cannot use the Responses API. Allow model responses in the OpenAI project key permissions.";
-  }
-  if (status === 429) {
-    return "OpenAI is rate-limiting this project or its budget has been reached. No automatic retry was made.";
-  }
-  return (
-    body.error?.message ||
-    `OpenAI could not complete the request (HTTP ${status}).`
-  );
-}
-
 export async function askTarvis(
   question: string,
   packet?: TarvisModelEvidencePacket,
@@ -332,8 +321,8 @@ export async function askTarvis(
             : "That is outside TARV1S’s scope",
         answer:
           scope === "sensitive_credentials"
-            ? "TARV1S cannot retrieve or display passwords, API keys, tokens or other secrets. No OpenAI request was made."
-            : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No OpenAI request was made.",
+            ? "TARV1S cannot retrieve or display passwords, API keys, tokens or other secrets. No AI provider request was made."
+            : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No AI provider request was made.",
         confidence: "high",
         evidenceIds: [],
         limitations: [],
@@ -410,9 +399,13 @@ export async function askTarvis(
       if (options.signal.aborted) connectionLease.abort();
     }
     connectionLease.assertCurrent();
-    const key = await loadTarvisApiKey(writeLease);
+    const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
-    if (!key) throw new Error("Add your OpenAI API key first.");
+    const providerConfig = TARVIS_PROVIDERS[provider];
+    assertTarvisProviderReady(provider);
+    const key = await loadTarvisApiKey(writeLease, provider);
+    connectionLease.assertCurrent();
+    if (!key) throw new TarvisProviderError(`Add your ${providerConfig.label} API key first.`, true);
 
     const now = Date.now();
     const existingUsage = await loadTarvisUsage(writeLease);
@@ -424,7 +417,7 @@ export async function askTarvis(
       requestTimestamps: [...recent, now],
       lastRequestAt: now,
     };
-    const safetyIdentifier = await getTarvisSafetyIdentifier(writeLease);
+    const safetyIdentifier = provider === "openai" ? await getTarvisSafetyIdentifier(writeLease) : undefined;
     connectionLease.assertCurrent();
     // Persist the local model-request reservation only after all pre-dispatch
     // work succeeds. A SecureStore/safety-ID failure must not consume quota.
@@ -436,7 +429,7 @@ export async function askTarvis(
       connectionLease?.abort();
     }, REQUEST_TIMEOUT_MS);
     modelRequestSent = true;
-    const response = await fetch(OPENAI_RESPONSES_URL, {
+    const response = await fetchTarvisProviderResponse(provider, key, OPENAI_RESPONSES_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -500,7 +493,6 @@ export async function askTarvis(
     connectionLease.assertCurrent();
     const body = (await response.json()) as OpenAiResponseBody;
     connectionLease.assertCurrent();
-    if (!response.ok) throw new Error(openAiError(response.status, body));
 
     const tokens = body.usage ?? {};
     const usage: TarvisUsage = {
@@ -510,14 +502,14 @@ export async function askTarvis(
       totalTokens: reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
     };
     knownRequestMetrics = {
-      model: MODEL,
+      model: providerConfig.model,
       inputTokens: tokens.input_tokens ?? 0,
       outputTokens: tokens.output_tokens ?? 0,
       totalTokens: tokens.total_tokens ?? 0,
-      estimatedCostUsd: estimateTarvisCostUsd(
+      estimatedCostUsd: provider === "openai" ? estimateTarvisCostUsd(
         tokens.input_tokens ?? 0,
         tokens.output_tokens ?? 0,
-      ),
+      ) : undefined,
       evidenceCharacters: encodedContext.length,
     };
     await saveTarvisUsage(usage, writeLease);
@@ -526,8 +518,8 @@ export async function askTarvis(
     if (body.status === "incomplete") {
       throw new Error(
         body.incomplete_details?.reason
-          ? `OpenAI returned an incomplete answer (${body.incomplete_details.reason}).`
-          : "OpenAI returned an incomplete answer.",
+          ? `${providerConfig.label} returned an incomplete answer (${body.incomplete_details.reason}).`
+          : `${providerConfig.label} returned an incomplete answer.`,
       );
     }
     const outputText = extractOutputText(body);
@@ -583,6 +575,8 @@ export async function askTarvis(
         : "TARV1S could not complete this request.";
     throw new TarvisRequestFailureError(message, {
       modelRequestSent,
+      settingsRequired: error instanceof TarvisProviderError && error.settingsRequired,
+      retryAt: error instanceof TarvisProviderError ? error.retryAt : undefined,
       requestMetrics: knownRequestMetrics,
       usage: knownUsage,
     });
@@ -701,9 +695,13 @@ export async function planTarvisEvidenceRequest(
       if (options.signal.aborted) connectionLease.abort();
     }
     connectionLease.assertCurrent();
-    const key = await loadTarvisApiKey(writeLease);
+    const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
-    if (!key) throw new Error("Add your OpenAI API key first.");
+    const providerConfig = TARVIS_PROVIDERS[provider];
+    assertTarvisProviderReady(provider);
+    const key = await loadTarvisApiKey(writeLease, provider);
+    connectionLease.assertCurrent();
+    if (!key) throw new TarvisProviderError(`Add your ${providerConfig.label} API key first.`, true);
 
     const now = Date.now();
     const existingUsage = await loadTarvisUsage(writeLease);
@@ -717,7 +715,7 @@ export async function planTarvisEvidenceRequest(
       requestTimestamps: [...recent, now],
       lastRequestAt: now,
     };
-    const safetyIdentifier = await getTarvisSafetyIdentifier(writeLease);
+    const safetyIdentifier = provider === "openai" ? await getTarvisSafetyIdentifier(writeLease) : undefined;
     connectionLease.assertCurrent();
     // Do not charge the local model-request allowance for failures that
     // happen before fetch is about to be dispatched.
@@ -729,7 +727,7 @@ export async function planTarvisEvidenceRequest(
       connectionLease?.abort();
     }, REQUEST_TIMEOUT_MS);
     modelRequestSent = true;
-    const response = await fetch(OPENAI_RESPONSES_URL, {
+    const response = await fetchTarvisProviderResponse(provider, key, OPENAI_RESPONSES_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -755,7 +753,6 @@ export async function planTarvisEvidenceRequest(
     connectionLease.assertCurrent();
     const body = (await response.json()) as OpenAiResponseBody;
     connectionLease.assertCurrent();
-    if (!response.ok) throw new Error(openAiError(response.status, body));
 
     const tokens = body.usage ?? {};
     const usage: TarvisUsage = {
@@ -765,14 +762,14 @@ export async function planTarvisEvidenceRequest(
       totalTokens: reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
     };
     knownRequestMetrics = {
-      model: MODEL,
+      model: providerConfig.model,
       inputTokens: tokens.input_tokens ?? 0,
       outputTokens: tokens.output_tokens ?? 0,
       totalTokens: tokens.total_tokens ?? 0,
-      estimatedCostUsd: estimateTarvisCostUsd(
+      estimatedCostUsd: provider === "openai" ? estimateTarvisCostUsd(
         tokens.input_tokens ?? 0,
         tokens.output_tokens ?? 0,
-      ),
+      ) : undefined,
       evidenceCharacters: encodedContext.length,
     };
     await saveTarvisUsage(usage, writeLease);
@@ -781,8 +778,8 @@ export async function planTarvisEvidenceRequest(
     if (body.status === "incomplete") {
       throw new Error(
         body.incomplete_details?.reason
-          ? `OpenAI returned an incomplete evidence plan (${body.incomplete_details.reason}).`
-          : "OpenAI returned an incomplete evidence plan.",
+          ? `${providerConfig.label} returned an incomplete evidence plan (${body.incomplete_details.reason}).`
+          : `${providerConfig.label} returned an incomplete evidence plan.`,
       );
     }
     return {
@@ -805,6 +802,8 @@ export async function planTarvisEvidenceRequest(
         : "Tarv1s could not plan this evidence request.";
     throw new TarvisRequestFailureError(message, {
       modelRequestSent,
+      settingsRequired: error instanceof TarvisProviderError && error.settingsRequired,
+      retryAt: error instanceof TarvisProviderError ? error.retryAt : undefined,
       requestMetrics: knownRequestMetrics,
       usage: knownUsage,
     });

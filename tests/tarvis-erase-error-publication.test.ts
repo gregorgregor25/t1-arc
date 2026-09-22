@@ -23,6 +23,7 @@ vi.mock("@/data/privacy/localDataWriteEpoch", () => ({
 vi.mock("@/data/tarvis/secureStore", () => ({
   getTarvisSafetyIdentifier: mocks.getSafetyIdentifier,
   loadTarvisApiKey: mocks.loadApiKey,
+  loadTarvisProvider: async () => "openai",
   loadTarvisUsage: mocks.loadUsage,
   saveTarvisUsage: mocks.saveUsage,
 }));
@@ -142,7 +143,7 @@ describe("Tarv1s erase-safe error publication", () => {
     ).rejects.toThrow("already answering");
 
     keyLoad.resolve("test-key");
-    await expect(first).rejects.toThrow("network failed");
+    await expect(first).rejects.toThrow("OpenAI could not be reached");
   });
 
   it("rejects a response that resolves after the hard request deadline without publishing final usage", async () => {
@@ -204,8 +205,8 @@ describe("Tarv1s erase-safe error publication", () => {
       .mockRejectedValueOnce(new Error("network disconnected"))
       .mockRejectedValueOnce(new Error("retry reached network"));
     const question = "What is time in range?";
-    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("network disconnected");
-    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("retry reached network");
+    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("OpenAI could not be reached");
+    await expect(askTarvis(question, undefined, [], { epoch: 3 })).rejects.toThrow("OpenAI could not be reached");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
@@ -225,6 +226,6 @@ describe("Tarv1s erase-safe error publication", () => {
     await rejected;
     expect(fetchSpy.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
     fetchSpy.mockRejectedValueOnce(new Error("next question reached network"));
-    await expect(askTarvis("What is time in range?", undefined, [], { epoch: 3 })).rejects.toThrow("next question reached network");
+    await expect(askTarvis("What is time in range?", undefined, [], { epoch: 3 })).rejects.toThrow("OpenAI could not be reached");
   });
 });

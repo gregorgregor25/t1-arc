@@ -18,15 +18,15 @@ describe("Tarv1s BYOK boundary", () => {
     expect(screen).not.toContain("EXPO_PUBLIC_TARVIS_");
   });
 
-  it("loads the user key locally and sends both model request types directly to OpenAI", () => {
+  it("loads the selected provider key locally for both guarded model request types", () => {
     const client = source("src/data/tarvis/openAiClient.ts");
 
     expect(client).toContain(
       'const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";',
     );
-    expect(client.match(/loadTarvisApiKey\(writeLease\)/g)).toHaveLength(2);
+    expect(client.match(/loadTarvisApiKey\(writeLease, provider\)/g)).toHaveLength(2);
     expect(client.match(/Authorization: `Bearer \$\{key\}`/g)).toHaveLength(2);
-    expect(client.match(/fetch\(OPENAI_RESPONSES_URL/g)).toHaveLength(2);
+    expect(client.match(/fetchTarvisProviderResponse\(provider, key, OPENAI_RESPONSES_URL/g)).toHaveLength(2);
     expect(client).not.toContain("process.env");
     expect(client).not.toContain("X-OpenAI-API-Key");
   });
@@ -36,7 +36,7 @@ describe("Tarv1s BYOK boundary", () => {
 
     expect(screen).toContain("Optional AI answers");
     expect(screen).toContain("Local questions about your recorded data work without a key.");
-    expect(screen).toContain("sent to OpenAI; API usage may cost money");
+    expect(screen).toContain("go to that provider; API usage may cost money");
     expect(screen).toContain("Save key on this phone");
     expect(screen).toContain("Remove saved key");
   });

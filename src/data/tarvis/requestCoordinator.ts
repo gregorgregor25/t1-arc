@@ -189,8 +189,8 @@ function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
       ? "I can\u2019t reveal private credentials"
       : "That is outside Tarv1s\u2019s scope",
     answer: credentialRequest
-      ? "Tarv1s cannot retrieve or display passwords, API keys, tokens or other secrets. No OpenAI request was made."
-      : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No OpenAI request was made.",
+      ? "Tarv1s cannot retrieve or display passwords, API keys, tokens or other secrets. No AI provider request was made."
+      : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No AI provider request was made.",
     confidence: "high",
     evidenceIds: [],
     limitations: [],
@@ -204,7 +204,7 @@ function unsupportedRangeAnswer(reason: string): TarvisAnswer {
     confidence: "limited",
     evidenceIds: [],
     limitations: [
-      "I haven’t loaded your health records or sent this question to OpenAI.",
+      "I haven’t loaded your health records or sent this question to an AI provider.",
     ],
   };
 }

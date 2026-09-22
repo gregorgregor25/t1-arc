@@ -1601,7 +1601,7 @@ export function classifyTarvisSafety(question: string): TarvisSafetyDecision {
         "I can review the records, but not set treatment",
         "I can show your delivered insulin, glucose response, meals, activity and recurring patterns, but I can't calculate a dose or recommend changing a basal rate, ratio, target, correction factor or pump setting. Those decisions need your agreed diabetes plan or diabetes team.",
         [
-          "No OpenAI request was made and no treatment calculation was performed.",
+          "No AI provider request was made and no treatment calculation was performed.",
         ],
       ),
     };

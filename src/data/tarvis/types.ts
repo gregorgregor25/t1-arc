@@ -168,6 +168,8 @@ export interface TarvisUsage {
 
 export interface TarvisStoredSettings {
   hasApiKey: boolean;
+  provider: import("./providers").TarvisProvider;
+  configuredProviders: Record<import("./providers").TarvisProvider, boolean>;
   usage: TarvisUsage;
 }
 
@@ -186,7 +188,8 @@ export interface TarvisRequestMetrics {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  estimatedCostUsd: number;
+  /** Omitted for providers without a maintained price estimate. Never means free. */
+  estimatedCostUsd?: number;
   evidenceCharacters: number;
   /** Internal performance telemetry; never shown as answer provenance. */
   durationMs?: number;

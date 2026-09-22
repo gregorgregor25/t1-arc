@@ -183,6 +183,16 @@ describe("stored Tarv1s conversation validation", () => {
     expect(validStoredTarvisExchange(exchange)).toBe(true);
   });
 
+  it("retains provider usage when a price estimate is unavailable", () => {
+    const exchange = Object.assign(validExchange(), {
+      modelRequestSent: true,
+      answerSource: "local" as const,
+      requestMetrics: { model: "gemini-3.8-flash", inputTokens: 10, outputTokens: 5, totalTokens: 15, evidenceCharacters: 500 },
+    });
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+    expect(validStoredTarvisExchange({ ...exchange, requestMetrics: { ...exchange.requestMetrics, estimatedCostUsd: -1 } })).toBe(false);
+  });
+
   it("keeps request provenance separate from a verified local fallback", () => {
     const exchange = Object.assign(validExchange(), {
       answerSource: "local" as const,
