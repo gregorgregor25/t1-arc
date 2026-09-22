@@ -187,7 +187,7 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
 - Optional persistent notification with lock-screen privacy controls.
 - Home-screen widget.
 - Optional always-on display service.
-- Experimental, opt-in Android Auto glance.
+- Experimental, opt-in Android Auto glance. Follow the [Android Auto setup guide](https://t1arc.com/android-auto/).
 
 The Wear OS companion brings glucose to your wrist. On supported Wear OS 6
 watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
@@ -270,6 +270,7 @@ Read the detailed [privacy model](PRIVACY.md) before connecting personal data.
 - [Set up Tarv1s](docs/TARV1S_BYOK.md)
 - [Set up displays, alerts and widgets](docs/DISPLAY_AND_ALERTS.md)
 - [Connect a watch and choose a face](docs/WATCH_SETUP.md)
+- [Set up Android Auto](https://t1arc.com/android-auto/)
 - [Troubleshoot common problems](docs/TROUBLESHOOTING.md)
 - [Get help or report a problem](SUPPORT.md)
 - [Check current release support](docs/RELEASE_STATUS.md)
