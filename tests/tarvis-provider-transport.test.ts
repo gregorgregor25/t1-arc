@@ -5,7 +5,7 @@ import { TARVIS_PROVIDERS, validateTarvisApiKey, type TarvisProvider } from "@/d
 const openAiUrl = "https://api.openai.com/v1/responses";
 const key = "test-key-never-put-in-a-url";
 const body = { model: TARVIS_PROVIDERS.openai.model, store: false, safety_identifier: "opaque-openai-only", instructions: "Guarded instructions", input: [{ role: "user", content: [{ type: "input_text", text: "bounded health context" }] }], max_output_tokens: 800, text: { format: { type: "json_schema", name: "answer", strict: true, schema: { type: "object", additionalProperties: false, properties: { answer: { type: "string", maxLength: 50 } }, required: ["answer"] } } } };
-const init = () => ({ method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: new AbortController().signal });
+const init = (provider: TarvisProvider = "openai") => ({ method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ ...body, model: TARVIS_PROVIDERS[provider].model }), signal: new AbortController().signal });
 const ok = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
 
 describe("Tarv1s native provider boundary", () => {
@@ -19,9 +19,24 @@ describe("Tarv1s native provider boundary", () => {
     expect(fetch).toHaveBeenCalledExactlyOnceWith(openAiUrl, request);
   });
 
+  it("uses the exact selected native model and rejects a cross-provider or unavailable model", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({}));
+    for (const [provider, model] of [["gemini", "gemini-3.8-flash"], ["claude", "claude-opus-5-5"]] as const) {
+      const request = { ...init(), body: JSON.stringify({ ...body, model }) };
+      await fetchTarvisProviderResponse(provider, key, openAiUrl, request);
+      const [url, sent] = vi.mocked(fetch).mock.lastCall!;
+      if (provider === "gemini") expect(String(url)).toContain(`/models/${model}:generateContent`);
+      else expect(JSON.parse(String(sent?.body)).model).toBe(model);
+    }
+    vi.mocked(fetch).mockClear();
+    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init())).rejects.toMatchObject({ settingsRequired: true });
+    await expect(fetchTarvisProviderResponse("openai", key, openAiUrl, { ...init(), body: JSON.stringify({ ...body, model: "unlisted" }) })).rejects.toMatchObject({ settingsRequired: true });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it.each(["gemini", "claude"] as const)("sends only the selected %s key and native schema", async provider => {
     vi.mocked(fetch).mockResolvedValue(ok({}));
-    const request = init();
+    const request = { ...init(), body: JSON.stringify({ ...body, model: TARVIS_PROVIDERS[provider].model }) };
     await fetchTarvisProviderResponse(provider, key, openAiUrl, request);
     const [url, sent] = vi.mocked(fetch).mock.calls[0]!;
     expect(String(url)).not.toContain(key);
@@ -67,21 +82,21 @@ describe("Tarv1s native provider boundary", () => {
 
   it.each([401, 403, 429, 500, 503, 504, 400])("handles HTTP %i even with HTML errors without leaking response content", async status => {
     vi.mocked(fetch).mockResolvedValue(new Response("<html>secret health data</html>", { status }));
-    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init())).rejects.not.toThrow("secret health data");
+    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init("gemini"))).rejects.not.toThrow("secret health data");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("exposes settings recovery for invalid keys", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response("", { status: 401 }));
-    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, init())).rejects.toMatchObject({ settingsRequired: true });
+    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, init("claude"))).rejects.toMatchObject({ settingsRequired: true });
   });
 
   it("honours Retry-After and isolates provider cooldowns", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     vi.mocked(fetch).mockResolvedValue(new Response("", { status: 429, headers: { "Retry-After": "90" } }));
-    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init())).rejects.toMatchObject({ retryAt: 1_090_000 });
-    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init())).rejects.toThrow("limit exceeded");
+    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init("gemini"))).rejects.toMatchObject({ retryAt: 1_090_000 });
+    await expect(fetchTarvisProviderResponse("gemini", key, openAiUrl, init("gemini"))).rejects.toThrow("limit exceeded");
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(() => assertTarvisProviderReady("claude")).not.toThrow();
     vi.advanceTimersByTime(90_000);
@@ -90,10 +105,10 @@ describe("Tarv1s native provider boundary", () => {
 
   it("reports malformed successful JSON and network failures safely", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response("not json"));
-    const response = await fetchTarvisProviderResponse("claude", key, openAiUrl, init());
+    const response = await fetchTarvisProviderResponse("claude", key, openAiUrl, init("claude"));
     await expect(response.json()).rejects.toThrow("unreadable");
     vi.mocked(fetch).mockRejectedValue(new Error("private URL"));
-    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, init())).rejects.toThrow("could not be reached");
+    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, init("claude"))).rejects.toThrow("could not be reached");
   });
 
   it("does not rewrite explicit cancellation", async () => {
@@ -101,7 +116,7 @@ describe("Tarv1s native provider boundary", () => {
     controller.abort();
     const error = new Error("cancelled");
     vi.mocked(fetch).mockRejectedValue(error);
-    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, { ...init(), signal: controller.signal })).rejects.toBe(error);
+    await expect(fetchTarvisProviderResponse("claude", key, openAiUrl, { ...init("claude"), signal: controller.signal })).rejects.toBe(error);
   });
 
   it("validates keys locally and rejects the wrong provider", () => {
@@ -109,6 +124,7 @@ describe("Tarv1s native provider boundary", () => {
       expect(validateTarvisApiKey(` ${prefix}${"x".repeat(40)} `, provider)).toBe(`${prefix}${"x".repeat(40)}`);
       expect(() => validateTarvisApiKey("wrong", provider)).toThrow();
     }
+    expect(validateTarvisApiKey(`AQ.${"x".repeat(50)}`, "gemini")).toBe(`AQ.${"x".repeat(50)}`);
     expect(() => validateTarvisApiKey(`sk-ant-${"x".repeat(40)}`, "openai")).toThrow();
   });
 });

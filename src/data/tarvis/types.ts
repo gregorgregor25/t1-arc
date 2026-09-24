@@ -170,6 +170,8 @@ export interface TarvisStoredSettings {
   hasApiKey: boolean;
   provider: import("./providers").TarvisProvider;
   configuredProviders: Record<import("./providers").TarvisProvider, boolean>;
+  /** Raw saved selections allow settings to repair an identifier removed from the catalog. */
+  selectedModels: Record<import("./providers").TarvisProvider, string>;
   usage: TarvisUsage;
 }
 

@@ -112,7 +112,7 @@ import {
   saveTarvisApiKey,
   selectTarvisProvider,
 } from "@/data/tarvis/secureStore";
-import { TARVIS_PROVIDERS, type TarvisProvider } from "@/data/tarvis/providers";
+import { TARVIS_MODELS, TARVIS_PROVIDERS, type TarvisProvider } from "@/data/tarvis/providers";
 import { loadTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
 import {
   buildTarvisTreatmentProfileAnswer,
@@ -1336,6 +1336,9 @@ export function TarvisScreen({
   const [hasApiKey, setHasApiKey] = useState(false);
   const [provider, setProvider] = useState<TarvisProvider>("openai");
   const [selectedProvider, setSelectedProvider] = useState<TarvisProvider>("openai");
+  const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
+  const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [configuredProviders, setConfiguredProviders] = useState<Record<TarvisProvider, boolean>>({ openai: false, gemini: false, claude: false });
   const [settingsNotice, setSettingsNotice] = useState<string>();
   const [retryAt, setRetryAt] = useState(0);
@@ -1351,11 +1354,13 @@ export function TarvisScreen({
     setSettingsVisible(false);
     setApiKey('');
     setSelectedProvider(provider);
+    setSelectedModels(savedModels);
+    setModelMenuOpen(false);
     if (settingsOpenedFromMenu.current) {
       settingsOpenedFromMenu.current = false;
       onReturnToSettings?.();
     }
-  }, [onReturnToSettings, provider]);
+  }, [onReturnToSettings, provider, savedModels]);
   const [apiKey, setApiKey] = useState("");
   const [, setUsage] = useState<TarvisUsage>();
   const [question, setQuestion] = useState("");
@@ -1521,6 +1526,9 @@ export function TarvisScreen({
       setProvider(settings.provider);
       setSelectedProvider(settings.provider);
       setConfiguredProviders(settings.configuredProviders);
+      setSelectedModels(settings.selectedModels);
+      setSavedModels(settings.selectedModels);
+      setModelMenuOpen(false);
       setSettingsLoadFailed(false);
       setUsage(settings.usage);
     } catch {
@@ -1542,6 +1550,8 @@ export function TarvisScreen({
         setProvider(settings.provider);
         setSelectedProvider(settings.provider);
         setConfiguredProviders(settings.configuredProviders);
+        setSelectedModels(settings.selectedModels);
+        setSavedModels(settings.selectedModels);
         setSettingsLoadFailed(false);
         setSettingsActionError(undefined);
         setUsage(settings.usage);
@@ -2017,13 +2027,16 @@ export function TarvisScreen({
     setSettingsWorking(true);
     try {
       const writeLease = await acquireLocalDataWriteLease();
-      if (apiKey.trim()) await saveTarvisApiKey(apiKey, writeLease, selectedProvider);
-      else await selectTarvisProvider(selectedProvider, writeLease);
+      const selectedModel = selectedModels[selectedProvider];
+      if (apiKey.trim()) await saveTarvisApiKey(apiKey, writeLease, selectedProvider, selectedModel);
+      else await selectTarvisProvider(selectedProvider, writeLease, selectedModel);
       setApiKey("");
       setHasApiKey(true);
       setProvider(selectedProvider);
       setConfiguredProviders(previous => ({ ...previous, [selectedProvider]: true }));
-      setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} selected. Key saved on this phone; API access will be checked when you send a question.`);
+      setSavedModels(previous => ({ ...previous, [selectedProvider]: selectedModel }));
+      setModelMenuOpen(false);
+      setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} · ${selectedModel} selected. Key saved on this phone; API access will be checked when you send a question.`);
       setError(undefined);
       setErrorNeedsSettings(false);
       setRetryAt(0);
@@ -3354,16 +3367,28 @@ export function TarvisScreen({
                 </View>
                 <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
                   {(Object.keys(TARVIS_PROVIDERS) as TarvisProvider[]).map(id => (
-                    <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: selectedProvider === id, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedProvider(id); setApiKey(""); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedProvider === id ? colors.primary : colors.border, borderRadius: radius.md }}>
+                    <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: selectedProvider === id, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(savedModels); setSelectedProvider(id); setModelMenuOpen(false); setApiKey(""); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedProvider === id ? colors.primary : colors.border, borderRadius: radius.md }}>
                       <Text style={{ color: colors.text }}>{TARVIS_PROVIDERS[id].label}{provider === id && hasApiKey ? " · Active" : configuredProviders[id] ? " · Key saved" : ""}</Text>
                     </Pressable>
                   ))}
                 </View>
-                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>Model: {TARVIS_PROVIDERS[selectedProvider].model}</Text>
+                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>Model</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Choose ${TARVIS_PROVIDERS[selectedProvider].label} model`} accessibilityState={{ expanded: modelMenuOpen, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => setModelMenuOpen(open => !open)} style={{ padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
+                  <Text style={{ color: colors.text }}>{selectedModels[selectedProvider]}  ▾</Text>
+                </Pressable>
+                {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>This saved model is unavailable. Choose an available model before sending a question.</Text> : null}
+                {modelMenuOpen ? <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
+                  {TARVIS_MODELS[selectedProvider].map(model => (
+                    <Pressable key={model} accessibilityRole="radio" accessibilityState={{ checked: selectedModels[selectedProvider] === model, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(previous => ({ ...previous, [selectedProvider]: model })); setModelMenuOpen(false); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedModels[selectedProvider] === model ? colors.primary : colors.border, borderRadius: radius.md }}>
+                      <Text style={{ color: colors.text }}>{model}</Text>
+                    </Pressable>
+                  ))}
+                </View> : null}
                 <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>{TARVIS_PROVIDERS[selectedProvider].privacy}</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
                   <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].keyUrl).catch(() => setSettingsActionError("The provider page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Get an API key</Text></Pressable>
                   <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].privacyUrl).catch(() => setSettingsActionError("The provider privacy page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider privacy terms</Text></Pressable>
+                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].pricingUrl).catch(() => setSettingsActionError("The provider pricing page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider pricing</Text></Pressable>
                 </View>
                 {settingsNotice ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text }}>{settingsNotice}</Text> : null}
                 <TextInput

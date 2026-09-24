@@ -1,8 +1,9 @@
-import { TARVIS_PROVIDERS, type TarvisProvider } from "./providers";
+import { assertTarvisModel, TARVIS_PROVIDERS, type TarvisProvider } from "./providers";
 
 // Keep the existing, guarded Responses-shaped request contract inside Tarv1s.
 // Only this boundary translates it to the selected provider's native API.
 interface ModelRequest {
+  model: string;
   instructions: string;
   input: { role: string; content: { text: string }[] }[];
   max_output_tokens: number;
@@ -84,13 +85,20 @@ export function normalizeProviderResponse(provider: TarvisProvider, value: unkno
 export async function fetchTarvisProviderResponse(provider: TarvisProvider, key: string, openAiUrl: string, init: RequestInit) {
   assertTarvisProviderReady(provider);
   const config = TARVIS_PROVIDERS[provider];
+  let original: ModelRequest;
+  let model: string;
+  try {
+    original = JSON.parse(String(init.body)) as ModelRequest;
+    model = assertTarvisModel(provider, original.model);
+  } catch {
+    throw new TarvisProviderError(`The selected ${config.label} model is unavailable. Choose a model in Tarv1s settings.`, true);
+  }
   let url = openAiUrl;
   let request = init;
   if (provider !== "openai") {
-    const original = JSON.parse(String(init.body)) as ModelRequest;
     const content = original.input.flatMap(item => item.content.map(part => part.text)).join("\n");
     if (provider === "gemini") {
-      url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent`;
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       request = { ...init, headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({
         systemInstruction: { parts: [{ text: original.instructions }] },
         contents: [{ role: "user", parts: [{ text: content }] }],
@@ -99,7 +107,7 @@ export async function fetchTarvisProviderResponse(provider: TarvisProvider, key:
     } else {
       url = "https://api.anthropic.com/v1/messages";
       request = { ...init, headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" }, body: JSON.stringify({
-        model: config.model, system: original.instructions, messages: [{ role: "user", content }],
+        model, system: original.instructions, messages: [{ role: "user", content }],
         max_tokens: Math.max(original.max_output_tokens, 2048),
         output_config: { format: { type: "json_schema", schema: claudeOutputSchema(original.text.format.schema) } },
       }) };

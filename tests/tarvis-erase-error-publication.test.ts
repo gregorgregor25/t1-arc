@@ -24,6 +24,7 @@ vi.mock("@/data/tarvis/secureStore", () => ({
   getTarvisSafetyIdentifier: mocks.getSafetyIdentifier,
   loadTarvisApiKey: mocks.loadApiKey,
   loadTarvisProvider: async () => "openai",
+  loadTarvisModel: async () => "gpt-5.6-luna",
   loadTarvisUsage: mocks.loadUsage,
   saveTarvisUsage: mocks.saveUsage,
 }));

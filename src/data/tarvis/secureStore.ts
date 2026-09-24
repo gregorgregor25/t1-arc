@@ -13,11 +13,12 @@ import {
   saveEpochBoundSecureStoreValue,
 } from "@/data/privacy/localDataEpochSecureStore";
 import { runTarvisConnectionMutation } from "./connectionCoordinator";
-import { isTarvisProvider, validateTarvisApiKey, type TarvisProvider } from "./providers";
+import { assertTarvisModel, isTarvisProvider, TARVIS_PROVIDERS, validateTarvisApiKey, type TarvisProvider } from "./providers";
 
 const API_KEY_KEY = "t1arc.tarvis.openai-key.v1";
 const PROVIDER_KEY = "t1arc.tarvis.provider.v1";
 const API_KEY_KEYS = { openai: API_KEY_KEY, gemini: "t1arc.tarvis.gemini-key.v1", claude: "t1arc.tarvis.claude-key.v1" };
+const MODEL_KEYS = { openai: "t1arc.tarvis.openai-model.v1", gemini: "t1arc.tarvis.gemini-model.v1", claude: "t1arc.tarvis.claude-model.v1" };
 const USAGE_KEY = "t1arc.tarvis.usage.v1";
 const SAFETY_ID_KEY = "t1arc.tarvis.safety-id.v1";
 const SAFETY_IDENTIFIER_PREFIX = "t1arc-";
@@ -49,21 +50,43 @@ export async function loadTarvisApiKey(lease?: LocalDataWriteLease, provider?: T
   );
 }
 
+async function loadSavedTarvisModel(provider: TarvisProvider, lease: LocalDataWriteLease) {
+  return await loadEpochBoundSecureStoreString(MODEL_KEYS[provider], lease) ?? TARVIS_PROVIDERS[provider].model;
+}
+
+export async function loadTarvisModel(lease?: LocalDataWriteLease, provider?: TarvisProvider): Promise<string> {
+  const writeLease = lease ?? await acquireLocalDataWriteLease();
+  const selected = provider ?? await loadTarvisProvider(writeLease);
+  return assertTarvisModel(selected, await loadSavedTarvisModel(selected, writeLease));
+}
+
+export async function selectTarvisModel(provider: TarvisProvider, model: string, lease: LocalDataWriteLease) {
+  const selected = assertTarvisModel(provider, model);
+  await runTarvisConnectionMutation(async () => {
+    await saveEpochBoundSecureStoreValue(MODEL_KEYS[provider], selected, lease);
+  });
+}
+
 export async function saveTarvisApiKey(
   value: string,
   lease: LocalDataWriteLease,
   provider: TarvisProvider = "openai",
+  model?: string,
 ) {
   const key = validateTarvisApiKey(value, provider);
   await runTarvisConnectionMutation(async () => {
+    const selectedModel = assertTarvisModel(provider, model ?? await loadSavedTarvisModel(provider, lease));
     await saveEpochBoundSecureStoreValue(API_KEY_KEYS[provider], key, lease);
+    await saveEpochBoundSecureStoreValue(MODEL_KEYS[provider], selectedModel, lease);
     await saveEpochBoundSecureStoreValue(PROVIDER_KEY, provider, lease);
   });
 }
 
-export async function selectTarvisProvider(provider: TarvisProvider, lease: LocalDataWriteLease) {
+export async function selectTarvisProvider(provider: TarvisProvider, lease: LocalDataWriteLease, model?: string) {
   await runTarvisConnectionMutation(async () => {
     if (!await loadTarvisApiKey(lease, provider)) throw new Error("Save a key for this provider first.");
+    const selectedModel = assertTarvisModel(provider, model ?? await loadSavedTarvisModel(provider, lease));
+    await saveEpochBoundSecureStoreValue(MODEL_KEYS[provider], selectedModel, lease);
     await saveEpochBoundSecureStoreValue(PROVIDER_KEY, provider, lease);
   });
 }
@@ -100,6 +123,7 @@ export async function clearTarvisStoredData() {
   await runTarvisConnectionMutation(async () => {
     const results = await Promise.allSettled([
       ...Object.values(API_KEY_KEYS).map(key => forceClearEpochBoundSecureStoreValue(key)),
+      ...Object.values(MODEL_KEYS).map(key => forceClearEpochBoundSecureStoreValue(key)),
       forceClearEpochBoundSecureStoreValue(PROVIDER_KEY),
       forceClearEpochBoundSecureStoreValue(USAGE_KEY),
       forceClearEpochBoundSecureStoreValue(SAFETY_ID_KEY),
@@ -149,12 +173,14 @@ export async function loadTarvisSettings(
 ): Promise<TarvisStoredSettings> {
   const writeLease = lease ?? (await acquireLocalDataWriteLease());
   const provider = await loadTarvisProvider(writeLease);
-  const [keys, usage] = await Promise.all([
+  const [keys, models, usage] = await Promise.all([
     Promise.all((Object.keys(API_KEY_KEYS) as TarvisProvider[]).map(async id => [id, Boolean(await loadTarvisApiKey(writeLease, id))] as const)),
+    Promise.all((Object.keys(MODEL_KEYS) as TarvisProvider[]).map(async id => [id, await loadSavedTarvisModel(id, writeLease)] as const)),
     loadTarvisUsage(writeLease),
   ]);
   const configuredProviders = Object.fromEntries(keys) as Record<TarvisProvider, boolean>;
-  return { hasApiKey: configuredProviders[provider], provider, configuredProviders, usage };
+  const selectedModels = Object.fromEntries(models) as Record<TarvisProvider, string>;
+  return { hasApiKey: configuredProviders[provider], provider, configuredProviders, selectedModels, usage };
 }
 
 export async function getTarvisSafetyIdentifier(lease: LocalDataWriteLease) {

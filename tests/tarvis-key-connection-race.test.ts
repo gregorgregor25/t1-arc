@@ -98,7 +98,7 @@ describe("Tarv1s key connection races", () => {
     });
     const saving = saveTarvisApiKey(`sk-${"b".repeat(40)}`, { epoch: 7 });
     await vi.waitFor(() =>
-      expect(epochStore.forceClear).toHaveBeenCalledTimes(6),
+      expect(epochStore.forceClear).toHaveBeenCalledTimes(9),
     );
     await Promise.resolve();
 
@@ -112,10 +112,14 @@ describe("Tarv1s key connection races", () => {
       "api-delete-start",
       "delete:t1arc.tarvis.gemini-key.v1",
       "delete:t1arc.tarvis.claude-key.v1",
+      "delete:t1arc.tarvis.openai-model.v1",
+      "delete:t1arc.tarvis.gemini-model.v1",
+      "delete:t1arc.tarvis.claude-model.v1",
       "delete:t1arc.tarvis.provider.v1",
       "usage-delete-failed",
       "delete:t1arc.tarvis.safety-id.v1",
       "api-delete-end",
+      "new-key-save",
       "new-key-save",
       "new-key-save",
     ]);

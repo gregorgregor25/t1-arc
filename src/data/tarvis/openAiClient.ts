@@ -4,6 +4,7 @@ import { applyTarvisCoverageGuardrailResult } from "./evidencePresentation";
 import {
   getTarvisSafetyIdentifier,
   loadTarvisApiKey,
+  loadTarvisModel,
   loadTarvisProvider,
   loadTarvisUsage,
   saveTarvisUsage,
@@ -14,7 +15,7 @@ import {
   isTarvisDependentFollowUp,
 } from "./scope";
 import { estimateTarvisCostUsd } from "./cost";
-import { TARVIS_PROVIDERS } from "./providers";
+import { TARVIS_PROVIDERS, TarvisModelUnavailableError, type TarvisProvider } from "./providers";
 import { assertTarvisProviderReady, fetchTarvisProviderResponse, TarvisProviderError } from "./providerTransport";
 import { classifyTarvisSafety } from "./safety";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
@@ -72,11 +73,19 @@ import {
 } from "./evidencePlanner";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-5.6-luna";
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_QUESTION_LENGTH = 1_500;
 const MAX_CONTEXT_CHARACTERS = 70_000;
 const MAX_OUTPUT_TOKENS = 800;
+
+async function loadReadyTarvisModel(lease: LocalDataWriteLease, provider: TarvisProvider) {
+  try {
+    return await loadTarvisModel(lease, provider);
+  } catch (error) {
+    if (error instanceof TarvisModelUnavailableError) throw new TarvisProviderError(error.message, true);
+    throw error;
+  }
+}
 
 let requestInFlight = false;
 
@@ -402,6 +411,8 @@ export async function askTarvis(
     const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
     const providerConfig = TARVIS_PROVIDERS[provider];
+    const model = await loadReadyTarvisModel(writeLease, provider);
+    connectionLease.assertCurrent();
     assertTarvisProviderReady(provider);
     const key = await loadTarvisApiKey(writeLease, provider);
     connectionLease.assertCurrent();
@@ -437,7 +448,7 @@ export async function askTarvis(
       },
       signal: connectionLease.signal,
       body: JSON.stringify({
-        model: MODEL,
+        model,
         store: false,
         safety_identifier: safetyIdentifier,
         instructions: responseMode === "general-education"
@@ -502,11 +513,11 @@ export async function askTarvis(
       totalTokens: reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
     };
     knownRequestMetrics = {
-      model: providerConfig.model,
+      model,
       inputTokens: tokens.input_tokens ?? 0,
       outputTokens: tokens.output_tokens ?? 0,
       totalTokens: tokens.total_tokens ?? 0,
-      estimatedCostUsd: provider === "openai" ? estimateTarvisCostUsd(
+      estimatedCostUsd: provider === "openai" && model === TARVIS_PROVIDERS.openai.model ? estimateTarvisCostUsd(
         tokens.input_tokens ?? 0,
         tokens.output_tokens ?? 0,
       ) : undefined,
@@ -698,6 +709,8 @@ export async function planTarvisEvidenceRequest(
     const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
     const providerConfig = TARVIS_PROVIDERS[provider];
+    const model = await loadReadyTarvisModel(writeLease, provider);
+    connectionLease.assertCurrent();
     assertTarvisProviderReady(provider);
     const key = await loadTarvisApiKey(writeLease, provider);
     connectionLease.assertCurrent();
@@ -735,7 +748,7 @@ export async function planTarvisEvidenceRequest(
       },
       signal: connectionLease.signal,
       body: JSON.stringify({
-        model: MODEL,
+        model,
         store: false,
         safety_identifier: safetyIdentifier,
         instructions: TARVIS_EVIDENCE_PLANNER_PROMPT,
@@ -762,11 +775,11 @@ export async function planTarvisEvidenceRequest(
       totalTokens: reservedUsage.totalTokens + (tokens.total_tokens ?? 0),
     };
     knownRequestMetrics = {
-      model: providerConfig.model,
+      model,
       inputTokens: tokens.input_tokens ?? 0,
       outputTokens: tokens.output_tokens ?? 0,
       totalTokens: tokens.total_tokens ?? 0,
-      estimatedCostUsd: provider === "openai" ? estimateTarvisCostUsd(
+      estimatedCostUsd: provider === "openai" && model === TARVIS_PROVIDERS.openai.model ? estimateTarvisCostUsd(
         tokens.input_tokens ?? 0,
         tokens.output_tokens ?? 0,
       ) : undefined,

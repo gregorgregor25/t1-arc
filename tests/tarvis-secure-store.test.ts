@@ -5,8 +5,10 @@ import {
   getTarvisStoredDataStatus,
   loadTarvisSettings,
   loadTarvisApiKey,
+  loadTarvisModel,
   saveTarvisApiKey,
   selectTarvisProvider,
+  selectTarvisModel,
   clearTarvisApiKey,
 } from "@/data/tarvis/secureStore";
 import { beginTarvisConnectionRequest, resetTarvisConnectionCoordinatorForTests } from "@/data/tarvis/connectionCoordinator";
@@ -75,10 +77,46 @@ describe("Tarv1s secure storage lifecycle", () => {
     expect(secureStore.values.size).toBe(0);
   });
 
+  it("remembers models separately and refuses an unavailable saved model without replacing it", async () => {
+    const lease = { epoch: 0 };
+    await saveTarvisApiKey(`sk-proj-${"a".repeat(40)}`, lease);
+    await selectTarvisModel("openai", "gpt-5.6-terra", lease);
+    await saveTarvisApiKey(`AQ.${"d".repeat(50)}`, lease, "gemini", "gemini-3.7-flash");
+    await saveTarvisApiKey(`sk-ant-${"b".repeat(40)}`, lease, "claude", "claude-haiku-4-5-20251001");
+    await expect(loadTarvisModel(lease, "openai")).resolves.toBe("gpt-5.6-terra");
+    await expect(loadTarvisModel(lease, "claude")).resolves.toBe("claude-haiku-4-5-20251001");
+    await expect(loadTarvisModel(lease, "gemini")).resolves.toBe("gemini-3.7-flash");
+    await saveTarvisApiKey(`sk-proj-${"c".repeat(40)}`, lease);
+    await expect(loadTarvisModel(lease, "openai")).resolves.toBe("gpt-5.6-terra");
+    await selectTarvisProvider("openai", lease);
+    expect((await loadTarvisSettings(lease)).selectedModels).toEqual({
+      openai: "gpt-5.6-terra", gemini: "gemini-3.7-flash", claude: "claude-haiku-4-5-20251001",
+    });
+    secureStore.values.set("t1arc.tarvis.claude-model.v1", "retired-model");
+    await expect(loadTarvisModel(lease, "claude")).rejects.toThrow(/unavailable/);
+    const settings = await loadTarvisSettings(lease);
+    expect(settings.selectedModels.claude).toBe("retired-model");
+    await selectTarvisProvider("claude", lease, "claude-opus-5-5");
+    await expect(loadTarvisModel(lease, "claude")).resolves.toBe("claude-opus-5-5");
+    await expect(selectTarvisModel("openai", "unlisted", lease)).rejects.toThrow(/unavailable/);
+    await expect(loadTarvisModel(lease, "openai")).resolves.toBe("gpt-5.6-terra");
+    await clearTarvisStoredData();
+    expect(secureStore.values.size).toBe(0);
+  });
+
   it("aborts an in-flight request when the provider changes", async () => {
     await saveTarvisApiKey(`sk-ant-${"c".repeat(40)}`, { epoch: 0 }, "claude");
     const request = await beginTarvisConnectionRequest();
     await saveTarvisApiKey(`AIza${"b".repeat(40)}`, { epoch: 0 }, "gemini");
+    expect(request.signal.aborted).toBe(true);
+    expect(() => request.assertCurrent()).toThrow("superseded");
+    request.release();
+  });
+
+  it("aborts an in-flight request when the selected model changes", async () => {
+    await saveTarvisApiKey(`sk-proj-${"a".repeat(40)}`, { epoch: 0 });
+    const request = await beginTarvisConnectionRequest();
+    await selectTarvisModel("openai", "gpt-5.6-terra", { epoch: 0 });
     expect(request.signal.aborted).toBe(true);
     expect(() => request.assertCurrent()).toThrow("superseded");
     request.release();

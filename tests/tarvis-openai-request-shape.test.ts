@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetTarvisConnectionCoordinatorForTests } from "@/data/tarvis/connectionCoordinator";
 import { clearTarvisProviderCooldownsForTests } from "@/data/tarvis/providerTransport";
-import { TARVIS_PROVIDERS } from "@/data/tarvis/providers";
+import { TARVIS_PROVIDERS, TarvisModelUnavailableError } from "@/data/tarvis/providers";
 import {
   askTarvis,
   getTarvisRequestFailureDetails,
@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   assertLeaseCurrent: vi.fn(),
   loadApiKey: vi.fn(),
   loadProvider: vi.fn(),
+  loadModel: vi.fn(),
   loadUsage: vi.fn(),
   saveUsage: vi.fn(),
   getSafetyIdentifier: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@/data/tarvis/secureStore", () => ({
   getTarvisSafetyIdentifier: mocks.getSafetyIdentifier,
   loadTarvisApiKey: mocks.loadApiKey,
   loadTarvisProvider: mocks.loadProvider,
+  loadTarvisModel: mocks.loadModel,
   loadTarvisUsage: mocks.loadUsage,
   saveTarvisUsage: mocks.saveUsage,
 }));
@@ -182,6 +184,7 @@ describe("Tarv1s direct model-request shape", () => {
     mocks.assertLeaseCurrent.mockResolvedValue(undefined);
     mocks.loadApiKey.mockResolvedValue("test-key");
     mocks.loadProvider.mockResolvedValue("openai");
+    mocks.loadModel.mockImplementation(async (_lease, provider) => TARVIS_PROVIDERS[provider as keyof typeof TARVIS_PROVIDERS].model);
     mocks.loadUsage.mockResolvedValue({
       requestTimestamps: [],
       inputTokens: 0,
@@ -190,6 +193,49 @@ describe("Tarv1s direct model-request shape", () => {
     });
     mocks.saveUsage.mockResolvedValue(undefined);
     mocks.getSafetyIdentifier.mockResolvedValue("safety-id");
+  });
+
+  it("uses the saved model for answer, planner and metrics without changing the provider", async () => {
+    mocks.loadModel.mockResolvedValue("gpt-5.6-terra");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(JSON.stringify({
+      kind: "explanation", headline: "About HbA1c", answer: "HbA1c reflects longer-term glucose exposure.", limitations: [],
+    })));
+    const answer = await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)).model).toBe("gpt-5.6-terra");
+    expect(answer.requestMetrics).toMatchObject({ model: "gpt-5.6-terra" });
+    expect(answer.requestMetrics?.estimatedCostUsd).toBeUndefined();
+
+    const question = "I had a really high reading two days ago. Do you know why?";
+    fetchSpy.mockResolvedValueOnce(response(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "range-1", eventOptionId: "event-high", categoryIds: ["glucose", "insulin", "food", "activity", "sleep", "context", "data-quality"], clarificationCode: "none" })));
+    const planned = await planTarvisEvidenceRequest(question, buildTarvisEvidencePlanningOptions(question, Date.parse("2026-08-26T10:00:00+01:00")), { epoch: 1 });
+    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)).model).toBe("gpt-5.6-terra");
+    expect(planned.requestMetrics?.model).toBe("gpt-5.6-terra");
+  });
+
+  it("does not send or reserve usage when the saved model is unavailable", async () => {
+    mocks.loadModel.mockRejectedValue(new TarvisModelUnavailableError("openai"));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); }
+    catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: false, settingsRequired: true });
+    const question = "I had a really high reading two days ago. Do you know why?";
+    let planFailure: unknown;
+    try { await planTarvisEvidenceRequest(question, buildTarvisEvidencePlanningOptions(question, Date.now()), { epoch: 1 }); }
+    catch (error) { planFailure = error; }
+    expect(getTarvisRequestFailureDetails(planFailure)).toMatchObject({ modelRequestSent: false, settingsRequired: true });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.saveUsage).not.toHaveBeenCalled();
+  });
+
+  it("keeps a model storage failure distinct from an unavailable model", async () => {
+    mocks.loadModel.mockRejectedValue(new Error("secure read failed"));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); }
+    catch (error) { failure = error; }
+    expect(failure).toMatchObject({ message: "secure read failed" });
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: false, settingsRequired: false });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it.each(["gemini", "claude"] as const)("runs %s education and planning through the existing strict parsers", async provider => {
