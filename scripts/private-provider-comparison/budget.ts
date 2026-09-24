@@ -3,8 +3,13 @@ import { dirname } from "node:path";
 
 export const COMPARISON_LIMIT_USD = 1;
 export const MAX_NATIVE_REQUEST_BYTES = 70_000;
+// Standard Gemini API paid rates verified 24 September 2026. Google publishes
+// higher rates from 1 January 2027; fail closed before that price change.
+// https://ai.google.dev/gemini-api/docs/pricing
+const GEMINI_CURRENT_RATES_END_UTC = Date.UTC(2027, 0, 1);
 export const MODEL_RATES = {
   "gemini-3.8-flash": { provider: "gemini", input: 0.75, output: 3.75, outputFloor: 4096 },
+  "gemini-3.7-flash": { provider: "gemini", input: 0.75, output: 3.75, outputFloor: 4096 },
   "claude-haiku-4-5-20251001": { provider: "claude", input: 1, output: 5, outputFloor: 2048 },
   "claude-sonnet-5": { provider: "claude", input: 2, output: 10, outputFloor: 2048 },
   "claude-opus-5-5": { provider: "claude", input: 4, output: 20, outputFloor: 2048 },
@@ -147,6 +152,9 @@ export function reserveComparisonRequest(ledgerPath: string, input: {
 }): ComparisonReservation {
   const rate = MODEL_RATES[input.model];
   if (!rate || rate.provider !== input.provider || !input.approvedModels.has(input.model)) {
+    throw new ComparisonBudgetStop("unapproved");
+  }
+  if (input.provider === "gemini" && Date.now() >= GEMINI_CURRENT_RATES_END_UTC) {
     throw new ComparisonBudgetStop("unapproved");
   }
   if (!/^[a-z0-9-]{3,80}$/.test(input.caseId) ||

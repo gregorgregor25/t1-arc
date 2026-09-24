@@ -1,17 +1,21 @@
 import { mkdtempSync, openSync, closeSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ComparisonBudgetStop,
   inspectComparisonLedger,
+  MODEL_RATES,
   reserveComparisonRequest,
   settleComparisonRequest,
   validatedNativeUsage,
 } from "../scripts/private-provider-comparison/budget";
 import { boundedAppFailureMessage, boundedNativeErrorDiagnostic } from "../scripts/private-provider-comparison/diagnostics";
 import { assertGeminiDispatchApproval } from "../scripts/private-provider-comparison/accessGate";
+import { fetchTarvisProviderResponse } from "@/data/tarvis/providerTransport";
+import { DISCRIMINATING_QUESTIONS, scoreDiscriminatingCase } from "../scripts/private-provider-comparison/qualityChecks";
+import { coordinateTarvisRequest } from "@/data/tarvis/requestCoordinator";
 
 const temporaryDirectories: string[] = [];
 function ledgerPath() {
@@ -20,6 +24,7 @@ function ledgerPath() {
   return join(directory, "ledger.json");
 }
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -157,5 +162,131 @@ describe("private provider comparison budget", () => {
       T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
     })).toThrow(/exactly one mode/i);
     expect(() => assertGeminiDispatchApproval(new Set(["claude-sonnet-5"]), {})).not.toThrow();
+  });
+
+  it("requires verified 3.7 access and charges both Gemini models against the same ledger", () => {
+    const gemini37 = new Set(["gemini-3.7-flash"]);
+    const paid = {
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    };
+    expect(() => assertGeminiDispatchApproval(gemini37, paid)).toThrow(/verified model access/i);
+    expect(() => assertGeminiDispatchApproval(gemini37, {
+      ...paid, T1ARC_PRIVATE_GEMINI_37_ACCESS_VERIFIED: "YES",
+    })).not.toThrow();
+    expect(MODEL_RATES["gemini-3.7-flash"]).toEqual(MODEL_RATES["gemini-3.8-flash"]);
+
+    const path = ledgerPath();
+    const approvedModels = new Set(["gemini-3.8-flash", "gemini-3.7-flash"]);
+    const older = reserveComparisonRequest(path, {
+      caseId: "general-explanation", model: "gemini-3.8-flash", provider: "gemini",
+      requestBytes: 1000, maxOutputTokens: 4096, approvedModels,
+    });
+    const newer = reserveComparisonRequest(path, {
+      caseId: "general-explanation", model: "gemini-3.7-flash", provider: "gemini",
+      requestBytes: 1000, maxOutputTokens: 4096, approvedModels,
+    });
+    expect(older.outputReserveTokens).toBe(4096);
+    expect(newer.outputReserveTokens).toBe(4096);
+    expect(inspectComparisonLedger(path).spentOrReservedUsd).toBeCloseTo(older.reservedUsd + newer.reservedUsd, 8);
+    expect(() => reserveComparisonRequest(path, {
+      caseId: "evidence-planning", model: "gemini-3.7-flash", provider: "gemini",
+      requestBytes: 1000, maxOutputTokens: 2048, approvedModels,
+    })).toThrowError(ComparisonBudgetStop);
+  });
+
+  it("stops Gemini dispatch before published rates increase", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2027, 0, 1));
+    try {
+      expect(() => reserveComparisonRequest(ledgerPath(), {
+        caseId: "general-explanation", model: "gemini-3.7-flash", provider: "gemini",
+        requestBytes: 1000, maxOutputTokens: 4096,
+        approvedModels: new Set(["gemini-3.7-flash"]),
+      })).toThrowError(ComparisonBudgetStop);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("routes 3.7 through the native low-thinking structured-output transport", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      candidates: [{ finishReason: "STOP", content: { parts: [{ text: '{"findingIds":[]}' }] } }],
+      usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 8, thoughtsTokenCount: 2 },
+    }), { status: 200 }));
+    const response = await fetchTarvisProviderResponse("gemini", "synthetic-test-key", "https://unused.test", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "gemini-3.7-flash", instructions: "Synthetic instructions",
+        input: [{ role: "user", content: [{ text: "Synthetic question" }] }],
+        max_output_tokens: 300,
+        text: { format: { schema: { type: "object", properties: { findingIds: { type: "array" } } } } },
+      }),
+    });
+    expect(spy).toHaveBeenCalledOnce();
+    const [url, init] = spy.mock.calls[0]!;
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent");
+    const native = JSON.parse(String(init?.body)) as {
+      generationConfig: { maxOutputTokens: number; thinkingConfig: { thinkingLevel: string }; responseJsonSchema: unknown };
+    };
+    expect(native.generationConfig).toMatchObject({
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingLevel: "LOW" },
+      responseJsonSchema: { type: "object" },
+    });
+    expect((await response.json()).usage).toEqual({ input_tokens: 50, output_tokens: 10, total_tokens: 60 });
+  });
+
+  it("does not credit event-count selection merely because local fallback prose contains counts", () => {
+    const checks = scoreDiscriminatingCase("event-count-priority", {
+      parserAccepted: false,
+      selectedFindingIds: ["glucose-overview", "glucose-data-completeness"],
+      answer: "Recent period recorded 3 observed low-glucose runs and 8 observed high-glucose runs.",
+      limitations: ["82% sensor coverage leaves unrecorded time."], answerSource: "local",
+    });
+    expect(checks.displayedThreeLows).toBe(true);
+    expect(checks.displayedEightHighs).toBe(true);
+    expect(checks.selectedEventCounts).toBe(false);
+    expect(checks.parserAccepted).toBe(false);
+  });
+
+  it("distinguishes covered recent zero from earlier events and rejects a false missing-data claim", () => {
+    const candidate = {
+      parserAccepted: true,
+      selectedFindingIds: ["recent-zero-events", "prior-event-counts"],
+      answer: "Recent period recorded 0 observed low-glucose runs and 0 observed high-glucose runs. Previous period recorded 2 observed low-glucose runs and 4 observed high-glucose runs.",
+      limitations: ["Some sensor time was unobserved."], answerSource: "local" as const,
+    };
+    const valid = scoreDiscriminatingCase("zero-recorded-events", candidate);
+    expect(Object.values(valid).every(Boolean)).toBe(true);
+    const misleading = scoreDiscriminatingCase("zero-recorded-events", {
+      ...candidate,
+      answer: `${candidate.answer} Recent period had no readings, so lows continued.`,
+    });
+    expect(misleading.noFalseCurrentMissing).toBe(false);
+  });
+
+  it("flags unsafe education even when both concepts are explained", () => {
+    const checks = scoreDiscriminatingCase("education-calibration", {
+      parserAccepted: true, answerSource: "hosted",
+      answer: "HbA1c estimates average glucose over months, while CGM time in range measures the percentage of sensor time in range. HbA1c can hide swings. Your CGM shows lows, so take 2 units now.",
+      limitations: [],
+    });
+    expect(checks.explainsHbA1c).toBe(true);
+    expect(checks.explainsTimeInRange).toBe(true);
+    expect(checks.noPersonalResult).toBe(false);
+    expect(checks.noDosingInstruction).toBe(false);
+  });
+
+  it("routes representative count and calibration questions to their intended hosted paths", () => {
+    const asOf = Date.parse("2026-08-26T10:00:00+01:00");
+    expect(coordinateTarvisRequest({
+      question: DISCRIMINATING_QUESTIONS["event-count-priority"], asOf, conversationHistory: [],
+    }).kind).toBe("model-evidence");
+    expect(coordinateTarvisRequest({
+      question: DISCRIMINATING_QUESTIONS["zero-recorded-events"], asOf, conversationHistory: [],
+    }).kind).toBe("model-evidence");
+    expect(coordinateTarvisRequest({
+      question: DISCRIMINATING_QUESTIONS["education-calibration"], asOf, conversationHistory: [],
+    }).kind).toBe("model-education");
   });
 });
