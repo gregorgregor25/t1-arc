@@ -1,12 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertTarvisProviderReady, claudeOutputSchema, clearTarvisProviderCooldownsForTests, fetchTarvisProviderResponse, normalizeProviderResponse } from "@/data/tarvis/providerTransport";
 import { TARVIS_PROVIDERS, validateTarvisApiKey, type TarvisProvider } from "@/data/tarvis/providers";
+import { TARVIS_GENERAL_EDUCATION_PROMPT, tarvisGeneralEducationTextConfig } from "@/data/tarvis/generalEducation";
 
 const openAiUrl = "https://api.openai.com/v1/responses";
 const key = "test-key-never-put-in-a-url";
 const body = { model: TARVIS_PROVIDERS.openai.model, store: false, safety_identifier: "opaque-openai-only", instructions: "Guarded instructions", input: [{ role: "user", content: [{ type: "input_text", text: "bounded health context" }] }], max_output_tokens: 800, text: { format: { type: "json_schema", name: "answer", strict: true, schema: { type: "object", additionalProperties: false, properties: { answer: { type: "string", maxLength: 50 } }, required: ["answer"] } } } };
 const init = (provider: TarvisProvider = "openai") => ({ method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ ...body, model: TARVIS_PROVIDERS[provider].model }), signal: new AbortController().signal });
 const ok = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+const educationRequest = (provider: TarvisProvider, question: string) => ({
+  ...init(provider),
+  body: JSON.stringify({
+    ...body,
+    model: TARVIS_PROVIDERS[provider].model,
+    instructions: TARVIS_GENERAL_EDUCATION_PROMPT,
+    input: [{ role: "user", content: [{ type: "input_text", text: JSON.stringify({
+      requestMode: "general-education", reviewedKnowledge: [], recentConversation: [], question,
+    }) }] }],
+    text: tarvisGeneralEducationTextConfig(),
+  }),
+});
 
 describe("Tarv1s native provider boundary", () => {
   beforeEach(() => { clearTarvisProviderCooldownsForTests(); vi.stubGlobal("fetch", vi.fn()); });
@@ -17,6 +30,80 @@ describe("Tarv1s native provider boundary", () => {
     const request = init();
     await fetchTarvisProviderResponse("openai", key, openAiUrl, request);
     expect(fetch).toHaveBeenCalledExactlyOnceWith(openAiUrl, request);
+  });
+
+  it("leaves the full OpenAI education request untouched", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({ output: [], usage: {} }));
+    const request = educationRequest("openai", "How do HbA1c and CGM time in range differ?");
+    await fetchTarvisProviderResponse("openai", key, openAiUrl, request);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(openAiUrl, request);
+  });
+
+  it("leaves the exact Claude education request unchanged", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({}));
+    const request = educationRequest("claude", "How do HbA1c and CGM time in range differ?");
+    await fetchTarvisProviderResponse("claude", key, openAiUrl, request);
+    const original = JSON.parse(String(request.body));
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("https://api.anthropic.com/v1/messages", {
+      ...request,
+      headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: TARVIS_PROVIDERS.claude.model,
+        system: TARVIS_GENERAL_EDUCATION_PROMPT,
+        messages: [{ role: "user", content: original.input[0].content[0].text }],
+        max_tokens: 2048,
+        output_config: { format: { type: "json_schema", schema: claudeOutputSchema(original.text.format.schema) } },
+      }),
+    });
+  });
+
+  it.each(["gemini-3.8-flash", "gemini-3.7-flash"])(
+    "calibrates only relevant general education on %s",
+    async model => {
+      vi.mocked(fetch).mockResolvedValue(ok({}));
+      const request = educationRequest("gemini", "How do HbA1c and CGM time in range differ?");
+      await fetchTarvisProviderResponse("gemini", key, openAiUrl, {
+        ...request, body: JSON.stringify({ ...JSON.parse(String(request.body)), model }),
+      });
+      const [, sent] = vi.mocked(fetch).mock.lastCall!;
+      const native = JSON.parse(String(sent?.body));
+      const instructions = native.systemInstruction.parts[0].text as string;
+      expect(instructions.startsWith(`${TARVIS_GENERAL_EDUCATION_PROMPT}\n\n`)).toBe(true);
+      expect(instructions).toContain("fraction of observed sensor time");
+      expect(instructions).toContain("number, timing, depth or duration");
+      expect(instructions).toContain("Red-cell lifespan or haemoglobin variants");
+      expect(instructions).toContain("High and low readings contribute to that average");
+      expect(instructions).toContain("Large sustained changes in recent weeks can change HbA1c");
+      expect(instructions).toContain("level 1 is at least 3.0 and below 3.9 mmol/L");
+      expect(instructions).toContain("Do not infer personal results");
+      expect(instructions).toContain("Do not describe the TIR percentage itself as showing day-to-day patterns or stability");
+      expect(instructions).toContain("A sensor threshold or trace alone cannot establish a severe event.");
+      expect(native.generationConfig.responseJsonSchema).toEqual(tarvisGeneralEducationTextConfig().format.schema);
+    },
+  );
+
+  it("retains conditional calibration for unrelated education and dependent follow-ups", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({}));
+    for (const question of ["How does sleep affect wellbeing?", "What can that number miss?"]) {
+      await fetchTarvisProviderResponse("gemini", key, openAiUrl, educationRequest("gemini", question));
+      const instructions = JSON.parse(String(vi.mocked(fetch).mock.lastCall?.[1]?.body)).systemInstruction.parts[0].text as string;
+      expect(instructions.startsWith(`${TARVIS_GENERAL_EDUCATION_PROMPT}\n\n`)).toBe(true);
+      expect(instructions).toContain("Use only the points relevant to the question.");
+    }
+  });
+
+  it("keeps Gemini evidence, reviewed education and planning instructions unchanged", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({}));
+    const request = educationRequest("gemini", "What is HbA1c?");
+    for (const name of ["tarvis_evidence_selection", "tarvis_reviewed_knowledge_answer", "tarvis_evidence_plan_v1"]) {
+      const original = JSON.parse(String(educationRequest("gemini", "What is HbA1c?").body));
+      original.text.format.name = name;
+      await fetchTarvisProviderResponse("gemini", key, openAiUrl, {
+        ...request, body: JSON.stringify(original),
+      });
+      expect(JSON.parse(String(vi.mocked(fetch).mock.lastCall?.[1]?.body)).systemInstruction.parts[0].text)
+        .toBe(TARVIS_GENERAL_EDUCATION_PROMPT);
+    }
   });
 
   it("uses the exact selected native model and rejects a cross-provider or unavailable model", async () => {

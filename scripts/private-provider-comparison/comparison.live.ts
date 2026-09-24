@@ -55,11 +55,12 @@ const AS_OF = Date.parse("2026-08-26T10:00:00+01:00");
 
 type CaseId = "general-explanation" | "evidence-planning" | "supported-findings" |
   "missing-stale-data" | "unsupported-claims" | "prompt-injection" |
-  "event-count-priority" | "zero-recorded-events" | "education-calibration";
+  "event-count-priority" | "zero-recorded-events" | "education-calibration" | "education-calibration-paraphrase" | "education-calibration-limits";
 const CASE_IDS: readonly CaseId[] = [
   "general-explanation", "evidence-planning", "supported-findings",
   "missing-stale-data", "unsupported-claims", "prompt-injection",
   "event-count-priority", "zero-recorded-events", "education-calibration",
+  "education-calibration-paraphrase", "education-calibration-limits",
 ];
 
 type TrialResult = {
@@ -233,8 +234,10 @@ function caseInput(caseId: CaseId): {
       question: DISCRIMINATING_QUESTIONS["zero-recorded-events"],
       packet: eventCountPacket("zero"), planning: false,
     };
-    case "education-calibration": return {
-      question: DISCRIMINATING_QUESTIONS["education-calibration"],
+    case "education-calibration":
+    case "education-calibration-paraphrase":
+    case "education-calibration-limits": return {
+      question: DISCRIMINATING_QUESTIONS[caseId],
       planning: false,
     };
   }
@@ -494,7 +497,8 @@ describe("private synthetic provider comparison", () => {
                 localFindingProse: !input.packet || "requestMode" in input.packet || result.answerSource === "local",
               };
               if (caseId === "event-count-priority" || caseId === "zero-recorded-events" ||
-                  caseId === "education-calibration") {
+                  caseId === "education-calibration" || caseId === "education-calibration-paraphrase" ||
+                  caseId === "education-calibration-limits") {
                 row.checks = {
                   ...row.checks,
                   ...scoreDiscriminatingCase(caseId, {

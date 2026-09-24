@@ -8,7 +8,17 @@ interface ModelRequest {
   input: { role: string; content: { text: string }[] }[];
   max_output_tokens: number;
   reasoning?: { effort: string };
-  text: { format: { schema: Record<string, unknown> } };
+  text: { format: { name?: string; schema: Record<string, unknown> } };
+}
+
+// Sources: https://www.niddk.nih.gov/health-information/diagnostic-tests/a1c-test
+// https://diabetes.org/living-with-diabetes/treatment-care/food-monitoring
+// ADA 2026 hypoglycaemia levels: https://pmc.ncbi.nlm.nih.gov/articles/PMC12690178/
+const GEMINI_MEASURE_CALIBRATION = `When the question concerns HbA1c or CGM time in range, keep these measures distinct. HbA1c reflects average glucose over roughly three months, with greater weight on recent weeks. Large sustained changes in recent weeks can change HbA1c; do not say it cannot reflect recent changes in glucose management. High and low readings contribute to that average, but the HbA1c result cannot identify individual episodes; do not imply that lows have no effect on HbA1c or are always masked by other readings. Red-cell lifespan or haemoglobin variants can affect the result. Time in range is the fraction of observed sensor time within a defined glucose range. A time-in-range percentage alone does not reveal the number, timing, depth or duration of high or low events, glucose variability, or how out-of-range time divides between below and above range. Those details need the CGM trace or separate statistics. Do not describe the TIR percentage itself as showing day-to-day patterns or stability, even in a summary or comparison with HbA1c; attribute those insights explicitly to the full CGM trace and separate metrics. Do not add numerical glucose bands or clinical classifications unless the question asks for them. If discussing hypoglycaemia levels, distinguish glucose depth from clinical severity: level 1 is at least 3.0 and below 3.9 mmol/L (at least 54 and below 70 mg/dL); level 2 is below 3.0 mmol/L (54 mg/dL), whereas severe (level 3) hypoglycaemia involves impaired mental or physical functioning requiring another person's assistance, irrespective of the glucose value. A sensor threshold or trace alone cannot establish a severe event. Use only the points relevant to the question. Do not infer personal results or turn either measure into a dose or an exact conversion. Keep all existing JSON and safety instructions.`;
+
+function geminiInstructions(original: ModelRequest) {
+  if (original.text.format.name !== "tarvis_general_education_v1") return original.instructions;
+  return `${original.instructions}\n\n${GEMINI_MEASURE_CALIBRATION}`;
 }
 
 export interface ProviderResponseBody {
@@ -100,7 +110,7 @@ export async function fetchTarvisProviderResponse(provider: TarvisProvider, key:
     if (provider === "gemini") {
       url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       request = { ...init, headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({
-        systemInstruction: { parts: [{ text: original.instructions }] },
+        systemInstruction: { parts: [{ text: geminiInstructions(original) }] },
         contents: [{ role: "user", parts: [{ text: content }] }],
         generationConfig: { responseMimeType: "application/json", responseJsonSchema: original.text.format.schema, maxOutputTokens: Math.max(original.max_output_tokens, 4096), thinkingConfig: { thinkingLevel: "LOW" } },
       }) };

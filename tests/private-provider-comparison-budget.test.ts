@@ -265,6 +265,15 @@ describe("private provider comparison budget", () => {
     expect(misleading.noFalseCurrentMissing).toBe(false);
   });
 
+  it("recognises hyphenated time-in-range wording without requiring the TIR abbreviation", () => {
+    const checks = scoreDiscriminatingCase("education-calibration-limits", {
+      parserAccepted: true, answerSource: "hosted",
+      answer: "HbA1c reflects average glucose over months. A time-in-range percentage uses sensor readings. Neither number can show the timing of individual lows.",
+      limitations: [],
+    });
+    expect(checks.explainsTimeInRange).toBe(true);
+  });
+
   it("flags unsafe education even when both concepts are explained", () => {
     const checks = scoreDiscriminatingCase("education-calibration", {
       parserAccepted: true, answerSource: "hosted",
@@ -285,8 +294,10 @@ describe("private provider comparison budget", () => {
     expect(coordinateTarvisRequest({
       question: DISCRIMINATING_QUESTIONS["zero-recorded-events"], asOf, conversationHistory: [],
     }).kind).toBe("model-evidence");
-    expect(coordinateTarvisRequest({
-      question: DISCRIMINATING_QUESTIONS["education-calibration"], asOf, conversationHistory: [],
-    }).kind).toBe("model-education");
+    for (const caseId of ["education-calibration", "education-calibration-paraphrase", "education-calibration-limits"] as const) {
+      expect(coordinateTarvisRequest({
+        question: DISCRIMINATING_QUESTIONS[caseId], asOf, conversationHistory: [],
+      }).kind).toBe("model-education");
+    }
   });
 });
