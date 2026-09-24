@@ -11,6 +11,7 @@ import {
   validatedNativeUsage,
 } from "../scripts/private-provider-comparison/budget";
 import { boundedAppFailureMessage, boundedNativeErrorDiagnostic } from "../scripts/private-provider-comparison/diagnostics";
+import { assertGeminiDispatchApproval } from "../scripts/private-provider-comparison/accessGate";
 
 const temporaryDirectories: string[] = [];
 function ledgerPath() {
@@ -128,5 +129,33 @@ describe("private provider comparison budget", () => {
     expect(boundedAppFailureMessage(new Error(`Google Gemini failed for ${syntheticKey}`)))
       .toBe("Google Gemini failed for [REDACTED]");
     expect(boundedAppFailureMessage(new Error("private provider response body"))).toBeUndefined();
+  });
+
+  it("requires one verified Gemini quota mode and explicit paid authorization", () => {
+    const gemini = new Set(["gemini-3.8-flash"]);
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED: "YES",
+    })).not.toThrow();
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    })).not.toThrow();
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+    })).toThrow(/explicit user authorization/i);
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    })).toThrow(/verified paid quota/i);
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED: "NO",
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    })).toThrow(/exactly one mode/i);
+    expect(() => assertGeminiDispatchApproval(gemini, {
+      T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    })).toThrow(/exactly one mode/i);
+    expect(() => assertGeminiDispatchApproval(new Set(["claude-sonnet-5"]), {})).not.toThrow();
   });
 });

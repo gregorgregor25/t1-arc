@@ -25,6 +25,7 @@ import {
   type ComparisonReservation,
 } from "./budget";
 import { boundedAppFailureMessage, boundedNativeErrorDiagnostic, type NativeErrorDiagnostic } from "./diagnostics";
+import { assertGeminiDispatchApproval } from "./accessGate";
 
 const mocks = vi.hoisted(() => ({
   acquireLease: vi.fn(), assertLeaseCurrent: vi.fn(), loadApiKey: vi.fn(),
@@ -219,10 +220,13 @@ function approvedModels() {
   if (requested.length === 0 || new Set(requested).size !== requested.length || requested.some((value: string) => !Object.hasOwn(MODEL_RATES, value))) {
     throw new Error("Set exact approved model IDs in T1ARC_PRIVATE_COMPARISON_MODELS.");
   }
-  if (requested.includes("gemini-3.8-flash") && process.env.T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED !== "YES") {
-    throw new Error("Gemini free quota verification is required before comparison.");
-  }
-  return new Set(requested) as ReadonlySet<ComparisonModel>;
+  const allowed = new Set(requested) as ReadonlySet<ComparisonModel>;
+  assertGeminiDispatchApproval(allowed, {
+    T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED: process.env.T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED,
+    T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: process.env.T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED,
+    T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: process.env.T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED,
+  });
+  return allowed;
 }
 
 function selectedCases(): readonly CaseId[] {
