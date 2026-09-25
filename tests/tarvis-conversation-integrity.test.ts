@@ -148,6 +148,27 @@ function exactExchange(): StoredTarvisExchange {
   };
 }
 
+function exactRangeExchange(
+  question: string,
+  readings: GlucoseReading[] = [],
+): StoredTarvisExchange {
+  const intent = ready(question);
+  const result = buildLocalGlucoseRangeAnswer({
+    asOf: AS_OF,
+    intent,
+    readings,
+  });
+  return {
+    id: `range-${question}`,
+    question,
+    answer: result.answer,
+    evidence: compactTarvisEvidence(result.evidence),
+    intent,
+    presentation: result.presentation,
+    answerBundle: result.answerBundle,
+  };
+}
+
 function recurringBoundaryEventExchange(): StoredTarvisExchange {
   const question =
     "How many high-glucose events did I have over the last one day between midnight and 7 a.m.?";
@@ -240,6 +261,77 @@ describe("Tarv1s schema-v3 conversation integrity", () => {
     expect(Object.isFrozen(restored?.answerBundle?.scope.windows[0])).toBe(
       true,
     );
+  });
+
+  it.each([
+    "How many low glucose events have I had in the last 7 days?",
+    "What was my time in range today?",
+    "What was my average glucose today?",
+  ])("persists an unavailable exact glucose answer: %s", async (question) => {
+    const exchange = exactRangeExchange(question);
+    expect(exchange.answer.headline).toBe("Glucose result unavailable");
+    expect(exchange.evidence[0]?.calculation?.metrics[0]?.value).toBeNull();
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+
+    await saveTarvisConversation([exchange]);
+    const [restored] = await loadedConversation();
+    expect(restored?.answer).toEqual(exchange.answer);
+    expect(restored?.answerBundle?.identity).toEqual(exchange.answerBundle?.identity);
+  });
+
+  it.each([
+    ["How many low glucose events have I had today?", 0],
+    ["What was my time in range today?", 100],
+  ])("keeps sparse observed results distinct from unavailable: %s", async (question, expected) => {
+    const exchange = exactRangeExchange(question, [
+      reading("one-normal-reading", "2026-08-07T08:00:00+01:00", 6),
+    ]);
+    expect(exchange.evidence[0]?.calculation?.metrics[0]?.value).toBe(expected);
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+    await saveTarvisConversation([exchange]);
+    const [restored] = await loadedConversation();
+    expect(restored?.evidence[0]?.calculation?.metrics[0]?.value).toBe(expected);
+  });
+
+  it("rejects forged zero and mismatched coverage in unavailable event answers", () => {
+    const empty = exactRangeExchange("How many low glucose events have I had today?");
+    expect(validStoredTarvisExchange(empty)).toBe(true);
+
+    const forgedZero = clone(empty);
+    forgedZero.evidence[0]!.calculation!.metrics[0]!.value = 0;
+    expect(validStoredTarvisExchange(forgedZero)).toBe(false);
+
+    const mismatchedCoverage = clone(empty);
+    const chart = mismatchedCoverage.evidence[0]!.visualization;
+    if (!chart || chart.kind !== "event-timeline-v1") {
+      throw new Error("Expected an event timeline.");
+    }
+    chart.windows[0]!.coverageStatus = "limited";
+    expect(validStoredTarvisExchange(mismatchedCoverage)).toBe(false);
+
+    const counted = clone(exactBoundaryEventExchange());
+    expect(validStoredTarvisExchange(counted)).toBe(true);
+    const countedChart = counted.evidence[0]!.visualization;
+    if (!countedChart || countedChart.kind !== "event-timeline-v1") {
+      throw new Error("Expected an event timeline.");
+    }
+    countedChart.windows[0]!.events = [];
+    expect(validStoredTarvisExchange(counted)).toBe(false);
+  });
+
+  it("rejects a fabricated zero-percent distribution without sensor time", () => {
+    const unavailable = clone(exactRangeExchange("What was my time in range today?"));
+    expect(validStoredTarvisExchange(unavailable)).toBe(true);
+    const chart = unavailable.evidence[0]!.visualization;
+    if (!chart || chart.kind !== "range-distribution-v1") {
+      throw new Error("Expected a range distribution.");
+    }
+    chart.windows[0]!.distribution = {
+      abovePercent: 0,
+      belowPercent: 0,
+      inRangePercent: 0,
+    };
+    expect(validStoredTarvisExchange(unavailable)).toBe(false);
   });
 
   it("preserves separate thread identities and migrates older exchanges", async () => {
