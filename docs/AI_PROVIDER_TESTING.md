@@ -1,9 +1,10 @@
 # AI provider choice: validation record
 
-This records the provider choice checks performed before the proposed T1 Arc
-1.7.12 release. The private phone build was `1.7.12-provider-test.3`, version
-code 52. It is not a production APK. The release workflow must verify the
-final signed 1.7.12 artifact and its exact source revision separately.
+This records the provider choice checks performed for the unpublished 1.7.12
+candidate, carried forward into the planned T1 Arc 1.7.13 release. The private
+phone build was `1.7.12-provider-test.3`, version code 52. It is not a
+production APK. The release workflow must verify the final signed 1.7.13
+artifact and its exact source revision separately.
 
 ## Model choice
 
@@ -46,6 +47,14 @@ locally. Format validation is not an authentication check.
   Gemini education responses across the two Flash models. The 3.8 phone
   limitation above shows why those synthetic results do not guarantee every
   future explanation.
+
+## 1.7.13 candidate correction
+
+An exact local low-glucose question could show a valid no-data answer but fail
+to save that answer in the conversation when the requested period had no
+readings. The 1.7.13 candidate corrects conversation validation for that case.
+Verify the saved no-data answer on the exact release artifact; this does not
+make an AI provider request or change the Wear protocol.
 
 ## Final release verification
 

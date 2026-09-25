@@ -1,6 +1,6 @@
 {
   "name": "t1-arc",
-  "version": "1.7.12",
+  "version": "1.7.13",
   "license": "MIT",
   "engines": {
     "node": ">=22.13.0"

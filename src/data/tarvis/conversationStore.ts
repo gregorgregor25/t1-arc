@@ -768,8 +768,25 @@ function exactVisualizationMatchesBundle(
     }
     if (visualization.kind === "range-distribution-v1") {
       const expected = distributionForWindow(bundle, window.id);
-      if (!expected || !window.distribution) return false;
-      if (
+      if (expected === null) {
+        // No observed sensor time is unavailable, not a zero-percent result.
+        const claim = bundle.claims.find(
+          ({ metric, windowIds }) =>
+            metric === visualization.metric && windowIds.includes(window.id),
+        );
+        if (
+          !claim ||
+          claim.value !== null ||
+          bundleWindow.calculationRecordIds.length !== 0 ||
+          window.recordCount !== 0 ||
+          window.coverageStatus !== "unavailable" ||
+          (window.distribution !== null &&
+            Object.values(window.distribution).some((value) => value !== null))
+        ) {
+          return false;
+        }
+      } else if (
+        !window.distribution ||
         expected.belowPercent !== window.distribution.belowPercent ||
         expected.inRangePercent !== window.distribution.inRangePercent ||
         expected.abovePercent !== window.distribution.abovePercent
@@ -782,7 +799,20 @@ function exactVisualizationMatchesBundle(
         ({ metric, windowIds }) =>
           metric === visualization.metric && windowIds.includes(window.id),
       );
-      if (!claim || claim.value !== window.events.length) return false;
+      if (!claim) return false;
+      if (claim.value === null) {
+        // A missing trace cannot establish that the event count was zero.
+        if (
+          bundleWindow.calculationRecordIds.length !== 0 ||
+          window.recordCount !== 0 ||
+          window.coverageStatus !== "unavailable" ||
+          window.events.length !== 0
+        ) {
+          return false;
+        }
+      } else if (claim.value !== window.events.length) {
+        return false;
+      }
       const recordById = new Map(
         bundle.records.map((record) => [record.id, record]),
       );
