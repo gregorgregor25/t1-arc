@@ -23,6 +23,8 @@
   <a href="docs/GETTING_STARTED.md">Installation guide</a>
   &nbsp;|&nbsp;
   <a href="docs/SCREENSHOTS.md">Screenshots</a>
+  &nbsp;|&nbsp;
+  <a href="https://www.reddit.com/r/T1Arc/">Reddit community</a>
 </p>
 
 > Free to use on Android 8.0 and newer. [Downloads and release support](docs/RELEASE_STATUS.md).
@@ -185,7 +187,7 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
 - Optional persistent notification with lock-screen privacy controls.
 - Home-screen widget.
 - Optional always-on display service.
-- Experimental, opt-in Android Auto glance.
+- Experimental, opt-in Android Auto glance. Follow the [Android Auto setup guide](https://t1arc.com/android-auto/).
 
 The Wear OS companion brings glucose to your wrist. On supported Wear OS 6
 watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
@@ -194,6 +196,7 @@ In independent APK builds with the guided installer, open **Settings → Watch &
 watch faces → Set up my watch**. The phone carries the matching companion and
 guides you through the watch's one-time debugging authorisation and installation.
 See [Watch setup](docs/WATCH_SETUP.md) for compatibility and installation.
+Prefer a web page? Follow the [step-by-step watch guide](https://t1arc.com/watch/).
 
 ## Regional support
 
@@ -258,6 +261,8 @@ Read the detailed [privacy model](PRIVACY.md) before connecting personal data.
 
 ## Help and documentation
 
+- [Website setup and help guide](https://t1arc.com/guide/)
+- [Ask the T1 Arc community on Reddit](https://www.reddit.com/r/T1Arc/)
 - [Install and update T1 Arc](docs/GETTING_STARTED.md)
 - [Use the main screens](docs/USING_T1_ARC.md)
 - [Log food and scan barcodes](docs/FOOD_LOGGING.md)
@@ -265,6 +270,7 @@ Read the detailed [privacy model](PRIVACY.md) before connecting personal data.
 - [Set up Tarv1s](docs/TARV1S_BYOK.md)
 - [Set up displays, alerts and widgets](docs/DISPLAY_AND_ALERTS.md)
 - [Connect a watch and choose a face](docs/WATCH_SETUP.md)
+- [Set up Android Auto](https://t1arc.com/android-auto/)
 - [Troubleshoot common problems](docs/TROUBLESHOOTING.md)
 - [Get help or report a problem](SUPPORT.md)
 - [Check current release support](docs/RELEASE_STATUS.md)
@@ -290,7 +296,9 @@ Developers should start with [CONTRIBUTING.md](CONTRIBUTING.md) and the separate
 requirements, not user installation requirements.
 
 Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Issues and pull requests
-are the current collaboration routes; no separate wiki or chat account is needed.
+are the source contribution routes. The [Reddit community](https://www.reddit.com/r/T1Arc/)
+is also available for app questions, feedback and updates. Using the app does
+not require a GitHub or Reddit account.
 
 Never upload an unedited health export, database, API key, password, session
 token or screenshot containing private information. Use synthetic data and the

@@ -25,6 +25,13 @@ function text(file: string) {
   return readFileSync(file, 'utf8');
 }
 
+function hasUnspacedProductNameInDocumentation(contents: string): boolean {
+  // URL paths can legitimately use technical names, such as Reddit's r/T1Arc.
+  // Keep checking prose and link labels without rewriting working destinations.
+  const displayCopy = contents.replace(/https?:\/\/[^\s<>"')]+/g, '');
+  return /\bT1Arc\b/.test(displayCopy);
+}
+
 function userVisibleAndroidStrings() {
   return [
     ...filesUnder(path.join(root, 'android', 'app', 'src', 'main', 'res')),
@@ -193,6 +200,19 @@ describe('T1 Arc product identity', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('allows URL spelling without allowing unspaced names in prose or link labels', () => {
+    expect(hasUnspacedProductNameInDocumentation(
+      '[T1 Arc community](https://www.reddit.com/r/T1Arc/)',
+    )).toBe(false);
+    expect(hasUnspacedProductNameInDocumentation(
+      '<a href="https://www.reddit.com/r/T1Arc/">T1 Arc community</a>',
+    )).toBe(false);
+    expect(hasUnspacedProductNameInDocumentation(
+      '[T1Arc community](https://www.reddit.com/r/T1Arc/)',
+    )).toBe(true);
+    expect(hasUnspacedProductNameInDocumentation('# T1Arc\nUse T1Arc.')).toBe(true);
+  });
+
   it('uses display-form T1 Arc throughout product documentation', () => {
     const productDocuments = [
       path.join(root, 'README.md'),
@@ -202,7 +222,7 @@ describe('T1 Arc product identity', () => {
       path.join(root, 'design-system', 't1arc', 'MASTER.md'),
     ];
     const offenders = productDocuments.flatMap((file) =>
-      /\bT1Arc\b/.test(text(file))
+      hasUnspacedProductNameInDocumentation(text(file))
         ? [path.relative(root, file)]
         : [],
     );
