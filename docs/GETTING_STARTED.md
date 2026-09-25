@@ -94,8 +94,8 @@ the other. Older test builds may not have an About page.
 A package ending in `.sideload` is a private test installation, not the official
 public package. Renaming its APK file does not turn it into an official update.
 Keep it installed until an encrypted backup has been verified and restored into
-the official app. Review the restored records, reconnect sources and the
-optional OpenAI key, and grant Android permissions again. Phone and Wear
+the official app. Review the restored records, reconnect sources and any
+optional AI provider keys, and grant Android permissions again. Phone and Wear
 companion package IDs and signing certificates must match for their data link.
 
 ## Verify a download

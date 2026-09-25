@@ -45,7 +45,7 @@ describe("Tarv1s treatment-profile answer", () => {
       "from 06:00 AM, 1 unit covers 12 g carbohydrate",
     );
     expect(answer.answer).toContain("did not calculate a dose");
-    expect(answer.limitations).toContain("No OpenAI request was made.");
+    expect(answer.limitations).toContain("No AI provider request was made.");
   });
 
   it("fails closed for an absent or unreadable local profile", () => {
@@ -56,6 +56,6 @@ describe("Tarv1s treatment-profile answer", () => {
     expect(absent.answer).toContain("Settings → Diabetes profile");
     expect(unreadable.headline).toContain("could not read");
     expect(unreadable.answer).toContain("did not use the saved ratio");
-    expect(unreadable.limitations).toContain("No OpenAI request was made.");
+    expect(unreadable.limitations).toContain("No AI provider request was made.");
   });
 });

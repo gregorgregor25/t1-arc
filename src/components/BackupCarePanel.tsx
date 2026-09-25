@@ -43,7 +43,7 @@ export function BackupCarePanel({ revision }: { revision: number }) {
       <Text style={[styles.body, { color: colors.textSecondary }]}>1. Create an encrypted backup: a locked copy of your saved app data, including foods, treatments, site history and lab results. Keep its passphrase somewhere safe. T1 Arc cannot recover a forgotten passphrase.</Text>
       <Text style={[styles.body, { color: colors.textSecondary }]}>2. Keep a copy somewhere you choose outside this phone. A file in Downloads alone will not protect you if the phone is lost. T1 Arc does not upload your backup automatically.</Text>
       <Text style={[styles.body, { color: colors.textSecondary }]}>3. On the new phone, install T1 Arc, choose Restore from backup and check the preview before merging. History, saved reviews, Tarv1s conversations and supported preferences restore without removing existing records.</Text>
-      <Text style={[styles.body, { color: colors.textSecondary }]}>4. Reconnect your sources and OpenAI key, and grant Android permissions again. Sign-ins, API keys and permissions are not in the backup. Check your restored history before removing the old app.</Text>
+      <Text style={[styles.body, { color: colors.textSecondary }]}>4. Reconnect your sources and AI provider keys, and grant Android permissions again. Sign-ins, API keys and permissions are not in the backup. Check your restored history before removing the old app.</Text>
       <View style={styles.reminder}>
         <View style={styles.copy}>
           <Text style={[styles.label, { color: colors.text }]}>Weekly reminder here</Text>

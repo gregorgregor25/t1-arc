@@ -189,7 +189,7 @@ export function routeTarvisIntent(
         answer: answer(
           "That period is too large for one on-phone answer",
           `To keep the calculation responsive and its evidence safely stored, Tarv1s can use up to ${MAX_LOCAL_GLUCOSE_SCOPE_DAYS} days of local health data in one answer, including both periods in a comparison. Ask for a shorter period, such as the last 90 days, or compare the last 30 days with the preceding 30 days.`,
-          "No health records were loaded and no OpenAI request was made for this oversized calculation.",
+          "No health records were loaded and no AI provider request was made for this oversized calculation.",
         ),
       };
     }
@@ -208,7 +208,7 @@ export function routeTarvisIntent(
         answer: answer(
           "GMI needs a full-period glucose range",
           "GMI is derived from broadly representative mean sensor glucose, so I cannot calculate an “overnight GMI” or use selected hours. Ask for a continuous period such as the last 14 or 30 days instead.",
-          "No calculation or OpenAI request was made; selected clock hours were not substituted for representative full-period CGM data.",
+          "No calculation or AI provider request was made; selected clock hours were not substituted for representative full-period CGM data.",
         ),
       };
     }
@@ -217,7 +217,7 @@ export function routeTarvisIntent(
       answer: answer(
         "I can’t calculate that safely yet",
         "I recognised what you asked to calculate, but this exact local calculation is not available yet. I won’t substitute a different metric or time period.",
-        "No calculation or OpenAI request was made for this unsupported calculation shape.",
+        "No calculation or AI provider request was made for this unsupported calculation shape.",
       ),
     };
   }
@@ -248,7 +248,7 @@ export function routeTarvisIntent(
       answer: answer(
         "One detail before I calculate that",
         `${resolution.outcome.message} ${resolution.outcome.clarification}`.trim(),
-        "No calculation or OpenAI request was made because the requested meaning was not unambiguous.",
+        "No calculation or AI provider request was made because the requested meaning was not unambiguous.",
       ),
     };
   }
@@ -258,7 +258,7 @@ export function routeTarvisIntent(
     answer: answer(
       "I can’t calculate that safely yet",
       `${resolution.outcome.message} I won’t substitute a different metric or time window.`,
-      "No calculation or OpenAI request was made for this unsupported request.",
+      "No calculation or AI provider request was made for this unsupported request.",
     ),
   };
 }

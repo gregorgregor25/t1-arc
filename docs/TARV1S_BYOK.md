@@ -1,17 +1,74 @@
-# Tarv1s and your OpenAI API key
+# Tarv1s and your AI provider API key
 
-Broader Tarv1s questions can use your own OpenAI API key. The maintainer and every other user follow the
-same setup. There is no bundled maintainer key, hidden free allowance or relay
-server in the normal app path.
+Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic
+Claude API key. Every user follows the same setup. There is no bundled
+maintainer key, hidden free allowance or relay server in the normal app path.
 
-## What works without OpenAI
+## Choose a provider
+
+In Tarv1s settings, select OpenAI, Google Gemini or Anthropic Claude. Read the
+selected provider's data-use notice, enter its API key and choose **Save key on
+this phone**. If a key is already saved, choose **Use selected provider**.
+Saving checks the key's format and stores it locally; the first eligible AI
+question checks actual API access. Saving does not send a test prompt.
+
+Existing installations keep their OpenAI key and default provider. Each provider
+has a separate secure key. Switching never substitutes another provider after an
+error, and replacing or removing a key cancels outstanding model requests. Remove
+saved key applies to the provider selected in settings; privacy erase removes all
+three keys, the selected provider, safety identifier and usage counters.
+
+The available models are GPT-5.6 Luna and Terra; Gemini 3.8 Flash and 3.7
+Flash; and Claude Haiku 4.5, Sonnet 5 and Opus 5.5. The defaults are Luna,
+Gemini 3.8 Flash and Claude Sonnet 5. There is no automatic model substitution
+and no Recommended badge. Token usage is recorded for all providers. The
+in-app cost estimate applies only to the default OpenAI Luna model; no Gemini
+or Claude price is inferred from OpenAI rates. Check the selected provider's
+[OpenAI pricing](https://developers.openai.com/api/docs/pricing),
+[Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) or
+[Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing),
+also linked in settings. ChatGPT, Gemini and Claude chat subscriptions are
+separate from API billing.
+
+Requests go directly from the phone to the selected provider. The same bounded
+evidence planner, local calculations, output validation and treatment boundaries
+apply to every provider. General education sends no health records. Switching
+providers can send recent previously shared conversation to the new provider on
+the next question; start a new conversation to omit that history.
+
+Use a billing-enabled Gemini API project for health information. Google's
+[API terms](https://ai.google.dev/gemini-api/terms) prohibit sensitive or personal
+information under unpaid-service terms and impose paid-service requirements for
+apps in the UK, EEA and Switzerland. The terms require API users to be at least
+18 and prohibit API clients directed towards or likely to be accessed by
+under-18s. They prohibit using the service in clinical practice or to provide
+medical advice. Review the regional and other use restrictions for your
+account. Claude's
+[API data policies](https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-data)
+apply to Claude; OpenAI's storage controls below do not describe other providers.
+
+On authentication failures, use **API settings** in the error message. Rate-limit
+errors keep the question and impose a cooldown (at least 30 seconds, respecting
+Retry-After up to 24 hours). Requests are never retried automatically. Network
+failures, timeouts, safety blocks and incomplete responses do not add blank
+assistant messages. A verified local fallback may still be displayed alongside
+the provider error; the draft remains available for retry.
+
+Implementation references: [Gemini generateContent](https://ai.google.dev/api/generate-content),
+[Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+and [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+Native provider requests and failures have automated coverage. The
+[dated provider test record](AI_PROVIDER_TESTING.md) describes live-key and
+phone validation and its limits.
+
+## What works without an AI provider
 
 Some exact questions can be answered locally from records already on the
-phone. Questions that need broader language reasoning show the OpenAI setup and
+phone. Questions that need broader language reasoning show the provider setup and
 require the user to choose whether to send them.
 
 Opening Tarv1s, seeing starter questions, saving an answer in your notebook or
-preparing appointment notes does not make an OpenAI request. Exact local
+preparing appointment notes does not make a provider request. Exact local
 calculations do not become paid AI requests just because a key is saved.
 
 ## What you can ask
@@ -69,21 +126,21 @@ choosing to include them.
 Choose **Prepare appointment notes**, select up to five items, then preview.
 **Share this text** opens Android sharing. **Save printable HTML** lets you choose
 a file destination; open the file in a browser to read or print it. Both contain
-readable health information and are **not encrypted**. No OpenAI request is used
-to assemble them, and T1 Arc does not send them automatically.
+readable health information and are **not encrypted**. No AI provider request
+is used to assemble them, and T1 Arc does not send them automatically.
 
 Deleting a notebook item does not delete the original conversation or health
 history. Portable encrypted backups include supported notebook records but never
-include your OpenAI key.
+include any provider API key.
 
-## What does it cost?
+## OpenAI Luna cost example
 
-**T1 Arc is free. Local factual answers are free.** The optional OpenAI
-connection is paid directly to OpenAI using your own API key; there is no
-T1 Arc subscription or markup. A ChatGPT subscription is not required and
-does not include API usage.
+**T1 Arc is free. Local factual answers are free.** Optional AI requests are
+billed by the selected provider using your own API key; there is no T1 Arc
+subscription or markup. A chat subscription does not include API usage. The
+example below applies only when you select OpenAI Luna.
 
-The app currently uses **GPT-5.6 Luna**. As checked on 17 September 2026,
+The default OpenAI model is **GPT-5.6 Luna**. As checked on 17 September 2026,
 standard text pricing is **US$0.20 per million input tokens** and **US$1.20 per
 million output tokens**. Tokens are small pieces of text; the input includes
 instructions and selected evidence as well as your question.
@@ -99,7 +156,7 @@ Check [current model pricing](https://developers.openai.com/api/docs/models/gpt-
 and [your usage](https://platform.openai.com/usage). Set suitable spend controls
 before use; the setup below explains them.
 
-## Set up a dedicated key
+## Set up a dedicated OpenAI key
 
 1. Sign in to the [OpenAI API platform](https://platform.openai.com/).
 2. Create a separate project for T1 Arc.
@@ -107,8 +164,10 @@ before use; the setup below explains them.
    enforced hard spend limit. Alerts alone do not stop requests, and hard-limit
    enforcement can lag slightly. See [OpenAI spend controls](https://developers.openai.com/api/docs/guides/spend-limits).
 4. Create a standard project API key. Do not use an organization admin key.
-5. In T1 Arc, open **Tarv1s**, open conversation history at the top left, then
-   choose **Tarv1s settings**. Paste the key and select **Save key on this phone**.
+5. In T1 Arc, open **Tarv1s**, then **Tarv1s settings**. Select OpenAI, choose
+   your model, paste the key and select **Save key on this phone**. The same
+   settings screen provides key-creation, privacy and pricing links for Gemini
+   and Claude when you select either of those providers.
 
 Saving stores the key locally. It does not verify billing or model access with
 OpenAI. The first broader question checks those when it is sent. No health
@@ -131,46 +190,50 @@ Useful official pages:
 
 For a personal-data question, T1 Arc builds a bounded evidence packet from the
 relevant dates and records. General explanations receive the question without a
-personal evidence packet. A dependent follow-up can include the immediately
-preceding exchange so Tarv1s understands what you mean.
+personal evidence packet. A dependent follow-up can include recent shared
+conversation so Tarv1s understands what you mean. Start a new conversation to
+omit that history before switching providers.
 
-The request goes directly from the Android app to the OpenAI Responses API. It
-is not sent through a T1 Arc server.
+The request goes directly from the Android app to the selected provider's API:
+OpenAI Responses, Gemini generateContent or Claude Messages. It is not sent
+through a T1 Arc server. An error does not silently reroute it to another AI
+provider.
 
-Requests also include a random, locally stored safety identifier. It is not
-derived from your name, email or health readings, but it can associate requests
-from that stored identifier. OpenAI also receives normal connection metadata,
-such as the phone's public IP address. This is not an anonymous or zero-data
-connection.
+OpenAI requests also include a random, locally stored safety identifier. It is
+not derived from your name, email or health readings, but it can associate
+requests from that stored identifier. The selected provider receives normal
+connection metadata, such as the phone's public IP address. This is not an
+anonymous or zero-data connection.
 
-The request sets `store: false`. According to the official OpenAI documentation,
-this disables optional Responses API application-state storage. It does not mean
-that no operational data can ever be retained. OpenAI documents separate abuse
-monitoring logs and account-specific data controls. Read the current
-[OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data)
-before sending health information.
+OpenAI requests set `store: false`. According to the official OpenAI
+documentation, this disables optional Responses API application-state storage.
+It does not mean that no operational data can ever be retained. OpenAI
+documents separate abuse monitoring logs and account-specific data controls.
+Read the current [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data)
+before sending health information. This OpenAI setting does not describe
+Gemini or Claude retention; review the provider privacy links above.
 
 Nothing is sent merely because the key has been saved. A request is made when
 the user submits an eligible question.
 
 ## Where the key is kept
 
-T1 Arc stores the key using Android secure storage and excludes it from portable
-backups. Removing local app data removes the app's stored copy. Revoking the key
-in the OpenAI platform prevents future use even if an old device still has a
-copy.
+T1 Arc stores each provider's key separately using Android secure storage and
+excludes all keys from portable backups. Removing local app data removes the
+app's stored copies. Revoking a key with its provider prevents future use even
+if an old device still has a copy.
 
 There is an important security tradeoff. OpenAI's official authentication
 guidance says API keys should not be exposed in client-side apps and recommends
 loading them from a server-side environment or key-management service. Direct
-BYOK deliberately keeps T1 Arc from operating a health-data relay, but the key
-still exists on the user's Android device. A determined attacker with control of
-the device or a modified build may be able to extract or misuse it.
+BYOK keeps T1 Arc from operating a health-data relay, but each saved key still
+exists on the user's Android device. A determined attacker with control of the
+device or a modified build may be able to extract or misuse it.
 
 Reduce that risk:
 
-- use a dedicated T1 Arc project, not a key shared with other work;
-- set spend alerts and an enforced hard limit if you need a spending cap;
+- use a dedicated project or key, not one shared with other work;
+- set spend controls with the selected provider;
 - never paste the key into an issue, screenshot, backup or chat;
 - install only builds you trust;
 - revoke and replace the key if the phone, build or key may be compromised.
@@ -200,16 +263,16 @@ an emergency or medical support service. See [report data handling](../PRIVACY.m
 
 ### Connection problems
 
-- **The key is rejected:** confirm it is a current standard project API key and
-  that the project permits Responses API calls.
+- **The key is rejected:** confirm it belongs to the selected provider and its
+  project permits the selected model. Key format validation alone does not
+  verify account access.
 - **A request is rate-limited:** wait for the project limit to reset or review
-  its limits in the OpenAI platform.
-- **Billing is unavailable:** check the API platform project and organization.
-  A ChatGPT plan does not automatically provide API credit.
+  its limits in the selected provider's console. The app keeps the question.
+- **Billing is unavailable:** check the selected provider's API project and
+  organization. Chat subscriptions do not automatically provide API credit.
 - **You changed phones or builds:** enter the key again. Portable T1 Arc backups
   deliberately exclude it.
 - **You suspect exposure:** revoke the key first, then create a replacement.
 
-This guide summarizes the app's design and links to the OpenAI Docs used for the
-current security and data-control statements. OpenAI remains the authority for
-its service behaviour, eligibility, limits and terms.
+This guide summarizes the app's design. Each provider remains the authority for
+its service behaviour, eligibility, pricing, data handling, limits and terms.

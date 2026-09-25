@@ -16,7 +16,7 @@ describe('public privacy policy entry points', () => {
   it('shows Health Connect users the policy and optional off-device boundaries without needing React', () => {
     const source = readFileSync('modules/t1arc-health-connect/android/src/main/java/io/github/gregorgregor25/t1arc/healthconnect/HealthPermissionsRationaleActivity.kt', 'utf8');
     expect(source).toContain('https://t1arc.com/privacy/');
-    expect(source).toContain('directly to OpenAI');
+    expect(source).toContain('directly to your selected AI provider (OpenAI, Google Gemini or Anthropic Claude)');
     expect(source).toContain('explicitly agree to share');
     expect(source).toContain('ActivityNotFoundException');
   });

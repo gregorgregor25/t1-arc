@@ -112,7 +112,7 @@ function expectCapability(
   }
   expect(routed.answer.evidenceIds, question).toEqual([]);
   expect(routed.answer.limitations.join(" "), question).toMatch(
-    /No calculation|No OpenAI request/i,
+    /No calculation|No AI provider request/i,
   );
 }
 

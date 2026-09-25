@@ -25,7 +25,8 @@ Follow the [phone installation guide](GETTING_STARTED.md) and
 - Supported provider connections, Health Connect, Hevy and manual logging.
 - Encrypted local storage and encrypted portable backups.
 - Food search, barcode scanning, saved foods, recipes and on-device label reading.
-- Tarv1s local factual answers and optional broader questions using your OpenAI key.
+- Tarv1s local factual answers and optional broader questions using your own
+  OpenAI, Google Gemini or Anthropic Claude API key and saved model choice.
 - Notifications, widgets, optional alerts and a Wear OS companion with five faces.
 
 See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
@@ -33,6 +34,10 @@ See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
 
 T1 Arc uses the same direct bring-your-own-key Tarv1s route for every user.
 There is no shared maintainer API key or separate hosted version.
+Each provider has its own saved key and model selection. Switching providers
+does not silently retry with another service. API use is billed by the chosen
+provider; see the official pricing links in Tarv1s settings. No model has a
+Recommended label in this release.
 
 ## Known limitations
 
@@ -59,6 +64,12 @@ There is no shared maintainer API key or separate hosted version.
 - **Backups exclude credentials and Android permissions.** Reconnect sources
   after restoring. Earlier-connection Tarv1s conversations may be kept in a
   read-only archive and are not used as evidence in new replies.
+- **AI explanations need review.** A phone test of Gemini 3.8 gave a useful
+  HbA1c and time-in-range explanation but phrased clinical severity as if a CGM
+  trace and variability statistics alone could establish it. Glucose patterns
+  cannot establish clinical severity without context. The owner accepted this
+  wording limitation for this release; do not use Tarv1s as the sole basis for
+  treatment decisions. See [provider validation](AI_PROVIDER_TESTING.md).
 
 ## Know which version you have
 
@@ -74,8 +85,9 @@ or installs automatically.
 
 Create an encrypted backup, then install the new official phone APK over the
 existing app. **Do not uninstall first:** that removes local app data. Official
-updates retain the same package and signing identity. A private test package is
-a separate installation.
+updates retain the same package and signing identity. A private test build may
+also use that package and signing identity, so check its version and provenance
+before installing another APK.
 
 The official phone package is `io.github.gregorgregor25.t1arc`; it appears in
 **About T1 Arc** alongside the installed build details.

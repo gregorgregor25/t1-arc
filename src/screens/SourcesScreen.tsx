@@ -493,14 +493,14 @@ export function SourcesScreen({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open Tarv1s settings"
-              accessibilityHint="Manage your OpenAI connection and AI privacy"
+              accessibilityHint="Manage your AI provider connection and privacy"
               onPress={() => navigation.navigate('Insights', { settings: true })}
               style={({ pressed }) => [styles.tourReplayButton, { opacity: pressed ? 0.68 : 1 }]}
             >
               <Ionicons accessibilityElementsHidden name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
               <View style={styles.tourReplayCopy}>
                 <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>Tarv1s</Text>
-                <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>OpenAI connection and privacy</Text>
+                <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>AI provider connection and privacy</Text>
               </View>
               <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>

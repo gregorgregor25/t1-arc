@@ -66,18 +66,18 @@ Tarv1s keeps supporting dates and records attached to its answers. It should
 say when the available evidence is incomplete instead of filling in the gaps.
 Supported exact questions are
 answered on the phone for free. Broader questions can use
-an optional direct OpenAI connection with your own API key, and nothing is sent
-until you choose to submit one of those questions.
+an optional direct connection to OpenAI, Google Gemini or Anthropic Claude
+with your own API key. Nothing is sent until you submit an AI question.
 
-The optional OpenAI connection uses **GPT-5.6 Luna**, a low-cost model. Usage is
-billed by OpenAI, not T1 Arc: a worked example costs **less than half a US cent
-per question**, but longer questions and answers cost more. This is an example,
-not a fixed price or measured average. [See the cost breakdown](docs/TARV1S_BYOK.md#what-does-it-cost).
+The default OpenAI model is **GPT-5.6 Luna**. An illustrative Luna question
+costs **less than half a US cent**, but usage varies with the question and
+answer. Each provider bills its own API usage; T1 Arc adds no markup. Check the
+provider's official pricing before use. [See the Luna cost example](docs/TARV1S_BYOK.md#openai-luna-cost-example).
 
 Tarv1s is not an insulin-dose calculator, medical device or emergency service.
 
 **[See how Tarv1s works](docs/USING_T1_ARC.md#tarv1s)** ·
-[Set it up with your own OpenAI key](docs/TARV1S_BYOK.md)
+[Choose an AI provider and set up your key](docs/TARV1S_BYOK.md)
 
 ### T1 Arc demo | AI narration: elevenlabs.io
 
@@ -227,21 +227,23 @@ T1 Arc labels those boundaries instead of treating a fixture as field proof.
 Read the [regional capability matrix](docs/REGIONAL_CAPABILITY_MATRIX.md) for
 the exact status.
 
-## How Tarv1s uses your OpenAI key
+## How Tarv1s uses your AI provider key
 
-Tarv1s works without OpenAI for supported exact questions. Broader questions
-can send a bounded evidence packet directly to OpenAI and keep the supporting
-dates and records attached to the answer.
+Tarv1s answers supported exact questions locally without an AI provider.
+Broader questions can send the question and a bounded evidence packet directly
+to the provider you choose: OpenAI, Google Gemini or Anthropic Claude. The
+answer keeps supporting dates and records attached.
 
 Every user follows the same bring-your-own-key route:
 
-- create a dedicated OpenAI API project and key;
-- store the key in Android secure storage on the phone;
-- send requests directly from the phone to the OpenAI Responses API;
-- use the API project's own billing and limits.
+- create a dedicated API project or key for the selected provider;
+- store each provider's key separately in Android secure storage on the phone;
+- send AI requests directly from the phone to the selected provider's API;
+- use that provider's API billing and limits.
 
 T1 Arc has no shared maintainer key or health-data relay. Nothing is sent until
-the user chooses to send a question. A ChatGPT subscription does not
+the user chooses to send an AI question. Switching providers does not silently
+send the question to another service after an error. Chat subscriptions do not
 automatically fund API usage. Read the [Tarv1s BYOK guide](docs/TARV1S_BYOK.md)
 before enabling it.
 
@@ -318,5 +320,6 @@ clinician or emergency service. Always use the official display and
 instructions for your medical devices when making treatment decisions.
 
 LibreLinkUp, Dexcom, Nightscout, xDrip, Medtrum, Glooko, Health Connect, Open
-Food Facts, OpenAI and other named services belong to their respective owners.
+Food Facts, OpenAI, Google Gemini, Anthropic Claude and other named services
+belong to their respective owners.
 Compatibility does not imply endorsement or affiliation.

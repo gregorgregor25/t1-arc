@@ -277,7 +277,7 @@ describe("Tarv1s production request coordinator", () => {
     if (result.kind !== "answer") throw new Error("Expected local answer");
     expect(result.source).toBe("scope");
     expect(result.answer.headline).toMatch(/outside/i);
-    expect(result.answer.answer).toContain("No OpenAI request was made");
+    expect(result.answer.answer).toContain("No AI provider request was made");
   });
 
   it("blocks credential extraction before API-key state can matter", () => {
@@ -286,7 +286,7 @@ describe("Tarv1s production request coordinator", () => {
     if (result.kind !== "answer") throw new Error("Expected local answer");
     expect(result.source).toBe("scope");
     expect(result.answer.headline).toMatch(/credentials/i);
-    expect(result.answer.answer).toContain("No OpenAI request was made");
+    expect(result.answer.answer).toContain("No AI provider request was made");
   });
 
   it.each([
@@ -300,7 +300,7 @@ describe("Tarv1s production request coordinator", () => {
       if (result.kind !== "answer") throw new Error("Expected local answer");
       expect(result.source).toBe("scope");
       expect(result.answer.headline).toMatch(/outside/i);
-      expect(result.answer.answer).toContain("No OpenAI request was made");
+      expect(result.answer.answer).toContain("No AI provider request was made");
     },
   );
 
@@ -312,7 +312,7 @@ describe("Tarv1s production request coordinator", () => {
     if (result.kind !== "answer") throw new Error("Expected local answer");
     expect(result.source).toBe("scope");
     expect(result.answer.headline).toMatch(/credentials/i);
-    expect(result.answer.answer).toContain("No OpenAI request was made");
+    expect(result.answer.answer).toContain("No AI provider request was made");
   });
 
   it("returns urgent and treatment boundaries before any model gate", () => {
@@ -608,7 +608,7 @@ describe("Tarv1s production request coordinator", () => {
     );
     expect(result.answer.answer).not.toContain("supported period");
     expect(result.answer.limitations[0]).toBe(
-      "I haven’t loaded your health records or sent this question to OpenAI.",
+      "I haven’t loaded your health records or sent this question to an AI provider.",
     );
   });
 

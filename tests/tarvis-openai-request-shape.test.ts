@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetTarvisConnectionCoordinatorForTests } from "@/data/tarvis/connectionCoordinator";
+import { clearTarvisProviderCooldownsForTests } from "@/data/tarvis/providerTransport";
+import { TARVIS_PROVIDERS, TarvisModelUnavailableError } from "@/data/tarvis/providers";
 import {
   askTarvis,
   getTarvisRequestFailureDetails,
@@ -20,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   acquireLease: vi.fn(),
   assertLeaseCurrent: vi.fn(),
   loadApiKey: vi.fn(),
+  loadProvider: vi.fn(),
+  loadModel: vi.fn(),
   loadUsage: vi.fn(),
   saveUsage: vi.fn(),
   getSafetyIdentifier: vi.fn(),
@@ -33,6 +37,8 @@ vi.mock("@/data/privacy/localDataWriteEpoch", () => ({
 vi.mock("@/data/tarvis/secureStore", () => ({
   getTarvisSafetyIdentifier: mocks.getSafetyIdentifier,
   loadTarvisApiKey: mocks.loadApiKey,
+  loadTarvisProvider: mocks.loadProvider,
+  loadTarvisModel: mocks.loadModel,
   loadTarvisUsage: mocks.loadUsage,
   saveTarvisUsage: mocks.saveUsage,
 }));
@@ -173,9 +179,12 @@ describe("Tarv1s direct model-request shape", () => {
     vi.clearAllMocks();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Unexpected network request in test"));
     resetTarvisConnectionCoordinatorForTests();
+    clearTarvisProviderCooldownsForTests();
     mocks.acquireLease.mockResolvedValue({ epoch: 1 });
     mocks.assertLeaseCurrent.mockResolvedValue(undefined);
     mocks.loadApiKey.mockResolvedValue("test-key");
+    mocks.loadProvider.mockResolvedValue("openai");
+    mocks.loadModel.mockImplementation(async (_lease, provider) => TARVIS_PROVIDERS[provider as keyof typeof TARVIS_PROVIDERS].model);
     mocks.loadUsage.mockResolvedValue({
       requestTimestamps: [],
       inputTokens: 0,
@@ -184,6 +193,95 @@ describe("Tarv1s direct model-request shape", () => {
     });
     mocks.saveUsage.mockResolvedValue(undefined);
     mocks.getSafetyIdentifier.mockResolvedValue("safety-id");
+  });
+
+  it("uses the saved model for answer, planner and metrics without changing the provider", async () => {
+    mocks.loadModel.mockResolvedValue("gpt-5.6-terra");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(JSON.stringify({
+      kind: "explanation", headline: "About HbA1c", answer: "HbA1c reflects longer-term glucose exposure.", limitations: [],
+    })));
+    const answer = await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)).model).toBe("gpt-5.6-terra");
+    expect(answer.requestMetrics).toMatchObject({ model: "gpt-5.6-terra" });
+    expect(answer.requestMetrics?.estimatedCostUsd).toBeUndefined();
+
+    const question = "I had a really high reading two days ago. Do you know why?";
+    fetchSpy.mockResolvedValueOnce(response(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "range-1", eventOptionId: "event-high", categoryIds: ["glucose", "insulin", "food", "activity", "sleep", "context", "data-quality"], clarificationCode: "none" })));
+    const planned = await planTarvisEvidenceRequest(question, buildTarvisEvidencePlanningOptions(question, Date.parse("2026-08-26T10:00:00+01:00")), { epoch: 1 });
+    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)).model).toBe("gpt-5.6-terra");
+    expect(planned.requestMetrics?.model).toBe("gpt-5.6-terra");
+  });
+
+  it("does not send or reserve usage when the saved model is unavailable", async () => {
+    mocks.loadModel.mockRejectedValue(new TarvisModelUnavailableError("openai"));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); }
+    catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: false, settingsRequired: true });
+    const question = "I had a really high reading two days ago. Do you know why?";
+    let planFailure: unknown;
+    try { await planTarvisEvidenceRequest(question, buildTarvisEvidencePlanningOptions(question, Date.now()), { epoch: 1 }); }
+    catch (error) { planFailure = error; }
+    expect(getTarvisRequestFailureDetails(planFailure)).toMatchObject({ modelRequestSent: false, settingsRequired: true });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.saveUsage).not.toHaveBeenCalled();
+  });
+
+  it("keeps a model storage failure distinct from an unavailable model", async () => {
+    mocks.loadModel.mockRejectedValue(new Error("secure read failed"));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); }
+    catch (error) { failure = error; }
+    expect(failure).toMatchObject({ message: "secure read failed" });
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: false, settingsRequired: false });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["gemini", "claude"] as const)("runs %s education and planning through the existing strict parsers", async provider => {
+    mocks.loadProvider.mockResolvedValue(provider);
+    function nativeResponse(text: string) {
+      return new Response(JSON.stringify(provider === "gemini"
+        ? { candidates: [{ finishReason: "STOP", content: { parts: [{ text }] } }], usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 10, thoughtsTokenCount: 5 } }
+        : { stop_reason: "end_turn", content: [{ type: "text", text }], usage: { input_tokens: 20, output_tokens: 10 } }));
+    }
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(nativeResponse(JSON.stringify({ kind: "explanation", headline: "About HbA1c", answer: "HbA1c reflects average glucose exposure over roughly two to three months.", limitations: [] })));
+    const education = await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 });
+    expect(education.answerSource).toBe("hosted");
+    expect(education.requestMetrics?.model).toBe(TARVIS_PROVIDERS[provider].model);
+    expect(education.requestMetrics?.estimatedCostUsd).toBeUndefined();
+    expect(mocks.getSafetyIdentifier).not.toHaveBeenCalled();
+    expect(mocks.loadApiKey).toHaveBeenCalledWith({ epoch: 1 }, provider);
+    const question = "I had a really high reading two days ago. Do you know why?";
+    const planningOptions = buildTarvisEvidencePlanningOptions(question, Date.parse("2026-08-26T10:00:00+01:00"));
+    fetchSpy.mockResolvedValueOnce(nativeResponse(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "range-1", eventOptionId: "event-high", categoryIds: ["glucose", "insulin", "food", "activity", "sleep", "context", "data-quality"], clarificationCode: "none" })));
+    const planned = await planTarvisEvidenceRequest(question, planningOptions, { epoch: 1 });
+    expect(planned.plan.kind).toBe("glucose-episode");
+    expect(planned.modelRequestSent).toBe(true);
+    // Unknown handles still fail closed, regardless of provider.
+    fetchSpy.mockResolvedValueOnce(nativeResponse(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "invented-range", eventOptionId: "event-high", categoryIds: ["glucose"], clarificationCode: "none" })));
+    await expect(planTarvisEvidenceRequest(question, planningOptions, { epoch: 1 })).rejects.toThrow();
+  });
+
+  it.each(["gemini", "claude"] as const)("keeps safety-critical questions local with %s selected", async provider => {
+    mocks.loadProvider.mockResolvedValue(provider);
+    const result = await askTarvis("How many units of insulin should I take now?", undefined, [], { epoch: 1 });
+    expect(result.modelRequestSent).toBe(false);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["gemini", "claude"] as const)("surfaces %s authentication and rate-limit recovery without extra dispatches", async provider => {
+    mocks.loadProvider.mockResolvedValue(provider);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("private error", { status: 401 }));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); } catch (error) { failure = error; }
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: true, settingsRequired: true });
+    fetchSpy.mockResolvedValueOnce(new Response("private error", { status: 429 }));
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); } catch (error) { failure = error; }
+    expect(getTarvisRequestFailureDetails(failure)?.retryAt).toBeGreaterThan(Date.now());
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); } catch (error) { failure = error; }
+    expect(getTarvisRequestFailureDetails(failure)?.modelRequestSent).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("asks for opaque evidence handles before any personal records are loaded", async () => {
@@ -785,6 +883,8 @@ describe("Tarv1s direct model-request shape", () => {
       modelRequestSent: false,
       requestMetrics: undefined,
       usage: undefined,
+      settingsRequired: true,
+      retryAt: undefined,
     });
   });
 

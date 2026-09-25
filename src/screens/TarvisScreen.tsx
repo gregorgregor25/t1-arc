@@ -110,7 +110,9 @@ import {
   clearTarvisApiKey,
   loadTarvisSettings,
   saveTarvisApiKey,
+  selectTarvisProvider,
 } from "@/data/tarvis/secureStore";
+import { TARVIS_MODELS, TARVIS_PROVIDERS, type TarvisProvider } from "@/data/tarvis/providers";
 import { loadTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
 import {
   buildTarvisTreatmentProfileAnswer,
@@ -186,7 +188,8 @@ function combineTarvisRequestMetrics(
     inputTokens: first.inputTokens + second.inputTokens,
     outputTokens: first.outputTokens + second.outputTokens,
     totalTokens: first.totalTokens + second.totalTokens,
-    estimatedCostUsd: first.estimatedCostUsd + second.estimatedCostUsd,
+    estimatedCostUsd: first.estimatedCostUsd === undefined || second.estimatedCostUsd === undefined
+      ? undefined : first.estimatedCostUsd + second.estimatedCostUsd,
     evidenceCharacters: first.evidenceCharacters + second.evidenceCharacters,
     durationMs: (first.durationMs ?? 0) + (second.durationMs ?? 0),
     modelDurationMs:
@@ -1001,11 +1004,13 @@ function TarvisConfirmationDialog({
   confirmation,
   onCancel,
   onConfirm,
+  provider,
   working,
 }: {
   confirmation?: TarvisConfirmation;
   onCancel(): void;
   onConfirm(): void;
+  provider: TarvisProvider;
   working: boolean;
 }) {
   const { colors, radius } = useAppTheme();
@@ -1015,22 +1020,22 @@ function TarvisConfirmationDialog({
     ? "Delete this conversation?"
     : newConversation
       ? "Start a new conversation?"
-      : "Disconnect broader answers?";
+      : `Remove ${TARVIS_PROVIDERS[provider].label} key?`;
   const detail = deletingConversation
     ? "This removes only this Tarv1s thread from this phone. Your health records are not affected."
     : newConversation
       ? "Your current thread will stay saved on this phone. The next question will begin a separate conversation."
-      : "Tarv1s can still answer supported questions using data on this phone. Broader questions will be unavailable until you reconnect.";
+      : `Only the saved ${TARVIS_PROVIDERS[provider].label} API key will be removed from this phone. Any other saved provider keys remain unchanged, and supported local answers still work.`;
   const action = deletingConversation
     ? "Delete"
     : newConversation
       ? "Start new"
-      : "Disconnect";
+      : "Remove key";
   const cancel = newConversation
     ? "Keep this conversation"
     : deletingConversation
       ? "Cancel"
-      : "Keep connected";
+      : "Keep key";
 
   return (
     <Modal
@@ -1331,16 +1336,33 @@ export function TarvisScreen({
   const [settingsActionError, setSettingsActionError] = useState<string>();
   const [settingsWorking, setSettingsWorking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [provider, setProvider] = useState<TarvisProvider>("openai");
+  const [selectedProvider, setSelectedProvider] = useState<TarvisProvider>("openai");
+  const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
+  const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [configuredProviders, setConfiguredProviders] = useState<Record<TarvisProvider, boolean>>({ openai: false, gemini: false, claude: false });
+  const [settingsNotice, setSettingsNotice] = useState<string>();
+  const [retryAt, setRetryAt] = useState(0);
+  const [errorNeedsSettings, setErrorNeedsSettings] = useState(false);
+  useEffect(() => {
+    if (!retryAt) return;
+    const timeout = setTimeout(() => setRetryAt(0), Math.max(0, retryAt - Date.now()));
+    return () => clearTimeout(timeout);
+  }, [retryAt]);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const settingsOpenedFromMenu = useRef(false);
   const closeTarvisSettings = useCallback(() => {
     setSettingsVisible(false);
     setApiKey('');
+    setSelectedProvider(provider);
+    setSelectedModels(savedModels);
+    setModelMenuOpen(false);
     if (settingsOpenedFromMenu.current) {
       settingsOpenedFromMenu.current = false;
       onReturnToSettings?.();
     }
-  }, [onReturnToSettings]);
+  }, [onReturnToSettings, provider, savedModels]);
   const [apiKey, setApiKey] = useState("");
   const [, setUsage] = useState<TarvisUsage>();
   const [question, setQuestion] = useState("");
@@ -1503,6 +1525,12 @@ export function TarvisScreen({
     try {
       const settings = await loadTarvisSettings();
       setHasApiKey(settings.hasApiKey);
+      setProvider(settings.provider);
+      setSelectedProvider(settings.provider);
+      setConfiguredProviders(settings.configuredProviders);
+      setSelectedModels(settings.selectedModels);
+      setSavedModels(settings.selectedModels);
+      setModelMenuOpen(false);
       setSettingsLoadFailed(false);
       setUsage(settings.usage);
     } catch {
@@ -1521,6 +1549,11 @@ export function TarvisScreen({
       .then((settings) => {
         if (!active) return;
         setHasApiKey(settings.hasApiKey);
+        setProvider(settings.provider);
+        setSelectedProvider(settings.provider);
+        setConfiguredProviders(settings.configuredProviders);
+        setSelectedModels(settings.selectedModels);
+        setSavedModels(settings.selectedModels);
         setSettingsLoadFailed(false);
         setSettingsActionError(undefined);
         setUsage(settings.usage);
@@ -1996,10 +2029,19 @@ export function TarvisScreen({
     setSettingsWorking(true);
     try {
       const writeLease = await acquireLocalDataWriteLease();
-      await saveTarvisApiKey(apiKey, writeLease);
+      const selectedModel = selectedModels[selectedProvider];
+      if (apiKey.trim()) await saveTarvisApiKey(apiKey, writeLease, selectedProvider, selectedModel);
+      else await selectTarvisProvider(selectedProvider, writeLease, selectedModel);
       setApiKey("");
       setHasApiKey(true);
-      closeTarvisSettings();
+      setProvider(selectedProvider);
+      setConfiguredProviders(previous => ({ ...previous, [selectedProvider]: true }));
+      setSavedModels(previous => ({ ...previous, [selectedProvider]: selectedModel }));
+      setModelMenuOpen(false);
+      setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} · ${selectedModel} selected. Key saved on this phone; API access will be checked when you send a question.`);
+      setError(undefined);
+      setErrorNeedsSettings(false);
+      setRetryAt(0);
     } catch (reason) {
       if (isLocalDataWriteSupersededError(reason)) return;
       setSettingsActionError(
@@ -2022,9 +2064,12 @@ export function TarvisScreen({
     setConfirmation(undefined);
     setSettingsActionError(undefined);
     setSettingsWorking(true);
-    void clearTarvisApiKey()
-      .then(() => {
-        setHasApiKey(false);
+    void clearTarvisApiKey(undefined, selectedProvider)
+      .then(async () => {
+        const settings = await loadTarvisSettings();
+        setHasApiKey(settings.hasApiKey);
+        setConfiguredProviders(settings.configuredProviders);
+        setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} key removed.`);
         setApiKey("");
       })
       .catch(() => {
@@ -2037,7 +2082,8 @@ export function TarvisScreen({
 
   async function sendQuestion(value?: string) {
     const prompt = (value ?? question).trim();
-    if (!prompt || workingRef.current || loadingSettings || !conversationLoaded) return;
+    // Provider cooldowns are checked at hosted dispatch so local answers remain available.
+    if (!prompt || workingRef.current || settingsWorking || loadingSettings || !conversationLoaded) return;
     const scopeLease = conversationScopeLeaseRef.current;
     if (!scopeLease || scopeLease.identity !== conversationScope.identity) {
       return;
@@ -2073,8 +2119,18 @@ export function TarvisScreen({
       if (selection) onRestoreEntry?.(selection);
       return true;
     };
+    const showProviderFailure = (reason: unknown) => {
+      const failure = getTarvisRequestFailureDetails(reason);
+      if (!failure) return;
+      operation.assertCurrent();
+      restoreDraft();
+      setError(reason instanceof Error ? reason.message : "The AI provider could not answer this question.");
+      setErrorNeedsSettings(Boolean(failure.settingsRequired));
+      if (failure.retryAt) setRetryAt(failure.retryAt);
+    };
     setError(undefined);
     setWorking(true);
+    setErrorNeedsSettings(false);
     let writeLease: LocalDataWriteLease | undefined;
     try {
       writeLease = await acquireLocalDataWriteLease();
@@ -2324,6 +2380,7 @@ export function TarvisScreen({
             const requestFailure = getTarvisRequestFailureDetails(reason);
             operation.assertCurrent();
             await assertLocalDataWriteLeaseCurrent(writeLease);
+            showProviderFailure(reason);
             await appendExchange(
               {
                 answer: localRetrospectiveAfterHostedFailure(local.answer),
@@ -2453,7 +2510,7 @@ export function TarvisScreen({
           await appendPlanningUnavailable({
             headline: "Connect broader answers for that question",
             answer:
-              "To interpret that question and request the right T1 Arc evidence, open Tarv1s settings and connect your OpenAI project.",
+              "To interpret that question and request the right T1 Arc evidence, open Tarv1s settings and connect your AI provider.",
             confidence: "limited",
             evidenceIds: [],
             limitations: [
@@ -2481,6 +2538,7 @@ export function TarvisScreen({
           }
           operation.assertCurrent();
           await assertLocalDataWriteLeaseCurrent(activeWriteLease);
+          showProviderFailure(reason);
           await appendPlanningUnavailable(
             plan.fallback.answer,
             getTarvisRequestFailureDetails(reason),
@@ -2562,6 +2620,7 @@ export function TarvisScreen({
           operation.assertCurrent();
           await assertLocalDataWriteLeaseCurrent(activeWriteLease);
           const failure = getTarvisRequestFailureDetails(reason);
+          showProviderFailure(reason);
           await appendExchange(
             {
               answer: localRetrospectiveAfterHostedFailure(localAnswer),
@@ -2776,7 +2835,7 @@ export function TarvisScreen({
             answer: {
               headline: "Connect broader answers for that question",
               answer:
-                "Supported personal calculations still work on this phone. To ask broader questions, open Tarv1s settings and connect your OpenAI project.",
+                "Supported personal calculations still work on this phone. To ask broader questions, open Tarv1s settings and connect your AI provider.",
               confidence: "limited",
               evidenceIds: [],
               limitations: ["Nothing left this phone."],
@@ -2810,6 +2869,7 @@ export function TarvisScreen({
         }
         operation.assertCurrent();
         await assertLocalDataWriteLeaseCurrent(writeLease);
+        showProviderFailure(reason);
         if (
           await appendLocalEvidenceFallback(
             getTarvisRequestFailureDetails(reason),
@@ -2896,6 +2956,9 @@ export function TarvisScreen({
         await withLocalDataWriteLeaseTransaction(writeLease, async () => {
           operation.assertCurrent();
           if (!restoreDraft()) return;
+          const failure = getTarvisRequestFailureDetails(reason);
+          setErrorNeedsSettings(Boolean(failure?.settingsRequired));
+          if (failure?.retryAt) setRetryAt(failure.retryAt);
           setError(
             reason instanceof Error
               ? reason.message
@@ -3019,7 +3082,7 @@ export function TarvisScreen({
   );
 
   const canSendQuestion = Boolean(
-    !loadingSettings && conversationLoaded && question.trim() && !working,
+    !loadingSettings && conversationLoaded && question.trim() && !working && !settingsWorking,
   );
   const composerFooter =
     !settingsVisible && !historyVisible ? (
@@ -3059,8 +3122,12 @@ export function TarvisScreen({
             <Text style={[styles.errorText, { color: colors.textSecondary }]}>
               {error}
             </Text>
+            {errorNeedsSettings ? <Pressable accessibilityRole="button" onPress={() => setSettingsVisible(true)} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>API settings</Text></Pressable> : null}
           </View>
         ) : null}
+        <Text style={[styles.boundary, { color: colors.textSecondary }]}>
+          {retryAt ? "API cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : "Local answers available. Connect an AI provider in settings for broader questions."}
+        </Text>
         {loadingSettings || (!conversationLoaded && !conversationCorrupt && !error) ? (
           <Text accessibilityLiveRegion="polite" style={[styles.boundary, { color: colors.textTertiary }]}>
             Opening saved conversations and connection…
@@ -3297,16 +3364,43 @@ export function TarvisScreen({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      Local questions about your recorded data work without a key. For broader AI answers, add your own OpenAI key. When you choose an AI answer, your question and the disclosed data context are sent to OpenAI; API usage may cost money. Your key stays secure on this phone and is excluded from backups.
+                      Local questions about your recorded data work without a key. For broader AI answers, choose a provider and add its API key. When you send an AI question, the disclosed context and recent shared conversation go to that provider; API usage may cost money. Keys stay secure on this phone and are excluded from backups. Chat subscriptions do not include API credit.
                     </Text>
                   </View>
                 </View>
+                <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
+                  {(Object.keys(TARVIS_PROVIDERS) as TarvisProvider[]).map(id => (
+                    <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: selectedProvider === id, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(savedModels); setSelectedProvider(id); setModelMenuOpen(false); setApiKey(""); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedProvider === id ? colors.primary : colors.border, borderRadius: radius.md }}>
+                      <Text style={{ color: colors.text }}>{TARVIS_PROVIDERS[id].label}{provider === id && hasApiKey ? " · Active" : configuredProviders[id] ? " · Key saved" : ""}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>Model</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Choose ${TARVIS_PROVIDERS[selectedProvider].label} model`} accessibilityState={{ expanded: modelMenuOpen, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => setModelMenuOpen(open => !open)} style={{ padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
+                  <Text style={{ color: colors.text }}>{selectedModels[selectedProvider]}  ▾</Text>
+                </Pressable>
+                {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>This saved model is unavailable. Choose an available model before sending a question.</Text> : null}
+                {modelMenuOpen ? <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
+                  {TARVIS_MODELS[selectedProvider].map(model => (
+                    <Pressable key={model} accessibilityRole="radio" accessibilityState={{ checked: selectedModels[selectedProvider] === model, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(previous => ({ ...previous, [selectedProvider]: model })); setModelMenuOpen(false); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedModels[selectedProvider] === model ? colors.primary : colors.border, borderRadius: radius.md }}>
+                      <Text style={{ color: colors.text }}>{model}</Text>
+                    </Pressable>
+                  ))}
+                </View> : null}
+                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>{TARVIS_PROVIDERS[selectedProvider].privacy}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].keyUrl).catch(() => setSettingsActionError("The provider page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Get an API key</Text></Pressable>
+                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].privacyUrl).catch(() => setSettingsActionError("The provider privacy page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider privacy terms</Text></Pressable>
+                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].pricingUrl).catch(() => setSettingsActionError("The provider pricing page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider pricing</Text></Pressable>
+                </View>
+                {settingsNotice ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text }}>{settingsNotice}</Text> : null}
                 <TextInput
-                  accessibilityLabel="OpenAI API key"
+                  accessibilityLabel={`${TARVIS_PROVIDERS[selectedProvider].label} API key`}
+                  editable={!settingsWorking && !working}
                   autoCapitalize="none"
                   autoCorrect={false}
                   onChangeText={setApiKey}
-                  placeholder="sk-proj-…"
+                  placeholder={configuredProviders[selectedProvider] ? "Key saved · enter a replacement if needed" : TARVIS_PROVIDERS[selectedProvider].placeholder}
                   placeholderTextColor={colors.textTertiary}
                   secureTextEntry
                   style={[
@@ -3322,12 +3416,12 @@ export function TarvisScreen({
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={!apiKey.trim() || settingsWorking || working}
+                  disabled={(!apiKey.trim() && !configuredProviders[selectedProvider]) || settingsWorking || working}
                   onPress={() => void saveKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     {
-                      backgroundColor: apiKey.trim()
+                      backgroundColor: apiKey.trim() || configuredProviders[selectedProvider]
                         ? colors.primary
                         : colors.border,
                       borderRadius: radius.md,
@@ -3339,7 +3433,7 @@ export function TarvisScreen({
                   <Ionicons
                     accessibilityElementsHidden
                     color={
-                      apiKey.trim() ? colors.onPrimary : colors.textTertiary
+                      apiKey.trim() || configuredProviders[selectedProvider] ? colors.onPrimary : colors.textTertiary
                     }
                     name="shield-checkmark-outline"
                     size={19}
@@ -3348,13 +3442,13 @@ export function TarvisScreen({
                     style={[
                       styles.primaryButtonText,
                       {
-                        color: apiKey.trim()
+                        color: apiKey.trim() || configuredProviders[selectedProvider]
                           ? colors.onPrimary
                           : colors.textTertiary,
                       },
                     ]}
                   >
-                    Save key on this phone
+                    {apiKey.trim() ? "Save key on this phone" : "Use selected provider"}
                   </Text>
                 </Pressable>
               </SectionCard>
@@ -3396,12 +3490,12 @@ export function TarvisScreen({
                 For some personal questions, Tarv1s first sends your question
                 with a bounded list of evidence choices, but no records. It then
                 sends only the selected evidence needed to answer, which can
-                include food names. T1 Arc disables response storage, but OpenAI
-                may retain API data for safety monitoring for up to{" "}
-                {formatEvidenceCount(30)} days unless your project has approved
-                Zero Data Retention.
+                include food names. The selected provider’s API privacy and
+                retention terms apply. Switching providers can share recent
+                previously shared conversation with the new provider when you
+                next tap Send. Start a new conversation to omit that history.
               </Text>
-              {settingsView.showRemove ? (
+              {settingsView.canEdit && configuredProviders[selectedProvider] ? (
                 <Pressable
                   accessibilityRole="button"
                   disabled={settingsWorking || working}
@@ -3996,6 +4090,7 @@ export function TarvisScreen({
       {conversationScope.kind !== 'legacy-unknown' ? <PersonalNotebook visible={notebookVisible} onClose={() => { setNotebookVisible(false); setNotebookSeed(undefined); }} ownerIdentity={conversationScope.ownerIdentity} dataMode={conversationScope.dataMode} seed={notebookSeed} /> : null}
       <TarvisConfirmationDialog
         confirmation={confirmation}
+        provider={selectedProvider}
         onCancel={() => {
           if (!working && !settingsWorking) {
             setConfirmation(undefined);
