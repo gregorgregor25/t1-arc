@@ -12,8 +12,8 @@ build must review the exact build, hosting, support and store configuration.
 
 Health records, imported provider records, food logs, context, Insights and
 Tarv1s conversation state are stored on the Android device. Health databases
-use SQLCipher. Provider credentials and the user's OpenAI API key use Android
-secure storage. Android system backup is disabled.
+use SQLCipher. Provider credentials and the user's selected AI provider API
+keys use Android secure storage. Android system backup is disabled.
 
 User-created portable backups are passphrase encrypted. They exclude provider
 credentials, session tokens, browser cookies and replaceable source ZIP/PDF
@@ -55,12 +55,17 @@ data directly from the device to the service the user selected:
 - LibreLinkUp, Dexcom Share, Medtrum, Glooko, Nightscout, xDrip and Hevy receive
   only the requests required by their configured connector. Credentials go to
   that provider, not to a T1 Arc server.
-- Tarv1s uses the same bring-your-own-key path for every build. The device sends
-  the user's question and the bounded evidence needed to answer it directly to
-  OpenAI. A random safety identifier stored on the phone accompanies those
-  requests; it is not derived from health readings or account details. OpenAI
-  also receives normal network metadata. The key is not supplied by or routed
-  through the maintainer. See [Tarv1s data handling](docs/TARV1S_BYOK.md#what-leaves-the-phone).
+- Tarv1s uses the same optional bring-your-own-key path for every build. The
+  user chooses OpenAI, Google Gemini or Anthropic Claude. For an eligible AI
+  question, the device sends the question, relevant bounded evidence and any
+  recent shared conversation directly to that selected provider. General
+  education questions have no personal evidence packet, and supported exact
+  calculations run locally without an AI request. There is no silent provider
+  fallback. OpenAI requests include a random safety identifier stored on the
+  phone; it is not derived from health readings or account details. The
+  selected provider also receives normal network metadata. Keys are supplied
+  by the user and are not routed through the maintainer. See
+  [Tarv1s data handling](docs/TARV1S_BYOK.md#what-leaves-the-phone).
 - **About T1 Arc > Check for updates** makes a manual, unauthenticated request
   to GitHub for public release and build metadata. It does not send health
   records, provider credentials or a device identifier. GitHub still receives
@@ -82,8 +87,11 @@ data directly from the device to the service the user selected:
   [ML Kit privacy terms](https://developers.google.com/ml-kit/terms) and
   [Android data disclosure](https://developers.google.com/ml-kit/android-data-disclosure).
 
-Provider services and OpenAI apply their own terms and privacy policies. T1 Arc
-must not describe a direct third-party request as purely local processing.
+Connected services and the selected AI provider apply their own terms and
+privacy policies. T1 Arc must not describe a direct third-party request as
+purely local processing. In particular, Google's Gemini API terms require a
+billing-enabled project for health information in this route; users should
+review the [provider-specific requirements](docs/TARV1S_BYOK.md#choose-a-provider).
 
 ## Android and Wear surfaces
 

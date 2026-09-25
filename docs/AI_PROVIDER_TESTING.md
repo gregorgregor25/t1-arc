@@ -1,8 +1,9 @@
-# AI provider choice: pre-release validation
+# AI provider choice: validation record
 
-Private implementation for issue #12. This work does not authorize a merge,
-public APK, release or publication. Private build version:
-`1.7.12-provider-test.2`, phone version code `50`.
+This records the provider choice checks performed before the proposed T1 Arc
+1.7.12 release. The private phone build was `1.7.12-provider-test.3`, version
+code 52. It is not a production APK. The release workflow must verify the
+final signed 1.7.12 artifact and its exact source revision separately.
 
 ## Model choice
 
@@ -11,7 +12,7 @@ defaults are retained for installations without a saved model. An unknown saved
 model or an API access failure requires an explicit selection; there is no
 automatic model or provider substitution. Both answers and evidence planning
 use the selected model. Settings link to official pricing instead of displaying
-fixed prices or cost labels. No model has earned a Recommended label.
+fixed prices or cost labels. No model has a Recommended label in this release.
 
 - OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`.
 - Gemini: `gemini-3.8-flash`, `gemini-3.7-flash`.
@@ -20,55 +21,54 @@ fixed prices or cost labels. No model has earned a Recommended label.
 Google's current `AQ.` authorization keys and legacy `AIza` keys are accepted
 locally. Format validation is not an authentication check.
 
-## Ready for device testing
+## Private validation completed on 24 September 2026
 
-1. Open Tarv1s settings. An existing installation should retain its OpenAI key.
-2. Select Gemini or Claude, read the data-use notice and enter a dedicated API key
-   on the phone. Do not put keys into chat, issues or screenshots. Gemini testing
-   with health records requires a billing-enabled project and applicable terms.
-3. Choose a model and save. Saving is local and does not claim authentication
-   succeeded. Check the pricing link opens the selected provider's official page.
-4. Ask “What does HbA1c mean?” first: this uses no health records. Check the model
-   returned a readable explanation without blank messages or truncated JSON.
-5. With consent to share the selected records, ask one retrospective question
-   and one evidence comparison. Verify the facts against local records and
-   inspect the evidence list. Check missing data is still clearly reported.
-6. Switch models and providers, save each selection, then restart the app. Keys
-   and saved models should remain separate. Cancel an unsaved model change and
-   confirm it was not applied. Start a new conversation if previous shared
-   context should not go to the new provider.
-7. Enter a wrong-format key (local rejection), then a revoked test key (provider
-   rejection). Check the API settings shortcut and that the question remains.
-8. Test airplane mode and reconnection. Check a failed draft can be retried. Do
-   not deliberately generate charges to trigger a quota error; that path has
-   mocked coverage. Confirm billing in the provider console.
-9. Remove each provider key. Confirm local calculations still work. Use a
-   disposable installation to verify privacy erase clears every saved key.
+- The provider transport, settings, local count route, evidence planner and
+  failure handling have automated coverage. The model comparison used synthetic
+  questions and records, native provider requests and strict response parsing.
+  Local fallbacks were recorded separately from accepted model responses.
+- The updated private phone APK installed over the existing app with the same
+  signing identity. Existing records and all three saved API keys remained
+  available. The owner confirmed the installed watch companion still showed a
+  fresh reading, trend arrow and reading age after the phone update.
+- On the phone, the exact seven-day **low** glucose event question returned the
+  same locally calculated answer with OpenAI Luna, Gemini 3.8 Flash and Claude
+  Haiku selected. These were local calculations, not three independently
+  generated AI answers. The private result and underlying records are not
+  published here.
+- Fresh, record-free HbA1c/time-in-range explanations from Gemini 3.7 and 3.8
+  were checked. Gemini 3.7 passed the factual review. Gemini 3.8 explained the
+  core distinction but used wording that could imply the complete CGM trace
+  and variability measurements establish clinical severity. They do not
+  establish it without clinical context. The owner accepted this limitation for the
+  release. It remains a known limitation, not a general clinical accuracy claim.
+- The private synthetic correction comparison accepted eight of eight final
+  Gemini education responses across the two Flash models. The 3.8 phone
+  limitation above shows why those synthetic results do not guarantee every
+  future explanation.
 
-## Before a release
+## Final release verification
 
 - Run the repository quality workflow on the intended PR head.
-- Complete real-key testing for both providers and visual phone QA of settings,
-  switching, failure recovery and persistence across app restarts.
-- Confirm model access for each account. A model-list response does not prove
-  inference quota or reliable output. The private comparison uses synthetic
-  cases through the actual answer/planning builders, transport and strict parsers;
-  local fallbacks must be reported separately from accepted model responses.
-- Update the public privacy policy and setup documentation to list Google and
-  Anthropic before enabling this in a published app. Review Google's account,
-  billing, age and regional terms for the intended audience.
+- Confirm the exact signed production build preserves the provider choices,
+  secure keys, local counts and existing Wear companion protocol. The private
+  phone build and passing older commits cannot stand in for release verification.
+- Update the public privacy policy to list Google and Anthropic before enabling
+  this in a published app. Review Google's account, billing, age and regional
+  terms for the intended audience.
 - Keep this as a phone-only change. There are no Wear OS code or protocol changes.
   The bundled companion's build version follows phone packaging metadata, but
   this does not require reinstalling a working companion or watch debugging.
-  Check readings, trends, reading age and stale states with the installed watch.
+  The owner confirmed a fresh reading, trend and reading age on the installed
+  watch after the private phone update. Check release-artifact compatibility.
 
-## Safe private installation
+## Safe phone updates
 
-Connect the phone and inspect the installed application ID, version code and
-signing certificate. Export a fresh encrypted backup in the existing app and
-keep its password separately before updating. Install only as an update with
-the matching certificate and a suitable version code. Never uninstall the
-populated app or downgrade its data to make a test build install.
+Inspect the installed application ID, version code and signing certificate.
+Create an encrypted backup in the existing app and keep its password
+separately before updating. Install only as an update with the matching
+certificate and a suitable version code. Never uninstall a populated app or
+downgrade its data to make a build install.
 
 ## Documentation verified on 24 September 2026
 

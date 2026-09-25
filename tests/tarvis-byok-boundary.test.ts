@@ -63,7 +63,7 @@ describe("Tarv1s BYOK boundary", () => {
       "Every user follows the same bring-your-own-key route:",
     );
     expect(byokGuide).toContain(
-      "The maintainer and every other user follow the",
+      "Every user follows the same setup.",
     );
     expect(byokGuide).toContain("same setup.");
     expect(releaseStatus).toContain(

@@ -2080,7 +2080,8 @@ export function TarvisScreen({
 
   async function sendQuestion(value?: string) {
     const prompt = (value ?? question).trim();
-    if (!prompt || workingRef.current || settingsWorking || retryAt > Date.now() || loadingSettings || !conversationLoaded) return;
+    // Provider cooldowns are checked at hosted dispatch so local answers remain available.
+    if (!prompt || workingRef.current || settingsWorking || loadingSettings || !conversationLoaded) return;
     const scopeLease = conversationScopeLeaseRef.current;
     if (!scopeLease || scopeLease.identity !== conversationScope.identity) {
       return;
@@ -3079,7 +3080,7 @@ export function TarvisScreen({
   );
 
   const canSendQuestion = Boolean(
-    !loadingSettings && conversationLoaded && question.trim() && !working && !settingsWorking && !retryAt,
+    !loadingSettings && conversationLoaded && question.trim() && !working && !settingsWorking,
   );
   const composerFooter =
     !settingsVisible && !historyVisible ? (
@@ -3123,7 +3124,7 @@ export function TarvisScreen({
           </View>
         ) : null}
         <Text style={[styles.boundary, { color: colors.textSecondary }]}>
-          {retryAt ? "API cooldown active. Your question is kept above." : hasApiKey ? `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : "Local answers available. Connect an AI provider in settings for broader questions."}
+          {retryAt ? "API cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : "Local answers available. Connect an AI provider in settings for broader questions."}
         </Text>
         {loadingSettings || (!conversationLoaded && !conversationCorrupt && !error) ? (
           <Text accessibilityLiveRegion="polite" style={[styles.boundary, { color: colors.textTertiary }]}>

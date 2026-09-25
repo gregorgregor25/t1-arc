@@ -1,6 +1,6 @@
 export type TarvisProvider = "openai" | "gemini" | "claude";
 
-// Only identifiers verified for this private build belong in this list. Never
+// Only identifiers verified for this release belong in this list. Never
 // substitute a different model when a saved identifier is no longer offered.
 export const TARVIS_MODELS: Record<TarvisProvider, readonly string[]> = {
   openai: ["gpt-5.6-luna", "gpt-5.6-terra"],
@@ -10,7 +10,7 @@ export const TARVIS_MODELS: Record<TarvisProvider, readonly string[]> = {
 
 export const TARVIS_PROVIDERS = {
   openai: { label: "OpenAI", model: "gpt-5.6-luna", pricingUrl: "https://developers.openai.com/api/docs/pricing", placeholder: "sk-proj-…", keyUrl: "https://platform.openai.com/api-keys", privacyUrl: "https://platform.openai.com/docs/guides/your-data", privacy: "T1 Arc requests no response storage. OpenAI's API retention and safety-monitoring terms still apply." },
-  gemini: { label: "Google Gemini", model: "gemini-3.8-flash", pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing", placeholder: "AQ.…", keyUrl: "https://aistudio.google.com/apikey", privacyUrl: "https://ai.google.dev/gemini-api/terms", privacy: "Use a Gemini API project with active billing for health information. Google's unpaid-service terms prohibit submitting sensitive or personal information and may allow human review and product improvement. Paid-service requirements also apply to apps in the UK, EEA and Switzerland. Check Google's terms for your account and region." },
+  gemini: { label: "Google Gemini", model: "gemini-3.8-flash", pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing", placeholder: "AQ.…", keyUrl: "https://aistudio.google.com/apikey", privacyUrl: "https://ai.google.dev/gemini-api/terms", privacy: "Use a Gemini API project with active billing for health information. Google's unpaid-service terms prohibit submitting sensitive or personal information and may allow human review and product improvement. Paid-service requirements also apply to apps in the UK, EEA and Switzerland. Gemini requires users aged 18 or older and prohibits clinical practice or medical advice. Check Google's terms for your account and region." },
   claude: { label: "Anthropic Claude", model: "claude-sonnet-5", pricingUrl: "https://platform.claude.com/docs/en/about-claude/pricing", placeholder: "sk-ant-…", keyUrl: "https://platform.claude.com/settings/keys", privacyUrl: "https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-data", privacy: "Anthropic's API retention and safety-monitoring terms apply. T1 Arc cannot enable zero data retention for your account." },
 } as const;
 

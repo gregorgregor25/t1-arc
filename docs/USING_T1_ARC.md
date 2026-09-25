@@ -93,8 +93,9 @@ them back. Display choices in the demo are separate from your personal view.
 
 Open **Tarv1s** from the bottom navigation. It is the question interface.
 Some exact questions are answered locally.
-Broader questions require the user's own OpenAI API key and send a bounded
-evidence packet only after the user submits the question. Read the
+Broader questions require the user's own OpenAI, Google Gemini or Anthropic
+Claude API key and send a bounded evidence packet directly to the selected
+provider only after the user submits the question. Read the
 [Tarv1s BYOK guide](TARV1S_BYOK.md) before enabling it.
 
 Starter questions reflect records available in the app. You can still ask in
@@ -103,7 +104,7 @@ supporting details; important gaps and limitations remain visible in the answer.
 
 Where **Ask Tarv1s about this** is available, it opens a question about the
 selected period or event. Check the dates above the message, then tap Send. Merely
-opening the question does not send it to OpenAI.
+opening the question does not send it to an AI provider.
 
 ### Earlier conversations
 
@@ -141,7 +142,7 @@ reviewing, not proof that one event caused another. The app should withhold a
 claim when coverage is too weak. Choose **Tarv1s** to return to questions.
 
 **Weekly evidence review** lets you choose the review day and time and turn its
-notification on or off. It uses local records, not an OpenAI request. Android
+notification on or off. It uses local records, without an AI provider request. Android
 decides the exact delivery time, so this is not an exact alarm. The notification
 contains no glucose value or health conclusion.
 
