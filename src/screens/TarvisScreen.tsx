@@ -1004,11 +1004,13 @@ function TarvisConfirmationDialog({
   confirmation,
   onCancel,
   onConfirm,
+  provider,
   working,
 }: {
   confirmation?: TarvisConfirmation;
   onCancel(): void;
   onConfirm(): void;
+  provider: TarvisProvider;
   working: boolean;
 }) {
   const { colors, radius } = useAppTheme();
@@ -1018,22 +1020,22 @@ function TarvisConfirmationDialog({
     ? "Delete this conversation?"
     : newConversation
       ? "Start a new conversation?"
-      : "Disconnect broader answers?";
+      : `Remove ${TARVIS_PROVIDERS[provider].label} key?`;
   const detail = deletingConversation
     ? "This removes only this Tarv1s thread from this phone. Your health records are not affected."
     : newConversation
       ? "Your current thread will stay saved on this phone. The next question will begin a separate conversation."
-      : "Tarv1s can still answer supported questions using data on this phone. Broader questions will be unavailable until you reconnect.";
+      : `Only the saved ${TARVIS_PROVIDERS[provider].label} API key will be removed from this phone. Any other saved provider keys remain unchanged, and supported local answers still work.`;
   const action = deletingConversation
     ? "Delete"
     : newConversation
       ? "Start new"
-      : "Disconnect";
+      : "Remove key";
   const cancel = newConversation
     ? "Keep this conversation"
     : deletingConversation
       ? "Cancel"
-      : "Keep connected";
+      : "Keep key";
 
   return (
     <Modal
@@ -4088,6 +4090,7 @@ export function TarvisScreen({
       {conversationScope.kind !== 'legacy-unknown' ? <PersonalNotebook visible={notebookVisible} onClose={() => { setNotebookVisible(false); setNotebookSeed(undefined); }} ownerIdentity={conversationScope.ownerIdentity} dataMode={conversationScope.dataMode} seed={notebookSeed} /> : null}
       <TarvisConfirmationDialog
         confirmation={confirmation}
+        provider={selectedProvider}
         onCancel={() => {
           if (!working && !settingsWorking) {
             setConfirmation(undefined);

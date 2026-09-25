@@ -73,6 +73,12 @@ describe("Tarv1s secure storage lifecycle", () => {
     expect(JSON.stringify(settings)).not.toContain(claude);
     await clearTarvisApiKey(undefined, "gemini");
     await expect(loadTarvisApiKey()).resolves.toBe(openai);
+    await expect(loadTarvisApiKey(undefined, "gemini")).resolves.toBeUndefined();
+    await expect(loadTarvisApiKey(undefined, "claude")).resolves.toBe(claude);
+    await expect(loadTarvisSettings()).resolves.toMatchObject({
+      provider: "openai", hasApiKey: true,
+      configuredProviders: { openai: true, gemini: false, claude: true },
+    });
     await clearTarvisStoredData();
     expect(secureStore.values.size).toBe(0);
   });
