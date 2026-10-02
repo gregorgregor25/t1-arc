@@ -1,5 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { AskTarvisButton } from './AskTarvisButton';
+import { FOOD_LOG_SOURCE_ID } from '@/data/food/foodLogRepository';
+import { MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
 import { createTarvisPeriodEntry } from '@/domain/tarvisEntry';
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import {
@@ -25,6 +27,7 @@ import {
   BasalDelivery,
   BolusDelivery,
   GlucoseReading,
+  HealthContextEvent,
   InsulinDailyTotal,
   PumpStateInterval,
   TimelineData,
@@ -35,6 +38,7 @@ import {
 } from "@/domain/glucoseChart";
 import {
   GLUCOSE_COLOR_PALETTE,
+  GLUCOSE_RANGE_LABELS,
   glucoseRangeForValue,
 } from "@/domain/glucoseAppearance";
 import { DateKey, dayRange, formatTime, toDateKey } from "@/domain/time";
@@ -59,13 +63,13 @@ import {
 import {
   formatTimelineInspectionTimestamp,
   formatTimelineRange,
-  retainedTimelineInspection,
   resolveTimelineLayerAvailability,
   timelineInspectorInsulinParts,
   timelineTickTimestamp,
   timelineTimestampAtX,
 } from "@/domain/timelinePresentation";
 import { presentTrend } from "@/domain/trend";
+import { nearbyTimelineContext, retainedChartInspection, timelineMealMarkers } from "@/domain/timelineContext";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
@@ -75,6 +79,7 @@ import { ChartExpandButton, FullscreenChartModal } from "./FullscreenChart";
 import { SectionCard } from "./SectionCard";
 
 const CHART_HEIGHT = 342;
+const COMPACT_CHART_HEIGHT = 204;
 const GLUCOSE_TOP = 18;
 const GLUCOSE_BOTTOM = 174;
 const INSULIN_TOP = 214;
@@ -302,6 +307,10 @@ function Inspector({
   showBasal,
   showBolus,
   showGlucose,
+  contextEvents,
+  onClose,
+  onAddContext,
+  onEditContext,
 }: {
   timestamp?: number;
   glucose?: GlucoseReading;
@@ -313,15 +322,19 @@ function Inspector({
   showBasal: boolean;
   showBolus: boolean;
   showGlucose: boolean;
+  contextEvents: HealthContextEvent[];
+  onClose(): void;
+  onAddContext?(timestamp: number, kind: "meal" | "note"): void;
+  onEditContext?(event: HealthContextEvent): void;
 }) {
   const { colors, dark } = useAppTheme();
   const { settings: appearance } = useGlucoseAppearance();
   const { defaults: regional } = useRegionalProfile();
   if (timestamp === undefined) {
     return (
-      <View style={styles.inspector}>
+      <View style={styles.inspectorHintWrap}>
         <Text style={[styles.inspectorHint, { color: colors.textSecondary }]}>
-          Tap the chart to inspect exact readings and deliveries.
+          Tap or drag the chart to explore readings and nearby records.
         </Text>
       </View>
     );
@@ -335,79 +348,174 @@ function Inspector({
     showBolus,
   });
   const showInsulin = showBasal || showBolus;
+  const rangeLabel = glucose
+    ? GLUCOSE_RANGE_LABELS[glucoseRangeForValue(glucose.mmolL, "current", appearance)]
+    : undefined;
+  const glucoseColor = glucose
+    ? GLUCOSE_COLOR_PALETTE[
+        appearance.colors[
+          glucoseRangeForValue(glucose.mmolL, "current", appearance)
+        ]
+      ][dark ? "dark" : "light"]
+    : colors.textSecondary;
   return (
-    <View style={[styles.inspector, { borderColor: colors.divider }]}>
-      <View style={styles.inspectorBlock}>
-        <Text style={[styles.inspectorTime, { color: colors.textSecondary }]}>
-          {formatTimelineInspectionTimestamp(timestamp)}
-        </Text>
-        {showGlucose ? (
-          <Text
-            style={[
-              styles.inspectorValue,
-              {
-                color: glucose
-                  ? GLUCOSE_COLOR_PALETTE[
-                      appearance.colors[
-                        glucoseRangeForValue(
-                          glucose.mmolL,
-                          "current",
-                          appearance,
-                        )
-                      ]
-                    ][dark ? "dark" : "light"]
-                  : colors.text,
-              },
-            ]}
-          >
-            {glucose
-              ? `${formatGlucose(glucose.mmolL, regional)}  ${trend?.arrow ?? ""}`
-              : "No nearby glucose"}
-          </Text>
-        ) : null}
-      </View>
-      {showInsulin || pumpStates.length ? (
+    <View
+      accessibilityLabel={`Selected time ${formatTimelineInspectionTimestamp(timestamp)}`}
+      style={[
+        styles.inspector,
+        { backgroundColor: colors.surfaceElevated, borderColor: colors.surfaceBorder },
+      ]}
+    >
+      <View style={styles.inspectorHeader}>
         <View style={styles.inspectorBlock}>
-          {showInsulin ? (
-            <>
-              <Text
-                style={[styles.inspectorTime, { color: colors.textSecondary }]}
-              >
-                INSULIN
+          <Text style={[styles.inspectorEyebrow, { color: colors.textTertiary }]}>
+            SELECTED POINT
+          </Text>
+          <Text style={[styles.inspectorTime, { color: colors.textSecondary }]}>
+            {formatTimelineInspectionTimestamp(timestamp)}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityLabel="Close selected point"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={onClose}
+          style={({ pressed }) => [styles.inspectorClose, pressed && styles.layerControlPressed]}
+        >
+          <Ionicons color={colors.textSecondary} name="close" size={20} />
+        </Pressable>
+      </View>
+      {showGlucose ? (
+        <View style={styles.inspectorReadingRow}>
+          <Text style={[styles.inspectorValue, { color: glucoseColor }]}>
+            {glucose ? formatGlucose(glucose.mmolL, regional) : "No nearby reading"}
+          </Text>
+          {glucose && trend?.label && glucose.trend !== "unknown" ? (
+            <View style={[styles.trendPill, { backgroundColor: `${glucoseColor}1C` }]}>
+              <Text style={[styles.trendLabel, { color: glucoseColor }]}>
+                {trend.arrow} {trend.label}
               </Text>
-              <Text
-                style={[styles.inspectorInsulin, { color: colors.insulin }]}
-              >
-                {!insulinAvailable
-                  ? "Not connected"
-                  : insulinParts.length
-                    ? insulinParts.join("  ·  ")
-                    : "No timed delivery event near this point"}
-              </Text>
-            </>
-          ) : null}
-          {pumpStates.length ? (
-            <View style={styles.inspectorStateRow}>
-              {pumpStates.map((state) => (
-                <Text
-                  key={state.id}
-                  style={[
-                    styles.inspectorStates,
-                    {
-                      color:
-                        state.kind === "activity-mode"
-                          ? colors.accent
-                          : colors.warning,
-                    },
-                  ]}
-                >
-                  {state.kind === "activity-mode"
-                    ? "Activity mode"
-                    : "Automated pause"}
-                </Text>
-              ))}
             </View>
           ) : null}
+        </View>
+      ) : null}
+      {glucose && rangeLabel ? (
+        <Text style={[styles.inspectorRange, { color: glucoseColor }]}>
+          ● {rangeLabel}
+        </Text>
+      ) : null}
+      {glucose && Math.abs(glucose.timestamp - timestamp) > 2 * 60_000 ? (
+        <Text style={[styles.inspectorOffset, { color: colors.textTertiary }]}>
+          Reading recorded at {formatTime(glucose.timestamp)}
+        </Text>
+      ) : null}
+      {showInsulin || pumpStates.length ? (
+        <View style={[styles.inspectorMeta, { borderTopColor: colors.divider }]}>
+          {showInsulin ? (
+            <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
+              <Text style={{ color: colors.insulin }}>Insulin  </Text>
+              {!insulinAvailable
+                ? "Not connected"
+                : insulinParts.length
+                  ? insulinParts.join("  ·  ")
+                  : "No timed delivery near this point"}
+            </Text>
+          ) : null}
+          {pumpStates.length ? (
+            <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
+              {pumpStates.map((state) =>
+                state.kind === "activity-mode" ? "Activity mode" : "Automated pause",
+              ).join(" · ")}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={[styles.contextSection, { borderTopColor: colors.divider }]}>
+        <Text style={[styles.contextHeading, { color: colors.textSecondary }]}>
+          RECORDED NEAR THIS TIME
+        </Text>
+        {contextEvents.length ? contextEvents.map((event) => {
+          const icon: keyof typeof Ionicons.glyphMap = event.kind === "meal"
+            ? "restaurant-outline"
+            : event.kind === "activity"
+              ? "walk-outline"
+              : event.kind === "sleep"
+                ? "moon-outline"
+                : event.kind === "note"
+                  ? "document-text-outline"
+                  : event.kind === "medication"
+                    ? "medical-outline"
+                    : "scale-outline";
+          const canEdit = Boolean(onEditContext && event.origin === "manual" && (
+            (event.kind === "meal" && (
+              event.sourceId === FOOD_LOG_SOURCE_ID ||
+              event.sourceId === MANUAL_CONTEXT_SOURCE_ID
+            )) ||
+            (event.kind === "note" && event.sourceId === MANUAL_CONTEXT_SOURCE_ID)
+          ));
+          return (
+            <View key={event.id} style={styles.contextRow}>
+              <View style={[styles.contextIcon, { backgroundColor: colors.surfaceMuted }]}>
+                <Ionicons color={colors.accent} name={icon} size={15} />
+              </View>
+              <View style={styles.contextCopy}>
+                <Text numberOfLines={1} style={[styles.contextTitle, { color: colors.text }]}>
+                  {event.title}
+                </Text>
+                <Text style={[styles.contextTime, { color: colors.textTertiary }]}>
+                  {formatTime(event.start)} · {event.kind === "note" ? "Note" : event.kind.charAt(0).toUpperCase() + event.kind.slice(1)}
+                  {event.kind === "meal" && event.carbsGrams !== undefined
+                    ? ` · ${formatRegionalNumber(event.carbsGrams, regional.locale)} g carbs`
+                    : ""}
+                </Text>
+              </View>
+              {canEdit ? (
+                <Pressable
+                  accessibilityLabel={`Edit ${event.title}`}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={() => onEditContext?.(event)}
+                  style={styles.contextEdit}
+                >
+                  <Ionicons color={colors.textSecondary} name="create-outline" size={18} />
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        }) : (
+          <Text style={[styles.contextEmpty, { color: colors.textTertiary }]}>
+            No context recorded near this time.
+          </Text>
+        )}
+      </View>
+      {onAddContext ? (
+        <View style={styles.contextActions}>
+          <Pressable
+            accessibilityLabel={`Add meal at ${formatTime(timestamp)}`}
+            accessibilityRole="button"
+            onPress={() => onAddContext(timestamp, "meal")}
+            style={({ pressed }) => [
+              styles.contextAction,
+              { backgroundColor: colors.accent },
+              pressed && styles.layerControlPressed,
+            ]}
+          >
+            <Ionicons color={colors.onPrimary} name="restaurant-outline" size={15} />
+            <Text style={[styles.contextActionText, { color: colors.onPrimary }]}>Add meal</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel={`Add note at ${formatTime(timestamp)}`}
+            accessibilityRole="button"
+            onPress={() => onAddContext(timestamp, "note")}
+            style={({ pressed }) => [
+              styles.contextAction,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.divider, borderWidth: 1 },
+              pressed && styles.layerControlPressed,
+            ]}
+          >
+            <Ionicons color={colors.text} name="document-text-outline" size={15} />
+            <Text style={[styles.contextActionText, { color: colors.text }]}>Add note</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
@@ -420,6 +528,8 @@ export function CombinedTimeline({
   headerAccessory,
   layers: controlledLayers,
   onLayersChange,
+  onAddContext,
+  onEditContext,
   onOpenTarvis,
   quiet = false,
   title = "Glucose + insulin",
@@ -429,6 +539,8 @@ export function CombinedTimeline({
   headerAccessory?: ReactNode;
   layers?: TimelineLayerVisibility;
   onLayersChange?(layers: TimelineLayerVisibility): void;
+  onAddContext?(timestamp: number, kind: "meal" | "note"): void;
+  onEditContext?(event: HealthContextEvent): void;
   onOpenTarvis?(): void;
   quiet?: boolean;
   title?: string;
@@ -443,7 +555,8 @@ export function CombinedTimeline({
     rangeStart: number;
     timestamp: number;
   }>();
-  const inspectedTimestamp = retainedTimelineInspection(selection, data.range);
+  const [selectedMealIds, setSelectedMealIds] = useState<string[]>([]);
+  const inspectedTimestamp = retainedChartInspection(selection, data.range);
   const [showExpanded, setShowExpanded] = useState(false);
   const [localLayers, setLocalLayers] = useState<TimelineLayerVisibility>(
     DEFAULT_TIMELINE_LAYERS,
@@ -452,7 +565,7 @@ export function CombinedTimeline({
   const chartHeight = expanded
     ? Math.max(145, Math.min(180, window.height - 275))
     : quiet
-      ? 230
+      ? COMPACT_CHART_HEIGHT
       : CHART_HEIGHT;
   const verticalScale = chartHeight / CHART_HEIGHT;
   const glucoseTop = GLUCOSE_TOP * verticalScale;
@@ -512,6 +625,12 @@ export function CombinedTimeline({
   }
   const plotRight = Math.max(PLOT_LEFT + 1, width - AXIS_WIDTH);
   const plotWidth = plotRight - PLOT_LEFT;
+  const mealMarkers = useMemo(
+    () => duration <= 24 * 3_600_000
+      ? timelineMealMarkers(data.context, data.range, plotWidth, 42)
+      : [],
+    [data.context, data.range, duration, plotWidth],
+  );
   const x = useCallback(
     (timestamp: number) =>
       PLOT_LEFT +
@@ -671,6 +790,14 @@ export function CombinedTimeline({
             inspectedTimestamp >= state.start &&
             inspectedTimestamp < state.end,
         );
+  const nearbyContext = (() => {
+    if (inspectedTimestamp === undefined) return [];
+    const nearby = nearbyTimelineContext(data.context, inspectedTimestamp, 45 * 60_000, 5);
+    if (!selectedMealIds.length) return nearby;
+    const selected = data.context.filter((event) => selectedMealIds.includes(event.id));
+    const selectedSet = new Set(selected.map((event) => event.id));
+    return [...selected, ...nearby.filter((event) => !selectedSet.has(event.id))];
+  })();
 
   function onLayout(event: LayoutChangeEvent) {
     setWidth(Math.floor(event.nativeEvent.layout.width));
@@ -678,6 +805,7 @@ export function CombinedTimeline({
 
   const inspectAtX = useCallback(
     (location: number) => {
+      setSelectedMealIds([]);
       setSelection({
         rangeEnd: data.range.end,
         rangeStart: data.range.start,
@@ -691,6 +819,15 @@ export function CombinedTimeline({
     },
     [data.range, plotRight],
   );
+
+  function inspectMealMarker(marker: (typeof mealMarkers)[number]) {
+    setSelectedMealIds(marker.events.map((event) => event.id));
+    setSelection({
+      rangeEnd: data.range.end,
+      rangeStart: data.range.start,
+      timestamp: marker.event.start,
+    });
+  }
 
   function inspect(event: GestureResponderEvent) {
     inspectAtX(event.nativeEvent.locationX);
@@ -833,7 +970,8 @@ export function CombinedTimeline({
         data.basal.length === 0 &&
         data.boluses.length === 0 &&
         (data.dailyInsulinTotals?.length ?? 0) === 0 &&
-        (data.pumpStates?.length ?? 0) === 0 ? (
+        (data.pumpStates?.length ?? 0) === 0 &&
+        data.context.length === 0 ? (
           <EmptyState
             title="No timeline data"
             detail="There are no glucose or insulin records in this range."
@@ -1264,6 +1402,60 @@ export function CombinedTimeline({
                     onPress={inspect}
                     style={StyleSheet.absoluteFill}
                   />
+                  {layers.glucose ? mealMarkers.map((marker) => {
+                    const nearest = nearestByTimestamp(
+                      data.glucose,
+                      (reading) => reading.timestamp,
+                      marker.event.start,
+                    );
+                    const anchoredReading = nearest.distance <= glucoseTolerance
+                      ? nearest.item
+                      : undefined;
+                    const markerCenterY = Math.max(
+                      glucoseTop + 21,
+                      Math.min(glucoseBottom - 16,
+                        anchoredReading
+                          ? glucoseY(anchoredReading.mmolL) - 25
+                          : glucoseBottom - 22,
+                      ),
+                    );
+                    const markerX = Math.max(20, Math.min(plotRight - 20, x(marker.event.start)));
+                    const selected = inspectedTimestamp !== undefined &&
+                      marker.events.some((event) => selectedMealIds.includes(event.id));
+                    return (
+                      <Pressable
+                        key={`meal-marker:${marker.event.id}`}
+                        accessibilityLabel={`${marker.count} meal${marker.count === 1 ? "" : "s"} around ${formatTime(marker.event.start)}. Inspect recorded meal context.`}
+                        accessibilityRole="button"
+                        onPress={() => inspectMealMarker(marker)}
+                        style={[
+                          styles.mealMarkerTarget,
+                          { left: markerX - 22, top: markerCenterY - 22 },
+                        ]}
+                      >
+                        <View style={[
+                          styles.mealMarker,
+                          {
+                            backgroundColor: selected ? colors.accent : colors.surfaceElevated,
+                            borderColor: selected ? colors.accent : colors.surfaceBorder,
+                          },
+                        ]}>
+                          <Ionicons
+                            color={selected ? colors.onPrimary : colors.accent}
+                            name="restaurant"
+                            size={14}
+                          />
+                        </View>
+                        {marker.count > 1 ? (
+                          <View style={[styles.mealMarkerCount, { backgroundColor: colors.accent }]}>
+                            <Text style={[styles.mealMarkerCountText, { color: colors.onPrimary }]}>
+                              {marker.count > 9 ? "9+" : marker.count}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </Pressable>
+                    );
+                  }) : null}
                 </>
               ) : null}
             </View>
@@ -1279,6 +1471,13 @@ export function CombinedTimeline({
                 showBasal={visibleLayers.basal}
                 showBolus={visibleLayers.bolus}
                 showGlucose={visibleLayers.glucose}
+                contextEvents={nearbyContext}
+                onClose={() => {
+                  setSelection(undefined);
+                  setSelectedMealIds([]);
+                }}
+                onAddContext={onAddContext}
+                onEditContext={onEditContext}
               />
             ) : null}
             {data.glucose.length > 0 && (!quiet || expanded || inspectedTimestamp !== undefined) ? <AskTarvisButton onOpen={onOpenTarvis} entry={() => createTarvisPeriodEntry(inspectedTimestamp === undefined ? data.range : { start: Math.max(data.range.start, inspectedTimestamp - 60 * 60_000), end: Math.min(data.range.end, inspectedTimestamp + 60 * 60_000) }, inspectedTimestamp === undefined ? 'Timeline period' : 'Around the selected time')} label="Ask about this period" /> : null}
@@ -1331,6 +1530,14 @@ export function CombinedTimeline({
             data={data}
             expanded
             onOpenTarvis={() => { setShowExpanded(false); onOpenTarvis?.(); }}
+            onAddContext={onAddContext ? (timestamp, kind) => {
+              setShowExpanded(false);
+              onAddContext(timestamp, kind);
+            } : undefined}
+            onEditContext={onEditContext ? (event) => {
+              setShowExpanded(false);
+              onEditContext(event);
+            } : undefined}
             layers={layers}
             onLayersChange={(next) => {
               if (controlledLayers) onLayersChange?.(next);
@@ -1476,13 +1683,34 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   inspector: {
-    minHeight: 57,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 10,
-    marginTop: 7,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 12,
+  },
+  inspectorHintWrap: {
+    marginTop: 8,
+    paddingVertical: 7,
+  },
+  inspectorHeader: {
     flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  inspectorClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
-    gap: 20,
+    justifyContent: "center",
+  },
+  inspectorEyebrow: {
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "800",
   },
   inspectorHint: {
     fontSize: 12,
@@ -1493,35 +1721,157 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   inspectorTime: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  inspectorReadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 10,
   },
   inspectorValue: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
+    fontSize: 29,
+    lineHeight: 35,
+    fontWeight: "800",
     fontVariant: ["tabular-nums"],
-    marginTop: 1,
+  },
+  trendPill: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  trendLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+  },
+  inspectorRange: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  inspectorOffset: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  inspectorMeta: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 11,
+    paddingTop: 10,
+    gap: 4,
   },
   inspectorInsulin: {
     fontSize: 12,
     lineHeight: 18,
-    fontWeight: "700",
     fontVariant: ["tabular-nums"],
-    marginTop: 1,
   },
-  inspectorStates: {
+  contextSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 11,
+    paddingTop: 10,
+    gap: 8,
+  },
+  contextHeading: {
     fontSize: 10,
     lineHeight: 14,
     fontWeight: "800",
-    marginTop: 1,
+    letterSpacing: 0.8,
   },
-  inspectorStateRow: {
+  contextRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    minHeight: 36,
+  },
+  contextIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contextCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  contextTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  contextTime: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  contextEdit: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contextEmpty: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  contextActions: {
     flexDirection: "row",
     flexWrap: "wrap",
-    columnGap: 10,
+    gap: 8,
+    marginTop: 13,
+  },
+  contextAction: {
+    minHeight: 38,
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  contextActionText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+  },
+  mealMarkerTarget: {
+    position: "absolute",
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mealMarker: {
+    width: 29,
+    height: 29,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  mealMarkerCount: {
+    position: "absolute",
+    top: 0,
+    right: -2,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mealMarkerCountText: {
+    fontSize: 9,
+    fontWeight: "800",
   },
   chart: {
     height: CHART_HEIGHT,
