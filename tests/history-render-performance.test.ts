@@ -40,7 +40,7 @@ describe('History render performance contract', () => {
     expect(history).toContain('<PopulatedHistoryContent');
     expect(timelineHook).toContain('const latestRange = useRef(range);');
     expect(timelineHook).toContain(
-      '}, [rangeKey, repository, revision]);',
+      '}, [contextPaddingMs, rangeKey, repository, revision]);',
     );
     expect(timelineHook).not.toContain(
       '}, [range.end, range.start, rangeKey, repository, revision]);',
