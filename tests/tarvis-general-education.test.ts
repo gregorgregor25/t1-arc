@@ -49,6 +49,9 @@ describe("Tarv1s general explanations", () => {
     "I reviewed your meals and found a pattern.",
     "You probably have depression.",
     "Your meal definitely caused the spike.",
+    "HbA1c will not identify what caused the change. Your meal caused the low.",
+    "What caused the low was your walk.",
+    "Whether a person was unable to treat it themselves and needed another person to administer carbohydrates matters. To treat a low, administer carbohydrates.",
     "You have gastroparesis.",
   ])("rejects unsafe or invented personal prose: %s", (copy) => {
     expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy)))).toThrow();
@@ -64,6 +67,11 @@ describe("Tarv1s general explanations", () => {
     "CGM tells you a hypo was severe.",
     "Sensor readings classify a low as severe.",
     "CGM does not just show glucose depth, it also reveals clinical severity.",
+    "No, neither HbA1c nor CGM can show clinical severity, yet a sensor trace can show how severe the hypo was.",
+    "Neither CGM nor time in range can establish clinical severity, and CGM can establish severe hypoglycaemia.",
+    "Neither CGM nor HbA1c captures patient distress, and CGM confirms clinical severity.",
+    "Neither CGM nor HbA1c reflects patient distress, and CGM confirms clinical severity.",
+    "CGM does not only show glucose depth, it also confirms clinical severity.",
   ])("rejects a glucose metric being presented as a clinical severity classification: %s", (copy) => {
     expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy))))
       .toThrow("Tarv1s returned an explanation outside its safety boundary. Please try again.");
@@ -77,6 +85,11 @@ describe("Tarv1s general explanations", () => {
     "A glucose reading below 54 mg/dL is not severe hypoglycaemia by itself.",
     "A CGM trace can show low duration and variability, but severe hypoglycaemia is defined by needing assistance.",
     "CGM cannot tell you whether a hypo was severe.",
+    "No, neither HbA1c, CGM time in range, nor a sensor trace alone can show whether a hypoglycaemic event was clinically severe (level 3).",
+    "No, neither HbA1c, time in range, nor a CGM sensor trace can establish whether a hypoglycaemic event was clinically severe (level 3).",
+    "HbA1c on its own will not identify what caused the change.",
+    "A time-in-range percentage cannot determine what caused your low.",
+    "Whether a person was unable to treat it themselves and needed another person to administer carbohydrates is relevant to severe hypoglycaemia.",
   ])("keeps accurate distinctions between glucose patterns and clinical severity: %s", (copy) => {
     expect(parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy))).acceptedHostedAnswer).toBe(true);
   });

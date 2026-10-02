@@ -3,13 +3,16 @@ import { dirname } from "node:path";
 
 export const COMPARISON_LIMIT_USD = 1;
 export const MAX_NATIVE_REQUEST_BYTES = 70_000;
-// Standard Gemini API paid rates verified 24 September 2026. Google publishes
+export const MAX_COMPARISON_REQUESTS = 30;
+// Standard Gemini API paid rates verified 2 October 2026. Google publishes
 // higher rates from 1 January 2027; fail closed before that price change.
 // https://ai.google.dev/gemini-api/docs/pricing
 const GEMINI_CURRENT_RATES_END_UTC = Date.UTC(2027, 0, 1);
 export const MODEL_RATES = {
   "gemini-3.8-flash": { provider: "gemini", input: 0.75, output: 3.75, outputFloor: 4096 },
   "gemini-3.7-flash": { provider: "gemini", input: 0.75, output: 3.75, outputFloor: 4096 },
+  // Standard Gemini API, prompts <=200k tokens; no free tier. See pricing URL above.
+  "gemini-3.1-pro-preview": { provider: "gemini", input: 2, output: 12, outputFloor: 4096 },
   "claude-haiku-4-5-20251001": { provider: "claude", input: 1, output: 5, outputFloor: 2048 },
   "claude-sonnet-5": { provider: "claude", input: 2, output: 10, outputFloor: 2048 },
   "claude-opus-5-5": { provider: "claude", input: 4, output: 20, outputFloor: 2048 },
@@ -168,15 +171,22 @@ export function reserveComparisonRequest(ledgerPath: string, input: {
   const outputReserveTokens = Math.max(input.maxOutputTokens, rate.outputFloor);
   // Anthropic cache creation can cost more than ordinary input. The harness
   // does not request caching, but price all potential Claude input at 1.25x.
-  const inputRate = rate.input * (input.provider === "claude" ? 1.25 : 1);
-  const reservedUsd = roundUpUsd((inputReserveTokens * inputRate + outputReserveTokens * rate.output) / 1_000_000);
+  const inputRate = input.model === "gemini-3.1-pro-preview" ? 4
+    : rate.input * (input.provider === "claude" ? 1.25 : 1);
+  const outputRate = input.model === "gemini-3.1-pro-preview" ? 18 : rate.output;
+  // Reserve Pro at Google's >200k tier even though the 70k-byte request cap
+  // keeps ordinary requests below that threshold. This fails closed if usage
+  // accounting unexpectedly exceeds our estimate.
+  const reservedUsd = roundUpUsd((inputReserveTokens * inputRate + outputReserveTokens * outputRate) / 1_000_000);
   return withLock(ledgerPath, () => {
     const ledger = readLedger(ledgerPath);
     if (ledger.reservations.some(row => row.id === `${input.model}:${input.caseId}`)) {
       throw new ComparisonBudgetStop("duplicate");
     }
     const committed = ledger.reservations.reduce((sum, row) => sum + ledgerCost(row), 0);
-    if (committed + reservedUsd > COMPARISON_LIMIT_USD) throw new ComparisonBudgetStop("budget");
+    if (ledger.reservations.length >= MAX_COMPARISON_REQUESTS || committed + reservedUsd > COMPARISON_LIMIT_USD) {
+      throw new ComparisonBudgetStop("budget");
+    }
     const reservation: ComparisonReservation = {
       id: `${input.model}:${input.caseId}`,
       caseId: input.caseId,
@@ -213,7 +223,9 @@ export function settleComparisonRequest(ledgerPath: string, id: string, result: 
       const rate = MODEL_RATES[row.model];
       // Native usage has been validated and cache creation is absent. Use the
       // published ordinary rate for the comparison's actual cost estimate.
-      row.actualUsd = roundUpUsd((row.inputTokens * rate.input + row.outputTokens * rate.output) / 1_000_000);
+      const proLargeContext = row.model === "gemini-3.1-pro-preview" && row.inputTokens > 200_000;
+      row.actualUsd = roundUpUsd((row.inputTokens * (proLargeContext ? 4 : rate.input) +
+        row.outputTokens * (proLargeContext ? 18 : rate.output)) / 1_000_000);
       // Any failed, timed-out or malformed request keeps its full reservation.
       if (result.status !== "failed") row.settledUsd = row.actualUsd;
     }

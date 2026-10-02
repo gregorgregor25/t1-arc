@@ -84,6 +84,10 @@ const SEVERITY_FROM_MEASURE = new RegExp(
 const MEASURE_THRESHOLD_IS_SEVERE =
   /\b(?:glucose|sensor|CGM|reading|value|level)\b.{0,45}?\b(?:below|under|less than|beneath)\s*\d+(?:\.\d+)?\s*(?:mg\s*\/\s*dL|mmol\s*\/\s*L)?\b.{0,50}?\b(?:is|means|counts as|qualifies as|proves|confirms|indicates)\b.{0,25}?\b(?:severe|level[ -]?3)\s+hypoglyc(?:aemia|emia)\b/i;
 const SEVERITY_NEGATION = /\b(?:cannot|can't|can not|does not|doesn't|do not|don't|will not|won't|never|insufficient|unable|not)\b/i;
+const SIMPLE_NEITHER_NOR_SEVERITY_DENIAL = new RegExp(
+  `\\bnor\\s+(?:(?:a|an|the)\\s+)?${GLUCOSE_MEASURE}(?:\\s+(?:sensor|trace|readings?|data|alone|metric|measure)){0,3}\\s+(?:can|could|will|would)\\s+${SEVERITY_ASSERTION}\\b`,
+  "i",
+);
 
 function claimsGlucoseMeasureEstablishesClinicalSeverity(copy: string) {
   // Restrict the denial check to the clause containing the assertion. A safe
@@ -92,8 +96,16 @@ function claimsGlucoseMeasureEstablishesClinicalSeverity(copy: string) {
     const clause = originalClause.replace(/\bnot (?:only|just)\b/gi, "");
     const threshold = MEASURE_THRESHOLD_IS_SEVERE.exec(clause);
     if (threshold && !SEVERITY_NEGATION.test(threshold[0])) return true;
-    const forward = MEASURE_ESTABLISHES_SEVERITY.exec(clause);
-    if (forward && !SEVERITY_NEGATION.test(forward[0])) return true;
+    // In "No, neither HbA1c nor CGM can show clinical severity", the forward
+    // match starts at HbA1c and misses the leading denial. Check each claim so
+    // a later affirmative claim in the same clause is still rejected.
+    for (const forward of clause.matchAll(new RegExp(MEASURE_ESTABLISHES_SEVERITY.source, "gi"))) {
+      const prefix = clause.slice(0, forward.index);
+      const assertionCount = [...forward[0].matchAll(new RegExp(`\\b${SEVERITY_ASSERTION}\\b`, "gi"))].length;
+      const deniedByNeither = /^\s*(?:no[,:]?\s+)?neither\b/i.test(prefix) &&
+        SIMPLE_NEITHER_NOR_SEVERITY_DENIAL.test(forward[0]) && assertionCount === 1;
+      if (!deniedByNeither && !SEVERITY_NEGATION.test(forward[0])) return true;
+    }
     const reverse = SEVERITY_FROM_MEASURE.exec(clause);
     return !!reverse && !SEVERITY_NEGATION.test(reverse[0]);
   });

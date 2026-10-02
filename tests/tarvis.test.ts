@@ -156,6 +156,29 @@ describe("TARV1S evidence and spending guardrails", () => {
     ).toThrow(/safe evidence boundary/i);
   });
 
+  it("keeps the existing strict causal filter for personal-evidence answers", async () => {
+    const lookup = await evidencePacket();
+    expect(() => parseTarvisAnswer(JSON.stringify({
+      headline: "A comparison",
+      answer: "The report will not identify what caused the change.",
+      confidence: "limited",
+      evidenceIds: [lookup.packet.evidence[0]!.id],
+      limitations: [],
+    }), lookup.packet)).toThrow(/safe evidence boundary/i);
+  });
+
+  it("allows only the descriptive level-3 assistance clause in no-record education", () => {
+    const payload = (answer: string) => JSON.stringify({
+      headline: "Level 3 context", answer, confidence: "limited", evidenceIds: [], limitations: [],
+    });
+    const description = "Whether the episode caused sufficient cognitive or physical impairment that you were unable to treat it yourself and needed someone else to administer carbohydrates is relevant to level 3.";
+    expect(parseTarvisAnswer(payload(description), undefined, { generalEducation: true }).answer).toBe(description);
+    expect(() => parseTarvisAnswer(payload(`${description} To treat a low, administer carbohydrates.`), undefined, { generalEducation: true }))
+      .toThrow(/safe evidence boundary/i);
+    expect(() => parseTarvisAnswer(payload("Whether the episode caused sufficient cognitive or physical impairment that you should take insulin and you were unable to treat it yourself and needed someone else to administer carbohydrates."), undefined, { generalEducation: true }))
+      .toThrow(/safe evidence boundary/i);
+  });
+
   it.each([
     "Take insulin now.",
     "Inject insulin now.",
