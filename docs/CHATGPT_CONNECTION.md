@@ -13,8 +13,21 @@ rotation fixes. Emulator checks confirmed settings navigation, all four provider
 choices and the ChatGPT sign-in/cancel controls. Browser launch reached Chrome's
 first-run screen, but the emulator process exited during Chrome startup on two
 attempts, including a graphics fallback. A successful browser round-trip and
-authenticated answer remain unverified. Tests used synthetic credentials and
-records; no live Gemini answer was retested.
+authenticated answer remain unverified. Automated tests used synthetic credentials
+and records. The subsequent live Gemini comparison and narrow answer-check fixes
+are documented in `AI_PROVIDER_TESTING.md`.
+
+Follow-up on 2 October 2026: a combined debug APK containing the chart, ChatGPT and
+Gemini changes was built for both ARM64 phones and x86_64 emulators. Its manifest,
+signature and embedded JavaScript were verified. The separate development package
+was installed on isolated Android 16 and Android 17 emulators. An existing desktop
+ChatGPT session reached T1 Arc's account-selection and plan-access consent screens,
+but this did not verify a completed connection in the Android app. One attempt
+expired during test setup; another lost its callback when the Android 16 emulator
+process crashed. Windows recorded a QEMU host access violation (`0xc0000005`), not
+an Android application crash. A fresh Android 17 test reached Google's passkey
+verification through the normal in-app sign-in flow. Physical-phone sign-in,
+account-model listing and a completed plan-backed answer still remain unverified.
 
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
