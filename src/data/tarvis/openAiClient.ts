@@ -87,12 +87,32 @@ async function loadReadyTarvisModel(lease: LocalDataWriteLease, provider: Tarvis
   }
 }
 
+async function loadTarvisRequestCredentials(lease: LocalDataWriteLease, provider: TarvisProvider) {
+  assertTarvisProviderReady(provider);
+  if (provider === "chatgpt") {
+    const { getChatGptRequestSession, ChatGptConnectionError, ChatGptModelUnavailableError } = await import("./chatGptConnection");
+    try {
+      const session = await getChatGptRequestSession(lease);
+      return { model: session.model, key: session.accessToken };
+    } catch (error) {
+      if (error instanceof ChatGptConnectionError) throw new TarvisProviderError(error.message, error.settingsRequired);
+      if (error instanceof ChatGptModelUnavailableError) throw new TarvisProviderError(error.message, true);
+      throw error;
+    }
+  }
+  const model = await loadReadyTarvisModel(lease, provider);
+  const key = await loadTarvisApiKey(lease, provider);
+  if (!key) throw new TarvisProviderError(`Add your ${TARVIS_PROVIDERS[provider].label} API key first.`, true);
+  return { model, key };
+}
+
 let requestInFlight = false;
 
 export interface TarvisRequestFailureDetails {
   modelRequestSent: boolean;
   settingsRequired?: boolean;
   retryAt?: number;
+  manageUsage?: boolean;
   requestMetrics?: TarvisResponse["requestMetrics"];
   usage?: TarvisUsage;
 }
@@ -410,13 +430,9 @@ export async function askTarvis(
     connectionLease.assertCurrent();
     const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
+    const { model, key } = await loadTarvisRequestCredentials(writeLease, provider);
     const providerConfig = TARVIS_PROVIDERS[provider];
-    const model = await loadReadyTarvisModel(writeLease, provider);
     connectionLease.assertCurrent();
-    assertTarvisProviderReady(provider);
-    const key = await loadTarvisApiKey(writeLease, provider);
-    connectionLease.assertCurrent();
-    if (!key) throw new TarvisProviderError(`Add your ${providerConfig.label} API key first.`, true);
 
     const now = Date.now();
     const existingUsage = await loadTarvisUsage(writeLease);
@@ -588,6 +604,7 @@ export async function askTarvis(
       modelRequestSent,
       settingsRequired: error instanceof TarvisProviderError && error.settingsRequired,
       retryAt: error instanceof TarvisProviderError ? error.retryAt : undefined,
+      ...(error instanceof TarvisProviderError && error.manageUsage ? { manageUsage: true } : {}),
       requestMetrics: knownRequestMetrics,
       usage: knownUsage,
     });
@@ -708,13 +725,9 @@ export async function planTarvisEvidenceRequest(
     connectionLease.assertCurrent();
     const provider = await loadTarvisProvider(writeLease);
     connectionLease.assertCurrent();
+    const { model, key } = await loadTarvisRequestCredentials(writeLease, provider);
     const providerConfig = TARVIS_PROVIDERS[provider];
-    const model = await loadReadyTarvisModel(writeLease, provider);
     connectionLease.assertCurrent();
-    assertTarvisProviderReady(provider);
-    const key = await loadTarvisApiKey(writeLease, provider);
-    connectionLease.assertCurrent();
-    if (!key) throw new TarvisProviderError(`Add your ${providerConfig.label} API key first.`, true);
 
     const now = Date.now();
     const existingUsage = await loadTarvisUsage(writeLease);
@@ -817,6 +830,7 @@ export async function planTarvisEvidenceRequest(
       modelRequestSent,
       settingsRequired: error instanceof TarvisProviderError && error.settingsRequired,
       retryAt: error instanceof TarvisProviderError ? error.retryAt : undefined,
+      ...(error instanceof TarvisProviderError && error.manageUsage ? { manageUsage: true } : {}),
       requestMetrics: knownRequestMetrics,
       usage: knownUsage,
     });

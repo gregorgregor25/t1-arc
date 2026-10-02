@@ -27,7 +27,22 @@ const mocks = vi.hoisted(() => ({
   loadUsage: vi.fn(),
   saveUsage: vi.fn(),
   getSafetyIdentifier: vi.fn(),
+  chatGptSession: vi.fn(),
+  chatGptRequest: vi.fn(),
 }));
+
+vi.mock("@/data/tarvis/chatGptConnection", () => ({
+  getChatGptRequestSession: mocks.chatGptSession,
+  ChatGptConnectionError: class ChatGptConnectionError extends Error {
+    constructor(message: string, readonly settingsRequired = true) { super(message); }
+  },
+  ChatGptModelUnavailableError: class ChatGptModelUnavailableError extends Error {},
+}));
+vi.mock("../modules/t1arc-chatgpt", () => ({
+  isAvailable: () => true,
+  default: { request: mocks.chatGptRequest, cancelRequest: async () => undefined },
+}));
+vi.mock("expo-crypto", () => ({ randomUUID: () => "request-fixture" }));
 
 vi.mock("@/data/privacy/localDataWriteEpoch", () => ({
   acquireLocalDataWriteLease: mocks.acquireLease,
@@ -193,6 +208,57 @@ describe("Tarv1s direct model-request shape", () => {
     });
     mocks.saveUsage.mockResolvedValue(undefined);
     mocks.getSafetyIdentifier.mockResolvedValue("safety-id");
+    mocks.chatGptSession.mockResolvedValue({ accessToken: "synthetic-session", accountId: "test-account", model: "account-model" });
+  });
+
+  it("uses the ChatGPT session for guarded education and planning without loading an API key", async () => {
+    mocks.loadProvider.mockResolvedValue("chatgpt");
+    const completed = (text: string) => JSON.stringify({ status: "completed", output: [{ content: [{ type: "output_text", text }] }], usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 } });
+    mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ kind: "explanation", headline: "About HbA1c", answer: "HbA1c reflects longer-term glucose exposure.", limitations: [] })));
+    const result = await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 });
+    expect(result.answerSource).toBe("hosted");
+    expect(result.requestMetrics).toMatchObject({ model: "account-model", totalTokens: 30 });
+    expect(result.requestMetrics?.estimatedCostUsd).toBeUndefined();
+    const question = "I had a really high reading two days ago. Do you know why?";
+    const options = buildTarvisEvidencePlanningOptions(question, Date.parse("2026-08-26T10:00:00+01:00"));
+    mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "range-1", eventOptionId: "event-high", categoryIds: ["glucose", "insulin", "food", "activity", "sleep", "context", "data-quality"], clarificationCode: "none" })));
+    expect((await planTarvisEvidenceRequest(question, options, { epoch: 1 })).plan.kind).toBe("glucose-episode");
+    mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "invented-range", eventOptionId: "event-high", categoryIds: ["glucose"], clarificationCode: "none" })));
+    await expect(planTarvisEvidenceRequest(question, options, { epoch: 1 })).rejects.toThrow();
+    expect(mocks.loadApiKey).not.toHaveBeenCalled();
+    expect(mocks.getSafetyIdentifier).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    for (const [request] of mocks.chatGptRequest.mock.calls) {
+      expect(request.accessToken).toBe("synthetic-session");
+      const body = JSON.parse(request.body);
+      expect(body).toMatchObject({ model: "account-model", stream: true, store: false });
+      expect(body).not.toHaveProperty("safety_identifier");
+      expect(body).not.toHaveProperty("max_output_tokens");
+    }
+  });
+
+  it("preserves ChatGPT quota recovery without dispatching another provider", async () => {
+    mocks.loadProvider.mockResolvedValue("chatgpt");
+    mocks.chatGptRequest.mockRejectedValueOnce({ code: "ERR_CHATGPT_QUOTA", message: "private provider body" });
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); } catch (error) { failure = error; }
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: true, manageUsage: true });
+    expect(String(failure)).not.toContain("private provider body");
+    expect(mocks.chatGptRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.loadApiKey).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for sign-in again after a temporary token renewal outage", async () => {
+    const { ChatGptConnectionError } = await import("@/data/tarvis/chatGptConnection");
+    mocks.loadProvider.mockResolvedValue("chatgpt");
+    mocks.chatGptSession.mockRejectedValueOnce(new ChatGptConnectionError("Your connection is saved; try again later.", false));
+    let failure: unknown;
+    try { await askTarvis("What does HbA1c mean?", undefined, [], { epoch: 1 }); } catch (error) { failure = error; }
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({ modelRequestSent: false, settingsRequired: false });
+    expect(mocks.chatGptRequest).not.toHaveBeenCalled();
+    expect(mocks.loadApiKey).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("uses the saved model for answer, planner and metrics without changing the provider", async () => {

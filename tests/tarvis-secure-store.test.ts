@@ -29,6 +29,10 @@ const secureStore = vi.hoisted(() => {
 
 vi.mock("expo-secure-store", () => secureStore);
 vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("../modules/t1arc-chatgpt", () => ({
+  isAvailable: () => true,
+  default: { cancelSignIn: async () => undefined, revokeSession: async () => true },
+}));
 vi.mock("@/data/persistence/t1arcDatabase", () => ({ withT1ArcTransaction: async (task: (tx: unknown) => Promise<unknown>) => task({}) }));
 vi.mock("@/data/privacy/localDataWriteEpoch", () => ({
   acquireLocalDataWriteLease: async () => ({ epoch: 0 }),
@@ -67,7 +71,7 @@ describe("Tarv1s secure storage lifecycle", () => {
     await selectTarvisProvider("openai", { epoch: 0 });
     await expect(loadTarvisApiKey()).resolves.toBe(openai);
     const settings = await loadTarvisSettings();
-    expect(settings.configuredProviders).toEqual({ openai: true, gemini: true, claude: true });
+    expect(settings.configuredProviders).toEqual({ openai: true, gemini: true, claude: true, chatgpt: false });
     expect(JSON.stringify(settings)).not.toContain(openai);
     expect(JSON.stringify(settings)).not.toContain(gemini);
     expect(JSON.stringify(settings)).not.toContain(claude);
@@ -96,7 +100,7 @@ describe("Tarv1s secure storage lifecycle", () => {
     await expect(loadTarvisModel(lease, "openai")).resolves.toBe("gpt-5.6-terra");
     await selectTarvisProvider("openai", lease);
     expect((await loadTarvisSettings(lease)).selectedModels).toEqual({
-      openai: "gpt-5.6-terra", gemini: "gemini-3.7-flash", claude: "claude-haiku-4-5-20251001",
+      openai: "gpt-5.6-terra", gemini: "gemini-3.7-flash", claude: "claude-haiku-4-5-20251001", chatgpt: "",
     });
     secureStore.values.set("t1arc.tarvis.claude-model.v1", "retired-model");
     await expect(loadTarvisModel(lease, "claude")).rejects.toThrow(/unavailable/);
@@ -162,5 +166,40 @@ describe("Tarv1s secure storage lifecycle", () => {
       hasUsage: false,
       hasSafetyIdentifier: false,
     });
+  });
+
+  it("selects a ChatGPT account explicitly without changing API keys and erases its tokens", async () => {
+    const key = `sk-proj-${"a".repeat(40)}`;
+    await saveTarvisApiKey(key, { epoch: 0 });
+    secureStore.values.set("t1arc.tarvis.chatgpt-connection.v1", JSON.stringify({
+      hostId: "urn:uuid:synthetic-installation", activeAccountId: "registration:subject",
+      accounts: [{
+        id: "registration:subject", clientId: "registration", subject: "subject", selectedModel: "account-model",
+        models: [{ slug: "account-model", displayName: "Account model" }],
+        credentials: { clientId: "registration", subject: "subject", accessToken: "private-access", refreshToken: "private-refresh", idToken: "private-id", expiresAt: Date.now() + 3_600_000, scopes: ["chatgpt.tokens.use.direct"] },
+      }],
+    }));
+    await expect(loadTarvisSettings()).resolves.toMatchObject({ provider: "openai" });
+    await expect(selectTarvisProvider("chatgpt", { epoch: 0 }, "wrong-model")).rejects.toThrow("unavailable");
+    await selectTarvisProvider("chatgpt", { epoch: 0 }, "account-model");
+    const settings = await loadTarvisSettings();
+    expect(settings).toMatchObject({ provider: "chatgpt", hasApiKey: true, selectedModels: { chatgpt: "account-model" } });
+    expect(JSON.stringify(settings)).not.toContain("private-access");
+    expect(JSON.stringify(settings)).not.toContain("private-refresh");
+    await expect(loadTarvisApiKey()).resolves.toBeUndefined();
+    await expect(loadTarvisApiKey(undefined, "openai")).resolves.toBe(key);
+    await expect(loadTarvisModel()).resolves.toBe("account-model");
+    await clearTarvisStoredData();
+    expect(secureStore.values.size).toBe(0);
+  });
+
+  it("never treats an API key as a ChatGPT session or silently selects an API provider", async () => {
+    await saveTarvisApiKey(`sk-proj-${"a".repeat(40)}`, { epoch: 0 });
+    await expect(saveTarvisApiKey(`sk-proj-${"b".repeat(40)}`, { epoch: 0 }, "chatgpt")).rejects.toThrow("Continue with ChatGPT");
+    secureStore.values.set("t1arc.tarvis.provider.v1", "chatgpt");
+    await expect(loadTarvisSettings()).resolves.toMatchObject({ provider: "chatgpt", hasApiKey: false });
+    await expect(loadTarvisApiKey()).resolves.toBeUndefined();
+    await expect(selectTarvisProvider("chatgpt", { epoch: 0 })).rejects.toThrow("Continue with ChatGPT");
+    await expect(loadTarvisModel()).rejects.toThrow("unavailable");
   });
 });

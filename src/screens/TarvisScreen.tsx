@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { AppScreen } from "@/components/AppScreen";
 import { SectionCard } from "@/components/SectionCard";
+import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
 import { TarvisWorkspaceSwitcher } from "@/components/TarvisWorkspaceSwitcher";
 import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
@@ -113,6 +114,17 @@ import {
   selectTarvisProvider,
 } from "@/data/tarvis/secureStore";
 import { TARVIS_MODELS, TARVIS_PROVIDERS, type TarvisProvider } from "@/data/tarvis/providers";
+import {
+  getChatGptState,
+  cancelChatGptSignIn,
+  discardPendingChatGptRegistration,
+  refreshChatGptModels,
+  selectChatGptAccount,
+  selectChatGptModel,
+  signInChatGpt,
+  signOutChatGpt,
+  type ChatGptConnectionState,
+} from "@/data/tarvis/chatGptConnection";
 import { loadTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
 import {
   buildTarvisTreatmentProfileAnswer,
@@ -149,6 +161,12 @@ import {
   type LocalDataWriteLease,
   withLocalDataWriteLeaseTransaction,
 } from "@/data/privacy/localDataWriteEpoch";
+import {
+  loadEpochBoundSecureStoreString,
+  saveEpochBoundSecureStoreValue,
+} from "@/data/privacy/localDataEpochSecureStore";
+
+const CHATGPT_PLAN_INFO_KEY = "t1arc.tarvis.chatgpt-plan-info-seen.v1";
 
 function guidanceReferences(
   items: readonly TarvisReviewedKnowledgeItem[],
@@ -1338,13 +1356,17 @@ export function TarvisScreen({
   const [hasApiKey, setHasApiKey] = useState(false);
   const [provider, setProvider] = useState<TarvisProvider>("openai");
   const [selectedProvider, setSelectedProvider] = useState<TarvisProvider>("openai");
-  const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
-  const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model });
+  const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
+  const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [configuredProviders, setConfiguredProviders] = useState<Record<TarvisProvider, boolean>>({ openai: false, gemini: false, claude: false });
+  const [configuredProviders, setConfiguredProviders] = useState<Record<TarvisProvider, boolean>>({ openai: false, gemini: false, claude: false, chatgpt: false });
+  const [chatGptState, setChatGptState] = useState<ChatGptConnectionState>({ available: false, hasPendingRegistration: false, accounts: [], connected: false, models: [] });
+  const [chatGptPlanInfoVisible, setChatGptPlanInfoVisible] = useState(false);
+  const [signingInChatGpt, setSigningInChatGpt] = useState(false);
   const [settingsNotice, setSettingsNotice] = useState<string>();
   const [retryAt, setRetryAt] = useState(0);
   const [errorNeedsSettings, setErrorNeedsSettings] = useState(false);
+  const [errorManageUsage, setErrorManageUsage] = useState(false);
   useEffect(() => {
     if (!retryAt) return;
     const timeout = setTimeout(() => setRetryAt(0), Math.max(0, retryAt - Date.now()));
@@ -1533,6 +1555,7 @@ export function TarvisScreen({
       setModelMenuOpen(false);
       setSettingsLoadFailed(false);
       setUsage(settings.usage);
+      if (settings.chatGpt) setChatGptState(settings.chatGpt);
     } catch {
       setSettingsLoadFailed(true);
       setSettingsActionError(
@@ -1557,6 +1580,7 @@ export function TarvisScreen({
         setSettingsLoadFailed(false);
         setSettingsActionError(undefined);
         setUsage(settings.usage);
+        if (settings.chatGpt) setChatGptState(settings.chatGpt);
       })
       .catch(() => {
         if (!active) return;
@@ -1992,6 +2016,10 @@ export function TarvisScreen({
       return;
     }
     if (settingsVisible) {
+      if (signingInChatGpt) {
+        void cancelChatGptSignIn().catch(() => setSettingsActionError("Could not cancel ChatGPT sign-in. Use the browser back button or retry shortly."));
+        return;
+      }
       closeTarvisSettings();
       setError(undefined);
       return;
@@ -2013,6 +2041,7 @@ export function TarvisScreen({
     historyVisible,
     onBack,
     settingsVisible,
+    signingInChatGpt,
     settingsWorking,
     working,
   ]);
@@ -2025,6 +2054,7 @@ export function TarvisScreen({
 
   async function saveKey() {
     if (working || settingsWorking) return;
+    if (selectedProvider === "chatgpt") return;
     setSettingsActionError(undefined);
     setSettingsWorking(true);
     try {
@@ -2041,6 +2071,7 @@ export function TarvisScreen({
       setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} · ${selectedModel} selected. Key saved on this phone; API access will be checked when you send a question.`);
       setError(undefined);
       setErrorNeedsSettings(false);
+      setErrorManageUsage(false);
       setRetryAt(0);
     } catch (reason) {
       if (isLocalDataWriteSupersededError(reason)) return;
@@ -2052,6 +2083,89 @@ export function TarvisScreen({
     } finally {
       setSettingsWorking(false);
     }
+  }
+
+  async function runChatGptAction(
+    action: (lease: LocalDataWriteLease) => Promise<ChatGptConnectionState>,
+    notice?: string,
+    showPlanInfo = false,
+  ) {
+    if (working || settingsWorking) return;
+    setSettingsActionError(undefined);
+    setSettingsNotice(undefined);
+    setSettingsWorking(true);
+    try {
+      const writeLease = await acquireLocalDataWriteLease();
+      const nextState = await action(writeLease);
+      const settings = await loadTarvisSettings(writeLease);
+      setChatGptState(nextState);
+      setHasApiKey(settings.hasApiKey);
+      setProvider(settings.provider);
+      setConfiguredProviders(settings.configuredProviders);
+      setSavedModels(settings.selectedModels);
+      setSelectedModels(settings.selectedModels);
+      setSettingsNotice(notice);
+      setError(undefined);
+      setErrorNeedsSettings(false);
+      setErrorManageUsage(false);
+      if (showPlanInfo && nextState.connected) {
+        const seen = await loadEpochBoundSecureStoreString(CHATGPT_PLAN_INFO_KEY, writeLease).catch((reason: unknown) => {
+          if (isLocalDataWriteSupersededError(reason)) throw reason;
+          return undefined;
+        });
+        if (seen !== "1") setChatGptPlanInfoVisible(true);
+      }
+    } catch (reason) {
+      if (isLocalDataWriteSupersededError(reason) || isTarvisConnectionSupersededError(reason)) return;
+      setSettingsActionError(reason instanceof Error ? reason.message : "The ChatGPT connection could not be changed. Try again.");
+      try { setChatGptState(await getChatGptState()); } catch { /* Keep the last readable account state. */ }
+    } finally {
+      setSettingsWorking(false);
+    }
+  }
+
+  async function beginChatGptSignIn(accountId?: string, startFresh = false) {
+    if (working || settingsWorking) return;
+    setSigningInChatGpt(true);
+    try {
+      await runChatGptAction(async (lease) => {
+        if (startFresh) await discardPendingChatGptRegistration(lease);
+        return signInChatGpt(lease, accountId);
+      });
+    } finally {
+      setSigningInChatGpt(false);
+    }
+  }
+
+  async function disconnectChatGpt() {
+    if (working || settingsWorking) return;
+    setSettingsActionError(undefined);
+    setSettingsWorking(true);
+    try {
+      const writeLease = await acquireLocalDataWriteLease();
+      const result = await signOutChatGpt(writeLease);
+      const settings = await loadTarvisSettings(writeLease);
+      if (settings.chatGpt) setChatGptState(settings.chatGpt);
+      setHasApiKey(settings.hasApiKey);
+      setConfiguredProviders(settings.configuredProviders);
+      setSavedModels(settings.selectedModels);
+      setSelectedModels(settings.selectedModels);
+      setSettingsNotice(result.revoked
+        ? "Signed out of ChatGPT on this phone. Your other AI connections are still available."
+        : "The ChatGPT connection was removed from this phone, but remote revocation could not be confirmed. Review connected apps in ChatGPT settings.");
+    } catch (reason) {
+      if (isLocalDataWriteSupersededError(reason) || isTarvisConnectionSupersededError(reason)) return;
+      setSettingsActionError("Could not sign out of ChatGPT. Try again.");
+    } finally {
+      setSettingsWorking(false);
+    }
+  }
+
+  function acknowledgeChatGptPlanInfo() {
+    setChatGptPlanInfoVisible(false);
+    void acquireLocalDataWriteLease()
+      .then((lease) => saveEpochBoundSecureStoreValue(CHATGPT_PLAN_INFO_KEY, "1", lease))
+      .catch(() => undefined);
   }
 
   function removeKey() {
@@ -2126,11 +2240,13 @@ export function TarvisScreen({
       restoreDraft();
       setError(reason instanceof Error ? reason.message : "The AI provider could not answer this question.");
       setErrorNeedsSettings(Boolean(failure.settingsRequired));
+      setErrorManageUsage(Boolean(failure.manageUsage));
       if (failure.retryAt) setRetryAt(failure.retryAt);
     };
     setError(undefined);
     setWorking(true);
     setErrorNeedsSettings(false);
+    setErrorManageUsage(false);
     let writeLease: LocalDataWriteLease | undefined;
     try {
       writeLease = await acquireLocalDataWriteLease();
@@ -2958,6 +3074,7 @@ export function TarvisScreen({
           if (!restoreDraft()) return;
           const failure = getTarvisRequestFailureDetails(reason);
           setErrorNeedsSettings(Boolean(failure?.settingsRequired));
+          setErrorManageUsage(Boolean(failure?.manageUsage));
           if (failure?.retryAt) setRetryAt(failure.retryAt);
           setError(
             reason instanceof Error
@@ -3122,12 +3239,19 @@ export function TarvisScreen({
             <Text style={[styles.errorText, { color: colors.textSecondary }]}>
               {error}
             </Text>
-            {errorNeedsSettings ? <Pressable accessibilityRole="button" onPress={() => setSettingsVisible(true)} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>API settings</Text></Pressable> : null}
+            {provider === "chatgpt" && errorManageUsage ? (
+              <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ padding: 12 }}><Text style={{ color: colors.primary, fontWeight: "700" }}>Manage usage in ChatGPT</Text></Pressable>
+            ) : errorNeedsSettings ? <Pressable accessibilityRole="button" onPress={() => setSettingsVisible(true)} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>Connection settings</Text></Pressable> : null}
           </View>
         ) : null}
         <Text style={[styles.boundary, { color: colors.textSecondary }]}>
-          {retryAt ? "API cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : "Local answers available. Connect an AI provider in settings for broader questions."}
+          {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Local answers available. Connect an AI provider in settings for broader questions."}
         </Text>
+        {provider === "chatgpt" && hasApiKey ? (
+          <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", paddingVertical: 5 }}>
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Manage usage in ChatGPT ↗</Text>
+          </Pressable>
+        ) : null}
         {loadingSettings || (!conversationLoaded && !conversationCorrupt && !error) ? (
           <Text accessibilityLiveRegion="polite" style={[styles.boundary, { color: colors.textTertiary }]}>
             Opening saved conversations and connection…
@@ -3364,17 +3488,40 @@ export function TarvisScreen({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      Local questions about your recorded data work without a key. For broader AI answers, choose a provider and add its API key. When you send an AI question, the disclosed context and recent shared conversation go to that provider; API usage may cost money. Keys stay secure on this phone and are excluded from backups. Chat subscriptions do not include API credit.
+                      Local questions about your recorded data work without a connection. For broader AI answers, choose an eligible ChatGPT plan or use an OpenAI, Gemini or Claude API key. Credentials stay on this phone, outside backups. Nothing is sent until you tap Send.
                     </Text>
                   </View>
                 </View>
                 <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
                   {(Object.keys(TARVIS_PROVIDERS) as TarvisProvider[]).map(id => (
                     <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: selectedProvider === id, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(savedModels); setSelectedProvider(id); setModelMenuOpen(false); setApiKey(""); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedProvider === id ? colors.primary : colors.border, borderRadius: radius.md }}>
-                      <Text style={{ color: colors.text }}>{TARVIS_PROVIDERS[id].label}{provider === id && hasApiKey ? " · Active" : configuredProviders[id] ? " · Key saved" : ""}</Text>
+                      <Text style={{ color: colors.text }}>{TARVIS_PROVIDERS[id].label}{provider === id && hasApiKey ? " · Active" : configuredProviders[id] ? id === "chatgpt" ? " · Connected" : " · Key saved" : ""}</Text>
                     </Pressable>
                   ))}
                 </View>
+                {selectedProvider === "chatgpt" ? (
+                  <ChatGptConnectionCard
+                    state={chatGptState}
+                    active={provider === "chatgpt" && hasApiKey}
+                    working={settingsWorking || working}
+                    notice={settingsNotice}
+                    signingIn={signingInChatGpt}
+                    onSignIn={(accountId) => void beginChatGptSignIn(accountId)}
+                    onStartFreshSignIn={() => void beginChatGptSignIn(undefined, true)}
+                    onCancelSignIn={() => { void cancelChatGptSignIn().catch(() => setSettingsActionError("Could not cancel ChatGPT sign-in. Use the browser back button or retry shortly.")); }}
+                    onSelectAccount={(accountId) => void runChatGptAction((lease) => selectChatGptAccount(accountId, lease))}
+                    onSelectModel={(slug) => void runChatGptAction((lease) => selectChatGptModel(slug, lease))}
+                    onRefreshModels={() => void runChatGptAction((lease) => refreshChatGptModels(lease))}
+                    onUse={() => void runChatGptAction(async (lease) => {
+                      if (!chatGptState.selectedModel) throw new Error("Choose a ChatGPT model first.");
+                      await selectTarvisProvider("chatgpt", lease, chatGptState.selectedModel);
+                      return getChatGptState(lease);
+                    }, "ChatGPT is now selected for AI answers. Your plan usage is managed in ChatGPT.", true)}
+                    onSignOut={() => void disconnectChatGpt()}
+                    onLinkError={() => setSettingsActionError("ChatGPT usage settings could not be opened.")}
+                  />
+                ) : <>
+                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>API usage may cost money. Chat subscriptions do not include API credit.</Text>
                 <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>Model</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel={`Choose ${TARVIS_PROVIDERS[selectedProvider].label} model`} accessibilityState={{ expanded: modelMenuOpen, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => setModelMenuOpen(open => !open)} style={{ padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
                   <Text style={{ color: colors.text }}>{selectedModels[selectedProvider]}  ▾</Text>
@@ -3451,6 +3598,7 @@ export function TarvisScreen({
                     {apiKey.trim() ? "Save key on this phone" : "Use selected provider"}
                   </Text>
                 </Pressable>
+                </>}
               </SectionCard>
             ) : null}
 
@@ -3490,12 +3638,13 @@ export function TarvisScreen({
                 For some personal questions, Tarv1s first sends your question
                 with a bounded list of evidence choices, but no records. It then
                 sends only the selected evidence needed to answer, which can
-                include food names. The selected provider’s API privacy and
-                retention terms apply. Switching providers can share recent
-                previously shared conversation with the new provider when you
+                include food names. The selected provider’s privacy and
+                retention terms apply. Switching providers or ChatGPT accounts
+                can share recent previously shared conversation with the new
+                connection when you
                 next tap Send. Start a new conversation to omit that history.
               </Text>
-              {settingsView.canEdit && configuredProviders[selectedProvider] ? (
+              {settingsView.canEdit && selectedProvider !== "chatgpt" && configuredProviders[selectedProvider] ? (
                 <Pressable
                   accessibilityRole="button"
                   disabled={settingsWorking || working}
@@ -4088,6 +4237,33 @@ export function TarvisScreen({
         )}
       </AppScreen>
       {conversationScope.kind !== 'legacy-unknown' ? <PersonalNotebook visible={notebookVisible} onClose={() => { setNotebookVisible(false); setNotebookSeed(undefined); }} ownerIdentity={conversationScope.ownerIdentity} dataMode={conversationScope.dataMode} seed={notebookSeed} /> : null}
+      <Modal
+        animationType="fade"
+        onRequestClose={acknowledgeChatGptPlanInfo}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        transparent
+        visible={chatGptPlanInfoVisible}
+      >
+        <View style={styles.confirmationFrame}>
+          <View accessibilityViewIsModal style={[styles.confirmationCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.surfaceBorder, borderRadius: radius.lg }]}>
+            <View style={[styles.confirmationIcon, { backgroundColor: `${colors.primary}18`, borderRadius: radius.pill }]}>
+              <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
+            </View>
+            <Text accessibilityRole="header" style={[styles.confirmationTitle, { color: colors.text }]}>You’re using your ChatGPT plan</Text>
+            <Text style={[styles.confirmationDetail, { color: colors.textSecondary }]}>
+              Tarv1s can use your eligible ChatGPT plan for broader AI answers. Plan usage and limits are managed in ChatGPT. This connection does not give T1 Arc access to your existing ChatGPT chats. Your health context is shared only when you tap Send.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={acknowledgeChatGptPlanInfo}
+              style={({ pressed }) => [styles.confirmationButton, { backgroundColor: colors.primary, borderColor: colors.primary, borderRadius: radius.md, opacity: pressed ? 0.72 : 1, marginTop: 20 }]}
+            >
+              <Text style={[styles.confirmationButtonText, { color: colors.onPrimary }]}>Got it</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <TarvisConfirmationDialog
         confirmation={confirmation}
         provider={selectedProvider}

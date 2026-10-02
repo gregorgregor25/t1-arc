@@ -16,7 +16,7 @@ describe('Tarv1s settings discovery contract', () => {
   it('offers settings on Tarv1s home without visiting conversation history', () => {
     const source = readFileSync('src/screens/TarvisScreen.tsx', 'utf8');
     expect(source).toContain('historyVisible || !conversationVisible ? "Open Tarv1s settings"');
-    expect(source).toContain('if (settingsVisible) {\n      closeTarvisSettings();');
+    expect(source).toMatch(/if \(settingsVisible\) \{[\s\S]{0,500}?closeTarvisSettings\(\);/);
     expect(source).toContain('settingsOpenedFromMenu.current = false;');
     expect(source).toContain('onReturnToSettings?.();');
     expect(source).toContain('settingsOpenedFromMenu.current ? "Back to Settings" : "Back to Tarv1s"');

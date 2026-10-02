@@ -106,6 +106,7 @@ jobs:
           ./gradlew \
             :app:testDebugUnitTest \
             :t1arc-backup-crypto:testDebugUnitTest \
+            :t1arc-chatgpt:testDebugUnitTest \
             :t1arc-food-label:testDebugUnitTest \
             :t1arc-glooko-export:testDebugUnitTest \
             :t1arc-glucose-display:testDebugUnitTest \
@@ -125,6 +126,7 @@ jobs:
             :watchface-push:testSummitDebugUnitTest \
             :app:lintRelease \
             :t1arc-backup-crypto:lintRelease \
+            :t1arc-chatgpt:lintRelease \
             :t1arc-food-label:lintRelease \
             :t1arc-glooko-export:lintRelease \
             :t1arc-glucose-display:lintRelease \

@@ -69,6 +69,11 @@ answered on the phone for free. Broader questions can use
 an optional direct connection to OpenAI, Google Gemini or Anthropic Claude
 with your own API key. Nothing is sent until you submit an AI question.
 
+The current source also includes an optional **Continue with ChatGPT** connection
+for an eligible ChatGPT plan. It is awaiting live-account validation and is not
+part of a published release. API-key connections remain available. See the
+[ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and test status.
+
 The default OpenAI model is **GPT-5.6 Luna**. An illustrative Luna question
 costs **less than half a US cent**, but usage varies with the question and
 answer. Each provider bills its own API usage; T1 Arc adds no markup. Check the
@@ -234,7 +239,7 @@ Broader questions can send the question and a bounded evidence packet directly
 to the provider you choose: OpenAI, Google Gemini or Anthropic Claude. The
 answer keeps supporting dates and records attached.
 
-Every user follows the same bring-your-own-key route:
+API-key connections follow the same bring-your-own-key route:
 
 - create a dedicated API project or key for the selected provider;
 - store each provider's key separately in Android secure storage on the phone;

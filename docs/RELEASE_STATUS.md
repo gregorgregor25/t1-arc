@@ -39,6 +39,15 @@ does not silently retry with another service. API use is billed by the chosen
 provider; see the official pricing links in Tarv1s settings. No model has a
 Recommended label in this release.
 
+### In development, not yet released
+
+The current source adds optional **Continue with ChatGPT** alongside the three
+API-key providers. It uses eligible ChatGPT plan usage and preserves local
+answers without a connection. Live-account sign-in and inference still need
+validation before release; see [connection details](CHATGPT_CONNECTION.md).
+It also adds a targeted guard against the Gemini severity wording described
+below. This guard does not establish general clinical accuracy.
+
 ## Known limitations
 
 - **Imports can be delayed.** Glooko is historical data, not live pump status.
