@@ -54,6 +54,44 @@ describe("Tarv1s general explanations", () => {
     expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy)))).toThrow();
   });
 
+  it.each([
+    "The full CGM trace and variability statistics show the clinical severity of the lows.",
+    "Time in range shows how severe a hypoglycaemic event was.",
+    "Severe hypoglycemia can be determined from the CGM trace.",
+    "A glucose reading below 54 mg/dL is severe hypoglycaemia.",
+    "HbA1c measures clinical severity of a low episode.",
+    "CGM cannot identify every symptom but the sensor trace reveals clinical severity.",
+    "CGM tells you a hypo was severe.",
+    "Sensor readings classify a low as severe.",
+    "CGM does not just show glucose depth, it also reveals clinical severity.",
+  ])("rejects a glucose metric being presented as a clinical severity classification: %s", (copy) => {
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy))))
+      .toThrow("Tarv1s returned an explanation outside its safety boundary. Please try again.");
+  });
+
+  it.each([
+    "The full CGM trace shows timing and depth of lows. It cannot establish clinical severity without context.",
+    "A CGM trace cannot establish clinical severity by itself.",
+    "Severe hypoglycaemia involves impaired functioning requiring another person's assistance, regardless of glucose value.",
+    "Readings below 54 mg/dL are level 2 hypoglycaemia; level 3 is defined by requiring help from another person.",
+    "A glucose reading below 54 mg/dL is not severe hypoglycaemia by itself.",
+    "A CGM trace can show low duration and variability, but severe hypoglycaemia is defined by needing assistance.",
+    "CGM cannot tell you whether a hypo was severe.",
+  ])("keeps accurate distinctions between glucose patterns and clinical severity: %s", (copy) => {
+    expect(parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy))).acceptedHostedAnswer).toBe(true);
+  });
+
+  it("checks the headline and limitations as well as the main explanation", () => {
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify({
+      ...explanation("A CGM trace shows the depth of a low."),
+      headline: "CGM reveals clinical severity of hypoglycaemia",
+    }))).toThrow();
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify({
+      ...explanation("A CGM trace shows the depth of a low."),
+      limitations: ["HbA1c indicates the clinical severity of the lows."],
+    }))).toThrow();
+  });
+
   it.each(["boundary", "urgent", "off-topic"])("uses local copy for %s and ignores returned prose", (kind) => {
     const result = parseTarvisGeneralEducationAnswer(JSON.stringify({ ...explanation("Take insulin now"), kind }));
     expect(result.acceptedHostedAnswer).toBe(false);
