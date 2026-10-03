@@ -6,13 +6,10 @@ import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.io.BufferedInputStream
 import java.net.InetAddress
 import java.net.ServerSocket
-import java.net.Socket
 import java.net.SocketException
 import java.net.SocketTimeoutException
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -153,6 +150,7 @@ class T1ArcChatGptModule : Module() {
     val state = ChatGptProtocol.randomUrlSafe()
     val nonce = ChatGptProtocol.randomUrlSafe()
     val verifier = ChatGptProtocol.randomUrlSafe(48)
+    val packageName = requireNotNull(appContext.reactContext) { "ChatGPT sign-in is unavailable." }.packageName
 
     // Bind before browser launch. Only this device's loopback can reach the callback.
     val listener = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
@@ -184,7 +182,7 @@ class T1ArcChatGptModule : Module() {
         val context = requireNotNull(appContext.reactContext) { "ChatGPT sign-in is unavailable." }
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorizeUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
       }
-      val callback = waitForCallback(active, state, selectedClient)
+      val callback = waitForCallback(active, state, selectedClient, packageName)
       if (active.cancelled.get()) throw ChatGptFailure("ERR_CHATGPT_CANCELLED", "ChatGPT sign-in cancelled.")
       if (callback.error != null) {
         throw ChatGptFailure("ERR_CHATGPT_AUTH", "ChatGPT access was not granted. You can enable app access in ChatGPT settings.")
@@ -240,20 +238,29 @@ class T1ArcChatGptModule : Module() {
     }
   }
 
-  private fun waitForCallback(active: AuthAttempt, state: String, selectedClient: String): ChatGptProtocol.Callback {
-    val deadline = System.nanoTime() + 180L * 1_000_000_000L
+  private fun waitForCallback(
+    active: AuthAttempt,
+    state: String,
+    selectedClient: String,
+    packageName: String,
+  ): ChatGptProtocol.Callback {
+    // Account selection, passkey verification and consent can take several minutes.
+    // The listener remains bounded and cancelSignIn still closes it immediately.
+    val deadline = System.nanoTime() + 10L * 60L * 1_000_000_000L
     while (System.nanoTime() < deadline && !active.cancelled.get()) {
       val socket = try { active.listener.accept() }
       catch (_: SocketTimeoutException) { continue }
       catch (_: SocketException) { break }
       try {
         socket.soTimeout = 5000
-        if (!socket.inetAddress.isLoopbackAddress) { sendPage(socket, 400, "Invalid callback."); continue }
-        val request = try { readCallbackRequest(socket, active.listener.localPort) }
-        catch (_: Exception) { sendPage(socket, 400, "Invalid callback."); continue }
+        if (!socket.inetAddress.isLoopbackAddress) { ChatGptCallbackHttp.sendPage(socket, 400, ChatGptCallbackHttp.invalidPage()); continue }
+        val request = try { ChatGptCallbackHttp.readTarget(socket, active.listener.localPort) }
+        catch (_: Exception) { ChatGptCallbackHttp.sendPage(socket, 400, ChatGptCallbackHttp.invalidPage()); continue }
         val callback = try { ChatGptProtocol.callback(request, state, selectedClient) }
-        catch (_: Exception) { sendPage(socket, 400, "Invalid callback."); continue }
-        sendPage(socket, 200, if (callback.error == null) "Authorization received. Return to T1 Arc to finish connecting." else "ChatGPT authorization was cancelled. Return to T1 Arc.")
+        catch (_: Exception) { ChatGptCallbackHttp.sendPage(socket, 400, ChatGptCallbackHttp.invalidPage()); continue }
+        val page = if (callback.error == null) ChatGptCallbackHttp.successPage(packageName)
+          else ChatGptCallbackHttp.cancelledPage()
+        ChatGptCallbackHttp.sendPage(socket, 200, page)
         return callback
       } finally {
         socket.close()
@@ -261,49 +268,5 @@ class T1ArcChatGptModule : Module() {
     }
     if (active.cancelled.get()) throw ChatGptFailure("ERR_CHATGPT_CANCELLED", "ChatGPT sign-in cancelled.")
     throw ChatGptFailure("ERR_CHATGPT_UNAVAILABLE", "ChatGPT sign-in timed out. Please try again.")
-  }
-
-  private fun readCallbackRequest(socket: Socket, port: Int): String {
-    val input = BufferedInputStream(socket.getInputStream())
-    val first = readLine(input, 8192)
-    val parts = first.split(' ')
-    require(parts.size == 3 && parts[0] == "GET" && parts[2].startsWith("HTTP/1.")) { "Invalid callback." }
-    var host: String? = null
-    var headerBytes = 0
-    while (true) {
-      val line = readLine(input, 8192)
-      headerBytes += line.length
-      require(headerBytes <= 16_384) { "Invalid callback." }
-      if (line.isEmpty()) break
-      if (line.startsWith("Host:", ignoreCase = true)) {
-        require(host == null) { "Invalid callback." }
-        host = line.substringAfter(':').trim()
-      }
-    }
-    require(host == "127.0.0.1:$port") { "Invalid callback." }
-    return parts[1]
-  }
-
-  private fun readLine(input: BufferedInputStream, max: Int): String {
-    val bytes = java.io.ByteArrayOutputStream()
-    while (bytes.size() < max) {
-      val next = input.read()
-      require(next >= 0) { "Invalid callback." }
-      if (next == 10) return String(bytes.toByteArray(), StandardCharsets.US_ASCII).trimEnd('\r')
-      bytes.write(next)
-    }
-    throw IllegalArgumentException("Invalid callback.")
-  }
-
-  private fun sendPage(socket: Socket, status: Int, message: String) {
-    try {
-      val body = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><title>T1 Arc</title><p>$message</p>"
-      val bytes = body.toByteArray(StandardCharsets.UTF_8)
-      val statusText = if (status == 200) "OK" else "Bad Request"
-      val headers = "HTTP/1.1 $status $statusText\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
-      socket.getOutputStream().write(headers.toByteArray(StandardCharsets.US_ASCII))
-      socket.getOutputStream().write(bytes)
-      socket.getOutputStream().flush()
-    } catch (_: Exception) {}
   }
 }

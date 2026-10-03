@@ -78,6 +78,8 @@ yarn-error.*
 /.tmp-*
 
 # root-level adb/emulator QA output (screenshots, UI trees and summaries)
+/timeline-emulator-out.log
+/timeline-emulator-err.log
 /qa-artifacts/
 /android17-*.png
 /android17-*.xml

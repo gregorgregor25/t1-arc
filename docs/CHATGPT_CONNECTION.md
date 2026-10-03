@@ -29,6 +29,20 @@ an Android application crash. A fresh Android 17 test reached Google's passkey
 verification through the normal in-app sign-in flow. Physical-phone sign-in,
 account-model listing and a completed plan-backed answer still remain unverified.
 
+Physical-phone follow-up on 3 October 2026: the verified development APK was
+installed alongside the existing app on a Pixel 10 Pro XL. The normal system
+browser flow reached OpenAI consent. Although Edge still showed a loading consent
+screen, returning to T1 Arc completed the connection: the app displayed the
+validated account as connected and loaded five account-specific model choices.
+This confirms a real callback, token exchange and model-catalog request. It does
+not yet verify a completed plan-backed answer, token renewal, sign-out or plan
+limits. The cause of Edge's lingering loading screen remains unconfirmed; the
+tested APK's callback page provided manual return instructions only. The private
+phone update adds a package-specific **Return to T1 Arc** button and a bounded
+ten-minute browser authorization window. Native loopback tests and independent
+review cover the new page and request handling; its Edge return action still
+needs physical-phone verification.
+
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
 Gemini** or **Anthropic Claude**. No account is required to use the rest of T1 Arc.
