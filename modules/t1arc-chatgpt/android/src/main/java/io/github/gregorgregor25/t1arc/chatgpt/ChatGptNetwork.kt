@@ -283,6 +283,8 @@ internal class ChatGptNetwork {
             throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT connection ended in an unfinished event.")
           }
           parser.line(line)?.let {
+            val diagnostic = parser.outputDiagnostic()
+            Log.i("T1ArcChatGPT", "response output terminal=${diagnostic.terminalShape} terminalMessages=${diagnostic.terminalMessages} terminalText=${diagnostic.terminalText} terminalRefusals=${diagnostic.terminalRefusals} itemDone=${diagnostic.itemDone} itemCandidates=${diagnostic.itemCandidates} textDone=${diagnostic.textDone} partDone=${diagnostic.partDone} delta=${diagnostic.delta} source=${diagnostic.selectedSource} refusal=${diagnostic.refusal} conflict=${diagnostic.conflict}")
             if (mimeClass == "missing") Log.i("T1ArcChatGPT", "response mime=missing framing=sse_completed")
             return it
           }

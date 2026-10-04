@@ -228,6 +228,264 @@ internal class CompletedResponseParser(private val headerless: Boolean = false) 
   private var totalDataBytes = 0
   private var sawDataLine = false
   private var sawNonEmptyLine = false
+  private data class PartKey(val outputIndex: Int, val contentIndex: Int, val itemId: String)
+  private data class MessageItem(val outputIndex: Int, val itemId: String, val value: JSONObject)
+  private data class DoneIdentity(val itemId: String, val assistant: Boolean)
+  private val completedItems = mutableMapOf<Int, MessageItem>()
+  private val doneItems = mutableMapOf<Int, DoneIdentity>()
+  private val textParts = mutableMapOf<PartKey, String>()
+  private val contentParts = mutableMapOf<PartKey, String>()
+  private var itemDoneCount = 0
+  private var itemCandidateCount = 0
+  private var textDoneCount = 0
+  private var partDoneCount = 0
+  private var deltaCount = 0
+  private var terminalMessageCount = 0
+  private var terminalTextCount = 0
+  private var terminalRefusalCount = 0
+  private var sawRefusal = false
+  private var conflictingEvents = false
+  private var partialAssistant = false
+  private var terminalShape = "unseen"
+  private var selectedSource = "none"
+
+  data class OutputDiagnostic(
+    val terminalShape: String,
+    val itemDone: Int,
+    val itemCandidates: Int,
+    val textDone: Int,
+    val partDone: Int,
+    val delta: Int,
+    val terminalMessages: Int,
+    val terminalText: Int,
+    val terminalRefusals: Int,
+    val selectedSource: String,
+    val refusal: Boolean,
+    val conflict: Boolean,
+  )
+
+  fun outputDiagnostic() = OutputDiagnostic(
+    terminalShape, itemDoneCount.coerceAtMost(99), itemCandidateCount.coerceAtMost(99),
+    textDoneCount.coerceAtMost(99),
+    partDoneCount.coerceAtMost(99), deltaCount.coerceAtMost(99),
+    terminalMessageCount.coerceAtMost(99), terminalTextCount.coerceAtMost(99),
+    terminalRefusalCount.coerceAtMost(99), selectedSource, sawRefusal, conflictingEvents,
+  )
+
+  private fun boundedText(value: Any?): String? = (value as? String)
+    ?.takeIf { it.isNotBlank() && it.length <= 500_000 }
+
+  private fun validId(value: String): Boolean = value.length in 1..128 && value.all {
+    it.isLetterOrDigit() && it.code < 128 || it == '_' || it == '-'
+  }
+
+  private fun partKey(event: JSONObject): PartKey? {
+    val output = event.optInt("output_index", -1)
+    val content = event.optInt("content_index", -1)
+    val id = event.optString("item_id")
+    return if (output in 0..15 && content in 0..15 && validId(id)) PartKey(output, content, id) else null
+  }
+
+  private fun recordPart(target: MutableMap<PartKey, String>, key: PartKey?, value: Any?) {
+    val text = boundedText(value)
+    if (key == null || text == null || target.size >= 16 && key !in target) {
+      conflictingEvents = true
+      return
+    }
+    if (target.putIfAbsent(key, text)?.let { it != text } == true) conflictingEvents = true
+  }
+
+  private fun messageText(item: JSONObject): Boolean {
+    if (item.optString("type") != "message" || item.optString("role") != "assistant" ||
+      item.optString("status") != "completed") return false
+    val content = item.optJSONArray("content") ?: return false
+    if (content.length() !in 1..16 || item.toString().length > 1_000_000) return false
+    for (index in 0 until content.length()) {
+      val part = content.optJSONObject(index) ?: return false
+      when (part.optString("type")) {
+        "output_text" -> if (boundedText(part.opt("text")) == null) return false
+        "refusal" -> { sawRefusal = true; return false }
+        else -> return false
+      }
+    }
+    return true
+  }
+
+  private fun terminalOutputShape(response: JSONObject): String {
+    val rawOutput = response.opt("output")
+    if (rawOutput != null && rawOutput !== JSONObject.NULL && rawOutput !is org.json.JSONArray) return "other"
+    val output = response.optJSONArray("output") ?: return "missing"
+    if (output.length() == 0) return "empty"
+    var blankMessage = false
+    var hasText = false
+    var other = false
+    for (index in 0 until output.length()) {
+      val item = output.optJSONObject(index)
+      if (item == null) { other = true; continue }
+      val content = item.optJSONArray("content")
+      if (content != null) for (partIndex in 0 until content.length()) {
+        if (content.optJSONObject(partIndex)?.optString("type") == "refusal") {
+          sawRefusal = true
+          terminalRefusalCount++
+        }
+      }
+      if (item.optString("type") == "reasoning") {
+        if (content != null) for (partIndex in 0 until content.length()) {
+          if (content.optJSONObject(partIndex)?.optString("type") == "output_text") other = true
+        }
+        continue
+      }
+      if (item.optString("type") == "message" && item.optString("role") == "assistant" &&
+        item.optString("status") !in listOf("", "completed")) partialAssistant = true
+      if (item.optString("type") != "message" || item.optString("role") != "assistant" ||
+        item.optString("status") !in listOf("", "completed")) { other = true; continue }
+      blankMessage = true
+      terminalMessageCount++
+      val assistantContent = content ?: continue
+      for (partIndex in 0 until assistantContent.length()) {
+        val part = assistantContent.optJSONObject(partIndex)
+        if (part == null) { other = true; continue }
+        if (part.optString("type") == "refusal") continue
+        else if (part.optString("type") == "output_text") {
+          if (boundedText(part.opt("text")) != null) {
+            hasText = true
+            terminalTextCount++
+          } else if (part.optString("text").isNotEmpty()) other = true
+        } else other = true
+      }
+    }
+    if (terminalMessageCount > 1 || terminalTextCount > 1) other = true
+    return when {
+      sawRefusal -> "refusal"
+      other -> "other"
+      hasText -> "text"
+      blankMessage -> "blank_message"
+      else -> "reasoning_only"
+    }
+  }
+
+  private fun completedOutput(response: JSONObject): String {
+    terminalShape = terminalOutputShape(response)
+    if (sawRefusal) throw ChatGptFailure("ERR_CHATGPT_STREAM_REJECTED", "ChatGPT declined this answer.")
+    if (partialAssistant) throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT did not complete its response.")
+    for (key in textParts.keys + contentParts.keys) {
+      val done = doneItems[key.outputIndex]
+      if (done != null && (done.itemId != key.itemId || !done.assistant)) conflictingEvents = true
+    }
+    if (response.opt("error")?.let { it !== JSONObject.NULL } == true)
+      throw ChatGptFailure("ERR_CHATGPT_STREAM_REJECTED", "ChatGPT could not complete this answer.")
+    if (response.opt("incomplete_details")?.let { it !== JSONObject.NULL } == true)
+      throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT did not complete its response.")
+    if (terminalShape == "other")
+      throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an unexpected response stream.")
+    if (terminalShape == "text" && conflictingEvents)
+      throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an unexpected response stream.")
+    if (terminalShape == "text") { selectedSource = "terminal"; return response.toString() }
+    if (terminalShape !in setOf("missing", "empty", "blank_message", "reasoning_only") ||
+      conflictingEvents) return response.toString()
+
+    val output = response.optJSONArray("output") ?: org.json.JSONArray()
+    if (completedItems.size > 1) return response.toString()
+    val item = completedItems.values.singleOrNull()
+    val candidate = if (item != null) {
+      if (!partsMatchItem(item)) return response.toString()
+      normalizedItem(item) ?: return response.toString()
+    } else {
+      val allKeys = (textParts.keys + contentParts.keys).distinct()
+      val ids = allKeys.map { it.outputIndex to it.itemId }.distinct()
+      if (ids.size != 1 || allKeys.isEmpty() || allKeys.size > 16) return response.toString()
+      for (key in allKeys) {
+        val fromText = textParts[key]
+        val fromPart = contentParts[key]
+        if (fromText != null && fromPart != null && fromText != fromPart) return response.toString()
+      }
+      val ordered = allKeys.sortedBy { it.contentIndex }
+      if (ordered.map { it.contentIndex } != (0 until ordered.size).toList()) return response.toString()
+      val combined = ordered.joinToString("") { textParts[it] ?: contentParts[it].orEmpty() }
+      if (boundedText(combined) == null) return response.toString()
+      syntheticMessage(combined, ids.single().second)
+    }
+    val index = item?.outputIndex ?: (textParts.keys + contentParts.keys).first().outputIndex
+    if (terminalShape == "blank_message") {
+      val blankIndex = (0 until output.length()).singleOrNull {
+        output.optJSONObject(it)?.optString("type") == "message"
+      }
+      if (blankIndex != index) {
+        conflictingEvents = true
+        return response.toString()
+      }
+    }
+    // Some completed responses omit the entire output array, including any
+    // reasoning items that preceded the sole completed assistant message.
+    // The event's index can then be nonzero; its unique ID and completed
+    // assistant role are still required, and no partial/delta text is used.
+    if (output.length() > 0 && index > output.length()) return response.toString()
+    if (output.length() > 0 && index < output.length()) {
+      val terminalItem = output.optJSONObject(index) ?: return response.toString()
+      if (terminalItem.optString("type") != "message" || terminalItem.optString("role") != "assistant" ||
+        terminalItem.optString("id").let { it.isNotBlank() && it != candidate.optString("id") }) return response.toString()
+      output.put(index, candidate)
+    } else output.put(candidate)
+    response.put("output", output)
+    selectedSource = if (item != null) "output_item_done"
+      else if (textParts.isNotEmpty()) "output_text_done" else "content_part_done"
+    return response.toString()
+  }
+
+  private fun partsMatchItem(item: MessageItem): Boolean {
+    val content = item.value.optJSONArray("content") ?: return false
+    for ((key, value) in textParts.toList() + contentParts.toList()) {
+      if (key.outputIndex != item.outputIndex || key.itemId != item.itemId) return false
+      val part = content.optJSONObject(key.contentIndex) ?: return false
+      if (part.optString("type") != "output_text" || part.optString("text") != value) return false
+    }
+    return true
+  }
+
+  private fun normalizedItem(item: MessageItem): JSONObject? {
+    val content = item.value.optJSONArray("content") ?: return null
+    val text = (0 until content.length()).joinToString("") { content.getJSONObject(it).getString("text") }
+    return boundedText(text)?.let { syntheticMessage(it, item.itemId) }
+  }
+
+  private fun syntheticMessage(text: String, id: String): JSONObject = JSONObject()
+    .put("id", id).put("type", "message").put("role", "assistant").put("status", "completed")
+    .put("content", org.json.JSONArray().put(JSONObject().put("type", "output_text").put("text", text)))
+
+  private fun recordItemDone(event: JSONObject) {
+    itemDoneCount++
+    val item = event.optJSONObject("item") ?: run { conflictingEvents = true; return }
+    val content = item.optJSONArray("content")
+    if (content != null) for (index in 0 until content.length()) {
+      if (content.optJSONObject(index)?.optString("type") == "refusal") sawRefusal = true
+    }
+    val index = event.optInt("output_index", -1)
+    val id = item.optString("id")
+    if (index !in 0..15 || !validId(id) || doneItems.size >= 16 && index !in doneItems) {
+      conflictingEvents = true
+      return
+    }
+    val assistant = item.optString("type") == "message" && item.optString("role") == "assistant"
+    val priorIdentity = doneItems[index]
+    if (priorIdentity == null) doneItems[index] = DoneIdentity(id, assistant)
+    else if (priorIdentity != DoneIdentity(id, assistant)) conflictingEvents = true
+    if (!assistant) return
+    if (item.optString("status") != "completed") partialAssistant = true
+    if (!messageText(item)) {
+      // A completed assistant item that cannot be validated cannot be
+      // replaced with potentially partial text from another event.
+      conflictingEvents = true
+      return
+    }
+    if (index !in 0..15 || !validId(id) || completedItems.size >= 16 && index !in completedItems) {
+      conflictingEvents = true
+      return
+    }
+    itemCandidateCount++
+    val prior = completedItems[index]
+    if (prior == null) completedItems[index] = MessageItem(index, id, item)
+    else if (prior.itemId != id || prior.value.toString() != item.toString()) conflictingEvents = true
+  }
 
   fun finish(): Nothing = when {
     !sawNonEmptyLine -> throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
@@ -256,13 +514,28 @@ internal class CompletedResponseParser(private val headerless: Boolean = false) 
       event = ""
       data.clear()
       when (type) {
+        "response.output_text.delta" -> deltaCount++
+        "response.output_item.done" -> recordItemDone(parsed)
+        "response.output_text.done" -> {
+          textDoneCount++
+          recordPart(textParts, partKey(parsed), parsed.opt("text"))
+        }
+        "response.content_part.done" -> {
+          partDoneCount++
+          val part = parsed.optJSONObject("part")
+          if (part?.optString("type") == "refusal") sawRefusal = true
+          else if (part?.optString("type") == "output_text") {
+            recordPart(contentParts, partKey(parsed), part?.opt("text"))
+          } else conflictingEvents = true
+        }
+        "response.refusal.done", "response.refusal.delta" -> sawRefusal = true
         "response.completed" -> {
           val response = parsed.optJSONObject("response")
             ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_COMPLETION_SHAPE", "ChatGPT completion had no response.")
           if (response.optString("status") != "completed") {
             throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT did not complete its response.")
           }
-          return response.toString()
+          return completedOutput(response)
         }
         "response.failed", "response.incomplete", "error" -> {
           val serviceCode = parsed.optJSONObject("response")?.optJSONObject("error")?.optString("code")

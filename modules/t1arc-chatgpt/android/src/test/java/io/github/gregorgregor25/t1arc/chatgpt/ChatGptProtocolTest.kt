@@ -91,6 +91,145 @@ class ChatGptProtocolTest {
     assertTrue(parser.line("")!!.contains("\"status\":\"completed\""))
   }
 
+  @Test fun completedItemSuppliesMissingTerminalOutputOnlyAfterCompletion() {
+    val parser = CompletedResponseParser(headerless = true)
+    parser.line("event: response.output_item.done")
+    parser.line("""data: {"type":"response.output_item.done","output_index":1,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"answer"}]}}""")
+    parser.line("")
+    parser.line("event: response.completed")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    val result = JSONObject(parser.line("")!!)
+    assertEquals("answer", result.getJSONArray("output").getJSONObject(0)
+      .getJSONArray("content").getJSONObject(0).getString("text"))
+    assertEquals("output_item_done", parser.outputDiagnostic().selectedSource)
+  }
+
+  @Test fun completeTextPartMaySupplyMissingTerminalOutputButDeltasCannot() {
+    val parser = CompletedResponseParser()
+    parser.line("event: response.output_text.delta")
+    parser.line("""data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial"}""")
+    parser.line("")
+    parser.line("event: response.output_text.done")
+    parser.line("""data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"complete"}""")
+    parser.line("")
+    parser.line("event: response.completed")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    val result = JSONObject(parser.line("")!!)
+    assertEquals("complete", result.getJSONArray("output").getJSONObject(0)
+      .getJSONArray("content").getJSONObject(0).getString("text"))
+    assertEquals("output_text_done", parser.outputDiagnostic().selectedSource)
+
+    val deltaOnly = CompletedResponseParser()
+    deltaOnly.line("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}")
+    deltaOnly.line("")
+    deltaOnly.line("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}")
+    assertEquals(0, JSONObject(deltaOnly.line("")!!).getJSONArray("output").length())
+  }
+
+  @Test fun refusalDominatesEarlierTextInEventsAndTerminalOutput() {
+    val parser = CompletedResponseParser()
+    parser.line("""data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"answer"}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.refusal.done","item_id":"msg_1","output_index":0,"content_index":1}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    try { parser.line(""); throw AssertionError("Expected refusal") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_REJECTED", error.code) }
+
+    val terminal = CompletedResponseParser()
+    terminal.line("""data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"},{"type":"refusal","refusal":"private"}]}]}}""")
+    try { terminal.line(""); throw AssertionError("Expected terminal refusal") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_REJECTED", error.code) }
+  }
+
+  @Test fun conflictingOrUncorrelatedCompletedEventsDoNotReconstructAnswer() {
+    val mismatch = CompletedResponseParser()
+    mismatch.line("""data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"one"}]}}""")
+    mismatch.line("")
+    mismatch.line("""data: {"type":"response.output_text.done","item_id":"msg_2","output_index":0,"content_index":0,"text":"two"}""")
+    mismatch.line("")
+    mismatch.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    assertEquals(0, JSONObject(mismatch.line("")!!).getJSONArray("output").length())
+
+    val duplicate = CompletedResponseParser()
+    duplicate.line("""data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"one"}""")
+    duplicate.line("")
+    duplicate.line("""data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"two"}""")
+    duplicate.line("")
+    duplicate.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    assertEquals(0, JSONObject(duplicate.line("")!!).getJSONArray("output").length())
+  }
+
+  @Test fun terminalErrorCannotReturnOtherwiseCompletedText() {
+    val parser = CompletedResponseParser()
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","error":{"code":"private"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]}]}}""")
+    try { parser.line(""); throw AssertionError("Expected terminal error") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_REJECTED", error.code) }
+
+    val incomplete = CompletedResponseParser()
+    incomplete.line("""data: {"type":"response.completed","response":{"status":"completed","incomplete_details":"unexpected","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]}]}}""")
+    try { incomplete.line(""); throw AssertionError("Expected incomplete details rejection") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+
+    val partial = CompletedResponseParser()
+    partial.line("""data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"partial"}]}]}}""")
+    try { partial.line(""); throw AssertionError("Expected incomplete item rejection") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+  }
+
+  @Test fun outOfOrderContentPartAndItemMustAgreeBeforeReconstruction() {
+    val parser = CompletedResponseParser()
+    parser.line("""data: {"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"complete"}}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"complete"}]}}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    assertEquals("complete", JSONObject(parser.line("")!!).getJSONArray("output").getJSONObject(0)
+      .getJSONArray("content").getJSONObject(0).getString("text"))
+    assertEquals("output_item_done", parser.outputDiagnostic().selectedSource)
+  }
+
+  @Test fun completedItemCombinesItsTextPartsInsteadOfReturningOnlyTheFirst() {
+    val parser = CompletedResponseParser()
+    parser.line("""data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    val output = JSONObject(parser.line("")!!).getJSONArray("output").getJSONObject(0)
+    assertEquals("firstsecond", output.getJSONArray("content").getJSONObject(0).getString("text"))
+    assertEquals(1, output.getJSONArray("content").length())
+  }
+
+  @Test fun completedItemCannotAppendPastBlankTerminalMessage() {
+    val parser = CompletedResponseParser()
+    parser.line("""data: {"type":"response.output_item.done","output_index":2,"item":{"id":"msg_B","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"wrong slot"}]}}""")
+    parser.line("")
+    parser.line("""data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"reasoning"},{"id":"msg_A","type":"message","role":"assistant","status":"completed","content":[]}]}}""")
+    val output = JSONObject(parser.line("")!!).getJSONArray("output")
+    assertEquals(2, output.length())
+    assertEquals(0, output.getJSONObject(1).getJSONArray("content").length())
+    assertTrue(parser.outputDiagnostic().conflict)
+  }
+
+  @Test fun incompleteOrNonAssistantDoneItemCannotBecomeCompletedText() {
+    val incomplete = CompletedResponseParser()
+    incomplete.line("""data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"partial"}""")
+    incomplete.line("")
+    incomplete.line("""data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"partial"}]}}""")
+    incomplete.line("")
+    incomplete.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    try { incomplete.line(""); throw AssertionError("Expected incomplete assistant rejection") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+
+    val reasoning = CompletedResponseParser()
+    reasoning.line("""data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"completed"}}""")
+    reasoning.line("")
+    reasoning.line("""data: {"type":"response.output_text.done","item_id":"rs_1","output_index":0,"content_index":0,"text":"not an answer"}""")
+    reasoning.line("")
+    reasoning.line("""data: {"type":"response.completed","response":{"status":"completed","output":[]}}""")
+    assertEquals(0, JSONObject(reasoning.line("")!!).getJSONArray("output").length())
+    assertTrue(reasoning.outputDiagnostic().conflict)
+  }
+
   @Test fun headerlessResponseAcceptsOnlyFramedCompletedEvents() {
     val completed = CompletedResponseParser(headerless = true)
     assertEquals(null, completed.line("event: response.output_text.delta"))

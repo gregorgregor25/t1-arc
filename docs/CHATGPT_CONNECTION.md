@@ -71,6 +71,13 @@ completed response is still mandatory. Explicit non-SSE media types, unframed
 JSON or HTML, empty bodies and partial answers remain failures. A successful
 plan-backed answer on the phone is still required before release.
 
+The private.4 phone candidate (code 64) then confirmed a completed SSE response
+despite the missing header. Tarv1s's answer extractor still reported no answer
+text, so a successful guarded answer remains unverified. The next revision
+assembles completed assistant message events before passing the response to
+the existing answer checks. It still requires successful terminal completion
+and rejects refused or incomplete responses; live verification remains required.
+
 The same private.3 phone update reported the existing Galaxy Watch companion as
 ready and successfully queued the latest glucose for it. No watch update or
 watch debugging was needed; the phone and watch continue to use the unchanged
