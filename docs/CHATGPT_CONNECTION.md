@@ -1,8 +1,41 @@
 # Optional ChatGPT connection
 
-Status: implemented in the current source, not released. Automated checks and
-Android build verification do not replace a successful real-account sign-in and
-plan-backed answer. Those live checks remain required before release.
+Status: implemented and verified in a private production-package phone build;
+**not yet published**. The latest public release remains 1.7.13. This private
+test does not verify the exact future public artifact or its release checks.
+
+On 4 October 2026, `1.7.14-private.5` (phone code 66) was installed in place
+with the production package and signer, retaining the owner's app data. The
+installed source revision was `8177e59`. A real ChatGPT plan request using an
+account-offered Luna model completed on the phone: Tarv1s displayed a record-free
+HbA1c/time-in-range explanation marked **General explanation · No personal
+records used**. It did not retry through an API key. The response fix assembles
+completed assistant message events within the strict SSE stream and still
+requires a successful terminal `response.completed` event. During Codex-led QA,
+sign-out reported successful remote revocation and the explicit browser sign-in
+cancel control worked. A normal returning-account reconnect then succeeded
+through Edge using the saved, authorized account. The **Return to T1 Arc** link
+opened Android's usual Edge confirmation and returned to the app. The account
+catalogue loaded again; Codex explicitly selected Luna, then deliberately
+switched from the still-active OpenAI API-key connection to ChatGPT. A second
+record-free answer completed with the title **HbA1c vs time in range**, the
+**General explanation · No personal records used** label and a **Using ChatGPT
+plan** footer. The account's five-model catalogue did not offer GPT-6.1, so no
+ChatGPT plan model outside that live list is promised. The owner's usual API-key choice is OpenAI
+Luna; Gemini was only a temporary QA selection.
+
+The private build passed 5,405 TypeScript tests, 28 native tests, lint,
+typecheck and APK verification. OpenAI API-key Luna and GPT-6.1 Sol each
+completed the record-free question in earlier physical-phone checks. The
+existing Galaxy Watch 8 companion remained ready and accepted a queued glucose
+snapshot on private.5 (code 66); no companion reinstall, protocol change or
+watch debugging was needed. Final public build and CI verification remain.
+
+## Earlier private testing and resolved failures
+
+The dated observations below explain how the private build reached the current
+result. Their then-unverified states are superseded by the successful private.5
+answer above; they do not describe the current release status.
 
 Validation on 2 October 2026: the full TypeScript test suite passed (5,365 tests),
 followed by five additional account-control and renewal-recovery tests. Nine Android protocol
@@ -119,6 +152,9 @@ epoch-bound Android secure storage, outside portable backups. The browser uses
 OpenAI's authorization page; T1 Arc never handles a ChatGPT password. The native
 callback listens only on `127.0.0.1` with a temporary port. Fresh PKCE, state and
 nonce values and signed identity-token validation bind each authorization.
+Sign-in, token renewal and model-list refresh contact OpenAI but do not send
+health records or Tarv1s questions. The random safety identifier used by the
+OpenAI **API-key** route is not added to ChatGPT plan requests.
 
 Responses use the public OpenAI Responses endpoint with `store: false` and
 `stream: true`. OpenAI's applicable privacy and retention terms still apply;
@@ -140,16 +176,19 @@ silently charge a saved API key. If already downgraded, reinstall the newer buil
 to change the selection, preserving app data. The development test APK uses a
 separate app package and does not change the installed release's settings.
 
-## Verification before release
+## Remaining release checks
 
-- Test fresh sign-in, returning-account sign-in, browser cancellation and callback
-  on a supported physical Android phone with an eligible account.
-- Confirm account-specific model choices, a completed guarded answer, token
-  refresh and sign-out. Verify plan limits show **Manage usage**, without API-key fallback.
-- Check sign-out and privacy erase during pending authorization or inference,
-  and switching between all four connection choices. Use synthetic health data.
-- Retest Gemini's known severity wording with representative general-education
-  questions. The new local wording guard is narrow and does not guarantee model accuracy.
+- Update the public privacy policy to disclose the optional ChatGPT route,
+  including sign-in and model-list traffic, local tokens, Send-only health
+  context and the provider's terms.
+- Verify the exact intended public source, signed artifact and CI checks. The
+  private phone tests do not stand in for that release verification.
+
+Token-expiry renewal, a live plan-limit response and privacy erase during a
+pending request were not deliberately induced on the owner's phone. Their
+automated checks remain part of release CI; these unforced live scenarios are
+not separate publication gates. Model answers still need user review, including
+the known Gemini wording limitation described in `AI_PROVIDER_TESTING.md`.
 
 Official protocol references: [open-source sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
 [profiles and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions),

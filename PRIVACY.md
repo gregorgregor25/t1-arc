@@ -13,7 +13,8 @@ build must review the exact build, hosting, support and store configuration.
 Health records, imported provider records, food logs, context, Insights and
 Tarv1s conversation state are stored on the Android device. Health databases
 use SQLCipher. Provider credentials and the user's selected AI provider API
-keys use Android secure storage. Android system backup is disabled.
+keys and optional ChatGPT OAuth credentials use Android secure storage. Android
+system backup is disabled.
 
 User-created portable backups are passphrase encrypted. They exclude provider
 credentials, session tokens, browser cookies and replaceable source ZIP/PDF
@@ -55,17 +56,25 @@ data directly from the device to the service the user selected:
 - LibreLinkUp, Dexcom Share, Medtrum, Glooko, Nightscout, xDrip and Hevy receive
   only the requests required by their configured connector. Credentials go to
   that provider, not to a T1 Arc server.
-- Tarv1s uses the same optional bring-your-own-key path for every build. The
-  user chooses OpenAI, Google Gemini or Anthropic Claude. For an eligible AI
-  question, the device sends the question, relevant bounded evidence and any
-  recent shared conversation directly to that selected provider. General
-  education questions have no personal evidence packet, and supported exact
-  calculations run locally without an AI request. There is no silent provider
-  fallback. OpenAI requests include a random safety identifier stored on the
-  phone; it is not derived from health readings or account details. The
-  selected provider also receives normal network metadata. Keys are supplied
-  by the user and are not routed through the maintainer. See
-  [Tarv1s data handling](docs/TARV1S_BYOK.md#what-leaves-the-phone).
+- Tarv1s offers optional OpenAI, Google Gemini and Anthropic Claude API-key
+  connections, plus an eligible ChatGPT plan connection. Supported exact
+  calculations run locally. For a broader AI question, the device sends the
+  question, relevant bounded evidence and any recent shared conversation
+  directly to the selected provider **only when the user taps Send**. General
+  education questions have no personal evidence packet. The selected provider
+  also receives normal network metadata. There is no silent provider, model or
+  billing fallback. API keys are supplied by the user and are not routed
+  through the maintainer. OpenAI **API-key** requests include a random safety
+  identifier stored on the phone; it is not derived from health readings or
+  account details. ChatGPT plan requests do not include that identifier.
+  OpenAI's applicable retention and safety terms still apply even when T1 Arc
+  requests `store: false`. See [Tarv1s data handling](docs/TARV1S_BYOK.md#what-leaves-the-phone)
+  and [ChatGPT connection](docs/CHATGPT_CONNECTION.md).
+- If the user selects ChatGPT, browser sign-in and account-specific model-list
+  refresh contact OpenAI without sending health records or Tarv1s questions.
+  The sign-in does not give T1 Arc access to existing ChatGPT conversations.
+  Validated OAuth credentials stay in Android secure storage, outside portable
+  backups; a sign-out attempts remote revocation and removes local tokens.
 - **About T1 Arc > Check for updates** makes a manual, unauthenticated request
   to GitHub for public release and build metadata. It does not send health
   records, provider credentials or a device identifier. GitHub still receives

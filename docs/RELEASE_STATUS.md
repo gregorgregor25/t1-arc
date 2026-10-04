@@ -32,7 +32,8 @@ Follow the [phone installation guide](GETTING_STARTED.md) and
 See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
 [Tarv1s costs and setup](TARV1S_BYOK.md) and [data freshness](DATA_FRESHNESS.md).
 
-T1 Arc uses the same direct bring-your-own-key Tarv1s route for every user.
+The current public release uses the same direct bring-your-own-key Tarv1s route
+for every user.
 There is no shared maintainer API key or separate hosted version.
 Each provider has its own saved key and model selection. Switching providers
 does not silently retry with another service. API use is billed by the chosen
@@ -43,10 +44,21 @@ Recommended label in this release.
 
 The current source adds optional **Continue with ChatGPT** alongside the three
 API-key providers. It uses eligible ChatGPT plan usage and preserves local
-answers without a connection. Live-account sign-in and inference still need
-validation before release; see [connection details](CHATGPT_CONNECTION.md).
+answers without a connection. In a signed, production-package private phone
+build, a real account completed two record-free answers with no API-key fallback.
+Codex also checked sign-out revocation, explicit sign-in cancellation and normal
+returning-account reconnect through Edge's **Return to T1 Arc** link. OpenAI's
+API-key connection stayed active during reconnect until ChatGPT was explicitly
+selected. The account's own catalogue offered five models, without GPT-6.1.
+Public privacy disclosure and exact release-artifact/CI checks remain; this
+private success is not a published release. See
+[connection details](CHATGPT_CONNECTION.md).
 It also adds a targeted guard against the Gemini severity wording described
 below. This guard does not establish general clinical accuracy.
+
+The private.5 phone update (code 66) retained the installed Galaxy Watch 8 companion:
+it remained ready and accepted a queued glucose snapshot. The watch protocol
+did not change, and no watch reinstall or debugging was required.
 
 ## Known limitations
 

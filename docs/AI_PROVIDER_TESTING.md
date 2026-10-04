@@ -1,19 +1,22 @@
 # AI provider choice: validation record
 
-This records the provider choice checks performed for the unpublished 1.7.12
-candidate, carried forward into the planned T1 Arc 1.7.13 release. The private
-phone build was `1.7.12-provider-test.3`, version code 52. It is not a
-production APK. The release workflow must verify the final signed 1.7.13
-artifact and its exact source revision separately.
+This records earlier provider choice checks performed for the 1.7.12 candidate
+and later private phone validation. The original comparison build was
+`1.7.12-provider-test.3`, version code 52. The latest public release is 1.7.13;
+the newer ChatGPT connection is still private and must be verified again on its
+exact public release artifact before publication.
 
 ## Model choice
 
-Each provider has its own saved model selection and secure API key. The existing
-defaults are retained for installations without a saved model. An unknown saved
-model or an API access failure requires an explicit selection; there is no
-automatic model or provider substitution. Both answers and evidence planning
-use the selected model. Settings link to official pricing instead of displaying
-fixed prices or cost labels. No model has a Recommended label in this release.
+Each API-key provider has its own saved model selection and secure key. ChatGPT
+is a separate, optional plan connection with an account-specific model list;
+it does not use or silently fall back to an API key. The existing API defaults
+are retained for installations without a saved model. The owner's usual API
+choice is OpenAI `gpt-5.6-luna`; the temporary Gemini selection during testing
+was not their default. An unavailable saved model or API access failure requires
+explicit action. Both answers and evidence planning use the selected model.
+Settings link to official pricing instead of displaying fixed prices or cost
+labels. No model has a Recommended label in this release.
 
 - OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`; the current unreleased source also offers
   `gpt-6.1-sol`. A record-free HbA1c/time-in-range question completed through the
@@ -25,6 +28,34 @@ fixed prices or cost labels. No model has a Recommended label in this release.
 
 Google's current `AQ.` authorization keys and legacy `AIza` keys are accepted
 locally. Format validation is not an authentication check.
+
+## ChatGPT and OpenAI private phone validation on 4 October 2026
+
+The signed, production-package `1.7.14-private.5` phone build (code 66, source
+`8177e59`) installed over the existing app without removing data. The owner's
+ChatGPT account listed five plan models and did not offer GPT-6.1. Using an
+account-offered Luna model, Tarv1s completed a record-free HbA1c/time-in-range
+answer and displayed **General explanation · No personal records used**. This
+was a ChatGPT plan request, with no API-key fallback. The strict stream path
+required a completed terminal response and assembled completed assistant
+messages before the existing answer checks. It verifies one live answer, not
+general accuracy or all plan-limit conditions.
+
+During Codex-led QA, sign-out showed a successful revocation notice and explicit
+browser sign-in cancellation completed. Returning-account reconnect then
+succeeded through Edge using the saved account, including the **Return to T1 Arc**
+link and Android's normal Open confirmation. The model list loaded again; OpenAI
+remained active until Codex explicitly chose Luna and **Use ChatGPT**. A second
+record-free answer completed with the title **HbA1c vs time in range**,
+**General explanation · No personal records used** and a **Using ChatGPT plan**
+footer. This verifies the returning-account path and a second real plan answer.
+Live token-expiry renewal, quota and privacy-erase races were not deliberately
+induced; automated checks cover those paths without making them separate live
+release gates. Earlier private phone checks also completed the same record-free
+question through the saved OpenAI **API key** with GPT-6.1 Sol and the usual Luna model. These do not
+show that GPT-6.1 is available through this ChatGPT account. The private.5
+source passed 5,405 TypeScript tests, 28 native tests, lint, typecheck and APK
+verification. Exact public release and CI checks remain separate.
 
 ## Gemini comparison completed on 2 October 2026
 
@@ -145,8 +176,9 @@ make an AI provider request or change the Wear protocol.
 - Confirm the exact signed production build preserves the provider choices,
   secure keys, local counts and existing Wear companion protocol. The private
   phone build and passing older commits cannot stand in for release verification.
-- Update the public privacy policy to list Google and Anthropic before enabling
-  this in a published app. Review Google's account, billing, age and regional
+- The public privacy policy already names Google and Anthropic but still needs
+  the optional ChatGPT plan route and its sign-in/model-list data flows before
+  that route is published. Review Google's account, billing, age and regional
   terms for the intended audience.
 - Keep this as a phone-only change. There are no Wear OS code or protocol changes.
   The bundled companion's build version follows phone packaging metadata, but
