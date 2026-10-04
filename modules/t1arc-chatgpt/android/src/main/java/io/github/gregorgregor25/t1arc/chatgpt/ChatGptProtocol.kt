@@ -4,6 +4,7 @@ import java.math.BigInteger
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -70,6 +71,48 @@ internal object ChatGptProtocol {
       "Invalid ChatGPT endpoint."
     }
     return uri.toString()
+  }
+
+  fun streamMimeClass(header: String?): String = when (header?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)) {
+    null, "" -> "missing"
+    "text/event-stream" -> "event_stream"
+    "application/json" -> "json"
+    "text/html" -> "html"
+    "text/plain" -> "plain_text"
+    else -> "other"
+  }
+
+  data class ResponseDiagnostic(val shape: String, val service: String, val parameter: String)
+
+  fun responseDiagnostic(body: JSONObject?): ResponseDiagnostic {
+    val error = body?.optJSONObject("error")
+    val serviceCode = error?.optString("code")
+    val parameter = error?.optString("param")
+    val safeService = when (serviceCode) {
+      "invalid_request_error", "invalid_json_schema", "subscription_sharing_unsupported_capability",
+      "subscription_sharing_route_not_supported", "subscription_sharing_user_not_eligible",
+      "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable",
+      "subscription_sharing_user_unavailable", "subscription_sharing_invalid_user",
+      "chatpass_v2_scope_not_authorized", "chatpass_v2_invalid_authorization_context" -> serviceCode ?: "other_or_missing"
+      else -> "other_or_missing"
+    }
+    val safeParameter = when {
+      parameter == "model" || parameter?.startsWith("model.") == true -> "model"
+      parameter == "input" || parameter?.startsWith("input.") == true ||
+        parameter?.startsWith("input[") == true -> "input"
+      parameter == "instructions" || parameter?.startsWith("instructions.") == true -> "instructions"
+      parameter == "reasoning" || parameter?.startsWith("reasoning.") == true -> "reasoning"
+      parameter == "text" || parameter?.startsWith("text.") == true -> "text"
+      else -> "other_or_missing"
+    }
+    val shape = when {
+      error != null -> "error_object"
+      body?.has("detail") == true -> "detail"
+      body?.optString("status") == "completed" && body?.optJSONArray("output") != null -> "completed_response"
+      body != null -> "other_json"
+      else -> "non_json_or_empty"
+    }
+    return ResponseDiagnostic(shape, safeService, safeParameter)
   }
 
   fun classifyHttpError(status: Int, serviceCode: String?, action: String, parameter: String? = null): String = when {
@@ -192,7 +235,7 @@ internal class CompletedResponseParser {
         throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT stream ended before the answer was complete.")
       }
       val parsed = try { JSONObject(data.toString()) } catch (_: Exception) {
-        throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an invalid response stream.")
+        throw ChatGptFailure("ERR_CHATGPT_STREAM_EVENT_JSON", "ChatGPT returned an invalid stream event.")
       }
       val type = parsed.optString("type").ifBlank { event }
       event = ""
@@ -200,7 +243,7 @@ internal class CompletedResponseParser {
       when (type) {
         "response.completed" -> {
           val response = parsed.optJSONObject("response")
-            ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT completion had no response.")
+            ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_COMPLETION_SHAPE", "ChatGPT completion had no response.")
           if (response.optString("status") != "completed") {
             throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT did not complete its response.")
           }

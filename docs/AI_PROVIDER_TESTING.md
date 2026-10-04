@@ -16,8 +16,10 @@ use the selected model. Settings link to official pricing instead of displaying
 fixed prices or cost labels. No model has a Recommended label in this release.
 
 - OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`; the current unreleased source also offers
-  `gpt-6.1-sol`. The new choice has request-contract tests, but no live API-key
-  inference verification yet. The default remains Luna.
+  `gpt-6.1-sol`. A record-free HbA1c/time-in-range question completed through the
+  saved OpenAI API key on the owner's phone using private candidate
+  `1.7.14-private.2` on 4 October 2026. This checks one inference and the guarded
+  answer path, not general model accuracy. The default remains Luna.
 - Gemini: `gemini-3.8-flash`, `gemini-3.7-flash`.
 - Claude: `claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5-5`.
 

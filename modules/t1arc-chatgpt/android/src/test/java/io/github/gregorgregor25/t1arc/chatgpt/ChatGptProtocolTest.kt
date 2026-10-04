@@ -136,7 +136,43 @@ class ChatGptProtocolTest {
     parser.line("event: response.completed")
     parser.line("data: private health text")
     try { parser.line(""); throw AssertionError("Expected stream-format error") }
-    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_FORMAT", error.code) }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_EVENT_JSON", error.code) }
+
+    val missingResponse = CompletedResponseParser()
+    missingResponse.line("event: response.completed")
+    missingResponse.line("data: {\"type\":\"response.completed\",\"response\":null}")
+    try { missingResponse.line(""); throw AssertionError("Expected missing completion response") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_COMPLETION_SHAPE", error.code) }
+  }
+
+  @Test fun mimeClassificationIsCaseInsensitiveAndNeverReflectsHeaderText() {
+    assertEquals("event_stream", ChatGptProtocol.streamMimeClass("text/event-stream; charset=utf-8"))
+    assertEquals("event_stream", ChatGptProtocol.streamMimeClass("Text/Event-Stream"))
+    assertEquals("json", ChatGptProtocol.streamMimeClass("application/json; charset=UTF-8"))
+    assertEquals("html", ChatGptProtocol.streamMimeClass("text/html"))
+    assertEquals("plain_text", ChatGptProtocol.streamMimeClass("text/plain"))
+    assertEquals("missing", ChatGptProtocol.streamMimeClass(null))
+    assertEquals("other", ChatGptProtocol.streamMimeClass("private health text"))
+  }
+
+  @Test fun nonStreamBodyDiagnosticsExposeOnlyFixedShapesAndAllowlistedFields() {
+    val completed = ChatGptProtocol.responseDiagnostic(JSONObject()
+      .put("status", "completed").put("output", JSONArray()))
+    assertEquals("completed_response", completed.shape)
+    val rejected = ChatGptProtocol.responseDiagnostic(JSONObject().put("error", JSONObject()
+      .put("code", "invalid_request_error").put("param", "text.format.schema")
+      .put("message", "private health text")))
+    assertEquals("error_object", rejected.shape)
+    assertEquals("invalid_request_error", rejected.service)
+    assertEquals("text", rejected.parameter)
+    val unknown = ChatGptProtocol.responseDiagnostic(JSONObject().put("error", JSONObject()
+      .put("code", "private health text").put("param", "private health text")))
+    assertEquals("other_or_missing", unknown.service)
+    assertEquals("other_or_missing", unknown.parameter)
+    assertEquals("detail", ChatGptProtocol.responseDiagnostic(JSONObject()
+      .put("detail", "private health text")).shape)
+    assertEquals("other_json", ChatGptProtocol.responseDiagnostic(JSONObject().put("foo", "private health text")).shape)
+    assertEquals("non_json_or_empty", ChatGptProtocol.responseDiagnostic(null).shape)
   }
 
   @Test fun unknownTerminalFailureIsDistinctFromIncompleteGeneration() {

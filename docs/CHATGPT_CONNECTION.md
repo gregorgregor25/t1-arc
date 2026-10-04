@@ -53,6 +53,15 @@ and blocks release. Gemini was restored as the active provider after the test.
 The next private candidate improves settings and separates request failures
 without exposing provider error bodies or credentials.
 
+The `1.7.14-private.2` candidate (phone code 60) was installed in place on the
+same phone. Its settings and model pickers were checked on-device. GPT-6.1 Sol
+completed the record-free education question through the saved OpenAI API key;
+the usual OpenAI Luna model was restored after that test. The ChatGPT model
+picker refreshed the account's five choices. Sending the same question through
+ChatGPT reached the stream-handling stage but failed as an unexpected stream.
+No completed ChatGPT answer has been verified. Release remains blocked on this
+live flow; further diagnostics use fixed categories without provider content.
+
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
 Gemini** or **Anthropic Claude**. No account is required to use the rest of T1 Arc.

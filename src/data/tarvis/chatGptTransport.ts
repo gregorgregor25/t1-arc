@@ -53,6 +53,14 @@ function connectionError(error: unknown): ChatGptTransportError {
       return new ChatGptTransportError("ChatGPT rejected T1 Arc's request before answering. Please report this error.");
     case "ERR_CHATGPT_STREAM_FORMAT":
       return new ChatGptTransportError("ChatGPT returned an unexpected response stream. Please report this error.");
+    case "ERR_CHATGPT_STREAM_MIME":
+      return new ChatGptTransportError("ChatGPT did not return an event stream. Please report this error.");
+    case "ERR_CHATGPT_STREAM_EMPTY":
+      return new ChatGptTransportError("ChatGPT returned an empty event stream. Please report this error.");
+    case "ERR_CHATGPT_STREAM_EVENT_JSON":
+      return new ChatGptTransportError("ChatGPT sent an unreadable stream event. Please report this error.");
+    case "ERR_CHATGPT_STREAM_COMPLETION_SHAPE":
+      return new ChatGptTransportError("ChatGPT sent an incomplete completion event. Please report this error.");
     case "ERR_CHATGPT_STREAM_REJECTED":
       return new ChatGptTransportError("ChatGPT stopped the answer before completing it. Please report this error.");
     case "ERR_CHATGPT_NATIVE_PROTOCOL":

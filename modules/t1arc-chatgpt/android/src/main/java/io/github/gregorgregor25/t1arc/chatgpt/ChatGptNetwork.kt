@@ -105,30 +105,8 @@ internal class ChatGptNetwork {
     }
     val code = ChatGptProtocol.classifyHttpError(response.code, serviceCode, action, parameter)
     if (action == "response") {
-      val safeServiceCode = when (serviceCode) {
-        "invalid_request_error", "invalid_json_schema", "subscription_sharing_unsupported_capability",
-        "subscription_sharing_route_not_supported", "subscription_sharing_user_not_eligible",
-        "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable",
-        "subscription_sharing_user_unavailable", "subscription_sharing_invalid_user",
-        "chatpass_v2_scope_not_authorized", "chatpass_v2_invalid_authorization_context" -> serviceCode
-        else -> "other_or_missing"
-      }
-      val safeParameter = when {
-        parameter == "model" || parameter?.startsWith("model.") == true -> "model"
-        parameter == "input" || parameter?.startsWith("input.") == true ||
-          parameter?.startsWith("input[") == true -> "input"
-        parameter == "instructions" || parameter?.startsWith("instructions.") == true -> "instructions"
-        parameter == "reasoning" || parameter?.startsWith("reasoning.") == true -> "reasoning"
-        parameter == "text" || parameter?.startsWith("text.") == true -> "text"
-        else -> "other_or_missing"
-      }
-      val shape = when {
-        error != null -> "error_object"
-        diagnosticBody?.has("detail") == true -> "detail"
-        diagnosticBody != null -> "other_json"
-        else -> "non_json_or_empty"
-      }
-      Log.w("T1ArcChatGPT", "response failure HTTP ${response.code} category=$code service=$safeServiceCode parameter=$safeParameter shape=$shape")
+      val diagnostic = ChatGptProtocol.responseDiagnostic(diagnosticBody)
+      Log.w("T1ArcChatGPT", "response failure HTTP ${response.code} category=$code service=${diagnostic.service} parameter=${diagnostic.parameter} shape=${diagnostic.shape}")
     }
     val requestId = response.header("x-request-id")?.takeIf { it.length in 1..128 &&
       it.all { char -> char.isLetterOrDigit() || char == '-' || char == '_' } }
@@ -281,11 +259,20 @@ internal class ChatGptNetwork {
       if (cancelledRequests.remove(requestId) != null) call.cancel()
       call.execute().use { response ->
         checkStatus(response, "response")
-        if (response.header("Content-Type")?.startsWith("text/event-stream") != true) {
-          throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT did not return a response stream.")
+        val mimeClass = ChatGptProtocol.streamMimeClass(response.header("Content-Type"))
+        if (mimeClass != "event_stream") {
+          val diagnosticBody = try { JSONObject(boundedBody(response, 8192)) }
+            catch (_: Exception) { null }
+          val diagnostic = ChatGptProtocol.responseDiagnostic(diagnosticBody)
+          Log.w("T1ArcChatGPT", "response HTTP ${response.code} mime=$mimeClass shape=${diagnostic.shape} service=${diagnostic.service} parameter=${diagnostic.parameter}")
+          throw ChatGptFailure("ERR_CHATGPT_STREAM_MIME", "ChatGPT did not return an event stream.")
         }
+        Log.i("T1ArcChatGPT", "response HTTP ${response.code} mime=event_stream")
         val source = response.body?.source()
-          ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an empty response stream.")
+          ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
+        if (source.exhausted()) {
+          throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
+        }
         val parser = CompletedResponseParser()
         while (!source.exhausted()) {
           val line = try { source.readUtf8LineStrict(4_000_000).trimEnd('\r') }
