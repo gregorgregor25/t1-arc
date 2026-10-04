@@ -260,26 +260,34 @@ internal class ChatGptNetwork {
       call.execute().use { response ->
         checkStatus(response, "response")
         val mimeClass = ChatGptProtocol.streamMimeClass(response.header("Content-Type"))
-        if (mimeClass != "event_stream") {
+        if (mimeClass != "event_stream" && mimeClass != "missing") {
           val diagnosticBody = try { JSONObject(boundedBody(response, 8192)) }
             catch (_: Exception) { null }
           val diagnostic = ChatGptProtocol.responseDiagnostic(diagnosticBody)
           Log.w("T1ArcChatGPT", "response HTTP ${response.code} mime=$mimeClass shape=${diagnostic.shape} service=${diagnostic.service} parameter=${diagnostic.parameter}")
           throw ChatGptFailure("ERR_CHATGPT_STREAM_MIME", "ChatGPT did not return an event stream.")
         }
-        Log.i("T1ArcChatGPT", "response HTTP ${response.code} mime=event_stream")
+        Log.i("T1ArcChatGPT", "response HTTP ${response.code} mime=$mimeClass")
         val source = response.body?.source()
           ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
         if (source.exhausted()) {
           throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
         }
-        val parser = CompletedResponseParser()
+        // A successful direct-route response can omit Content-Type. It is
+        // accepted only if the body is framed SSE with a completed terminal
+        // event. Ordinary JSON, HTML and partial output remain failures.
+        val parser = CompletedResponseParser(headerless = mimeClass == "missing")
         while (!source.exhausted()) {
           val line = try { source.readUtf8LineStrict(4_000_000).trimEnd('\r') }
-          catch (_: java.io.EOFException) { break }
-          parser.line(line)?.let { return it }
+          catch (_: java.io.EOFException) {
+            throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT connection ended in an unfinished event.")
+          }
+          parser.line(line)?.let {
+            if (mimeClass == "missing") Log.i("T1ArcChatGPT", "response mime=missing framing=sse_completed")
+            return it
+          }
         }
-        throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT connection ended before the answer was complete.")
+        parser.finish()
       }
     } catch (_: SocketTimeoutException) {
       throw ChatGptFailure("ERR_CHATGPT_RETRY", "ChatGPT took too long to respond. Try again.")

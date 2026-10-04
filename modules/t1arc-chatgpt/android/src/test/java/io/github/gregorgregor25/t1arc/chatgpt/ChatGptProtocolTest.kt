@@ -91,6 +91,33 @@ class ChatGptProtocolTest {
     assertTrue(parser.line("")!!.contains("\"status\":\"completed\""))
   }
 
+  @Test fun headerlessResponseAcceptsOnlyFramedCompletedEvents() {
+    val completed = CompletedResponseParser(headerless = true)
+    assertEquals(null, completed.line("event: response.output_text.delta"))
+    assertEquals(null, completed.line("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}"))
+    assertEquals(null, completed.line(""))
+    assertEquals(null, completed.line("event: response.completed"))
+    assertEquals(null, completed.line("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}"))
+    assertTrue(completed.line("")!!.contains("\"status\":\"completed\""))
+
+    val dataOnly = CompletedResponseParser(headerless = true)
+    dataOnly.line("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}")
+    assertTrue(dataOnly.line("")!!.contains("\"status\":\"completed\""))
+
+    for (bodyLine in listOf("{\"status\":\"completed\",\"output\":[]}", "<html>error</html>")) {
+      val notSse = CompletedResponseParser(headerless = true)
+      try { notSse.line(bodyLine); throw AssertionError("Expected non-SSE rejection") }
+      catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_FRAMING", error.code) }
+    }
+    val partial = CompletedResponseParser(headerless = true)
+    partial.line("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}")
+    partial.line("")
+    try { partial.finish() }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+    try { CompletedResponseParser(headerless = true).finish() }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_EMPTY", error.code) }
+  }
+
   @Test fun streamedQuotaFailureIsDistinct() {
     val parser = CompletedResponseParser()
     parser.line("event: response.failed")

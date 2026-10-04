@@ -222,13 +222,28 @@ internal object ChatGptProtocol {
 }
 
 /** An SSE event is trusted only after its complete blank-line terminator. */
-internal class CompletedResponseParser {
+internal class CompletedResponseParser(private val headerless: Boolean = false) {
   private var event = ""
   private val data = StringBuilder()
   private var totalDataBytes = 0
+  private var sawDataLine = false
+  private var sawNonEmptyLine = false
+
+  fun finish(): Nothing = when {
+    !sawNonEmptyLine -> throw ChatGptFailure("ERR_CHATGPT_STREAM_EMPTY", "ChatGPT returned an empty response stream.")
+    headerless && !sawDataLine -> throw ChatGptFailure("ERR_CHATGPT_STREAM_FRAMING", "ChatGPT did not return an event stream.")
+    else -> throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT connection ended before the answer was complete.")
+  }
 
   fun line(line: String): String? {
     require(line.length <= 4_000_000) { "ChatGPT response exceeded its size limit." }
+    if (line.isNotEmpty()) {
+      sawNonEmptyLine = true
+      if (headerless && !line.startsWith(":") && !line.startsWith("event:") &&
+        !line.startsWith("data:") && !line.startsWith("id:") && !line.startsWith("retry:")) {
+        throw ChatGptFailure("ERR_CHATGPT_STREAM_FRAMING", "ChatGPT did not return an event stream.")
+      }
+    }
     if (line.isEmpty()) {
       if (data.isEmpty()) { event = ""; return null }
       if (data.toString() == "[DONE]") {
@@ -265,6 +280,7 @@ internal class CompletedResponseParser {
     }
     if (line.startsWith("event:")) event = line.substringAfter(':').trimStart()
     if (line.startsWith("data:")) {
+      sawDataLine = true
       val part = line.substringAfter(':').trimStart()
       totalDataBytes += part.length
       require(totalDataBytes <= 8_000_000) { "ChatGPT response exceeded its size limit." }

@@ -60,6 +60,7 @@ describe("ChatGPT plan transport", () => {
     ["ERR_CHATGPT_REQUEST_HTTP_OTHER", "before answering"],
     ["ERR_CHATGPT_STREAM_FORMAT", "response stream"],
     ["ERR_CHATGPT_STREAM_MIME", "did not return an event stream"],
+    ["ERR_CHATGPT_STREAM_FRAMING", "expected event framing"],
     ["ERR_CHATGPT_STREAM_EMPTY", "empty event stream"],
     ["ERR_CHATGPT_STREAM_EVENT_JSON", "unreadable stream event"],
     ["ERR_CHATGPT_STREAM_COMPLETION_SHAPE", "incomplete completion event"],

@@ -55,6 +55,8 @@ function connectionError(error: unknown): ChatGptTransportError {
       return new ChatGptTransportError("ChatGPT returned an unexpected response stream. Please report this error.");
     case "ERR_CHATGPT_STREAM_MIME":
       return new ChatGptTransportError("ChatGPT did not return an event stream. Please report this error.");
+    case "ERR_CHATGPT_STREAM_FRAMING":
+      return new ChatGptTransportError("ChatGPT returned content without the expected event framing. Please report this error.");
     case "ERR_CHATGPT_STREAM_EMPTY":
       return new ChatGptTransportError("ChatGPT returned an empty event stream. Please report this error.");
     case "ERR_CHATGPT_STREAM_EVENT_JSON":

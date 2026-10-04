@@ -62,6 +62,20 @@ ChatGPT reached the stream-handling stage but failed as an unexpected stream.
 No completed ChatGPT answer has been verified. Release remains blocked on this
 live flow; further diagnostics use fixed categories without provider content.
 
+The next private phone candidate (`1.7.14-private.3`, code 62) isolated the
+response failure: HTTP 200 without a Content-Type header. The bounded diagnostic
+body was not ordinary JSON; this alone does not establish that it was a valid
+stream. The next source revision accepts an absent header only through the
+strict SSE parser. A fully terminated `response.completed` event containing a
+completed response is still mandatory. Explicit non-SSE media types, unframed
+JSON or HTML, empty bodies and partial answers remain failures. A successful
+plan-backed answer on the phone is still required before release.
+
+The same private.3 phone update reported the existing Galaxy Watch companion as
+ready and successfully queued the latest glucose for it. No watch update or
+watch debugging was needed; the phone and watch continue to use the unchanged
+version 1 capability and data protocol.
+
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
 Gemini** or **Anthropic Claude**. No account is required to use the rest of T1 Arc.
