@@ -113,6 +113,51 @@ class ChatGptProtocolTest {
       403, "subscription_sharing_route_not_supported", "response"))
   }
 
+  @Test fun rejectedInferenceUsesOnlyFixedSafeDiagnosticCodes() {
+    assertEquals("ERR_CHATGPT_REQUEST_FORMAT", ChatGptProtocol.classifyHttpError(
+      400, "invalid_request_error", "response", "text.format.schema"))
+    assertEquals("ERR_CHATGPT_REQUEST_FORMAT", ChatGptProtocol.classifyHttpError(
+      400, "invalid_json_schema", "response", "some arbitrary provider string"))
+    assertEquals("ERR_CHATGPT_REQUEST_MODEL", ChatGptProtocol.classifyHttpError(
+      400, "invalid_request_error", "response", "model"))
+    assertEquals("ERR_CHATGPT_REQUEST_INPUT", ChatGptProtocol.classifyHttpError(
+      400, "invalid_request_error", "response", "input[0].content"))
+    assertEquals("ERR_CHATGPT_REQUEST_REASONING", ChatGptProtocol.classifyHttpError(
+      400, "invalid_request_error", "response", "reasoning.effort"))
+    assertEquals("ERR_CHATGPT_REQUEST_OTHER", ChatGptProtocol.classifyHttpError(
+      400, null, "response", "private health text"))
+    assertEquals("ERR_CHATGPT_REQUEST_HTTP_OTHER", ChatGptProtocol.classifyHttpError(
+      422, null, "response", "private health text"))
+    assertEquals("ERR_CHATGPT_RETRY", ChatGptProtocol.classifyHttpError(502, null, "response"))
+  }
+
+  @Test fun malformedStreamCannotBeAcceptedAsCompleted() {
+    val parser = CompletedResponseParser()
+    parser.line("event: response.completed")
+    parser.line("data: private health text")
+    try { parser.line(""); throw AssertionError("Expected stream-format error") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_FORMAT", error.code) }
+  }
+
+  @Test fun unknownTerminalFailureIsDistinctFromIncompleteGeneration() {
+    val failed = CompletedResponseParser()
+    failed.line("event: response.failed")
+    failed.line("data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"unknown_provider_code\"}}}")
+    try { failed.line(""); throw AssertionError("Expected failed response") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_STREAM_REJECTED", error.code) }
+
+    val incomplete = CompletedResponseParser()
+    incomplete.line("event: response.incomplete")
+    incomplete.line("data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\"}}")
+    try { incomplete.line(""); throw AssertionError("Expected incomplete response") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+
+    val done = CompletedResponseParser()
+    done.line("data: [DONE]")
+    try { done.line(""); throw AssertionError("Expected premature end marker") }
+    catch (error: ChatGptFailure) { assertEquals("ERR_CHATGPT_INCOMPLETE", error.code) }
+  }
+
   @Test fun explicitEmptyScopeClearsPriorPlanPermission() {
     val previous = listOf("openid", PLAN_SCOPE)
     assertEquals(previous, ChatGptProtocol.grantedScopes(JSONObject(), previous))

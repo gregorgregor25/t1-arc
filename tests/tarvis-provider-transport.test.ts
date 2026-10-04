@@ -32,6 +32,16 @@ describe("Tarv1s native provider boundary", () => {
     expect(fetch).toHaveBeenCalledExactlyOnceWith(openAiUrl, request);
   });
 
+  it("accepts GPT-6.1 Sol on the OpenAI API-key route with its supported low reasoning request", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({ output: [], usage: {} }));
+    const request = {
+      ...init(),
+      body: JSON.stringify({ ...body, model: "gpt-6.1-sol", reasoning: { effort: "low" } }),
+    };
+    await fetchTarvisProviderResponse("openai", key, openAiUrl, request);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(openAiUrl, request);
+  });
+
   it("leaves the full OpenAI education request untouched", async () => {
     vi.mocked(fetch).mockResolvedValue(ok({ output: [], usage: {} }));
     const request = educationRequest("openai", "How do HbA1c and CGM time in range differ?");

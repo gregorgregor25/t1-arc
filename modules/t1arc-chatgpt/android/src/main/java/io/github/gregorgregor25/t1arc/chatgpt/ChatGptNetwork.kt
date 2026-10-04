@@ -1,5 +1,6 @@
 package io.github.gregorgregor25.t1arc.chatgpt
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -89,15 +90,46 @@ internal class ChatGptNetwork {
 
   private fun checkStatus(response: Response, action: String) {
     if (response.isSuccessful) return
-    val serviceCode = try { JSONObject(boundedBody(response, 8192)).optJSONObject("error")?.optString("code") }
+    // Read only structured, bounded diagnostics. Never forward the provider's
+    // free-form message/detail: it may reflect the user's question or records.
+    val diagnosticBody = try { JSONObject(boundedBody(response, 8192)) }
       catch (_: Exception) { null }
+    val error = diagnosticBody?.optJSONObject("error")
+    val serviceCode = error?.optString("code")
+    val parameter = error?.optString("param")
     val suffix = when (response.code) {
       401 -> " Please reconnect your ChatGPT account."
       403 -> " Your ChatGPT plan or workspace may not allow this access."
       429 -> " Check your ChatGPT usage limits."
       else -> " Try again later."
     }
-    val code = ChatGptProtocol.classifyHttpError(response.code, serviceCode, action)
+    val code = ChatGptProtocol.classifyHttpError(response.code, serviceCode, action, parameter)
+    if (action == "response") {
+      val safeServiceCode = when (serviceCode) {
+        "invalid_request_error", "invalid_json_schema", "subscription_sharing_unsupported_capability",
+        "subscription_sharing_route_not_supported", "subscription_sharing_user_not_eligible",
+        "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable",
+        "subscription_sharing_user_unavailable", "subscription_sharing_invalid_user",
+        "chatpass_v2_scope_not_authorized", "chatpass_v2_invalid_authorization_context" -> serviceCode
+        else -> "other_or_missing"
+      }
+      val safeParameter = when {
+        parameter == "model" || parameter?.startsWith("model.") == true -> "model"
+        parameter == "input" || parameter?.startsWith("input.") == true ||
+          parameter?.startsWith("input[") == true -> "input"
+        parameter == "instructions" || parameter?.startsWith("instructions.") == true -> "instructions"
+        parameter == "reasoning" || parameter?.startsWith("reasoning.") == true -> "reasoning"
+        parameter == "text" || parameter?.startsWith("text.") == true -> "text"
+        else -> "other_or_missing"
+      }
+      val shape = when {
+        error != null -> "error_object"
+        diagnosticBody?.has("detail") == true -> "detail"
+        diagnosticBody != null -> "other_json"
+        else -> "non_json_or_empty"
+      }
+      Log.w("T1ArcChatGPT", "response failure HTTP ${response.code} category=$code service=$safeServiceCode parameter=$safeParameter shape=$shape")
+    }
     val requestId = response.header("x-request-id")?.takeIf { it.length in 1..128 &&
       it.all { char -> char.isLetterOrDigit() || char == '-' || char == '_' } }
     val requestTag = requestId?.let { " Request ID $it." } ?: ""
@@ -249,10 +281,11 @@ internal class ChatGptNetwork {
       if (cancelledRequests.remove(requestId) != null) call.cancel()
       call.execute().use { response ->
         checkStatus(response, "response")
-        require(response.header("Content-Type")?.startsWith("text/event-stream") == true) {
-          "ChatGPT did not return a response stream."
+        if (response.header("Content-Type")?.startsWith("text/event-stream") != true) {
+          throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT did not return a response stream.")
         }
-        val source = response.body?.source() ?: throw IllegalStateException("ChatGPT returned an empty response.")
+        val source = response.body?.source()
+          ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an empty response stream.")
         val parser = CompletedResponseParser()
         while (!source.exhausted()) {
           val line = try { source.readUtf8LineStrict(4_000_000).trimEnd('\r') }
@@ -262,7 +295,7 @@ internal class ChatGptNetwork {
         throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT connection ended before the answer was complete.")
       }
     } catch (_: SocketTimeoutException) {
-      throw IllegalStateException("ChatGPT took too long to respond. Try again.")
+      throw ChatGptFailure("ERR_CHATGPT_RETRY", "ChatGPT took too long to respond. Try again.")
     } catch (error: IOException) {
       throw ChatGptFailure(
         if (call.isCanceled()) "ERR_CHATGPT_CANCELLED" else "ERR_CHATGPT_UNAVAILABLE",

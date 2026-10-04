@@ -62,7 +62,7 @@ class T1ArcChatGptModule : Module() {
     }
 
     AsyncFunction("request") Coroutine { input: Map<String, Any?> ->
-      safe {
+      safe("response") {
         withContext(Dispatchers.IO) {
           val requestId = required(input, "requestId")
           val token = required(input, "accessToken")
@@ -81,7 +81,7 @@ class T1ArcChatGptModule : Module() {
     (values[key] as? String)?.takeIf(String::isNotBlank)
       ?: throw IllegalArgumentException("ChatGPT input is incomplete.")
 
-  private suspend fun <T> safe(block: suspend () -> T): T = try {
+  private suspend fun <T> safe(action: String = "other", block: suspend () -> T): T = try {
     block()
   } catch (error: CodedException) {
     throw error
@@ -91,7 +91,8 @@ class T1ArcChatGptModule : Module() {
     val protocolFailure = error is IllegalArgumentException || error is IllegalStateException ||
       error is org.json.JSONException
     throw CodedException(
-      if (protocolFailure) "ERR_CHATGPT_RESPONSE" else "ERR_CHATGPT_UNAVAILABLE",
+      if (protocolFailure && action == "response") "ERR_CHATGPT_NATIVE_PROTOCOL"
+      else if (protocolFailure) "ERR_CHATGPT_RESPONSE" else "ERR_CHATGPT_UNAVAILABLE",
       if (protocolFailure) "ChatGPT returned invalid account or response information." else "ChatGPT connection failed. Please try again.",
       null,
     )

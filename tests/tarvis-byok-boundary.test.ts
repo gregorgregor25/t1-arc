@@ -37,7 +37,7 @@ describe("Tarv1s BYOK boundary", () => {
     const screen = source("src/screens/TarvisScreen.tsx");
 
     expect(screen).toContain("Optional AI answers");
-    expect(screen).toContain("Local questions about your recorded data work without a connection.");
+    expect(screen).toContain("Local answers work without a connection.");
     expect(screen).toContain("API usage may cost money");
     expect(screen).toContain("Save key on this phone");
     expect(screen).toContain("Remove saved key");

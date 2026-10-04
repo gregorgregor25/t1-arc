@@ -17,40 +17,61 @@ function render(changes: Partial<Props> = {}) {
     state: { available: true, hasPendingRegistration: false, accounts: [], connected: false, models: [] },
     active: false, working: false, signingIn: false,
     onSignIn: vi.fn(), onStartFreshSignIn: vi.fn(), onCancelSignIn: vi.fn(), onSelectAccount: vi.fn(),
-    onSelectModel: vi.fn(), onRefreshModels: vi.fn(), onUse: vi.fn(), onSignOut: vi.fn(), onLinkError: vi.fn(),
+    onSelectModel: vi.fn(), onRefreshModels: vi.fn(async () => undefined), onRefreshModelsIfStale: vi.fn(async () => undefined), onUse: vi.fn(), onSignOut: vi.fn(), onLinkError: vi.fn(),
     ...changes,
   };
+  const stateSlots: unknown[] = [];
+  const refSlots: { current: unknown }[] = [];
+  let stateIndex = 0;
+  let refIndex = 0;
   const scope = {
     exports: {},
     React: { createElement: (type: unknown, attributes: object, ...children: unknown[]) => ({ type, props: attributes, children }) },
     require: (name: string) => {
       if (name === "@expo/vector-icons/Ionicons") return { default: "Icon" };
-      if (name === "react-native") return { ActivityIndicator: "Spinner", Pressable: "Pressable", Text: "Text", View: "View", Linking: { openURL: vi.fn() } };
+      if (name === "react") return {
+        useState: (initial: unknown) => {
+          const index = stateIndex++;
+          if (!(index in stateSlots)) stateSlots[index] = initial;
+          return [stateSlots[index], (update: unknown) => { stateSlots[index] = typeof update === "function" ? (update as (value: unknown) => unknown)(stateSlots[index]) : update; }];
+        },
+        useRef: (initial: unknown) => {
+          const index = refIndex++;
+          if (!(index in refSlots)) refSlots[index] = { current: initial };
+          return refSlots[index];
+        },
+      };
+      if (name === "react-native") return { ActivityIndicator: "Spinner", Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View", Linking: { openURL: vi.fn() } };
       if (name === "@/theme/theme") return { useAppTheme: () => ({ colors: {}, radius: {} }) };
       throw new Error(`Unexpected UI import: ${name}`);
     },
   };
   runInNewContext(compiled, scope);
-  const tree = (scope.exports as { ChatGptConnectionCard(props: Props): Node }).ChatGptConnectionCard(props);
-  const nodes: Node[] = [];
+  let nodes: Node[] = [];
   function walk(node: unknown) {
     if (Array.isArray(node)) return node.forEach(walk);
     if (!node || typeof node !== "object") return;
     nodes.push(node as Node);
     (node as Node).children?.forEach(walk);
   }
-  walk(tree);
+  function rerender() {
+    stateIndex = 0;
+    refIndex = 0;
+    nodes = [];
+    walk((scope.exports as { ChatGptConnectionCard(props: Props): Node }).ChatGptConnectionCard(props));
+  }
+  rerender();
   function label(node: unknown): string {
     if (typeof node === "string") return node;
     if (Array.isArray(node)) return node.map(label).join("");
     return node && typeof node === "object" ? label((node as Node).children) : "";
   }
   const button = (text: string) => {
-    const node = nodes.find(item => item.props?.accessibilityRole === "button" && label(item) === text);
+    const node = nodes.find(item => item.props?.accessibilityRole === "button" && (item.props?.accessibilityLabel === text || label(item) === text));
     if (!node) throw new Error(`Missing button: ${text}`);
     return node;
   };
-  return { props, nodes, label, button };
+  return { props, get nodes() { return nodes; }, rerender, label, button };
 }
 
 const disabledAccount = { id: "disabled-account", label: "Account A", hasSession: true, connected: false, models: [] };
@@ -58,6 +79,8 @@ const disabledAccount = { id: "disabled-account", label: "Account A", hasSession
 describe("ChatGPT connection controls", () => {
   it("selects an inactive disabled account locally so it can be disconnected without reauthorizing", () => {
     const view = render({ state: { available: true, hasPendingRegistration: false, connected: false, models: [], accounts: [disabledAccount] } });
+    (view.button("Choose ChatGPT account").props?.onPress as () => void)();
+    view.rerender();
     const account = view.nodes.find(node => node.props?.accessibilityRole === "radio");
     (account?.props?.onPress as () => void)();
     expect(view.props.onSelectAccount).toHaveBeenCalledWith("disabled-account");
@@ -88,5 +111,25 @@ describe("ChatGPT connection controls", () => {
     (cancel.props?.onPress as () => void)();
     expect(view.props.onCancelSignIn).toHaveBeenCalledOnce();
     expect(view.button("Continue with ChatGPT").props?.disabled).toBe(true);
+  });
+
+  it("checks catalog freshness on each picker opening and keeps manual refresh available", async () => {
+    const model = { slug: "account-model", displayName: "Account model" };
+    const account = { id: "account-a", label: "Account A", hasSession: true, connected: true, models: [model], selectedModel: model.slug };
+    const view = render({ state: { available: true, hasPendingRegistration: false, connected: true, accounts: [account], activeAccountId: account.id, models: [model], selectedModel: model.slug } });
+
+    (view.button("Choose ChatGPT model").props?.onPress as () => void)();
+    expect(view.props.onRefreshModelsIfStale).toHaveBeenCalledOnce();
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    view.rerender();
+    (view.button("Choose ChatGPT model").props?.onPress as () => void)();
+    view.rerender();
+    (view.button("Choose ChatGPT model").props?.onPress as () => void)();
+    expect(view.props.onRefreshModelsIfStale).toHaveBeenCalledTimes(2);
+
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    view.rerender();
+    (view.button("Refresh models").props?.onPress as () => void)();
+    expect(view.props.onRefreshModels).toHaveBeenCalledOnce();
   });
 });

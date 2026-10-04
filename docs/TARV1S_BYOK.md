@@ -24,7 +24,7 @@ saved key applies to the provider selected in settings; privacy erase removes al
 three keys, ChatGPT credentials and account mappings, the selected provider,
 safety identifier and usage counters.
 
-The available models are GPT-5.6 Luna and Terra; Gemini 3.8 Flash and 3.7
+The current source's API-key choices are GPT-5.6 Luna, Terra and GPT-6.1 Sol; Gemini 3.8 Flash and 3.7
 Flash; and Claude Haiku 4.5, Sonnet 5 and Opus 5.5. The defaults are Luna,
 Gemini 3.8 Flash and Claude Sonnet 5. There is no automatic model substitution
 and no Recommended badge. Token usage is recorded for all providers. The

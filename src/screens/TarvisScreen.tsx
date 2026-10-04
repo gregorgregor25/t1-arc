@@ -119,6 +119,7 @@ import {
   cancelChatGptSignIn,
   discardPendingChatGptRegistration,
   refreshChatGptModels,
+  refreshChatGptModelsIfStale,
   selectChatGptAccount,
   selectChatGptModel,
   signInChatGpt,
@@ -167,6 +168,12 @@ import {
 } from "@/data/privacy/localDataEpochSecureStore";
 
 const CHATGPT_PLAN_INFO_KEY = "t1arc.tarvis.chatgpt-plan-info-seen.v1";
+const PROVIDER_CHOICE_META = {
+  chatgpt: { subtitle: "Use an eligible ChatGPT plan", icon: "chatbubble-ellipses-outline" },
+  openai: { subtitle: "Bring your OpenAI API key", icon: "key-outline" },
+  gemini: { subtitle: "Bring your Gemini API key", icon: "key-outline" },
+  claude: { subtitle: "Bring your Claude API key", icon: "key-outline" },
+} as const;
 
 function guidanceReferences(
   items: readonly TarvisReviewedKnowledgeItem[],
@@ -1359,6 +1366,9 @@ export function TarvisScreen({
   const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
   const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [providerTermsOpen, setProviderTermsOpen] = useState(false);
+  const [privacyExpanded, setPrivacyExpanded] = useState(false);
+  const [changeKeyVisible, setChangeKeyVisible] = useState(false);
   const [configuredProviders, setConfiguredProviders] = useState<Record<TarvisProvider, boolean>>({ openai: false, gemini: false, claude: false, chatgpt: false });
   const [chatGptState, setChatGptState] = useState<ChatGptConnectionState>({ available: false, hasPendingRegistration: false, accounts: [], connected: false, models: [] });
   const [chatGptPlanInfoVisible, setChatGptPlanInfoVisible] = useState(false);
@@ -1380,6 +1390,8 @@ export function TarvisScreen({
     setSelectedProvider(provider);
     setSelectedModels(savedModels);
     setModelMenuOpen(false);
+    setProviderTermsOpen(false);
+    setChangeKeyVisible(false);
     if (settingsOpenedFromMenu.current) {
       settingsOpenedFromMenu.current = false;
       onReturnToSettings?.();
@@ -2063,6 +2075,7 @@ export function TarvisScreen({
       if (apiKey.trim()) await saveTarvisApiKey(apiKey, writeLease, selectedProvider, selectedModel);
       else await selectTarvisProvider(selectedProvider, writeLease, selectedModel);
       setApiKey("");
+      setChangeKeyVisible(false);
       setHasApiKey(true);
       setProvider(selectedProvider);
       setConfiguredProviders(previous => ({ ...previous, [selectedProvider]: true }));
@@ -2185,6 +2198,7 @@ export function TarvisScreen({
         setConfiguredProviders(settings.configuredProviders);
         setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} key removed.`);
         setApiKey("");
+        setChangeKeyVisible(false);
       })
       .catch(() => {
         setSettingsActionError(
@@ -3474,7 +3488,7 @@ export function TarvisScreen({
                     <Ionicons
                       accessibilityElementsHidden
                       color={colors.primary}
-                      name="key-outline"
+                      name="sparkles-outline"
                       size={23}
                     />
                   </View>
@@ -3488,17 +3502,64 @@ export function TarvisScreen({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      Local questions about your recorded data work without a connection. For broader AI answers, choose an eligible ChatGPT plan or use an OpenAI, Gemini or Claude API key. Credentials stay on this phone, outside backups. Nothing is sent until you tap Send.
+                      Local answers work without a connection. Choose a provider for broader questions. Keys and sign-ins stay on this phone, outside backups. Your question and health context are sent only when you tap Send.
                     </Text>
                   </View>
                 </View>
-                <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
-                  {(Object.keys(TARVIS_PROVIDERS) as TarvisProvider[]).map(id => (
-                    <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: selectedProvider === id, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(savedModels); setSelectedProvider(id); setModelMenuOpen(false); setApiKey(""); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedProvider === id ? colors.primary : colors.border, borderRadius: radius.md }}>
-                      <Text style={{ color: colors.text }}>{TARVIS_PROVIDERS[id].label}{provider === id && hasApiKey ? " · Active" : configuredProviders[id] ? id === "chatgpt" ? " · Connected" : " · Key saved" : ""}</Text>
-                    </Pressable>
-                  ))}
+                <Text style={[styles.settingsEyebrow, { color: colors.textSecondary }]}>CHOOSE A CONNECTION</Text>
+                <View accessibilityRole="radiogroup" style={styles.providerChoiceList}>
+                  {(Object.keys(TARVIS_PROVIDERS) as TarvisProvider[]).map((id) => {
+                    const selected = selectedProvider === id;
+                    const active = provider === id && hasApiKey;
+                    const status = active ? "ACTIVE" : configuredProviders[id] ? id === "chatgpt" ? "CONNECTED" : "KEY SAVED" : provider === id ? "NEEDS SETUP" : undefined;
+                    return (
+                      <Pressable
+                        key={id}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${TARVIS_PROVIDERS[id].label}, ${PROVIDER_CHOICE_META[id].subtitle}${status ? `, ${status.toLowerCase()}` : ""}`}
+                        accessibilityState={{ checked: selected, disabled: settingsWorking || working }}
+                        disabled={settingsWorking || working}
+                        onPress={() => {
+                          setSelectedModels(savedModels);
+                          setSelectedProvider(id);
+                          setModelMenuOpen(false);
+                          setProviderTermsOpen(false);
+                          setChangeKeyVisible(false);
+                          setApiKey("");
+                          setSettingsNotice(undefined);
+                          setSettingsActionError(undefined);
+                        }}
+                        style={({ pressed }) => [
+                          styles.providerChoice,
+                          {
+                            backgroundColor: selected ? `${colors.primary}12` : colors.surfaceMuted,
+                            borderColor: selected ? colors.primary : colors.border,
+                            borderRadius: radius.md,
+                            opacity: pressed ? 0.74 : 1,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.providerChoiceIcon, { backgroundColor: selected ? `${colors.primary}20` : colors.surfaceElevated, borderRadius: radius.sm }]}>
+                          <Ionicons accessibilityElementsHidden name={PROVIDER_CHOICE_META[id].icon} size={19} color={selected ? colors.primary : colors.textSecondary} />
+                        </View>
+                        <View style={styles.providerChoiceCopy}>
+                          <Text style={[styles.providerChoiceTitle, { color: colors.text }]}>{TARVIS_PROVIDERS[id].label}</Text>
+                          <Text style={[styles.providerChoiceSubtitle, { color: colors.textSecondary }]}>{PROVIDER_CHOICE_META[id].subtitle}</Text>
+                        </View>
+                        {status ? <Text style={[styles.providerChoiceBadge, { color: active ? colors.primary : colors.textSecondary, backgroundColor: active ? `${colors.primary}18` : colors.surfaceElevated, borderRadius: radius.pill }]}>{status}</Text> : null}
+                        <Ionicons accessibilityElementsHidden name={selected ? "checkmark-circle" : "chevron-forward"} size={selected ? 19 : 16} color={selected ? colors.primary : colors.textTertiary} />
+                      </Pressable>
+                    );
+                  })}
                 </View>
+                <View style={[styles.providerDetails, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
+                  <View style={styles.providerDetailsHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.providerDetailsTitle, { color: colors.text }]}>{TARVIS_PROVIDERS[selectedProvider].label}</Text>
+                      <Text style={[styles.providerDetailsHint, { color: colors.textSecondary }]}>{selectedProvider === "chatgpt" ? "Connect your plan and choose a model" : configuredProviders[selectedProvider] ? "Manage your model and saved key" : "Choose a model and add an API key"}</Text>
+                    </View>
+                    {provider === selectedProvider && hasApiKey ? <Text style={[styles.providerChoiceBadge, { color: colors.primary, backgroundColor: `${colors.primary}18`, borderRadius: radius.pill }]}>IN USE</Text> : null}
+                  </View>
                 {selectedProvider === "chatgpt" ? (
                   <ChatGptConnectionCard
                     state={chatGptState}
@@ -3511,7 +3572,8 @@ export function TarvisScreen({
                     onCancelSignIn={() => { void cancelChatGptSignIn().catch(() => setSettingsActionError("Could not cancel ChatGPT sign-in. Use the browser back button or retry shortly.")); }}
                     onSelectAccount={(accountId) => void runChatGptAction((lease) => selectChatGptAccount(accountId, lease))}
                     onSelectModel={(slug) => void runChatGptAction((lease) => selectChatGptModel(slug, lease))}
-                    onRefreshModels={() => void runChatGptAction((lease) => refreshChatGptModels(lease))}
+                    onRefreshModels={() => runChatGptAction((lease) => refreshChatGptModels(lease))}
+                    onRefreshModelsIfStale={() => runChatGptAction((lease) => refreshChatGptModelsIfStale(lease))}
                     onUse={() => void runChatGptAction(async (lease) => {
                       if (!chatGptState.selectedModel) throw new Error("Choose a ChatGPT model first.");
                       await selectTarvisProvider("chatgpt", lease, chatGptState.selectedModel);
@@ -3520,155 +3582,126 @@ export function TarvisScreen({
                     onSignOut={() => void disconnectChatGpt()}
                     onLinkError={() => setSettingsActionError("ChatGPT usage settings could not be opened.")}
                   />
-                ) : <>
-                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>API usage may cost money. Chat subscriptions do not include API credit.</Text>
-                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>Model</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Choose ${TARVIS_PROVIDERS[selectedProvider].label} model`} accessibilityState={{ expanded: modelMenuOpen, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => setModelMenuOpen(open => !open)} style={{ padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md }}>
-                  <Text style={{ color: colors.text }}>{selectedModels[selectedProvider]}  ▾</Text>
-                </Pressable>
-                {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>This saved model is unavailable. Choose an available model before sending a question.</Text> : null}
-                {modelMenuOpen ? <View accessibilityRole="radiogroup" style={{ gap: 8 }}>
-                  {TARVIS_MODELS[selectedProvider].map(model => (
-                    <Pressable key={model} accessibilityRole="radio" accessibilityState={{ checked: selectedModels[selectedProvider] === model, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels(previous => ({ ...previous, [selectedProvider]: model })); setModelMenuOpen(false); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={{ padding: 14, borderWidth: 1, borderColor: selectedModels[selectedProvider] === model ? colors.primary : colors.border, borderRadius: radius.md }}>
-                      <Text style={{ color: colors.text }}>{model}</Text>
+                ) : (
+                  <View style={styles.providerFields}>
+                    <View style={[styles.costCallout, { backgroundColor: `${colors.warning}15`, borderColor: `${colors.warning}55`, borderRadius: radius.md }]}>
+                      <Ionicons accessibilityElementsHidden name="information-circle-outline" size={18} color={colors.warning} />
+                      <Text style={[styles.costCalloutText, { color: colors.text }]}>
+                        {selectedProvider === "gemini"
+                          ? "Gemini needs active API billing for health data. Unpaid-service terms prohibit sensitive information. Users must be 18+; no clinical use. UK, EEA and Swiss app terms also apply."
+                          : "API usage may cost money. Chat subscriptions do not include API credit."}
+                      </Text>
+                    </View>
+                    <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>MODEL</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Choose ${TARVIS_PROVIDERS[selectedProvider].label} model`}
+                      accessibilityValue={{ text: selectedModels[selectedProvider] }}
+                      accessibilityState={{ expanded: modelMenuOpen, disabled: settingsWorking || working }}
+                      disabled={settingsWorking || working}
+                      onPress={() => setModelMenuOpen((open) => !open)}
+                      style={({ pressed }) => [styles.settingsSelect, { borderColor: colors.border, backgroundColor: colors.surfaceElevated, borderRadius: radius.md, opacity: pressed ? 0.72 : 1 }]}
+                    >
+                      <Text style={[styles.settingsSelectText, { color: colors.text }]} numberOfLines={1}>{selectedModels[selectedProvider]}</Text>
+                      <Ionicons accessibilityElementsHidden name={modelMenuOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
                     </Pressable>
-                  ))}
-                </View> : null}
-                <Text style={[styles.keyDetail, { color: colors.textSecondary }]}>{TARVIS_PROVIDERS[selectedProvider].privacy}</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].keyUrl).catch(() => setSettingsActionError("The provider page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Get an API key</Text></Pressable>
-                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].privacyUrl).catch(() => setSettingsActionError("The provider privacy page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider privacy terms</Text></Pressable>
-                  <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].pricingUrl).catch(() => setSettingsActionError("The provider pricing page could not be opened.")); }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary }}>Provider pricing</Text></Pressable>
+                    {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger, fontSize: 12 }}>This saved model is unavailable. Choose an available model before sending.</Text> : null}
+                    {modelMenuOpen ? (
+                      <View accessibilityRole="radiogroup" style={[styles.settingsDropdown, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md }]}>
+                        {TARVIS_MODELS[selectedProvider].map((model) => (
+                          <Pressable key={model} accessibilityRole="radio" accessibilityState={{ checked: selectedModels[selectedProvider] === model, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels((previous) => ({ ...previous, [selectedProvider]: model })); setModelMenuOpen(false); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={({ pressed }) => [styles.settingsDropdownOption, { opacity: pressed ? 0.68 : 1 }]}>
+                            <Text style={{ flex: 1, color: colors.text, fontSize: 13 }}>{model}</Text>
+                            {selectedModels[selectedProvider] === model ? <Ionicons accessibilityElementsHidden name="checkmark" size={18} color={colors.primary} /> : null}
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : null}
+                    <View style={styles.keyStatusRow}>
+                      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>API KEY</Text>
+                      {configuredProviders[selectedProvider] ? changeKeyVisible ? (
+                        <Pressable accessibilityRole="button" onPress={() => { setChangeKeyVisible(false); setApiKey(""); }} style={{ minHeight: 44, justifyContent: "center" }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Cancel change</Text></Pressable>
+                      ) : <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "700" }}>Saved on this phone</Text> : null}
+                    </View>
+                    {configuredProviders[selectedProvider] && !changeKeyVisible ? (
+                      <Pressable accessibilityRole="button" disabled={settingsWorking || working} onPress={() => setChangeKeyVisible(true)} style={[styles.settingsSelect, { borderColor: colors.border, backgroundColor: colors.surfaceElevated, borderRadius: radius.md }]}>
+                        <Ionicons accessibilityElementsHidden name="shield-checkmark-outline" size={18} color={colors.accent} />
+                        <Text style={[styles.settingsSelectText, { color: colors.text }]}>Key saved</Text>
+                        <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700" }}>Change</Text>
+                      </Pressable>
+                    ) : (
+                      <TextInput
+                        accessibilityLabel={`${TARVIS_PROVIDERS[selectedProvider].label} API key`}
+                        editable={!settingsWorking && !working}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onChangeText={setApiKey}
+                        placeholder={TARVIS_PROVIDERS[selectedProvider].placeholder}
+                        placeholderTextColor={colors.textTertiary}
+                        secureTextEntry
+                        style={[styles.keyInput, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md, color: colors.text }]}
+                        value={apiKey}
+                      />
+                    )}
+                    <View style={styles.settingsLinkRow}>
+                      <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].keyUrl).catch(() => setSettingsActionError("The provider page could not be opened.")); }} style={styles.settingsLink}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Get an API key ↗</Text></Pressable>
+                      <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].pricingUrl).catch(() => setSettingsActionError("The provider pricing page could not be opened.")); }} style={styles.settingsLink}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Pricing ↗</Text></Pressable>
+                    </View>
+                    {settingsNotice ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text, fontSize: 12, lineHeight: 18 }}>{settingsNotice}</Text> : null}
+                    {(provider !== selectedProvider || !hasApiKey || selectedModels[selectedProvider] !== savedModels[selectedProvider] || Boolean(apiKey.trim())) ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: (!apiKey.trim() && !configuredProviders[selectedProvider]) || settingsWorking || working }}
+                        disabled={(!apiKey.trim() && !configuredProviders[selectedProvider]) || settingsWorking || working}
+                        onPress={() => void saveKey()}
+                        style={({ pressed }) => [styles.primaryButton, { backgroundColor: apiKey.trim() || configuredProviders[selectedProvider] ? colors.primary : colors.border, borderRadius: radius.md, opacity: settingsWorking || working ? 0.55 : pressed ? 0.72 : 1 }]}
+                      >
+                        <Ionicons accessibilityElementsHidden color={apiKey.trim() || configuredProviders[selectedProvider] ? colors.onPrimary : colors.textTertiary} name="shield-checkmark-outline" size={19} />
+                        <Text style={[styles.primaryButtonText, { color: apiKey.trim() || configuredProviders[selectedProvider] ? colors.onPrimary : colors.textTertiary }]}>{apiKey.trim() ? "Save key on this phone" : configuredProviders[selectedProvider] ? `Use ${TARVIS_PROVIDERS[selectedProvider].label}` : "Enter an API key to continue"}</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable accessibilityRole="button" accessibilityState={{ expanded: providerTermsOpen }} onPress={() => setProviderTermsOpen((open) => !open)} style={styles.settingsDisclosure}>
+                      <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Privacy & provider terms</Text>
+                      <Ionicons accessibilityElementsHidden name={providerTermsOpen ? "chevron-up" : "chevron-down"} size={17} color={colors.primary} />
+                    </Pressable>
+                    {providerTermsOpen ? (
+                      <View style={{ gap: 4 }}>
+                        <Text style={[styles.settingsDisclosureText, { color: colors.textSecondary }]}>{TARVIS_PROVIDERS[selectedProvider].privacy}</Text>
+                        <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(TARVIS_PROVIDERS[selectedProvider].privacyUrl).catch(() => setSettingsActionError("The provider privacy page could not be opened.")); }} style={styles.settingsLink}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Provider privacy terms ↗</Text></Pressable>
+                      </View>
+                    ) : null}
+                    {configuredProviders[selectedProvider] ? (
+                      <Pressable accessibilityRole="button" disabled={settingsWorking || working} onPress={removeKey} style={[styles.credentialRemove, { borderColor: `${colors.danger}55`, borderRadius: radius.md }]}>
+                        <Ionicons accessibilityElementsHidden color={colors.danger} name="trash-outline" size={16} />
+                        <Text style={{ color: colors.danger, fontSize: 12, fontWeight: "700" }}>Remove saved key</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                )}
                 </View>
-                {settingsNotice ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text }}>{settingsNotice}</Text> : null}
-                <TextInput
-                  accessibilityLabel={`${TARVIS_PROVIDERS[selectedProvider].label} API key`}
-                  editable={!settingsWorking && !working}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onChangeText={setApiKey}
-                  placeholder={configuredProviders[selectedProvider] ? "Key saved · enter a replacement if needed" : TARVIS_PROVIDERS[selectedProvider].placeholder}
-                  placeholderTextColor={colors.textTertiary}
-                  secureTextEntry
-                  style={[
-                    styles.keyInput,
-                    {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
-                      borderRadius: radius.md,
-                      color: colors.text,
-                    },
-                  ]}
-                  value={apiKey}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={(!apiKey.trim() && !configuredProviders[selectedProvider]) || settingsWorking || working}
-                  onPress={() => void saveKey()}
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    {
-                      backgroundColor: apiKey.trim() || configuredProviders[selectedProvider]
-                        ? colors.primary
-                        : colors.border,
-                      borderRadius: radius.md,
-                      opacity:
-                        settingsWorking || working ? 0.55 : pressed ? 0.72 : 1,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    accessibilityElementsHidden
-                    color={
-                      apiKey.trim() || configuredProviders[selectedProvider] ? colors.onPrimary : colors.textTertiary
-                    }
-                    name="shield-checkmark-outline"
-                    size={19}
-                  />
-                  <Text
-                    style={[
-                      styles.primaryButtonText,
-                      {
-                        color: apiKey.trim() || configuredProviders[selectedProvider]
-                          ? colors.onPrimary
-                          : colors.textTertiary,
-                      },
-                    ]}
-                  >
-                    {apiKey.trim() ? "Save key on this phone" : "Use selected provider"}
-                  </Text>
-                </Pressable>
-                </>}
               </SectionCard>
             ) : null}
 
             <SectionCard>
-              <Text style={[styles.guardTitle, { color: colors.text }]}>
-                Your privacy
-              </Text>
-              <View style={styles.guardList}>
-                {[
-                  "Tarv1s only shares information after you tap Send.",
-                  "Tarv1s answers supported personal totals directly.",
-                  "Tarv1s only answers diabetes and personal health questions and never reveals saved sign-ins.",
-                  "Tarv1s never sends questions while running in the background.",
-                ].map((item) => (
-                  <View key={item} style={styles.guardRow}>
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={colors.accent}
-                      name="checkmark-circle-outline"
-                      size={17}
-                    />
-                    <Text
-                      style={[
-                        styles.guardText,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
-                      {item}
-                    </Text>
-                  </View>
-                ))}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+                <Ionicons accessibilityElementsHidden name="shield-checkmark-outline" size={20} color={colors.accent} />
+                <Text style={[styles.guardTitle, { color: colors.text }]}>Your privacy</Text>
               </View>
-              <Text
-                style={[styles.privacyNote, { color: colors.textTertiary }]}
-              >
-                General diabetes questions do not include your health records.
-                For some personal questions, Tarv1s first sends your question
-                with a bounded list of evidence choices, but no records. It then
-                sends only the selected evidence needed to answer, which can
-                include food names. The selected provider’s privacy and
-                retention terms apply. Switching providers or ChatGPT accounts
-                can share recent previously shared conversation with the new
-                connection when you
-                next tap Send. Start a new conversation to omit that history.
+              <Text style={[styles.settingsDisclosureText, { color: colors.textSecondary, marginTop: 9 }]}>
+                Nothing is sent in the background. Tarv1s shares your question and selected evidence only when you tap Send.
               </Text>
-              {settingsView.canEdit && selectedProvider !== "chatgpt" && configuredProviders[selectedProvider] ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={settingsWorking || working}
-                  onPress={removeKey}
-                  style={({ pressed }) => [
-                    styles.removeButton,
-                    {
-                      borderColor: `${colors.danger}66`,
-                      borderRadius: radius.md,
-                      opacity:
-                        settingsWorking || working ? 0.55 : pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    accessibilityElementsHidden
-                    color={colors.danger}
-                    name="trash-outline"
-                    size={18}
-                  />
-                  <Text style={[styles.removeText, { color: colors.danger }]}>
-                    Remove saved key
-                  </Text>
-                </Pressable>
+              <Pressable accessibilityRole="button" accessibilityState={{ expanded: privacyExpanded }} onPress={() => setPrivacyExpanded((open) => !open)} style={styles.settingsDisclosure}>
+                <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700" }}>How sharing works</Text>
+                <Ionicons accessibilityElementsHidden name={privacyExpanded ? "chevron-up" : "chevron-down"} size={18} color={colors.primary} />
+              </Pressable>
+              {privacyExpanded ? (
+                <View style={{ gap: 9, marginTop: 7 }}>
+                  {[
+                    "Supported personal totals are calculated on this phone. General diabetes questions do not include your health records.",
+                    "For some personal questions, Tarv1s first sends your question with a bounded list of evidence choices, but no records. It then sends only the selected evidence needed to answer, which can include food names.",
+                    "The selected provider’s privacy and retention terms apply. Switching providers or ChatGPT accounts can share previously shared conversation with the new connection when you next tap Send. Start a new conversation to omit that history.",
+                    "Tarv1s only answers diabetes and personal health questions and never reveals saved sign-ins.",
+                  ].map((item) => <Text key={item} style={[styles.settingsDisclosureText, { color: colors.textSecondary }]}>{item}</Text>)}
+                </View>
               ) : null}
             </SectionCard>
           </>
@@ -4330,6 +4363,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
+    marginBottom: 18,
   },
   keyIcon: {
     width: 46,
@@ -4348,12 +4382,37 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 3,
   },
+  settingsEyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 0.9, marginBottom: 9 },
+  providerChoiceList: { gap: 8 },
+  providerChoice: { minHeight: 70, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 9 },
+  providerChoiceIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  providerChoiceCopy: { flex: 1, minWidth: 0, gap: 2 },
+  providerChoiceTitle: { fontSize: 14, lineHeight: 19, fontWeight: "800" },
+  providerChoiceSubtitle: { fontSize: 11, lineHeight: 15 },
+  providerChoiceBadge: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4, paddingHorizontal: 7, paddingVertical: 5, overflow: "hidden" },
+  providerDetails: { borderWidth: StyleSheet.hairlineWidth, padding: 15, marginTop: 18 },
+  providerDetailsHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 13 },
+  providerDetailsTitle: { fontSize: 17, lineHeight: 23, fontWeight: "800" },
+  providerDetailsHint: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  providerFields: { gap: 9 },
+  costCallout: { flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 11, borderWidth: StyleSheet.hairlineWidth },
+  costCalloutText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  fieldLabel: { fontSize: 11, lineHeight: 16, fontWeight: "800", letterSpacing: 0.8 },
+  settingsSelect: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, paddingHorizontal: 12 },
+  settingsSelectText: { flex: 1, fontSize: 13, fontWeight: "700" },
+  settingsDropdown: { borderWidth: 1, overflow: "hidden" },
+  settingsDropdownOption: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 8 },
+  keyStatusRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 5, marginTop: 5 },
+  settingsLinkRow: { flexDirection: "row", flexWrap: "wrap", columnGap: 17 },
+  settingsLink: { minHeight: 44, justifyContent: "center" },
+  settingsDisclosure: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  settingsDisclosureText: { fontSize: 12, lineHeight: 18 },
+  credentialRemove: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: StyleSheet.hairlineWidth, marginTop: 4 },
   keyInput: {
-    minHeight: 54,
+    minHeight: 50,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 15,
-    marginTop: 18,
-    fontSize: 15,
+    paddingHorizontal: 12,
+    fontSize: 13,
   },
   primaryButton: {
     minHeight: 52,
@@ -4373,14 +4432,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "800",
   },
-  guardList: { gap: 9, marginTop: 13 },
-  guardRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-  },
   guardText: { flex: 1, fontSize: 12, lineHeight: 18 },
-  privacyNote: { fontSize: 11, lineHeight: 17, marginTop: 16 },
   removeButton: {
     minHeight: 48,
     marginTop: 16,

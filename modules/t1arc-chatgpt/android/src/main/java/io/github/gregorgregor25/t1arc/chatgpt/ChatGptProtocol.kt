@@ -72,16 +72,31 @@ internal object ChatGptProtocol {
     return uri.toString()
   }
 
-  fun classifyHttpError(status: Int, serviceCode: String?, action: String): String = when {
+  fun classifyHttpError(status: Int, serviceCode: String?, action: String, parameter: String? = null): String = when {
     serviceCode == "subscription_sharing_usage_limit_exceeded" || status == 429 -> "ERR_CHATGPT_QUOTA"
     serviceCode == "subscription_sharing_usage_unavailable" ||
-      serviceCode == "subscription_sharing_user_unavailable" || status == 503 -> "ERR_CHATGPT_RETRY"
+      serviceCode == "subscription_sharing_user_unavailable" || status >= 500 -> "ERR_CHATGPT_RETRY"
     serviceCode == "subscription_sharing_unsupported_capability" -> "ERR_CHATGPT_UNSUPPORTED"
     serviceCode == "subscription_sharing_route_not_supported" -> "ERR_CHATGPT_ROUTE"
     serviceCode == "subscription_sharing_user_not_eligible" || status == 403 -> "ERR_CHATGPT_RESTRICTED"
     action == "session" && serviceCode == "invalid_grant" -> "ERR_CHATGPT_INVALID_GRANT"
     status == 401 || (action == "session" && status == 400) -> "ERR_CHATGPT_AUTH"
+    action == "response" && status == 400 -> classifyRequestParameter(parameter, serviceCode)
+    action == "response" && status in 400..499 -> "ERR_CHATGPT_REQUEST_HTTP_OTHER"
     else -> "ERR_CHATGPT_RESPONSE"
+  }
+
+  // Do not pass provider error text or arbitrary parameter values through the
+  // native bridge. These fixed buckets are sufficient to diagnose a rejected
+  // request without risking a reflected prompt or account detail in the UI.
+  private fun classifyRequestParameter(parameter: String?, serviceCode: String?): String = when {
+    serviceCode == "invalid_json_schema" || parameter == "text" || parameter?.startsWith("text.") == true ->
+      "ERR_CHATGPT_REQUEST_FORMAT"
+    parameter == "model" || parameter?.startsWith("model.") == true -> "ERR_CHATGPT_REQUEST_MODEL"
+    parameter == "input" || parameter?.startsWith("input.") == true || parameter?.startsWith("input[") == true ||
+      parameter == "instructions" || parameter?.startsWith("instructions.") == true -> "ERR_CHATGPT_REQUEST_INPUT"
+    parameter == "reasoning" || parameter?.startsWith("reasoning.") == true -> "ERR_CHATGPT_REQUEST_REASONING"
+    else -> "ERR_CHATGPT_REQUEST_OTHER"
   }
 
   fun classifyStreamError(serviceCode: String?): String = when (serviceCode) {
@@ -173,8 +188,11 @@ internal class CompletedResponseParser {
     require(line.length <= 4_000_000) { "ChatGPT response exceeded its size limit." }
     if (line.isEmpty()) {
       if (data.isEmpty()) { event = ""; return null }
+      if (data.toString() == "[DONE]") {
+        throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT stream ended before the answer was complete.")
+      }
       val parsed = try { JSONObject(data.toString()) } catch (_: Exception) {
-        throw IllegalStateException("ChatGPT returned an invalid response.")
+        throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT returned an invalid response stream.")
       }
       val type = parsed.optString("type").ifBlank { event }
       event = ""
@@ -182,15 +200,22 @@ internal class CompletedResponseParser {
       when (type) {
         "response.completed" -> {
           val response = parsed.optJSONObject("response")
-            ?: throw IllegalStateException("ChatGPT did not complete its response.")
-          require(response.optString("status") == "completed") { "ChatGPT did not complete its response." }
+            ?: throw ChatGptFailure("ERR_CHATGPT_STREAM_FORMAT", "ChatGPT completion had no response.")
+          if (response.optString("status") != "completed") {
+            throw ChatGptFailure("ERR_CHATGPT_INCOMPLETE", "ChatGPT did not complete its response.")
+          }
           return response.toString()
         }
         "response.failed", "response.incomplete", "error" -> {
           val serviceCode = parsed.optJSONObject("response")?.optJSONObject("error")?.optString("code")
             ?: parsed.optJSONObject("error")?.optString("code")
             ?: parsed.optString("code")
-          throw ChatGptFailure(ChatGptProtocol.classifyStreamError(serviceCode), "ChatGPT could not complete this answer.")
+          val classified = ChatGptProtocol.classifyStreamError(serviceCode)
+          // An explicit failed/error terminal event differs from an incomplete
+          // generation even when its provider-specific code is unknown.
+          val code = if (classified == "ERR_CHATGPT_INCOMPLETE" && type != "response.incomplete")
+            "ERR_CHATGPT_STREAM_REJECTED" else classified
+          throw ChatGptFailure(code, "ChatGPT could not complete this answer.")
         }
       }
       return null

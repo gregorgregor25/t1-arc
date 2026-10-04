@@ -8,6 +8,7 @@ import {
   getChatGptState,
   hasChatGptStoredData,
   refreshChatGptModels,
+  refreshChatGptModelsIfStale,
   selectChatGptAccount,
   selectChatGptModel,
   signInChatGpt,
@@ -118,6 +119,37 @@ describe("ChatGPT account connection", () => {
     expect(JSON.stringify(state)).not.toContain("access-subject-one");
     expect(JSON.stringify(state)).not.toContain("refresh-subject-one");
     expect(await hasChatGptStoredData(lease)).toBe(true);
+  });
+
+  it("discovers a newly listed 6.1 model on picker refresh without replacing the selected model", async () => {
+    await signInChatGpt(lease);
+    await selectChatGptModel("gpt-first", lease);
+    expect((await refreshChatGptModelsIfStale(lease)).selectedModel).toBe("gpt-first");
+    expect(testState.listModels).toHaveBeenCalledTimes(1);
+
+    const now = Date.now();
+    const time = vi.spyOn(Date, "now").mockReturnValue(now + 6 * 60_000);
+    try {
+      testState.listModels.mockResolvedValueOnce(JSON.stringify({ models: [
+        { slug: "gpt-6.1-sol", display_name: "GPT-6.1 Sol", visibility: "list" },
+        { slug: "internal-only", display_name: "Internal", visibility: "hidden" },
+        { slug: "gpt-first", display_name: "First", visibility: "list" },
+      ] }));
+      const [first, second] = await Promise.all([
+        refreshChatGptModelsIfStale(lease), refreshChatGptModelsIfStale(lease),
+      ]);
+      expect(testState.listModels).toHaveBeenCalledTimes(2);
+      expect(first.models).toEqual([
+        { slug: "gpt-6.1-sol", displayName: "GPT-6.1 Sol" },
+        { slug: "gpt-first", displayName: "First" },
+      ]);
+      expect(second.models).toEqual(first.models);
+      expect(first.selectedModel).toBe("gpt-first");
+      await selectChatGptModel("gpt-6.1-sol", lease);
+      expect(await getChatGptRequestSession(lease)).toMatchObject({ model: "gpt-6.1-sol" });
+    } finally {
+      time.mockRestore();
+    }
   });
 
   it("keeps registrations with matching email separate and validates returning identity", async () => {

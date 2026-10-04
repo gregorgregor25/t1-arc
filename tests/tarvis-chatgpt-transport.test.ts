@@ -51,6 +51,24 @@ describe("ChatGPT plan transport", () => {
     await expect(fetchChatGptResponse("token", original)).rejects.toThrow("unreadable response");
   });
 
+  it.each([
+    ["ERR_CHATGPT_REQUEST_FORMAT", "answer format (HTTP 400)"],
+    ["ERR_CHATGPT_REQUEST_MODEL", "selected model (HTTP 400)"],
+    ["ERR_CHATGPT_REQUEST_INPUT", "question format (HTTP 400)"],
+    ["ERR_CHATGPT_REQUEST_REASONING", "model setting (HTTP 400)"],
+    ["ERR_CHATGPT_REQUEST_OTHER", "request (HTTP 400)"],
+    ["ERR_CHATGPT_REQUEST_HTTP_OTHER", "before answering"],
+    ["ERR_CHATGPT_STREAM_FORMAT", "response stream"],
+    ["ERR_CHATGPT_STREAM_REJECTED", "stopped the answer"],
+    ["ERR_CHATGPT_NATIVE_PROTOCOL", "could not read ChatGPT's response"],
+  ])("classifies %s without exposing provider text", async (code, message) => {
+    native.request.mockRejectedValueOnce({ code, message: "private health content" });
+    const failure = await fetchChatGptResponse("token", original).then(() => null, error => error as Error);
+    expect(failure?.message).toContain(message);
+    expect(failure?.message).not.toContain("private health");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("surfaces ChatGPT usage recovery without retrying or using a saved API key", async () => {
     native.request.mockRejectedValueOnce({ code: "ERR_CHATGPT_QUOTA", message: "private health content" });
     await expect(fetchTarvisProviderResponse("chatgpt", "token", "https://unused.invalid", { body: JSON.stringify(original) })).rejects.toMatchObject({ manageUsage: true, settingsRequired: false });

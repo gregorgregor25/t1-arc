@@ -39,6 +39,24 @@ function connectionError(error: unknown): ChatGptTransportError {
       return new ChatGptTransportError("ChatGPT cannot handle this request in T1 Arc yet. Choose another connection in Tarv1s settings.", true);
     case "ERR_CHATGPT_INCOMPLETE":
       return new ChatGptTransportError("ChatGPT did not finish the answer. Your question is still here; try again when ready.");
+    case "ERR_CHATGPT_REQUEST_FORMAT":
+      return new ChatGptTransportError("ChatGPT rejected T1 Arc's answer format (HTTP 400). Please report this error.");
+    case "ERR_CHATGPT_REQUEST_MODEL":
+      return new ChatGptTransportError("ChatGPT rejected the selected model (HTTP 400). Refresh the model list in Tarv1s settings.", true);
+    case "ERR_CHATGPT_REQUEST_INPUT":
+      return new ChatGptTransportError("ChatGPT rejected T1 Arc's question format (HTTP 400). Please report this error.");
+    case "ERR_CHATGPT_REQUEST_REASONING":
+      return new ChatGptTransportError("ChatGPT rejected T1 Arc's model setting (HTTP 400). Please report this error.");
+    case "ERR_CHATGPT_REQUEST_OTHER":
+      return new ChatGptTransportError("ChatGPT rejected T1 Arc's request (HTTP 400). Please report this error.");
+    case "ERR_CHATGPT_REQUEST_HTTP_OTHER":
+      return new ChatGptTransportError("ChatGPT rejected T1 Arc's request before answering. Please report this error.");
+    case "ERR_CHATGPT_STREAM_FORMAT":
+      return new ChatGptTransportError("ChatGPT returned an unexpected response stream. Please report this error.");
+    case "ERR_CHATGPT_STREAM_REJECTED":
+      return new ChatGptTransportError("ChatGPT stopped the answer before completing it. Please report this error.");
+    case "ERR_CHATGPT_NATIVE_PROTOCOL":
+      return new ChatGptTransportError("T1 Arc could not read ChatGPT's response. Please report this error.");
     case "ERR_CHATGPT_CANCELLED":
       return new ChatGptTransportError("The ChatGPT request was cancelled.");
     case "ERR_CHATGPT_RESPONSE":

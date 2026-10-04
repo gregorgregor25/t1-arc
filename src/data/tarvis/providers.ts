@@ -6,7 +6,7 @@ export type TarvisProvider = TarvisApiKeyProvider | "chatgpt";
 export const TARVIS_MODELS: Record<TarvisProvider, readonly string[]> = {
   // ChatGPT models come from the signed-in account's catalog, never a fallback.
   chatgpt: [],
-  openai: ["gpt-5.6-luna", "gpt-5.6-terra"],
+  openai: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-6.1-sol"],
   gemini: ["gemini-3.8-flash", "gemini-3.7-flash"],
   claude: ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5-5"],
 };

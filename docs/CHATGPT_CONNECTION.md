@@ -43,6 +43,16 @@ ten-minute browser authorization window. Native loopback tests and independent
 review cover the new page and request handling; its Edge return action still
 needs physical-phone verification.
 
+Physical-phone follow-up on 4 October 2026: the everyday production-package
+private update (`1.7.14-private.1`, phone code 58) retained the connected account.
+A manual model refresh completed and showed five account-specific models; it
+did not return GPT-6.1 Sol for this account. A new, record-free education question
+failed with an unreadable-response error. Sign-in and model listing therefore
+work on the everyday app, but a completed plan-backed answer is still unverified
+and blocks release. Gemini was restored as the active provider after the test.
+The next private candidate improves settings and separates request failures
+without exposing provider error bodies or credentials.
+
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
 Gemini** or **Anthropic Claude**. No account is required to use the rest of T1 Arc.
@@ -60,7 +70,10 @@ ChatGPT plan usage is separate from API billing. T1 Arc never switches to a save
 API key or another provider after an error.
 
 Models are loaded from the active account and displayed in the order OpenAI
-returns. A saved model that disappears must be replaced explicitly. Separate
+returns. Opening the model picker refreshes a catalogue older than five minutes;
+**Refresh models** always requests a fresh list. Availability depends on the
+account, so an API model is not added to this list by assumption. A saved model
+that disappears must be replaced explicitly. Separate
 ChatGPT registrations stay separate even when they have the same email address.
 
 ## What is shared and stored

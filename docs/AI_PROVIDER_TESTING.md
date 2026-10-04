@@ -15,7 +15,9 @@ automatic model or provider substitution. Both answers and evidence planning
 use the selected model. Settings link to official pricing instead of displaying
 fixed prices or cost labels. No model has a Recommended label in this release.
 
-- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`.
+- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`; the current unreleased source also offers
+  `gpt-6.1-sol`. The new choice has request-contract tests, but no live API-key
+  inference verification yet. The default remains Luna.
 - Gemini: `gemini-3.8-flash`, `gemini-3.7-flash`.
 - Claude: `claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5-5`.
 

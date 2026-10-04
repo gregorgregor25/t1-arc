@@ -15,6 +15,7 @@ import { runTarvisConnectionMutation, TarvisConnectionSupersededError } from "./
 const STORAGE_KEY = "t1arc.tarvis.chatgpt-connection.v1";
 const DIRECT_SCOPE = "chatgpt.tokens.use.direct";
 const REFRESH_MARGIN_MS = 2 * 60_000;
+const MODEL_CATALOG_MAX_AGE_MS = 5 * 60_000;
 
 export interface ChatGptCredentials {
   clientId: string;
@@ -54,6 +55,7 @@ interface SavedAccount {
   email?: string;
   credentials?: ChatGptCredentials;
   models: ChatGptModel[];
+  modelsFetchedAt?: number;
   selectedModel?: string;
 }
 
@@ -103,6 +105,7 @@ let refreshTail: Promise<void> = Promise.resolve();
 let connectionIntent = 0;
 let activeBrowserIntent: number | undefined;
 let nativeModulePromise: Promise<typeof import("../../../modules/t1arc-chatgpt")> | undefined;
+let staleCatalogRefresh: { key: string; promise: Promise<ChatGptConnectionState> } | undefined;
 
 function loadNativeModule() {
   nativeModulePromise ??= import("../../../modules/t1arc-chatgpt");
@@ -200,6 +203,7 @@ function parseSavedConnection(value: unknown): SavedConnection | undefined {
     const account = item as Partial<SavedAccount>;
     if (!validString(account.id) || !validString(account.clientId) || !validString(account.subject)
       || !Array.isArray(account.models) || !account.models.every(validModel)
+      || (account.modelsFetchedAt !== undefined && (!Number.isFinite(account.modelsFetchedAt) || account.modelsFetchedAt < 0))
       || (account.email !== undefined && typeof account.email !== "string")
       || (account.credentials !== undefined && !validCredentials(account.credentials))
       || (account.selectedModel !== undefined && typeof account.selectedModel !== "string")) return undefined;
@@ -401,6 +405,7 @@ export async function signInChatGpt(lease: LocalDataWriteLease, existingAccountI
         throw new TarvisConnectionSupersededError();
       }
       account.models = models;
+      account.modelsFetchedAt = Date.now();
       await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     }));
   }
@@ -467,6 +472,7 @@ export async function selectChatGptAccount(id: string, lease: LocalDataWriteLeas
       if (!saved || !account?.credentials) throw new TarvisConnectionSupersededError();
       if (hasDirectScope(account.credentials)) throw new TarvisConnectionSupersededError();
       account.models = [];
+      account.modelsFetchedAt = undefined;
       account.selectedModel = undefined;
       saved.activeAccountId = id;
       await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
@@ -487,6 +493,7 @@ export async function selectChatGptAccount(id: string, lease: LocalDataWriteLeas
       throw new TarvisConnectionSupersededError();
     }
     account.models = models;
+    account.modelsFetchedAt = Date.now();
     saved.activeAccountId = id;
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
@@ -527,9 +534,31 @@ export async function refreshChatGptModels(lease: LocalDataWriteLease): Promise<
       throw new TarvisConnectionSupersededError();
     }
     account.models = models;
+    account.modelsFetchedAt = Date.now();
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
   });
+}
+
+/** Refresh the visible account catalog on picker entry, without immediately
+ * repeating the fetch already done at sign-in or account switch. */
+export async function refreshChatGptModelsIfStale(lease: LocalDataWriteLease): Promise<ChatGptConnectionState> {
+  const saved = await loadSaved(lease);
+  await assertLocalDataWriteLeaseCurrent(lease);
+  const account = saved?.accounts.find((item) => item.id === saved.activeAccountId);
+  if (!account?.credentials || !hasDirectScope(account.credentials)) return getChatGptState(lease);
+  const now = Date.now();
+  if (account.modelsFetchedAt !== undefined && account.modelsFetchedAt <= now
+    && now - account.modelsFetchedAt < MODEL_CATALOG_MAX_AGE_MS) return getChatGptState(lease);
+  // A returning sign-in or account switch can reuse the same account ID while
+  // superseding an older catalog request. Never join that older request.
+  const key = `${lease.epoch}:${account.id}:${connectionIntent}`;
+  if (staleCatalogRefresh?.key === key) return staleCatalogRefresh.promise;
+  const promise = refreshChatGptModels(lease).finally(() => {
+    if (staleCatalogRefresh?.promise === promise) staleCatalogRefresh = undefined;
+  });
+  staleCatalogRefresh = { key, promise };
+  return promise;
 }
 
 async function refreshIfNeeded(credentials: ChatGptCredentials, lease: LocalDataWriteLease) {
@@ -559,6 +588,7 @@ async function refreshIfNeeded(credentials: ChatGptCredentials, lease: LocalData
         if (!saved || !account?.credentials || account.credentials.refreshToken !== credentials.refreshToken) return;
         account.credentials = undefined;
         account.models = [];
+        account.modelsFetchedAt = undefined;
         account.selectedModel = undefined;
         await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
       });
@@ -636,6 +666,7 @@ export async function signOutChatGpt(lease: LocalDataWriteLease): Promise<{ revo
     }
     account.credentials = undefined;
     account.models = [];
+    account.modelsFetchedAt = undefined;
     account.selectedModel = undefined;
     saved.activeAccountId = undefined;
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
