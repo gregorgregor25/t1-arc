@@ -73,7 +73,7 @@ This isolates the parser defect; it does not demonstrate a successful attack
 against the application's normal configuration. A single parser regression
 and valid-signature smoke test are not comprehensive cryptographic assurance.
 
-## Release decision
+## Initial release decision before exception approval
 
 No proposed patch was applied to installed project dependencies or shipped
 code. Neither dependency was renamed, assigned an invented safe version,
@@ -91,10 +91,12 @@ behaviour checks, then require the existing security and build checks to pass.
 The exact signed public APK still needs device/update verification, including
 the user's saved OpenAI provider and existing Wear companion compatibility.
 
-## Completed exposure assessment and proposed exception
+## Completed exposure assessment and approved conditional exception
 
-The following is a proposal for explicit owner approval, not an active audit
-exception. No workflow or branch/environment protection has been changed.
+The owner explicitly approved the conditional exception on 5 October 2026,
+after reviewing its residual risks. The workflow now evaluates only that
+narrow exception and adds mandatory guarded-build and APK evidence gates.
+Branch and environment protections remain unchanged.
 
 ### Execution evidence
 
@@ -128,10 +130,10 @@ vulnerable in the dependency tree, and development/iOS/updates paths are not
 covered by the proposed Android release exception. Compromised dependencies
 or changes to build configuration remain separate risks.
 
-### Proposed approval scope and acceptance conditions
+### Approved scope and mandatory acceptance conditions
 
-Independent review considers a conditional exception defensible for owner
-consideration, with these limits:
+Independent review considered a conditional exception defensible for owner
+consideration. The approved limits are:
 
 1. T1 Arc Android **1.7.14 only**, on the exact independently reviewed PR head.
    Retain the lockfile hash recorded above and package versions Braces 3.0.3
@@ -141,6 +143,8 @@ consideration, with these limits:
    derived solely from those two advisories, may be accepted. Keep the full
    audit report visible and preserve their high-severity classifications.
 3. Expire the exception at **2026-10-12 00:00 UTC**, even if no fix exists.
+   This expires permission to use the exception for builds; it does not add
+   an expiry or disable functionality in an installed app.
    Fail closed on expiry, unrecognised findings, audit/network/report errors,
    package/version/hash drift, or an incomplete evidence check. Do not disable
    the audit command or use `continue-on-error` to ignore its result.
@@ -153,6 +157,11 @@ consideration, with these limits:
    risk**, including the Forge signature-verification issue; it does not
    assert that either library is fixed or universally unexploitable.
 
-This creates a possible controlled route to release without waiting for an
-upstream version. It still requires owner approval and successful execution of
-the conditions above. Until then, the existing failing audit remains binding.
+This creates a controlled route to release without waiting for an upstream
+version. Successful execution of all conditions above is still mandatory;
+approval alone is not release verification. Full audit JSON remains visible in
+workflow logs, including accepted high-severity findings. The audit evaluator
+checks the complete dependency graph, package identities, lock hash and expiry.
+Guard records are durable before a rejected call, so catching its exception
+cannot hide an attempted use. Bundle source maps are inspected and the exact
+generated bundle must match the bytes inside the signed APK before drafting.

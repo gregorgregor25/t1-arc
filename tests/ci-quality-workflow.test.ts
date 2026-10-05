@@ -157,7 +157,7 @@ describe('pull-request Android quality workflow', () => {
   it('runs contributor lint and a high-severity production dependency audit', () => {
     const installIndex = qualityJob.indexOf('- run: npm ci');
     const auditIndex = qualityJob.indexOf(
-      'run: npm audit --omit=dev --audit-level=high',
+      'run: node scripts/security-audit.mjs --report',
     );
     const lintIndex = qualityJob.indexOf('- run: npm run lint');
     const typecheckIndex = qualityJob.indexOf('- run: npm run typecheck');

@@ -63,13 +63,42 @@ jobs:
       - name: Check public-source artifacts, secrets and licence metadata
         run: npm run verify:public-source
       - name: Audit production dependencies for high-severity advisories
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/security-audit.mjs --report "$RUNNER_TEMP/t1arc-audit.json"
+      - name: Preserve complete production audit report
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/t1arc-audit.json"; then
+            cat "$RUNNER_TEMP/t1arc-audit.json"
+          fi
       - name: Check Expo dependency parity
         run: npx expo install --check
       - name: Check Expo project health
         run: npx --no-install expo-doctor
       - name: Generate the native Android project for identity checks
+        env:
+          NODE_ENV: production
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: prebuild
         run: npx expo prebuild --platform android --clean --no-install
+      - name: Verify guarded Linux release bundling
+        working-directory: android
+        env:
+          NODE_ENV: production
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: bundle
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:createBundleReleaseJsAndAssets --no-build-cache --no-daemon
+      - name: Verify dependency exposure evidence
+        run: |
+          node scripts/verify-dependency-exposure.mjs \
+            --evidence-dir "$RUNNER_TEMP/t1arc-exposure" \
+            --require-stage prebuild --require-stage bundle \
+            --source-map android/app/build/generated/sourcemaps/react/release/index.android.bundle.map \
+            --bundle android/app/build/generated/assets/react/release/index.android.bundle
+          python -m unittest discover -s tests/security -p 'test_apk_js_bundle.py'
       - name: Link generated Android resources
         working-directory: android
         env:

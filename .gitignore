@@ -96,3 +96,7 @@ yarn-error.*
 /t1arc-*.xml
 /tarvis-chat-native.png
 /tarvis-pill-*.png
+
+# Python verification tools and tests
+__pycache__/
+*.py[cod]

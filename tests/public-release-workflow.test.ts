@@ -17,7 +17,8 @@ describe("public GitHub APK release", () => {
     expect(workflow).not.toContain("actions/upload-artifact");
     expect(workflow).toContain("ephemeral-ci-only");
     expect(workflow).not.toContain(".sideload");
-    expect(workflow.match(/NODE_ENV: production/g)).toHaveLength(4);
+    // Clean prebuild and guarded bundling also run in production mode.
+    expect(workflow.match(/NODE_ENV: production/g)).toHaveLength(6);
   });
 
   it("creates only a verified draft from protected production signing", () => {

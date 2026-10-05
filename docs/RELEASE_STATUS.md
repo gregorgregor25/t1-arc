@@ -41,12 +41,16 @@ model has a Recommended label in this release.
 
 ### 1.7.14 changes
 
-Release preparation on 5 October 2026 is blocked by the required production
-dependency audit. The lockfile updates brace-expansion to 5.0.12, but
+Release preparation on 5 October 2026 identified two outstanding production
+dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
 braces 3.0.3 ([advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm))
 and node-forge 1.4.0 ([advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv))
 have no published patched versions at the time of verification. Their dependent
-packages produce 17 high-severity audit findings. Do not bypass this check or
+packages produce 17 high-severity audit findings. The owner approved a
+conditional exception for these two advisories in Android 1.7.14 only, expiring
+12 October 2026 at 00:00 UTC. The reviewed lockfile, guarded Linux build,
+source-map inspection and exact APK bundle comparison are mandatory; any new
+finding, failed evidence check or expired exception blocks release. Do not
 use the audit tool's incompatible Expo/React Native downgrades. The public
 privacy disclosure is published; exact public APK and device verification
 remain pending a passing release build. Version 1.7.14 is not yet published.
