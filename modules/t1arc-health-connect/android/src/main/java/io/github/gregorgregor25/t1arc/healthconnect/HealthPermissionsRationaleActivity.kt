@@ -57,8 +57,8 @@ class HealthPermissionsRationaleActivity : Activity() {
                 "are copied into this device's encrypted local database so they " +
                 "can be shown beside glucose and insulin. They are not automatically uploaded " +
                 "to a T1 Arc-operated server, sold, or used to recommend insulin doses. " +
-                "Optional Tarv1s AI sends your question and relevant records directly to your selected AI provider (OpenAI, Google Gemini or Anthropic Claude) " +
-                "using your own API key. Support reports send only the information you review " +
+                "When you tap Send, optional Tarv1s AI sends your question and relevant records directly to your selected AI provider (OpenAI, Google Gemini or Anthropic Claude) " +
+                "using your own API key, or to OpenAI through an eligible ChatGPT plan. Support reports send only the information you review " +
                 "and explicitly agree to share. You can revoke Health Connect permissions in Android settings."
             textSize = 17f
             setLineSpacing(0f, 1.25f)

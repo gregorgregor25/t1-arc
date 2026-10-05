@@ -10,6 +10,11 @@ const PROHIBITED_TREATMENT_OUTPUT =
   /\b(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\bconsider\s+(?:taking|injecting|using|reducing|lowering|increasing|decreasing|adjusting|changing|skipping|stopping)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?)\b|\b(?:you (?:should|must|need to)|i (?:recommend|suggest|advise))\b[\s\S]{0,80}\b(?:take|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|double|halve|skip|stop|set)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|glucose tablets?)\b/i;
 const PROHIBITED_CAUSAL_OUTPUT =
   /\b(?:definitely|certainly|clearly)\b[\s\S]{0,50}\b(?:caused|cause|because|due to)\b|\b(?:caused (?:your|the)|was caused by|was the cause of your|is the reason your|explains why your|led to (?:your|the)|triggered (?:your|the)|(?:your|the) (?:meal|walk|exercise|workout|insulin|bolus) explains? (?:your|the))\b/i;
+// No-record education may state that a measure cannot identify a cause. Mask
+// only that explicit denial before applying the existing causal-claim filter.
+// Personal-evidence answers keep the stricter original filter unchanged.
+const EDUCATION_CAUSAL_UNCERTAINTY =
+  /\b(?:cannot|can't|can not|does not|doesn't|will not|won't)\s+(?:identify|determine|show|establish|tell(?: you)?|know)\s+what caused (?:your|the)\b/gi;
 const PROHIBITED_DIAGNOSIS_OUTPUT =
   /\byou (?:have|definitely have|are developing|are suffering from)\s+(?:dka|diabetic ketoacidosis|gastroparesis|neuropathy|retinopathy|hypoglyc(?:aemia|emia) unawareness)\b|\b(?:this|that|it)\s+(?:is|looks like|appears to be|could be|may be)\s+(?:dka|diabetic ketoacidosis|gastroparesis|neuropathy|retinopathy|hypoglyc(?:aemia|emia) unawareness)\b/i;
 
@@ -19,6 +24,11 @@ const PROHIBITED_DIAGNOSIS_OUTPUT =
 // Personal-evidence parsing retains its stricter, existing output filter.
 const PROHIBITED_EDUCATION_TREATMENT_OUTPUT =
   /(?:^|[.!?;:\n,]\s*)(?:(?:please|then|for example)\s+)?(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,80}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\b(?:you (?:should|must|need to|can)|(?:i |we )?(?:recommend|suggest|advise)|consider|try|best to|to treat|to correct)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|inject(?:ing)?|us(?:e|ing)|administer(?:ing)?|bolus|giv(?:e|ing)|reduc(?:e|ing)|lower(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|chang(?:e|ing)|doubl(?:e|ing)|halv(?:e|ing)|skip(?:ping)?|stop(?:ping)?|set(?:ting)?|hav(?:e|ing)|eat(?:ing)?|drink(?:ing)?|consum(?:e|ing))\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b/i;
+// A level-3 definition can describe someone being unable to self-treat and
+// needing another person's assistance. That past-tense description is not an
+// instruction to administer anything. Keep the exception this specific.
+const EDUCATION_ASSISTANCE_DESCRIPTION =
+  /\bwhether (?:the episode caused sufficient cognitive or physical impairment that )?(?:you were|a person was|they were) unable to treat it (?:yourself|themselves) and needed (?:someone else|another person) to administer (?:carbohydrates|glucagon)\b/gi;
 
 function cleanModelText(value: unknown, validEvidenceIds: Set<string>) {
   if (typeof value !== "string") return "";
@@ -94,11 +104,18 @@ export function parseTarvisAnswer(
     : [];
   let selectedEvidenceIds: string[] = [];
   const visibleCopy = [headline, answer, ...limitations].join("\n");
+  const generalEducation = options.generalEducation && !packet;
+  const causalCopy = generalEducation
+    ? visibleCopy.replace(EDUCATION_CAUSAL_UNCERTAINTY, "")
+    : visibleCopy;
+  const treatmentCopy = generalEducation
+    ? visibleCopy.replace(EDUCATION_ASSISTANCE_DESCRIPTION, "")
+    : visibleCopy;
   if (
-    (options.generalEducation && !packet
+    (generalEducation
       ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT
-      : PROHIBITED_TREATMENT_OUTPUT).test(visibleCopy) ||
-    PROHIBITED_CAUSAL_OUTPUT.test(visibleCopy) ||
+      : PROHIBITED_TREATMENT_OUTPUT).test(treatmentCopy) ||
+    PROHIBITED_CAUSAL_OUTPUT.test(causalCopy) ||
     PROHIBITED_DIAGNOSIS_OUTPUT.test(visibleCopy)
   ) {
     throw new Error(

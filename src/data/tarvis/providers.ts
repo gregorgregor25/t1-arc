@@ -1,21 +1,25 @@
-export type TarvisProvider = "openai" | "gemini" | "claude";
+export type TarvisApiKeyProvider = "openai" | "gemini" | "claude";
+export type TarvisProvider = TarvisApiKeyProvider | "chatgpt";
 
 // Only identifiers verified for this release belong in this list. Never
 // substitute a different model when a saved identifier is no longer offered.
 export const TARVIS_MODELS: Record<TarvisProvider, readonly string[]> = {
-  openai: ["gpt-5.6-luna", "gpt-5.6-terra"],
+  // ChatGPT models come from the signed-in account's catalog, never a fallback.
+  chatgpt: [],
+  openai: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-6.1-sol"],
   gemini: ["gemini-3.8-flash", "gemini-3.7-flash"],
   claude: ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5-5"],
 };
 
 export const TARVIS_PROVIDERS = {
+  chatgpt: { label: "ChatGPT", model: "", pricingUrl: "https://chatgpt.com/settings/usage", placeholder: "", keyUrl: "https://chatgpt.com", privacyUrl: "https://openai.com/policies/privacy-policy/", privacy: "Use an eligible ChatGPT plan for AI answers. Only the question and disclosed context you send are shared with OpenAI; T1 Arc cannot read your existing ChatGPT conversations. ChatGPT plan limits and OpenAI's privacy terms apply. Manage usage in ChatGPT settings." },
   openai: { label: "OpenAI", model: "gpt-5.6-luna", pricingUrl: "https://developers.openai.com/api/docs/pricing", placeholder: "sk-proj-…", keyUrl: "https://platform.openai.com/api-keys", privacyUrl: "https://platform.openai.com/docs/guides/your-data", privacy: "T1 Arc requests no response storage. OpenAI's API retention and safety-monitoring terms still apply." },
   gemini: { label: "Google Gemini", model: "gemini-3.8-flash", pricingUrl: "https://ai.google.dev/gemini-api/docs/pricing", placeholder: "AQ.…", keyUrl: "https://aistudio.google.com/apikey", privacyUrl: "https://ai.google.dev/gemini-api/terms", privacy: "Use a Gemini API project with active billing for health information. Google's unpaid-service terms prohibit submitting sensitive or personal information and may allow human review and product improvement. Paid-service requirements also apply to apps in the UK, EEA and Switzerland. Gemini requires users aged 18 or older and prohibits clinical practice or medical advice. Check Google's terms for your account and region." },
   claude: { label: "Anthropic Claude", model: "claude-sonnet-5", pricingUrl: "https://platform.claude.com/docs/en/about-claude/pricing", placeholder: "sk-ant-…", keyUrl: "https://platform.claude.com/settings/keys", privacyUrl: "https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-data", privacy: "Anthropic's API retention and safety-monitoring terms apply. T1 Arc cannot enable zero data retention for your account." },
 } as const;
 
 export function isTarvisProvider(value: unknown): value is TarvisProvider {
-  return value === "openai" || value === "gemini" || value === "claude";
+  return value === "chatgpt" || value === "openai" || value === "gemini" || value === "claude";
 }
 
 export class TarvisModelUnavailableError extends Error {
@@ -26,6 +30,9 @@ export class TarvisModelUnavailableError extends Error {
 }
 
 export function assertTarvisModel(provider: TarvisProvider, value: unknown): string {
+  // Membership in ChatGPT's account-specific catalog is checked when loading
+  // the request session. This boundary only accepts a well-formed slug.
+  if (provider === "chatgpt" && typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) return value;
   if (typeof value !== "string" || !TARVIS_MODELS[provider].includes(value)) {
     throw new TarvisModelUnavailableError(provider);
   }
@@ -33,6 +40,7 @@ export function assertTarvisModel(provider: TarvisProvider, value: unknown): str
 }
 
 export function validateTarvisApiKey(value: string, provider: TarvisProvider) {
+  if (provider === "chatgpt") throw new Error("Use Continue with ChatGPT to connect your ChatGPT plan.");
   const key = value.trim();
   const prefix = provider === "gemini" ? "AQ. or AIza" : provider === "claude" ? "sk-ant-" : "sk-";
   const validPrefix = provider === "gemini" ? key.startsWith("AQ.") || key.startsWith("AIza") : provider === "claude" ? key.startsWith("sk-ant-") : key.startsWith("sk-") && !key.startsWith("sk-ant-");

@@ -64,10 +64,16 @@ how meals, insulin and activity lined up with glucose.
 
 Tarv1s keeps supporting dates and records attached to its answers. It should
 say when the available evidence is incomplete instead of filling in the gaps.
-Supported exact questions are
-answered on the phone for free. Broader questions can use
-an optional direct connection to OpenAI, Google Gemini or Anthropic Claude
-with your own API key. Nothing is sent until you submit an AI question.
+Supported exact questions are answered on the phone for free. For broader
+questions, you can optionally use an eligible ChatGPT plan through **Continue
+with ChatGPT**, or connect directly to OpenAI, Google Gemini or Anthropic Claude
+with your own API key. A question and any selected health context go to the
+chosen provider only when you tap Send. ChatGPT uses models offered to that
+account and never silently falls back to an API key.
+
+The ChatGPT route completed two record-free answers on a private production-
+package phone build. The exact public APK has separate release checks. See the
+[ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
 
 The default OpenAI model is **GPT-5.6 Luna**. An illustrative Luna question
 costs **less than half a US cent**, but usage varies with the question and
@@ -77,7 +83,7 @@ provider's official pricing before use. [See the Luna cost example](docs/TARV1S_
 Tarv1s is not an insulin-dose calculator, medical device or emergency service.
 
 **[See how Tarv1s works](docs/USING_T1_ARC.md#tarv1s)** ·
-[Choose an AI provider and set up your key](docs/TARV1S_BYOK.md)
+[Choose an AI connection](docs/TARV1S_BYOK.md)
 
 ### T1 Arc demo | AI narration: elevenlabs.io
 
@@ -227,25 +233,27 @@ T1 Arc labels those boundaries instead of treating a fixture as field proof.
 Read the [regional capability matrix](docs/REGIONAL_CAPABILITY_MATRIX.md) for
 the exact status.
 
-## How Tarv1s uses your AI provider key
+## How Tarv1s connects to optional AI
 
 Tarv1s answers supported exact questions locally without an AI provider.
 Broader questions can send the question and a bounded evidence packet directly
-to the provider you choose: OpenAI, Google Gemini or Anthropic Claude. The
-answer keeps supporting dates and records attached.
+to the connection you choose: an eligible ChatGPT plan, or your own OpenAI,
+Google Gemini or Anthropic Claude API key. The answer keeps supporting dates
+and records attached. ChatGPT model choices come from the connected account.
 
-Every user follows the same bring-your-own-key route:
+API-key connections follow the same bring-your-own-key route:
 
 - create a dedicated API project or key for the selected provider;
 - store each provider's key separately in Android secure storage on the phone;
 - send AI requests directly from the phone to the selected provider's API;
 - use that provider's API billing and limits.
 
-T1 Arc has no shared maintainer key or health-data relay. Nothing is sent until
-the user chooses to send an AI question. Switching providers does not silently
+T1 Arc has no shared maintainer key or health-data relay. No question or health
+evidence is sent until the user taps Send. Switching providers does not silently
 send the question to another service after an error. Chat subscriptions do not
-automatically fund API usage. Read the [Tarv1s BYOK guide](docs/TARV1S_BYOK.md)
-before enabling it.
+automatically fund API usage; **Continue with ChatGPT** uses an eligible plan
+instead of an API key. Read the [Tarv1s connection guide](docs/TARV1S_BYOK.md)
+before enabling either route.
 
 ## Privacy
 

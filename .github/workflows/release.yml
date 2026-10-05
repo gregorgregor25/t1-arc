@@ -119,7 +119,13 @@ jobs:
       - name: Check public source
         run: npm run verify:public-source
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/security-audit.mjs --report "$RUNNER_TEMP/t1arc-audit.json"
+      - name: Preserve complete production audit report
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/t1arc-audit.json"; then
+            cat "$RUNNER_TEMP/t1arc-audit.json"
+          fi
       - name: Check Expo project
         run: |
           npx expo install --check
@@ -129,6 +135,9 @@ jobs:
       - name: Generate the native Android project
         env:
           NODE_ENV: production
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: prebuild
         run: npx expo prebuild --platform android --clean --no-install
       - name: Confirm clean source before signing
         run: |
@@ -163,9 +172,13 @@ jobs:
           T1ARC_RELEASE_KEY_ALIAS: ${{ secrets.T1ARC_RELEASE_KEY_ALIAS }}
           T1ARC_RELEASE_KEY_PASSWORD: ${{ secrets.T1ARC_RELEASE_KEY_PASSWORD }}
           NODE_ENV: production
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: signed-build
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease :app:lintRelease \
+            :t1arc-chatgpt:testReleaseUnitTest \
             :wear:assembleRelease :wear:testReleaseUnitTest :wear:lintRelease \
             :watchface-meridian:assembleRelease :watchface-meridian:lintRelease \
             :watchface-chronograph:assembleRelease :watchface-chronograph:lintRelease \
@@ -176,7 +189,17 @@ jobs:
             :watchface-push:lintChronographRelease \
             :watchface-push:lintAtelierRelease \
             :watchface-push:lintPaceRelease \
-            :watchface-push:lintSummitRelease --no-daemon
+            :watchface-push:lintSummitRelease --no-build-cache --no-daemon
+      - name: Verify signed APK dependency exposure
+        run: |
+          node scripts/verify-dependency-exposure.mjs \
+            --evidence-dir "$RUNNER_TEMP/t1arc-exposure" \
+            --require-stage prebuild --require-stage signed-build \
+            --source-map android/app/build/generated/sourcemaps/react/release/index.android.bundle.map \
+            --bundle android/app/build/generated/assets/react/release/index.android.bundle
+          python scripts/verify-apk-js-bundle.py \
+            android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/generated/assets/react/release/index.android.bundle
       - name: Verify and name the public APK set
         shell: pwsh
         env:
@@ -241,6 +264,9 @@ jobs:
           APK_NAME: ${{ steps.version.outputs.apk }}
         run: |
           set -euo pipefail
+          # Recheck expiry and fresh advisories after the potentially long build.
+          node scripts/security-audit.mjs --report "$RUNNER_TEMP/t1arc-final-audit.json"
+          cat "$RUNNER_TEMP/t1arc-final-audit.json"
           existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq '.[] | select(.ref == "refs/tags/" + env.RELEASE_TAG) | .ref')
           if [[ -n "$existing" ]]; then
             echo "Release tag was created during the build. Stop and review it before retrying."
@@ -265,3 +291,9 @@ jobs:
             --notes-file "$RUNNER_TEMP/t1arc-release-notes.md" \
             --target "$GITHUB_SHA" \
             --title "T1 Arc $RELEASE_VERSION"
+      - name: Preserve final production audit report
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/t1arc-final-audit.json"; then
+            cat "$RUNNER_TEMP/t1arc-final-audit.json"
+          fi

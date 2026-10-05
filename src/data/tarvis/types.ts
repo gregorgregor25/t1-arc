@@ -167,11 +167,13 @@ export interface TarvisUsage {
 }
 
 export interface TarvisStoredSettings {
+  /** Backwards-compatible connection flag; also true for a connected ChatGPT account. */
   hasApiKey: boolean;
   provider: import("./providers").TarvisProvider;
   configuredProviders: Record<import("./providers").TarvisProvider, boolean>;
   /** Raw saved selections allow settings to repair an identifier removed from the catalog. */
   selectedModels: Record<import("./providers").TarvisProvider, string>;
+  chatGpt?: import("./chatGptConnection").ChatGptState;
   usage: TarvisUsage;
 }
 

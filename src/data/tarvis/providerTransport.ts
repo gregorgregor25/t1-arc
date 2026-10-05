@@ -1,4 +1,5 @@
 import { assertTarvisModel, TARVIS_PROVIDERS, type TarvisProvider } from "./providers";
+import { ChatGptTransportError, fetchChatGptResponse } from "./chatGptTransport";
 
 // Keep the existing, guarded Responses-shaped request contract inside Tarv1s.
 // Only this boundary translates it to the selected provider's native API.
@@ -29,16 +30,16 @@ export interface ProviderResponseBody {
 }
 
 export class TarvisProviderError extends Error {
-  constructor(message: string, readonly settingsRequired = false, readonly retryAt?: number) {
+  constructor(message: string, readonly settingsRequired = false, readonly retryAt?: number, readonly manageUsage = false) {
     super(message);
     this.name = "TarvisProviderError";
   }
 }
 
-const cooldowns = new Map<TarvisProvider, number>();
+const cooldowns = new Map<TarvisProvider, { until: number; message?: string; manageUsage?: boolean }>();
 export function assertTarvisProviderReady(provider: TarvisProvider, now = Date.now()) {
-  const until = cooldowns.get(provider) ?? 0;
-  if (until > now) throw new TarvisProviderError(`${TARVIS_PROVIDERS[provider].label} API limit exceeded. Please wait before trying again.`, false, until);
+  const cooldown = cooldowns.get(provider);
+  if (cooldown && cooldown.until > now) throw new TarvisProviderError(cooldown.message ?? `${TARVIS_PROVIDERS[provider].label} API limit exceeded. Please wait before trying again.`, false, cooldown.until, cooldown.manageUsage);
 }
 
 export function clearTarvisProviderCooldownsForTests() { cooldowns.clear(); }
@@ -61,7 +62,7 @@ function count(value: unknown): number { return typeof value === "number" && Num
 
 export function normalizeProviderResponse(provider: TarvisProvider, value: unknown): ProviderResponseBody {
   const raw = record(value);
-  if (provider === "openai") return raw as ProviderResponseBody;
+  if (provider === "openai" || provider === "chatgpt") return raw as ProviderResponseBody;
   let text: string;
   let reason: unknown;
   let input: number;
@@ -103,6 +104,17 @@ export async function fetchTarvisProviderResponse(provider: TarvisProvider, key:
   } catch {
     throw new TarvisProviderError(`The selected ${config.label} model is unavailable. Choose a model in Tarv1s settings.`, true);
   }
+  if (provider === "chatgpt") {
+    try {
+      const body = await fetchChatGptResponse(key, original as unknown as Record<string, unknown>, init.signal);
+      return { ok: true, status: 200, async json() { return normalizeProviderResponse(provider, body); } };
+    } catch (error) {
+      if (!(error instanceof ChatGptTransportError)) throw error;
+      const until = error.cooldownMs ? Date.now() + error.cooldownMs : undefined;
+      if (until) cooldowns.set(provider, { until, message: error.message, manageUsage: error.manageUsage });
+      throw new TarvisProviderError(error.message, error.settingsRequired, until, error.manageUsage);
+    }
+  }
   let url = openAiUrl;
   let request = init;
   if (provider !== "openai") {
@@ -137,7 +149,7 @@ export async function fetchTarvisProviderResponse(provider: TarvisProvider, key:
       const seconds = retry && /^\d+$/.test(retry) ? Number(retry) : 0;
       const requestedDelay = seconds ? seconds * 1000 : retry ? Date.parse(retry) - Date.now() : 0;
       const until = Date.now() + Math.min(24 * 60 * 60 * 1000, Math.max(30_000, Number.isFinite(requestedDelay) ? requestedDelay : 0));
-      cooldowns.set(provider, until);
+      cooldowns.set(provider, { until });
       throw new TarvisProviderError(`${config.label} API limit exceeded. Please wait before trying again.`, false, until);
     }
     if (response.status >= 500) throw new TarvisProviderError(`${config.label} is currently unavailable. Please try again later.`);

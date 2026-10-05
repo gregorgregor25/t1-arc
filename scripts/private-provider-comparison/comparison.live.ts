@@ -16,6 +16,7 @@ import type { TarvisEvidencePacket, TarvisModelEvidencePacket, TarvisRetrospecti
 import {
   ComparisonBudgetStop,
   inspectComparisonLedger,
+  MAX_COMPARISON_REQUESTS,
   MODEL_RATES,
   reserveComparisonRequest,
   settleComparisonRequest,
@@ -27,6 +28,24 @@ import {
 import { boundedAppFailureMessage, boundedNativeErrorDiagnostic, type NativeErrorDiagnostic } from "./diagnostics";
 import { assertGeminiDispatchApproval } from "./accessGate";
 import { DISCRIMINATING_QUESTIONS, scoreDiscriminatingCase } from "./qualityChecks";
+import { privateComparisonPaths } from "./runFiles";
+
+// This test-only overlay permits a candidate model through the application's
+// real request path without exposing it in the shipped settings selector.
+vi.mock("@/data/tarvis/providers", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/data/tarvis/providers")>();
+  return {
+    ...original,
+    TARVIS_MODELS: {
+      ...original.TARVIS_MODELS,
+      gemini: [...original.TARVIS_MODELS.gemini, "gemini-3.1-pro-preview"],
+    },
+    assertTarvisModel(provider: Parameters<typeof original.assertTarvisModel>[0], value: unknown) {
+      if (provider === "gemini" && value === "gemini-3.1-pro-preview") return value;
+      return original.assertTarvisModel(provider, value);
+    },
+  };
+});
 
 const mocks = vi.hoisted(() => ({
   acquireLease: vi.fn(), assertLeaseCurrent: vi.fn(), loadApiKey: vi.fn(),
@@ -48,19 +67,19 @@ vi.mock("@/data/tarvis/secureStore", () => ({
 
 const PRIVATE_DIR = join(homedir(), ".t1arc-private", "launch-testing");
 const KEY_FILE = join(PRIVATE_DIR, "services.txt");
-const LEDGER_FILE = join(PRIVATE_DIR, "provider-comparison-ledger.json");
-const RESULTS_FILE = join(PRIVATE_DIR, "provider-comparison-results.json");
 const RUN_LOCK = join(PRIVATE_DIR, "provider-comparison-run.lock");
 const AS_OF = Date.parse("2026-08-26T10:00:00+01:00");
 
 type CaseId = "general-explanation" | "evidence-planning" | "supported-findings" |
   "missing-stale-data" | "unsupported-claims" | "prompt-injection" |
-  "event-count-priority" | "zero-recorded-events" | "education-calibration" | "education-calibration-paraphrase" | "education-calibration-limits";
+  "event-count-priority" | "zero-recorded-events" | "education-calibration" | "education-calibration-paraphrase" | "education-calibration-limits" |
+  "severe-hypo-definition" | "severe-hypo-sensor-limits";
 const CASE_IDS: readonly CaseId[] = [
   "general-explanation", "evidence-planning", "supported-findings",
   "missing-stale-data", "unsupported-claims", "prompt-injection",
   "event-count-priority", "zero-recorded-events", "education-calibration",
   "education-calibration-paraphrase", "education-calibration-limits",
+  "severe-hypo-definition", "severe-hypo-sensor-limits",
 ];
 
 type TrialResult = {
@@ -75,6 +94,7 @@ type TrialResult = {
   actualCostUsd?: number; reservedCostUsd?: number;
   headline?: string; answer?: string; limitations?: string[];
   answerOriginalLength?: number; answerTruncated?: boolean;
+  rawModelText?: string; rawModelTextTruncated?: boolean;
   selectedFindingIds?: string[];
   checks?: Record<string, boolean>; failureKind?: "provider-access" | "rate-limit" | "timeout" |
     "network" | "parse-or-guardrail" | "other";
@@ -236,7 +256,9 @@ function caseInput(caseId: CaseId): {
     };
     case "education-calibration":
     case "education-calibration-paraphrase":
-    case "education-calibration-limits": return {
+    case "education-calibration-limits":
+    case "severe-hypo-definition":
+    case "severe-hypo-sensor-limits": return {
       question: DISCRIMINATING_QUESTIONS[caseId],
       planning: false,
     };
@@ -268,19 +290,19 @@ async function readOnlyComparisonKeys(): Promise<Partial<Record<ComparisonProvid
   return keys;
 }
 
-function saveResults(rows: TrialResult[]) {
-  const temporary = `${RESULTS_FILE}.${process.pid}.tmp`;
+function saveResults(path: string, rows: TrialResult[]) {
+  const temporary = `${path}.${process.pid}.tmp`;
   const fd = openSync(temporary, "wx", 0o600);
   try {
     writeFileSync(fd, JSON.stringify({ version: 1, rows }, null, 2));
     fsyncSync(fd);
   } finally { closeSync(fd); }
-  renameSync(temporary, RESULTS_FILE);
+  renameSync(temporary, path);
 }
 
-function readResults(): TrialResult[] {
-  if (!existsSync(RESULTS_FILE)) return [];
-  const value: unknown = JSON.parse(readFileSync(RESULTS_FILE, "utf8"));
+function readResults(path: string): TrialResult[] {
+  if (!existsSync(path)) return [];
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   if (!value || typeof value !== "object" || !Array.isArray((value as { rows?: unknown }).rows)) {
     throw new Error("Private result file is invalid; inspect it before resuming.");
   }
@@ -298,6 +320,7 @@ function approvedModels() {
     T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: process.env.T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED,
     T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: process.env.T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED,
     T1ARC_PRIVATE_GEMINI_37_ACCESS_VERIFIED: process.env.T1ARC_PRIVATE_GEMINI_37_ACCESS_VERIFIED,
+    T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED: process.env.T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED,
   });
   return allowed;
 }
@@ -328,7 +351,7 @@ function classifyFailure(error: unknown): TrialResult["failureKind"] {
   const message = error instanceof Error ? error.message : "";
   if (/45 seconds|stopped evidence planning/i.test(message)) return "timeout";
   if (/could not be reached|network|fetch failed/i.test(message)) return "network";
-  if (/unreadable|invalid|incomplete|outside its safety boundary|inconsistent/i.test(message)) return "parse-or-guardrail";
+  if (/unreadable|invalid|incomplete|outside its (?:safety|safe evidence) boundary|inconsistent/i.test(message)) return "parse-or-guardrail";
   return "other";
 }
 
@@ -339,9 +362,13 @@ describe("private synthetic provider comparison", () => {
     const allowed = approvedModels();
     const cases = selectedCases();
     const attemptId = diagnosticAttemptId();
+    const { ledgerFile, resultsFile } = privateComparisonPaths(PRIVATE_DIR, process.env.T1ARC_PRIVATE_COMPARISON_RUN_ID);
+    if (allowed.size * cases.length > MAX_COMPARISON_REQUESTS) {
+      throw new Error(`Select at most ${MAX_COMPARISON_REQUESTS} model/case pairs per run.`);
+    }
     mkdirSync(PRIVATE_DIR, { recursive: true, mode: 0o700 });
     const keys = await readOnlyComparisonKeys();
-    let rows = readResults();
+    let rows = readResults(resultsFile);
     const runFd = openSync(RUN_LOCK, "wx", 0o600);
     const originalFetch = globalThis.fetch.bind(globalThis);
     let selectedModel: ComparisonModel | undefined;
@@ -381,7 +408,7 @@ describe("private synthetic provider comparison", () => {
         throw new Error("Native model or output ceiling did not match the approved selection.");
       }
       if (expectedProvider === "gemini") {
-        const previous = inspectComparisonLedger(LEDGER_FILE).reservations
+        const previous = inspectComparisonLedger(ledgerFile).reservations
           .filter(row => row.provider === "gemini")
           .map(row => Date.parse(row.createdAt))
           .reduce((latest, timestamp) => Math.max(latest, timestamp), 0);
@@ -389,7 +416,7 @@ describe("private synthetic provider comparison", () => {
         if (waitMs > 0) await new Promise<void>(resolve => { setTimeout(resolve, waitMs); });
       }
       try {
-        reservation = reserveComparisonRequest(LEDGER_FILE, {
+        reservation = reserveComparisonRequest(ledgerFile, {
           caseId: attemptId ? `${selectedCase}-${attemptId}` : selectedCase,
           model: selectedModel, provider: expectedProvider,
           requestBytes: Buffer.byteLength(init.body, "utf8"), maxOutputTokens: maxTokens,
@@ -402,7 +429,6 @@ describe("private synthetic provider comparison", () => {
       nativeDispatchAttempted = true;
       const start = performance.now();
       const response = await originalFetch(input, { ...init, redirect: "error" });
-      nativeFetchMs = Math.round(performance.now() - start);
       httpStatus = response.status;
       if (response.ok) {
         try {
@@ -415,6 +441,8 @@ describe("private synthetic provider comparison", () => {
         try { nativeError = boundedNativeErrorDiagnostic(await response.clone().json()); }
         catch { /* An unreadable provider error body is never surfaced. */ }
       }
+      // Include provider body transfer and parsing; fetch() alone stops at headers.
+      nativeFetchMs = Math.round(performance.now() - start);
       return response;
     };
     try {
@@ -427,7 +455,7 @@ describe("private synthetic provider comparison", () => {
         let modelAccessFailure = false;
         for (const caseId of cases) {
           const id = `${model}:${caseId}${attemptId ? `-${attemptId}` : ""}`;
-          if (rows.some(row => row.id === id) || inspectComparisonLedger(LEDGER_FILE).reservations.some(row => row.id === id)) continue;
+          if (rows.some(row => row.id === id) || inspectComparisonLedger(ledgerFile).reservations.some(row => row.id === id)) continue;
           if (modelAccessFailure) break;
           selectedModel = model;
           selectedCase = caseId;
@@ -498,7 +526,8 @@ describe("private synthetic provider comparison", () => {
               };
               if (caseId === "event-count-priority" || caseId === "zero-recorded-events" ||
                   caseId === "education-calibration" || caseId === "education-calibration-paraphrase" ||
-                  caseId === "education-calibration-limits") {
+                  caseId === "education-calibration-limits" || caseId === "severe-hypo-definition" ||
+                  caseId === "severe-hypo-sensor-limits") {
                 row.checks = {
                   ...row.checks,
                   ...scoreDiscriminatingCase(caseId, {
@@ -528,17 +557,24 @@ describe("private synthetic provider comparison", () => {
             row.totalTokens = metrics?.totalTokens;
             // One failed call is enough to diagnose this model. No automatic
             // follow-up cases should spend quota against the same failure.
-            modelAccessFailure = true;
+            // A complete HTTP 200 answer rejected by the local parser/guard is
+            // a quality result, not evidence that the model cannot be reached.
+            modelAccessFailure = !(row.failureKind === "parse-or-guardrail" && httpStatus === 200 && nativeOutput !== undefined);
           }
           row.durationMs = Math.round(performance.now() - start);
           row.nativeFetchMs = nativeFetchMs;
           row.nativeDispatchAttempted = nativeDispatchAttempted;
           row.httpStatus = httpStatus;
           row.nativeError = nativeError;
+          const completedNativeText = nativeOutput as string | undefined;
+          if (completedNativeText !== undefined) {
+            row.rawModelText = cleanText(completedNativeText, 6000);
+            row.rawModelTextTruncated = completedNativeText.length > 6000;
+          }
           const committed = reservation as ComparisonReservation | undefined;
           const billed = authoritativeUsage as { inputTokens: number; outputTokens: number } | undefined;
           if (committed) {
-            const settled = settleComparisonRequest(LEDGER_FILE, committed.id, {
+            const settled = settleComparisonRequest(ledgerFile, committed.id, {
               status: row.status === "failed" ? "failed" : row.parserAccepted === false ? "local-fallback" : "accepted",
               inputTokens: billed?.inputTokens,
               outputTokens: billed?.outputTokens,
@@ -547,7 +583,7 @@ describe("private synthetic provider comparison", () => {
             row.actualCostUsd = settled.actualUsd;
           }
           rows = [...rows, row];
-          saveResults(rows);
+          saveResults(resultsFile, rows);
           console.log(`${model}/${caseId}: ${row.status}; HTTP=${row.httpStatus ?? "none"}; sent=${row.nativeDispatchAttempted}; parser=${row.parserAccepted}; tokens=${row.totalTokens ?? "unknown"}.`);
         }
       }
@@ -564,7 +600,7 @@ describe("private synthetic provider comparison", () => {
         expect(nativeDispatchAttempted).toBe(false);
         expect(reservation).toBeUndefined();
       }
-      console.log(`Comparison ledger committed or reserved: $${inspectComparisonLedger(LEDGER_FILE).spentOrReservedUsd.toFixed(4)} of $1.0000.`);
+      console.log(`Comparison ledger committed or reserved: $${inspectComparisonLedger(ledgerFile).spentOrReservedUsd.toFixed(4)} of $1.0000.`);
     } finally {
       globalThis.fetch = originalFetch;
       closeSync(runFd);

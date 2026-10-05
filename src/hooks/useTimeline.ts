@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiabetesRepository } from "@/data/contracts";
+import { loadTimelineWithContext } from "@/domain/timelineContextLoading";
 import { glucoseFreshness } from "@/domain/freshness";
 import {
   DataSourceStatus,
@@ -54,13 +55,21 @@ export function timelineStateForRange(
     : { loading: true };
 }
 
-export function useTimeline(range: TimeRange, selectionKey?: string) {
+export function useTimeline(
+  range: TimeRange,
+  selectionKey?: string,
+  options: { contextPaddingMs?: number } = {},
+) {
   const { repository, revision } = useDataContext();
+  const contextPaddingMs = options.contextPaddingMs ?? 0;
   // A live range's numeric end moves with the foreground clock. A stable
   // selection key keeps that clock-only render from repeating an identical
   // encrypted query; repository revisions still revalidate with the newest
   // range, while date/range-choice changes continue to fail closed.
-  const rangeKey = timelineRequestKey(range, selectionKey);
+  const baseRangeKey = timelineRequestKey(range, selectionKey);
+  const rangeKey = contextPaddingMs > 0
+    ? `${baseRangeKey}:context:${contextPaddingMs}`
+    : baseRangeKey;
   const latestRange = useRef(range);
   useEffect(() => {
     latestRange.current = range;
@@ -82,11 +91,7 @@ export function useTimeline(range: TimeRange, selectionKey?: string) {
     // it with a loading card made every silent glucose poll look like a full
     // screen refresh.
     const requestedRange = latestRange.current;
-    repository
-      .getTimeline({
-        start: requestedRange.start,
-        end: requestedRange.end,
-      })
+    loadTimelineWithContext(repository, requestedRange, contextPaddingMs)
       .then((data) => {
         if (active) {
           setState({ data, loading: false, rangeKey, owner: repository });
@@ -110,7 +115,7 @@ export function useTimeline(range: TimeRange, selectionKey?: string) {
     return () => {
       active = false;
     };
-  }, [rangeKey, repository, revision]);
+  }, [contextPaddingMs, rangeKey, repository, revision]);
 
   return timelineStateForRange(state, rangeKey, repository);
 }

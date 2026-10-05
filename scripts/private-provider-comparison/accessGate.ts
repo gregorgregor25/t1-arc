@@ -1,10 +1,11 @@
-const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash"] as const;
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.1-pro-preview"] as const;
 
 interface GeminiApprovalEnvironment {
   T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED?: string;
   T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED?: string;
   T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED?: string;
   T1ARC_PRIVATE_GEMINI_37_ACCESS_VERIFIED?: string;
+  T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED?: string;
 }
 
 /** Fail closed unless the selected Gemini billing mode has explicit approval. */
@@ -17,6 +18,10 @@ export function assertGeminiDispatchApproval(
       environment.T1ARC_PRIVATE_GEMINI_37_ACCESS_VERIFIED !== "YES") {
     throw new Error("Gemini 3.7 comparison requires verified model access for the selected account.");
   }
+  if (models.has("gemini-3.1-pro-preview") &&
+      environment.T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED !== "YES") {
+    throw new Error("Gemini 3.1 Pro comparison requires verified model access for the selected account.");
+  }
 
   const free = environment.T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED === "YES";
   const paidQuota = environment.T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED === "YES";
@@ -24,7 +29,7 @@ export function assertGeminiDispatchApproval(
   const anyPaidFlag = environment.T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED !== undefined ||
     environment.T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED !== undefined;
 
-  if (free && !anyPaidFlag) return;
+  if (free && !anyPaidFlag && !models.has("gemini-3.1-pro-preview")) return;
   if (environment.T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED === undefined &&
       paidQuota && paidAuthorization) return;
 

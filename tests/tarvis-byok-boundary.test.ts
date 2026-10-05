@@ -24,7 +24,9 @@ describe("Tarv1s BYOK boundary", () => {
     expect(client).toContain(
       'const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";',
     );
-    expect(client.match(/loadTarvisApiKey\(writeLease, provider\)/g)).toHaveLength(2);
+    expect(client).toContain("loadTarvisApiKey(lease, provider)");
+    expect(client).toContain("getChatGptRequestSession(lease)");
+    expect(client.match(/loadTarvisRequestCredentials\(writeLease, provider\)/g)).toHaveLength(2);
     expect(client.match(/Authorization: `Bearer \$\{key\}`/g)).toHaveLength(2);
     expect(client.match(/fetchTarvisProviderResponse\(provider, key, OPENAI_RESPONSES_URL/g)).toHaveLength(2);
     expect(client).not.toContain("process.env");
@@ -35,8 +37,8 @@ describe("Tarv1s BYOK boundary", () => {
     const screen = source("src/screens/TarvisScreen.tsx");
 
     expect(screen).toContain("Optional AI answers");
-    expect(screen).toContain("Local questions about your recorded data work without a key.");
-    expect(screen).toContain("go to that provider; API usage may cost money");
+    expect(screen).toContain("Local answers work without a connection.");
+    expect(screen).toContain("API usage may cost money");
     expect(screen).toContain("Save key on this phone");
     expect(screen).toContain("Remove saved key");
   });
@@ -60,20 +62,22 @@ describe("Tarv1s BYOK boundary", () => {
     const archivedEnvironment = source(".env.mtls-poc.example");
 
     expect(readme).toContain(
-      "Every user follows the same bring-your-own-key route:",
+      "API-key connections follow the same bring-your-own-key route:",
     );
     expect(byokGuide).toContain(
-      "Every user follows the same setup.",
+      "API-key connections follow the same setup.",
     );
     expect(byokGuide).toContain("same setup.");
     expect(releaseStatus).toContain(
-      "the same direct bring-your-own-key Tarv1s route for every user",
+      "The API-key routes use each user's saved key and model.",
     );
+    expect(releaseStatus).toContain("ChatGPT is a separate, optional plan");
+    expect(releaseStatus).toContain("maintainer API key or hosted AI relay.");
     expect(releaseStatus).not.toContain(
       "Put the production OpenAI key in a T1 Arc backend",
     );
     expect(normalEnvironment).not.toContain("EXPO_PUBLIC_TARVIS_");
-    expect(normalEnvironment).toContain("Every user connects their own OpenAI");
+    expect(normalEnvironment).toContain("API connections use the user's own OpenAI");
     expect(archivedEnvironment).toContain("Archived direct-mTLS proof of concept");
   });
 

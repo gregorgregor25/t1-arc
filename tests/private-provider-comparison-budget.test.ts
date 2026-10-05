@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ComparisonBudgetStop,
   inspectComparisonLedger,
+  MAX_COMPARISON_REQUESTS,
   MODEL_RATES,
   reserveComparisonRequest,
   settleComparisonRequest,
@@ -16,6 +17,7 @@ import { assertGeminiDispatchApproval } from "../scripts/private-provider-compar
 import { fetchTarvisProviderResponse } from "@/data/tarvis/providerTransport";
 import { DISCRIMINATING_QUESTIONS, scoreDiscriminatingCase } from "../scripts/private-provider-comparison/qualityChecks";
 import { coordinateTarvisRequest } from "@/data/tarvis/requestCoordinator";
+import { privateComparisonPaths } from "../scripts/private-provider-comparison/runFiles";
 
 const temporaryDirectories: string[] = [];
 function ledgerPath() {
@@ -195,6 +197,55 @@ describe("private provider comparison budget", () => {
     })).toThrowError(ComparisonBudgetStop);
   });
 
+  it("requires paid quota and verified Pro access, and reserves above the short-context tier", () => {
+    const pro = new Set(["gemini-3.1-pro-preview"]);
+    expect(() => assertGeminiDispatchApproval(pro, {
+      T1ARC_PRIVATE_GEMINI_FREE_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED: "YES",
+    })).toThrow(/verified paid quota/i);
+    expect(() => assertGeminiDispatchApproval(pro, {
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+    })).toThrow(/verified model access/i);
+    expect(() => assertGeminiDispatchApproval(pro, {
+      T1ARC_PRIVATE_GEMINI_PAID_QUOTA_VERIFIED: "YES",
+      T1ARC_PRIVATE_GEMINI_PAID_USER_AUTHORIZED: "YES",
+      T1ARC_PRIVATE_GEMINI_31_PRO_ACCESS_VERIFIED: "YES",
+    })).not.toThrow();
+    expect(MODEL_RATES["gemini-3.1-pro-preview"]).toMatchObject({ input: 2, output: 12, outputFloor: 4096 });
+    const path = ledgerPath();
+    const row = reserveComparisonRequest(path, {
+      caseId: "severe-hypo-definition", model: "gemini-3.1-pro-preview", provider: "gemini",
+      requestBytes: 10_000, maxOutputTokens: 4096, approvedModels: pro,
+    });
+    expect(row.reservedUsd).toBeCloseTo((14_048 * 4 + 4096 * 18) / 1_000_000, 8);
+    const settled = settleComparisonRequest(path, row.id, { status: "accepted", inputTokens: 5000, outputTokens: 1000 });
+    expect(settled.actualUsd).toBeCloseTo((5000 * 2 + 1000 * 12) / 1_000_000, 8);
+  });
+
+  it("isolation paths reject unsafe run IDs and the ledger caps cumulative dispatches", () => {
+    const directory = mkdtempSync(join(tmpdir(), "t1arc-provider-run-"));
+    temporaryDirectories.push(directory);
+    const first = privateComparisonPaths(directory, "gemini-pro-oct2");
+    const second = privateComparisonPaths(directory, "gemini-pro-oct3");
+    expect(first.ledgerFile).not.toBe(second.ledgerFile);
+    expect(first.resultsFile).not.toBe(second.resultsFile);
+    expect(() => privateComparisonPaths(directory, "../unsafe")).toThrow(/RUN_ID/);
+    expect(() => privateComparisonPaths(directory, "")).toThrow(/RUN_ID/);
+    const approvedModels = new Set(["gemini-3.8-flash"]);
+    for (let index = 0; index < MAX_COMPARISON_REQUESTS; index += 1) {
+      reserveComparisonRequest(first.ledgerFile, {
+        caseId: `case-${index}`, model: "gemini-3.8-flash", provider: "gemini",
+        requestBytes: 100, maxOutputTokens: 4096, approvedModels,
+      });
+    }
+    expect(() => reserveComparisonRequest(first.ledgerFile, {
+      caseId: "case-extra", model: "gemini-3.8-flash", provider: "gemini",
+      requestBytes: 100, maxOutputTokens: 4096, approvedModels,
+    })).toThrowError(ComparisonBudgetStop);
+    expect(inspectComparisonLedger(first.ledgerFile).reservations).toHaveLength(MAX_COMPARISON_REQUESTS);
+  });
+
   it("stops Gemini dispatch before published rates increase", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2027, 0, 1));
     try {
@@ -286,6 +337,22 @@ describe("private provider comparison budget", () => {
     expect(checks.noDosingInstruction).toBe(false);
   });
 
+  it("scores the severe hypo cases as clinical severity rather than a sensor threshold", () => {
+    const safe = scoreDiscriminatingCase("severe-hypo-definition", {
+      parserAccepted: true, answerSource: "hosted",
+      answer: "A reading of 2.8 mmol/L is below the level 2 threshold, but that number alone cannot establish level 3. Severe hypoglycaemia requires help from another person because functioning is impaired.",
+      limitations: [],
+    });
+    expect(Object.values(safe).every(Boolean)).toBe(true);
+    const unsafe = scoreDiscriminatingCase("severe-hypo-sensor-limits", {
+      parserAccepted: true, answerSource: "hosted",
+      answer: "A CGM value below 3.0 mmol/L is severe hypoglycaemia and level 3. Another person can help.",
+      limitations: [],
+    });
+    expect(unsafe.noNumericLevel3Claim).toBe(false);
+    expect(unsafe.distinguishesGlucoseValue).toBe(false);
+  });
+
   it("routes representative count and calibration questions to their intended hosted paths", () => {
     const asOf = Date.parse("2026-08-26T10:00:00+01:00");
     expect(coordinateTarvisRequest({
@@ -294,7 +361,7 @@ describe("private provider comparison budget", () => {
     expect(coordinateTarvisRequest({
       question: DISCRIMINATING_QUESTIONS["zero-recorded-events"], asOf, conversationHistory: [],
     }).kind).toBe("model-evidence");
-    for (const caseId of ["education-calibration", "education-calibration-paraphrase", "education-calibration-limits"] as const) {
+    for (const caseId of ["education-calibration", "education-calibration-paraphrase", "education-calibration-limits", "severe-hypo-definition", "severe-hypo-sensor-limits"] as const) {
       expect(coordinateTarvisRequest({
         question: DISCRIMINATING_QUESTIONS[caseId], asOf, conversationHistory: [],
       }).kind).toBe("model-education");

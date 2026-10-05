@@ -47,6 +47,26 @@ afterEach(() => {
 });
 
 describe("release safety boundaries", () => {
+  it('requires guarded dependency evidence before preparing any public artifact', () => {
+    const steps = release.jobs['prepare-release']?.steps ?? [];
+    const audit = steps.findIndex((step) => step.run?.includes('scripts/security-audit.mjs'));
+    const build = steps.findIndex((step) => step.name === 'Build and check the production-signed APK set');
+    const evidence = steps.findIndex((step) => step.name === 'Verify signed APK dependency exposure');
+    const assets = steps.findIndex((step) => step.name === 'Verify and name the public APK set');
+    const draft = steps.findIndex((step) => step.name === 'Create a draft GitHub Release');
+    expect(audit).toBeGreaterThanOrEqual(0);
+    expect(build).toBeGreaterThan(audit);
+    expect(evidence).toBeGreaterThan(build);
+    expect(assets).toBeGreaterThan(evidence);
+    expect(draft).toBeGreaterThan(assets);
+    expect(steps[draft]?.run).toContain('scripts/security-audit.mjs --report');
+    expect(steps[evidence]?.run).toContain('--require-stage prebuild --require-stage signed-build');
+    expect(steps[evidence]?.run).toContain('scripts/verify-apk-js-bundle.py');
+    expect(steps[evidence]?.run).toContain('android/app/build/generated/assets/react/release/index.android.bundle');
+    expect(releaseText).not.toContain('continue-on-error');
+    expect(qualityText).toContain('--require-stage prebuild --require-stage bundle');
+  });
+
   it("rejects instrumentation in the actual Play bundle manifest", () => {
     const packaging = source('scripts/prepare-play-bundles.ps1');
     expect(packaging).toContain("$manifest.DocumentElement.SelectSingleNode('instrumentation')");

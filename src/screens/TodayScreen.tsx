@@ -26,30 +26,37 @@ import { TodayGlanceCard } from "@/components/TodayGlanceCard";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
-import { isManualKetoneEvent } from "@/data/manualContext";
+import { FOOD_LOG_SOURCE_ID } from "@/data/food/foodLogRepository";
+import type { FoodLog } from "@/data/food/types";
+import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualContext";
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
 import { dayRange } from "@/domain/time";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
+import { paddedContextRange } from "@/domain/timelineContextLoading";
+import { useFoodLogs } from "@/hooks/useFoodLogs";
 import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
+import type { HealthContextEvent } from "@/domain/models";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import { useDataContext } from "@/providers/DataProvider";
 
-type TodayRange = "6h" | "12h" | "24h";
+type TodayRange = "4h" | "8h" | "12h" | "24h";
 const RANGE_HOURS: Record<TodayRange, number> = {
-  "6h": 6,
+  "4h": 4,
+  "8h": 8,
   "12h": 12,
   "24h": 24,
 };
+const CONTEXT_PADDING_MS = 45 * 60_000;
 
 export function TodayScreen() {
   const route = useRoute<RouteProp<RootTabParamList, "Today">>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
   const { deleteManualContext, now, ownerIdentity, refreshData, sourceError, syncing, today } =
     useDataContext();
-  const [rangeChoice, setRangeChoice] = useState<TodayRange>("6h");
+  const [rangeChoice, setRangeChoice] = useState<TodayRange>("4h");
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
@@ -57,6 +64,10 @@ export function TodayScreen() {
   const [initialContextKind, setInitialContextKind] =
     useState<ManualContextKind>("meal");
   const [contextKindLocked, setContextKindLocked] = useState(false);
+  const [logTimestamp, setLogTimestamp] = useState(now);
+  const [editingContext, setEditingContext] = useState<HealthContextEvent>();
+  const [editingFoodLog, setEditingFoodLog] = useState<FoodLog>();
+  const [timelineActionError, setTimelineActionError] = useState<string>();
   const range = useMemo(
     () => ({
       start: now - RANGE_HOURS[rangeChoice] * 3_600_000,
@@ -66,6 +77,15 @@ export function TodayScreen() {
   );
   const selectedTimeline = useTimeline(
     range,
+    `today:${today}:timeline:${rangeChoice}`,
+    { contextPaddingMs: CONTEXT_PADDING_MS },
+  );
+  const foodRange = useMemo(
+    () => paddedContextRange(range, CONTEXT_PADDING_MS),
+    [range],
+  );
+  const foodHistory = useFoodLogs(
+    foodRange,
     `today:${today}:timeline:${rangeChoice}`,
   );
   const todayTimeline = useTimeline(
@@ -94,27 +114,69 @@ export function TodayScreen() {
   useEffect(() => {
     if (!route.params?.action) return;
     if (route.params.action === "log-food") {
+      // The route action is an imperative request to initialise the editor.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLogTimestamp(now);
       // This route parameter is a one-shot navigation command; incrementing the
       // child launch token is its intentional effect on the mounted Today screen.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFoodLaunchRequest((value) => value + 1);
     } else if (route.params.action === "trend-details") {
       setTrendDetailsRequest((value) => value + 1);
     } else if (route.params.action === "log-context") {
+      setLogTimestamp(now);
       setInitialContextKind("meal");
       setContextKindLocked(false);
       setContextLaunchRequest((value) => value + 1);
     }
     navigation.setParams({ action: undefined, request: undefined });
-  }, [navigation, route.params?.action, route.params?.request]);
+  }, [navigation, now, route.params?.action, route.params?.request]);
 
   function chooseLogEntry(kind: LogEntryKind) {
+    setTimelineActionError(undefined);
+    setLogTimestamp(now);
     if (kind === "food") {
       setFoodLaunchRequest((value) => value + 1);
     } else {
       setInitialContextKind(kind);
       setContextKindLocked(true);
       setContextLaunchRequest((value) => value + 1);
+    }
+  }
+
+  function addFromTimeline(timestamp: number, kind: "meal" | "note") {
+    setTimelineActionError(undefined);
+    setEditingContext(undefined);
+    setEditingFoodLog(undefined);
+    setLogTimestamp(timestamp);
+    if (kind === "meal") {
+      setFoodLaunchRequest((value) => value + 1);
+    } else {
+      setInitialContextKind("note");
+      setContextKindLocked(true);
+      setContextLaunchRequest((value) => value + 1);
+    }
+  }
+
+  function editFromTimeline(event: HealthContextEvent) {
+    setTimelineActionError(undefined);
+    if (event.origin !== "manual") return;
+    if (event.sourceId === FOOD_LOG_SOURCE_ID && event.kind === "meal") {
+      if (foodHistory.loading) {
+        setTimelineActionError("Meal details are still loading. Try again in a moment.");
+        return;
+      }
+      if (foodHistory.error) {
+        setTimelineActionError(`Meal details are unavailable. ${foodHistory.error}`);
+        return;
+      }
+      const log = foodHistory.logs.find((item) => item.contextEventId === event.id);
+      if (!log) {
+        setTimelineActionError("This meal could not be opened for editing.");
+        return;
+      }
+      setEditingFoodLog(log);
+    } else if (event.sourceId === MANUAL_CONTEXT_SOURCE_ID) {
+      setEditingContext(event);
     }
   }
 
@@ -201,11 +263,14 @@ export function TodayScreen() {
             <View>
               <CombinedTimeline
                 data={selectedTimeline.data}
+                onAddContext={addFromTimeline}
+                onEditContext={editFromTimeline}
                 headerAccessory={
                   <SegmentedControl
                     accessibilityLabel="Timeline range"
                     options={[
-                      { value: "6h", label: "6h" },
+                      { value: "4h", label: "4h" },
+                      { value: "8h", label: "8h" },
                       { value: "12h", label: "12h" },
                       { value: "24h", label: "24h" },
                     ]}
@@ -219,6 +284,7 @@ export function TodayScreen() {
             </View>
           )}
         </View>
+        {timelineActionError ? <ErrorCard message={timelineActionError} /> : null}
 
         {todayTimeline.error ? (
           <View style={styles.ketones}>
@@ -254,17 +320,21 @@ export function TodayScreen() {
         visible={logLauncherVisible}
       />
       <FoodLoggerCard
-        initialTimestamp={now}
+        editingLog={editingFoodLog}
+        initialTimestamp={logTimestamp}
         launchRequest={foodLaunchRequest}
+        onEditEnd={() => setEditingFoodLog(undefined)}
         onModalShow={() => setLogLauncherVisible(false)}
         showLauncher={false}
       />
       <ManualContextCard
+        editingEvent={editingContext}
         glucoseSourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)}
         initialKind={initialContextKind}
-        initialTimestamp={now}
+        initialTimestamp={logTimestamp}
         launchRequest={contextLaunchRequest}
         lockKind={contextKindLocked}
+        onEditEnd={() => setEditingContext(undefined)}
         onModalShow={() => setLogLauncherVisible(false)}
         showLauncher={false}
       />

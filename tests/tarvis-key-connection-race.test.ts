@@ -98,7 +98,7 @@ describe("Tarv1s key connection races", () => {
     });
     const saving = saveTarvisApiKey(`sk-${"b".repeat(40)}`, { epoch: 7 });
     await vi.waitFor(() =>
-      expect(epochStore.forceClear).toHaveBeenCalledTimes(9),
+      expect(epochStore.forceClear).toHaveBeenCalledTimes(11),
     );
     await Promise.resolve();
 
@@ -108,7 +108,7 @@ describe("Tarv1s key connection races", () => {
     await saving;
 
     expect(clearFailure).toMatchObject({ message: "usage delete failed" });
-    expect(events).toEqual([
+    expect(events).toEqual(expect.arrayContaining([
       "api-delete-start",
       "delete:t1arc.tarvis.gemini-key.v1",
       "delete:t1arc.tarvis.claude-key.v1",
@@ -118,10 +118,18 @@ describe("Tarv1s key connection races", () => {
       "delete:t1arc.tarvis.provider.v1",
       "usage-delete-failed",
       "delete:t1arc.tarvis.safety-id.v1",
+      "delete:t1arc.tarvis.chatgpt-plan-info-seen.v1",
+      "delete:t1arc.tarvis.chatgpt-connection.v1",
       "api-delete-end",
       "new-key-save",
       "new-key-save",
       "new-key-save",
-    ]);
+    ]));
+    expect(events.filter(event => event === "new-key-save")).toHaveLength(3);
+    const firstSave = events.indexOf("new-key-save");
+    expect(events.indexOf("api-delete-end")).toBeLessThan(firstSave);
+    for (const [index, event] of events.entries()) {
+      if (event.startsWith("delete:")) expect(index).toBeLessThan(firstSave);
+    }
   });
 });

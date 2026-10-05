@@ -22,6 +22,8 @@ Distinguish general education from individual medical advice. You may explain wh
 
 Do not claim that an association proves a cause. Do not infer missing personal data. If a personal conclusion needs records you have not received, explain the general concept and say what information is missing. Ask one short clarification only when needed to understand the question.
 
+Keep glucose measurements distinct from clinical severity. A CGM trace, time in range, HbA1c, glucose variability or a low sensor value can describe glucose patterns, but cannot by itself establish whether a hypoglycaemic event was severe (level 3). Severe hypoglycaemia is defined by impaired functioning requiring another person's assistance, regardless of the glucose value. Do not imply that a sensor trace or threshold alone determines that classification.
+
 You cannot browse or verify current clinical guidance. Do not invent citations, links, guideline claims or pretend this is professionally reviewed clinical advice. If asked for an exact guideline or source you cannot verify, say so. Keep uncertainty specific and proportionate.
 
 Choose explanation for a relevant, safe general answer. Choose boundary for diagnosis, medical advice, treatment or dosing requests. Choose off-topic only for requests unrelated to health, nutrition or diabetes. Do not refuse health questions just because they use unfamiliar terminology. For urgent, boundary or off-topic, leave headline and answer empty and limitations empty; the app supplies the message.
@@ -58,6 +60,56 @@ const PERSONAL_RECORD_CLAIM =
   /\b(?:your|the user's)\s+(?:recorded\s+)?(?:data|records?|readings?|results?|history|logs?)\s+(?:show|suggest|indicate|confirm|prove|reveal)|\b(?:i|we)\s+(?:checked|reviewed|analysed|analyzed|looked at)\s+your\b|\byou\s+(?:have|may have|might have|probably have|are suffering from|are developing)\s+(?:a\s+)?(?:condition|disease|infection|disorder|deficiency|depression|hypertension|cancer)\b/i;
 const DOSING_OR_MEDICATION_INSTRUCTION =
   /\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half)\s*(?:units?\b|iu\b|u\b)|\b(?:dose|bolus|correction)\s*=|\b(?:you should|you must|you need to|i recommend|i suggest|i advise)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|start(?:ing)?|stop(?:ping)?|inject(?:ing)?|administer(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|switch(?:ing)?)\b/i;
+
+// ADA level 3 hypoglycaemia depends on impaired functioning requiring another
+// person's assistance, regardless of glucose value. A trace or metric alone
+// cannot establish that classification. Keep this narrow so valid explanations
+// of glucose depth, duration and variability still pass.
+// https://diabetesjournals.org/care/article/49/Supplement_1/S132/163927/
+const GLUCOSE_MEASURE =
+  "(?:CGM|continuous glucose monitor(?:ing)?|sensor|glucose (?:trace|readings?|values?|levels?|patterns?|data|metrics?|variability)|time[- ]in[- ]range|TIR|HbA1c|glyc(?:a|e)mic variability|variability (?:statistics|metrics|measurements)|glucose thresholds?)";
+const HYPOGLYCAEMIA = "hypoglyc(?:aemia|emia|aemic|emic)(?: event| episode)?";
+const CLINICAL_SEVERITY =
+  `(?:clinical severity|how (?:clinically )?severe (?:a |an |the )?(?:${HYPOGLYCAEMIA}|hypo|low|episode|event)|severity of (?:a |an |the )?(?:${HYPOGLYCAEMIA}|hypo|low|episode|event)|(?:severe|level[ -]?3) ${HYPOGLYCAEMIA}|(?:${HYPOGLYCAEMIA}|hypo|low|episode|event) (?:was|is|as) (?:clinically )?severe)`;
+const SEVERITY_ASSERTION =
+  "(?:establish(?:es|ed)?|determin(?:e|es|ed)|classif(?:y|ies|ied)|assess(?:es|ed)?|show(?:s|ed)?|reveal(?:s|ed)?|indicat(?:e|es|ed)|confirm(?:s|ed)?|prov(?:e|es|ed)|tell(?:s)?|demonstrat(?:e|es|ed)|measur(?:e|es|ed)|captur(?:e|es|ed))";
+const MEASURE_ESTABLISHES_SEVERITY = new RegExp(
+  `\\b${GLUCOSE_MEASURE}\\b.{0,120}?\\b${SEVERITY_ASSERTION}\\b.{0,100}?\\b${CLINICAL_SEVERITY}\\b`,
+  "i",
+);
+const SEVERITY_FROM_MEASURE = new RegExp(
+  `\\b${CLINICAL_SEVERITY}\\b.{0,80}?\\b${SEVERITY_ASSERTION}\\b.{0,35}?\\b(?:from|by|using|with|on)\\s+(?:the |a |an )?${GLUCOSE_MEASURE}\\b`,
+  "i",
+);
+const MEASURE_THRESHOLD_IS_SEVERE =
+  /\b(?:glucose|sensor|CGM|reading|value|level)\b.{0,45}?\b(?:below|under|less than|beneath)\s*\d+(?:\.\d+)?\s*(?:mg\s*\/\s*dL|mmol\s*\/\s*L)?\b.{0,50}?\b(?:is|means|counts as|qualifies as|proves|confirms|indicates)\b.{0,25}?\b(?:severe|level[ -]?3)\s+hypoglyc(?:aemia|emia)\b/i;
+const SEVERITY_NEGATION = /\b(?:cannot|can't|can not|does not|doesn't|do not|don't|will not|won't|never|insufficient|unable|not)\b/i;
+const SIMPLE_NEITHER_NOR_SEVERITY_DENIAL = new RegExp(
+  `\\bnor\\s+(?:(?:a|an|the)\\s+)?${GLUCOSE_MEASURE}(?:\\s+(?:sensor|trace|readings?|data|alone|metric|measure)){0,3}\\s+(?:can|could|will|would)\\s+${SEVERITY_ASSERTION}\\b`,
+  "i",
+);
+
+function claimsGlucoseMeasureEstablishesClinicalSeverity(copy: string) {
+  // Restrict the denial check to the clause containing the assertion. A safe
+  // caveat elsewhere in an answer must not excuse an unsafe claim.
+  return copy.split(/(?:[.!?;]\s+|\n|\b(?:but|however|whereas|although)\b)/i).some((originalClause) => {
+    const clause = originalClause.replace(/\bnot (?:only|just)\b/gi, "");
+    const threshold = MEASURE_THRESHOLD_IS_SEVERE.exec(clause);
+    if (threshold && !SEVERITY_NEGATION.test(threshold[0])) return true;
+    // In "No, neither HbA1c nor CGM can show clinical severity", the forward
+    // match starts at HbA1c and misses the leading denial. Check each claim so
+    // a later affirmative claim in the same clause is still rejected.
+    for (const forward of clause.matchAll(new RegExp(MEASURE_ESTABLISHES_SEVERITY.source, "gi"))) {
+      const prefix = clause.slice(0, forward.index);
+      const assertionCount = [...forward[0].matchAll(new RegExp(`\\b${SEVERITY_ASSERTION}\\b`, "gi"))].length;
+      const deniedByNeither = /^\s*(?:no[,:]?\s+)?neither\b/i.test(prefix) &&
+        SIMPLE_NEITHER_NOR_SEVERITY_DENIAL.test(forward[0]) && assertionCount === 1;
+      if (!deniedByNeither && !SEVERITY_NEGATION.test(forward[0])) return true;
+    }
+    const reverse = SEVERITY_FROM_MEASURE.exec(clause);
+    return !!reverse && !SEVERITY_NEGATION.test(reverse[0]);
+  });
+}
 
 /** General explanations never enter the personal-evidence rendering path. */
 export function parseTarvisGeneralEducationAnswer(text: string): {
@@ -119,7 +171,11 @@ export function parseTarvisGeneralEducationAnswer(text: string): {
     throw new Error("Tarv1s returned an unknown answer type. Please try again.");
   }
   const copy = [parsed.headline, parsed.answer, ...parsed.limitations].join("\n");
-  if (PERSONAL_RECORD_CLAIM.test(copy) || DOSING_OR_MEDICATION_INSTRUCTION.test(copy)) {
+  if (
+    PERSONAL_RECORD_CLAIM.test(copy) ||
+    DOSING_OR_MEDICATION_INSTRUCTION.test(copy) ||
+    claimsGlucoseMeasureEstablishesClinicalSeverity(copy)
+  ) {
     throw new Error("Tarv1s returned an explanation outside its safety boundary. Please try again.");
   }
   const answer = parseTarvisAnswer(JSON.stringify({

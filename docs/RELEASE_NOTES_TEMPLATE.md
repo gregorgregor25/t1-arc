@@ -1,8 +1,8 @@
 # T1 Arc vX.Y.Z
 
-<!-- Draft template only. Replace every X.Y.Z and placeholder, verify links
-against the exact release tag, and remove this comment before publication.
-Do not publish while the production APK release hold remains in effect. -->
+<!-- Draft for 1.7.14. Replace every X.Y.Z and remaining verification
+placeholder, verify links against the exact release tag, and remove this
+comment before publication. -->
 
 T1 Arc is an independent, local-first Android app for reviewing Type 1 diabetes
 data. It does not calculate doses, provide medical
@@ -19,9 +19,22 @@ encrypted backup before updating.
 
 ## What changed
 
-- Replace this line with the most important user-visible change.
-- Add only changes present in this exact release.
-- Call out any migration or action required before updating.
+- **A more useful Today chart.** It opens in a compact four-hour view, with
+  eight-, twelve- and twenty-four-hour choices. Tap or drag to inspect a
+  reading and the recorded meals or notes around it; add context at that time.
+- **More choice for optional AI answers.** Continue with ChatGPT uses an
+  eligible ChatGPT plan and the models offered to that account. OpenAI, Gemini
+  and Claude API-key connections remain available, and local answers still
+  work without an AI connection. ChatGPT does not silently switch to an API key.
+- Tarv1s settings make the active connection, saved connections and model
+  selection clearer. OpenAI API-key users can choose GPT-6.1 Sol; the OpenAI
+  Luna default is unchanged. GPT-6.1 availability through a ChatGPT plan
+  depends on that account's model list.
+- General diabetes explanations now reject a specific misleading claim that
+  glucose readings alone establish the clinical severity of hypoglycaemia.
+  AI answers still need review and must not be used to make treatment decisions.
+- Existing local data, saved API keys and provider choice are retained by an
+  in-place update. Back up your data before updating; do not uninstall first.
 
 ## Included in this release
 
@@ -29,7 +42,10 @@ encrypted backup before updating.
 - Local encrypted health storage and encrypted portable backups.
 - The provider, food, regional and Health Connect routes listed in the
   [release status for this version](https://github.com/gregorgregor25/t1-arc/blob/vX.Y.Z/docs/RELEASE_STATUS.md).
-- Direct bring-your-own-key Tarv1s access for users who choose to enable it.
+- Local Tarv1s answers, plus optional ChatGPT-plan sign-in or direct
+  bring-your-own-key access to OpenAI, Gemini and Claude. Questions and any
+  selected health context are sent to the chosen provider only when you tap
+  **Send**. The provider's privacy and retention terms apply.
 
 The release workflow prepares a separate Wear companion and five standalone
 faces: Meridian, Chronograph, Atelier, Pace and Summit. List only the matching
@@ -37,26 +53,39 @@ APKs that are actually attached and verified for this release. The companion
 contains its own bundled faces for supported Watch Face Push devices; the
 independent phone APK bundles the companion for the guided installer in
 **Settings → Watch & watch faces**. Installation requires the user’s explicit
-action and temporary watch debugging; it is not automatic.
+action and temporary watch debugging; it is not automatic. This phone update
+does not change the glucose companion protocol, so a working companion does not
+need reinstalling solely because the phone version increased.
 
 - Companion and standalone APKs included: replace with the verified asset list.
 - Watch versions and installation routes tested: replace with exact evidence.
 
 ## Known limitations
 
-- Copy current limitations from the release status and add release-specific
-  issues here.
-- State any provider route that remains experimental.
-- Do not imply translated UI, clinical review or physical-device validation
-  without evidence from this release.
+- Dexcom and Medtrum have no real-account verification; US Glooko is
+  experimental. Nightscout and xDrip were checked with real server/app software
+  and synthetic readings. See the [regional capability matrix](https://github.com/gregorgregor25/t1-arc/blob/vX.Y.Z/docs/REGIONAL_CAPABILITY_MATRIX.md).
+- Food-label recognition requires checking the proposed amounts against the
+  pack, especially for small print, glare, curved packs and multiple columns.
+- AI answers can be incomplete or misleading. Gemini has previously phrased
+  glucose-only severity claims incorrectly; the targeted wording guard does
+  not establish general clinical accuracy. Tarv1s does not calculate doses.
+- ChatGPT model availability and limits depend on the connected account.
+  Gemini API health-data use requires active billing and compliance with
+  Google's applicable terms. API-key usage may incur provider charges.
+- The interface is in English. Watch coverage beyond the tested Galaxy Watch 8
+  and Android Auto remain limited as described in the release status.
 
 ## Verification
 
-- Android versions tested: replace with exact versions.
+- Android versions and devices tested against the **public draft APK**: replace
+  with exact results; private-build tests do not count as this check.
 - Clean install: pass/fail and test device.
 - Update over previous public release: pass/fail, or not applicable for the
   first release.
 - Backup and restore with synthetic records: pass/fail.
+- Today chart, ChatGPT answer, all saved-provider choices and existing watch
+  companion: list the routes exercised on this exact APK and their results.
 - Food catalogue, offline barcode, label review and recipe portions: list the
   routes exercised on this exact APK, with any untested limits.
 - Manual update check and public release metadata: pass/fail.

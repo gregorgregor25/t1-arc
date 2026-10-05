@@ -25,19 +25,59 @@ Follow the [phone installation guide](GETTING_STARTED.md) and
 - Supported provider connections, Health Connect, Hevy and manual logging.
 - Encrypted local storage and encrypted portable backups.
 - Food search, barcode scanning, saved foods, recipes and on-device label reading.
-- Tarv1s local factual answers and optional broader questions using your own
-  OpenAI, Google Gemini or Anthropic Claude API key and saved model choice.
+- Tarv1s local factual answers and optional broader questions using an eligible
+  ChatGPT plan or your own OpenAI, Google Gemini or Anthropic Claude API key.
 - Notifications, widgets, optional alerts and a Wear OS companion with five faces.
 
 See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
 [Tarv1s costs and setup](TARV1S_BYOK.md) and [data freshness](DATA_FRESHNESS.md).
 
-T1 Arc uses the same direct bring-your-own-key Tarv1s route for every user.
-There is no shared maintainer API key or separate hosted version.
-Each provider has its own saved key and model selection. Switching providers
-does not silently retry with another service. API use is billed by the chosen
-provider; see the official pricing links in Tarv1s settings. No model has a
-Recommended label in this release.
+The API-key routes use each user's saved key and model. There is no shared
+maintainer API key or hosted AI relay. ChatGPT is a separate, optional plan
+connection; its model choices come from the connected account. Switching
+providers does not silently retry with another service. API use is billed by
+the chosen provider; see the official pricing links in Tarv1s settings. No
+model has a Recommended label in this release.
+
+### 1.7.14 changes
+
+Release preparation on 5 October 2026 identified two outstanding production
+dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
+braces 3.0.3 ([advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm))
+and node-forge 1.4.0 ([advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv))
+have no published patched versions at the time of verification. Their dependent
+packages produce 17 high-severity audit findings. The owner approved a
+conditional exception for these two advisories in Android 1.7.14 only, expiring
+12 October 2026 at 00:00 UTC. The reviewed lockfile, guarded Linux build,
+source-map inspection and exact APK bundle comparison are mandatory; any new
+finding, failed evidence check or expired exception blocks release. Do not
+use the audit tool's incompatible Expo/React Native downgrades. The public
+privacy disclosure is published; exact public APK and device verification
+remain pending a passing release build. Version 1.7.14 is not yet published.
+The [dependency security review](DEPENDENCY_SECURITY_REVIEW.md) records bundle
+exposure checks and isolated tests of the proposed upstream patches.
+
+The 1.7.14 source adds **Continue with ChatGPT** alongside the three API-key
+providers. It uses an eligible ChatGPT plan; local answers remain available
+without any AI connection. In a signed, production-package private phone
+build, a real account completed two record-free answers with no API-key fallback.
+Codex also checked sign-out revocation, explicit sign-in cancellation and normal
+returning-account reconnect through Edge's **Return to T1 Arc** link. OpenAI's
+API-key connection stayed active during reconnect until ChatGPT was explicitly
+selected. The account's own catalogue offered five models, without GPT-6.1.
+These private checks do not substitute for testing the exact public APK. See
+[connection details](CHATGPT_CONNECTION.md). The 1.7.14 source also adds a
+targeted guard against the Gemini severity wording described below; that guard
+does not establish general clinical accuracy.
+
+The Today chart now starts with a compact four-hour view, allows eight-,
+twelve- and twenty-four-hour views, and lets users inspect readings alongside
+nearby recorded meals and notes. OpenAI API-key users can select GPT-6.1 Sol;
+availability through a ChatGPT plan depends on that account's model catalogue.
+
+The private.5 phone update (code 66) retained the installed Galaxy Watch 8 companion:
+it remained ready and accepted a queued glucose snapshot. The watch protocol
+did not change, and no watch reinstall or debugging was required.
 
 ## Known limitations
 
