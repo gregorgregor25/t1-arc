@@ -52,9 +52,11 @@ const EDUCATIONAL_QUESTION =
 const EVIDENCE_SYNTHESIS_QUESTION =
   /\b(?:why was|usually|patterns?|linked|associated|relationship|make a difference|making (?:the )?.*unreliable|what changed|how (?:have|has|was|were) .*\b(?:been|doing)|how was (?:my )?(?:bg|glucose|blood sugar|sugars?)|quick summary|summari[sz]e|worth reviewing|what should i discuss|discuss with my|was .*\bbad|spot any|seem to|(?:basal|bolus|insulin|carbs?|carbohydrates?).*\b(?:higher|lower|more|less)\b|did i eat more)\b/i;
 const PERSONAL_EVIDENCE_QUESTION =
-  /\bmy\s+(?:glucose|blood sugar|sugars?|bg|cgm|sensor|readings?|levels?|numbers?|insulin|basal|bolus|pump|carbs?|meals?|food|activity|exercise|sleep|health data|records?|history|time in range|tir|patterns?)\b|\b(?:today|yesterday|last (?:night|week|month)|past \d+|previous period)\b/i;
+  /\bmy\s+(?:recorded\s+)?(?:glucose|blood sugar|sugars?|bg|cgm|sensor|readings?|levels?|numbers?|insulin|basal|bolus|pump|carbs?|meals?|food|activity|exercise|sleep|health data|records?|history|time in range|tir|patterns?)\b|\b(?:today|yesterday|last (?:night|week|month)|past \d+|previous period)\b/i;
 const AMBIGUOUS_PERSONAL_RECORD_RETRIEVAL =
   /\bwhat (?:did|have) i (?:eat|ate|have for (?:breakfast|lunch|dinner))\b/i;
+const EXPLICIT_RECORD_FILTER =
+  /\b(?:without|excluding?|except(?: for)?|omit(?:ting)?|ignor(?:e|ing))\b[^,.?!;]{0,60}\b(?:readings?|records?|data|samples?|values?|insulin|basal|bolus|sensor|cgm|dexcom|libre|calibration)\b/i;
 
 export type TarvisOnDeviceRoute =
   | { kind: "scoped-glucose" }
@@ -138,12 +140,21 @@ function modelRoute(
 > | null {
   const question = resolution.intent.normalizedQuestion;
   if (resolution.outcome.code === "ambiguous_clock_time") return null;
-  if (
-    resolution.outcome.code === "ambiguous_time_scope" &&
-    !EVIDENCE_SYNTHESIS_QUESTION.test(question) &&
-    !EDUCATIONAL_QUESTION.test(question)
-  ) {
-    return null;
+  if (resolution.outcome.code === "ambiguous_time_scope") {
+    // A broad exclusion word can also appear in a record-free educational
+    // hypothetical ("without anyone else's assistance"). Preserve that
+    // explanation route, but never broaden a personal or dated data request.
+    const recordFreeEducation =
+      EDUCATIONAL_QUESTION.test(question) &&
+      !/\b(?:my|mine|me|i|our|ours)\b/.test(question) &&
+      !/\b(?:today|yesterday|last|past|recent|previous)\b/.test(question) &&
+      !EXPLICIT_RECORD_FILTER.test(question) &&
+      resolution.literals.dates.length === 0 &&
+      resolution.literals.durations.length === 0 &&
+      resolution.literals.times.length === 0 &&
+      resolution.literals.clockWindows.length === 0;
+    if (!recordFreeEducation) return null;
+    return { kind: "model-education" };
   }
   if (
     resolution.outcome.code === "invalid_threshold" ||

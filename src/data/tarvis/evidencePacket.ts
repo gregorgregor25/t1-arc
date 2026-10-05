@@ -5,6 +5,10 @@ import {
 } from "@/domain/insights";
 import { getRuntimeAnalysisTimeZone } from "@/domain/regionalProfileRuntime";
 import { formatTarvisNumber } from "./regionalNumberPresentation";
+import {
+  MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS,
+  MAX_TARVIS_EVIDENCE_REFERENCES,
+} from "./evidenceAnswerGuardrail";
 
 import {
   TarvisEvidenceLookup,
@@ -16,6 +20,11 @@ import {
 const MAX_FINDINGS = 18;
 const MAX_EXAMPLES_PER_EVIDENCE = 5;
 const MIN_GLUCOSE_COVERAGE_PERCENT = 70;
+
+/** A named sleep request must not lose its evidence to the generic report cap. */
+export function requestsSleepEvidence(question: string) {
+  return /\b(?:sleep|slept|sleeping|bedtime)\b/i.test(question);
+}
 
 export function toTarvisInsightWindowSummary(
   summary: InsightReport["current"],
@@ -57,7 +66,7 @@ function glucoseCoverageContext(report: InsightReport) {
 
 export function buildTarvisEvidencePacket(
   report: InsightReport,
-  options: { includeGlucoseCoverageContext?: boolean } = {},
+  options: { includeGlucoseCoverageContext?: boolean; question?: string } = {},
 ): TarvisEvidenceLookup {
   const references = new Map<string, EvidenceReference>();
   const coverageContext =
@@ -76,9 +85,14 @@ export function buildTarvisEvidencePacket(
   // A manually recorded ketone value must not disappear merely because an
   // unusually rich report reached the model-packet cap. Keep this typed,
   // safety-relevant finding ahead of the otherwise stable report order.
+  const prioritizeSleep = options.question && requestsSleepEvidence(options.question);
   const sourceFindings = [
     ...eligibleFindings.filter(({ id }) => id === "recorded-ketone-readings"),
-    ...eligibleFindings.filter(({ id }) => id !== "recorded-ketone-readings"),
+    ...(prioritizeSleep
+      ? eligibleFindings.filter(({ category, id }) => category === "sleep" && id !== "recorded-ketone-readings")
+      : []),
+    ...eligibleFindings.filter(({ category, id }) =>
+      id !== "recorded-ketone-readings" && (!prioritizeSleep || category !== "sleep")),
   ].slice(0, MAX_FINDINGS);
   const findings = sourceFindings.map((finding) => {
     const evidenceIds: string[] = [];
@@ -157,6 +171,22 @@ export function selectTarvisEvidencePacket(
       categories.has(finding.category) || finding.category === "data-quality",
   );
   const requiredIds = new Set(packet.requiredFindingIds ?? []);
+  const requestedSleep = requestsSleepEvidence(question);
+  const sleepFinding = requestedSleep
+    ? packet.findings.find(({ category }) => category === "sleep")
+    : undefined;
+  // A requested sleep finding must survive hosted ranking and the local
+  // fallback. Keep the established six-finding/twelve-reference boundary.
+  if (sleepFinding && !requiredIds.has(sleepFinding.id)) {
+    const requiredEvidence = new Set(packet.findings
+      .filter(({ id }) => requiredIds.has(id))
+      .flatMap(({ evidenceIds }) => evidenceIds));
+    sleepFinding.evidenceIds.forEach((id) => requiredEvidence.add(id));
+    if (requiredIds.size < MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS &&
+      requiredEvidence.size <= MAX_TARVIS_EVIDENCE_REFERENCES) {
+      requiredIds.add(sleepFinding.id);
+    }
+  }
   const candidates = relevantFindings.length ? relevantFindings : packet.findings;
   const findings = [
     ...packet.findings.filter(({ id }) => requiredIds.has(id)),
@@ -174,6 +204,8 @@ export function selectTarvisEvidencePacket(
 
   return {
     ...packet,
+    ...(requestedSleep ? { requestedSleep: true } : {}),
+    ...(requiredIds.size ? { requiredFindingIds: [...requiredIds] } : {}),
     findings,
     evidence,
   };

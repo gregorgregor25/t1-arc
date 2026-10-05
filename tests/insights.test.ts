@@ -418,6 +418,60 @@ describe("evidence-backed insights", () => {
     ).toBe(false);
   });
 
+  it("separates timed basal rows from source-labelled pauses in a limitation", async () => {
+    const now = Date.parse("2026-07-26T10:00:00+01:00");
+    const todayStart = dayRange(toDateKey(now), now).start;
+    const currentStart = dayRange(addDays(toDateKey(now), -7), now).start;
+    const previousStart = dayRange(addDays(toDateKey(now), -14), now).start;
+    const repository = createDemoRepository(now);
+    const [loadedCurrent, loadedPrevious] = await Promise.all([
+      repository.getTimeline({ start: currentStart, end: todayStart }),
+      repository.getTimeline({ start: previousStart, end: currentStart }),
+    ]);
+    const current: TimelineData = {
+      ...loadedCurrent,
+      basal: [],
+      boluses: [],
+      pumpStates: [{
+        id: "glooko:pause:current",
+        sourceId: "glooko-export",
+        kind: "automated-pause",
+        start: currentStart + 60_000,
+        end: currentStart + 46 * 60_000,
+      }],
+    };
+    const previous: TimelineData = {
+      ...loadedPrevious,
+      basal: [],
+      boluses: [],
+      pumpStates: [{
+        id: "glooko:pause:previous",
+        sourceId: "glooko-export",
+        kind: "automated-pause",
+        start: previousStart + 60_000,
+        end: previousStart + 31 * 60_000,
+      }],
+    };
+
+    const finding = buildInsightReport(current, previous, now).findings.find(
+      (item) => item.id === "basal-data-completeness",
+    );
+
+    expect(finding?.title).toBe("Timed basal detail is incomplete");
+    expect(finding?.summary).toContain("Timestamped basal entries, including zero-rate entries, cover 0% of the recent window (0 entries) and 0% of the previous window (0 entries)");
+    expect(finding?.summary).toContain("Recorded pump pauses separately span 0.4% recently (1 interval) and 0.3% previously (1 interval)");
+    expect(finding?.summary).not.toContain("combined record coverage");
+    expect(finding?.caveat).toContain("does not prove that insulin was missed");
+    expect(finding?.evidence.map((item) => item.recordIds)).toEqual([
+      ["glooko:pause:current"],
+      ["glooko:pause:previous"],
+    ]);
+    expect(finding?.evidence[0]?.examples[0]).toMatchObject({
+      kind: "source-record",
+      primary: "Recorded pump pause",
+    });
+  });
+
   it("links weight comparisons to the exact context records", async () => {
     const now = Date.parse("2026-07-26T10:00:00+01:00");
     const today = toDateKey(now);

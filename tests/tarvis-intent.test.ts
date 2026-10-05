@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeTarvisIntent,
   extractTarvisLiterals,
+  hasTarvisUnrepresentedRecordFilter,
   isReadyTarvisIntent,
   isTarvisIntentV1,
   resolveTarvisIntent,
@@ -912,6 +913,42 @@ describe("Tarv1s fail-closed capability outcomes", () => {
     if (!isReadyTarvisIntent(result)) throw new Error("Expected ready intent");
     expect(result.intent.domain.value).toBe("insulin");
     expect(result.intent.metrics[0]?.value).toBe("insulin.delivered_total");
+  });
+
+  it("treats a causation caveat as reasoning, not a record exclusion", () => {
+    const result = resolve(
+      "What do my recorded sleep and glucose data show over the last 7 days? Compare them without assuming that one caused the other, and explain any missing data.",
+    );
+    expect(result.outcome.code).not.toBe("ambiguous_time_scope");
+    expect(result.literals.durations.length).toBeGreaterThan(0);
+  });
+
+  it("still rejects a real exclusion after a causation caveat", () => {
+    const result = resolve(
+      "What was my average glucose over the last 7 days without assuming causation, without calibration readings?",
+    );
+    expect(result.outcome).toMatchObject({
+      status: "needs_clarification",
+      code: "ambiguous_time_scope",
+    });
+    expect(hasTarvisUnrepresentedRecordFilter(result.intent.question)).toBe(true);
+  });
+
+  it("distinguishes event-relative meals and causal reasoning from record exclusions", () => {
+    expect(hasTarvisUnrepresentedRecordFilter("Why was I high after breakfast yesterday?")).toBe(false);
+    expect(hasTarvisUnrepresentedRecordFilter("Compare sleep and glucose without assuming that one caused the other.")).toBe(false);
+    expect(hasTarvisUnrepresentedRecordFilter("Compare sleep and glucose without sensor readings.")).toBe(true);
+  });
+
+  it("recognises an ordinary recorded sleep total as sleep duration", () => {
+    const result = expectReady(
+      "How much sleep did I record over the last 7 days?",
+    );
+    expect(result.intent.metrics.map(({ value }) => value)).toEqual(["sleep.duration"]);
+    expect(result.intent.temporalScope.value).toMatchObject({
+      kind: "recent_local_days",
+      count: 7,
+    });
   });
 
   it("clarifies a genuinely negated metric", () => {

@@ -1404,6 +1404,7 @@ function insulinEvidence(
   id: string,
   label: string,
   data: TimelineData,
+  includePumpPauses = false,
 ): EvidenceReference {
   const basalExamples = data.basal.slice(0, 2).map((delivery) => ({
     id: delivery.id,
@@ -1421,10 +1422,26 @@ function insulinEvidence(
     secondary: "Delivered event",
     sourceId: delivery.sourceId,
   }));
+  const pauses = includePumpPauses
+    ? (data.pumpStates ?? []).filter(
+        (state) =>
+          state.kind === "automated-pause" &&
+          state.start < data.range.end &&
+          state.end > data.range.start,
+      )
+    : [];
+  const pauseExamples = pauses.slice(0, 2).map((pause) => ({
+    id: pause.id,
+    kind: "source-record" as const,
+    timestamp: Math.max(pause.start, data.range.start),
+    primary: "Recorded pump pause",
+    secondary: `${regionalNumber((pause.end - pause.start) / 60_000, 0)} minutes`,
+    sourceId: pause.sourceId,
+  }));
   return {
     id,
     label,
-    description: `${regionalNumber(data.basal.length, 0)} basal intervals and ${regionalNumber(data.boluses.length, 0)} boluses`,
+    description: `${regionalNumber(data.basal.length, 0)} timestamped basal entries and ${regionalNumber(data.boluses.length, 0)} boluses${includePumpPauses ? `; ${regionalNumber(pauses.length, 0)} recorded pump-pause intervals` : ""}`,
     range: data.basal.reduce((bounds, delivery) => ({
       start: Math.min(bounds.start, delivery.start),
       end: Math.max(bounds.end, delivery.end),
@@ -1432,8 +1449,9 @@ function insulinEvidence(
     recordIds: [
       ...data.basal.map((delivery) => delivery.id),
       ...data.boluses.map((delivery) => delivery.id),
+      ...pauses.map((pause) => pause.id),
     ],
-    examples: [...basalExamples, ...bolusExamples],
+    examples: [...basalExamples, ...bolusExamples, ...pauseExamples],
   };
 }
 
@@ -2120,31 +2138,44 @@ export function buildInsightReport(
   if (
     insulinIsAvailable(currentData) &&
     insulinIsAvailable(previousData) &&
-    (currentCompleteness.basal.recordCount > 0 ||
-      previousCompleteness.basal.recordCount > 0) &&
-    (currentCompleteness.basal.coveragePercent < 90 ||
-      previousCompleteness.basal.coveragePercent < 90)
+    (currentCompleteness.timedBasal.recordCount > 0 ||
+      previousCompleteness.timedBasal.recordCount > 0 ||
+      currentCompleteness.pumpPauses.recordCount > 0 ||
+      previousCompleteness.pumpPauses.recordCount > 0) &&
+    (currentCompleteness.timedBasal.coveragePercent < 90 ||
+      previousCompleteness.timedBasal.coveragePercent < 90)
   ) {
+    const intervalCount = (count: number, singular: string, plural = `${singular}s`) =>
+      `${regionalNumber(count, 0)} ${count === 1 ? singular : plural}`;
+    const timedRecent = currentCompleteness.timedBasal;
+    const timedPrevious = previousCompleteness.timedBasal;
+    const pausesRecent = currentCompleteness.pumpPauses;
+    const pausesPrevious = previousCompleteness.pumpPauses;
     findings.push({
       id: "basal-data-completeness",
       kind: "limitation",
       category: "data-quality",
-      title: "Basal history has uncovered time",
-      summary: `Recorded basal deliveries and known automated pauses cover ${regionalNumber(currentCompleteness.basal.coveragePercent)}% of the recent window and ${regionalNumber(previousCompleteness.basal.coveragePercent)}% of the previous window.`,
+      title: "Timed basal detail is incomplete",
+      summary: [
+        `Timestamped basal entries, including zero-rate entries, cover ${regionalNumber(timedRecent.coveragePercent, 1)}% of the recent window (${intervalCount(timedRecent.recordCount, "entry", "entries")}) and ${regionalNumber(timedPrevious.coveragePercent, 1)}% of the previous window (${intervalCount(timedPrevious.recordCount, "entry", "entries")}).`,
+        `Recorded pump pauses separately span ${regionalNumber(pausesRecent.coveragePercent, 1)}% recently (${intervalCount(pausesRecent.recordCount, "interval")}) and ${regionalNumber(pausesPrevious.coveragePercent, 1)}% previously (${intervalCount(pausesPrevious.recordCount, "interval")}).`,
+      ].join(" "),
       caveat:
-        "Known automated-pause intervals count as explained zero-delivery time. Any remaining uncovered interval has neither an imported basal delivery nor a known pause; it does not prove zero insulin was delivered.",
+        "Pump-pause intervals are imported source records, not a measure of insulin delivered. Missing timed basal detail does not prove that insulin was missed; daily insulin totals may exist without timestamped basal entries. Basal and pause intervals can overlap, so their coverage percentages must not be added together.",
       evidence: [
         insulinEvidence(
           "current-basal-completeness",
           "Recent insulin records",
           currentData,
+          true,
         ),
         insulinEvidence(
           "previous-basal-completeness",
           "Previous insulin records",
           previousData,
+          true,
         ),
-      ],
+      ].filter((reference) => reference.recordIds.length > 0),
     });
   }
 

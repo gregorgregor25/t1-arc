@@ -93,6 +93,16 @@ describe("local data completeness audit", () => {
       coveragePercent: 83.3,
       longestGapMinutes: 10,
     });
+    expect(report.timedBasal).toMatchObject({
+      recordCount: 2,
+      coveredMinutes: 50,
+      coveragePercent: 83.3,
+    });
+    expect(report.pumpPauses).toMatchObject({
+      recordCount: 0,
+      coveredMinutes: 0,
+      coveragePercent: 0,
+    });
   });
 
   it("treats an imported automated pause as explained basal time", () => {
@@ -125,6 +135,90 @@ describe("local data completeness audit", () => {
       coveredMinutes: 45,
       missingMinutes: 15,
       coveragePercent: 75,
+    });
+    expect(report.timedBasal).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 30,
+      coveragePercent: 50,
+    });
+    expect(report.pumpPauses).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 15,
+      coveragePercent: 25,
+    });
+  });
+
+  it("does not present pause-only coverage as timed basal rows", () => {
+    const report = buildDataCompletenessReport(
+      timeline({
+        pumpStates: [
+          {
+            id: "pause:only",
+            sourceId: "glooko-export",
+            start: START,
+            end: START + 45 * MINUTE,
+            kind: "automated-pause",
+          },
+        ],
+      }),
+    );
+
+    expect(report.basal).toMatchObject({
+      recordCount: 0,
+      coveredMinutes: 45,
+      coveragePercent: 75,
+    });
+    expect(report.timedBasal).toMatchObject({
+      recordCount: 0,
+      coveredMinutes: 0,
+      coveragePercent: 0,
+    });
+    expect(report.pumpPauses).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 45,
+      coveragePercent: 75,
+    });
+  });
+
+  it("counts a recorded zero-rate basal row separately from overlapping pauses", () => {
+    const report = buildDataCompletenessReport(
+      timeline({
+        basal: [
+          {
+            id: "basal:zero-rate",
+            sourceId: "glooko-export",
+            start: START + 10 * MINUTE,
+            end: START + 20 * MINUTE,
+            units: 0,
+            rateUnitsPerHour: 0,
+          },
+        ],
+        pumpStates: [
+          {
+            id: "pause:overlapping",
+            sourceId: "glooko-export",
+            start: START + 15 * MINUTE,
+            end: START + 30 * MINUTE,
+            kind: "automated-pause",
+          },
+        ],
+      }),
+    );
+
+    expect(report.timedBasal).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 10,
+      coveragePercent: 16.7,
+    });
+    expect(report.pumpPauses).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 15,
+      coveragePercent: 25,
+    });
+    expect(report.basal).toMatchObject({
+      recordCount: 1,
+      coveredMinutes: 20,
+      coveragePercent: 33.3,
     });
   });
 

@@ -1,4 +1,5 @@
 import {
+  hasTarvisUnrepresentedRecordFilter,
   isReadyTarvisIntent,
   PendingTarvisClarification,
   resolveTarvisClarificationReply,
@@ -436,6 +437,25 @@ export function coordinateTarvisRequest({
     (unresolvedEventKind === "high" || unresolvedEventKind === "low") &&
     hasConcreteTarvisEventMarker(question) &&
     isOpenEndedGlucoseEpisodeReview(question);
+  if (
+    isUnresolvedGlucoseEpisode &&
+    resolution.outcome.code === "ambiguous_time_scope" &&
+    hasTarvisUnrepresentedRecordFilter(question)
+  ) {
+    return {
+      kind: "answer",
+      answer: route.kind === "capability"
+        ? route.answer
+        : {
+            headline: "I need a supported record filter",
+            answer: "That requested filter cannot be applied to your records. Please ask without the filter or use a supported calculation.",
+            confidence: "limited",
+            evidenceIds: [],
+            limitations: ["No health records were loaded or sent to an AI provider."],
+          },
+      source: "capability",
+    };
+  }
   if (isUnresolvedGlucoseEpisode) {
     const temporalIssue = retrospectiveTemporalIssue(question, asOf);
     if (temporalIssue) {

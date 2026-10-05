@@ -31,6 +31,10 @@ export interface DataCompletenessReport {
     sourceCounts: { sourceId: string; count: number }[];
   };
   basal: CoverageSummary;
+  /** Coverage from timestamped basal rows alone, including recorded zero-rate rows. */
+  timedBasal: CoverageSummary;
+  /** Separately reported pump-pause intervals; these are not delivered basal. */
+  pumpPauses: CoverageSummary;
   bolusCount: number;
   contextCount: number;
   insulinReconciliation?: InsulinReconciliation;
@@ -177,10 +181,22 @@ function basalCoverage(
       state.start < range.end &&
       state.end > range.start,
   );
-  const intervals = [...overlapping, ...knownPauses]
+  const basalIntervals = overlapping
     .map((delivery) => clippedInterval(delivery.start, delivery.end, range))
     .filter((interval): interval is Interval => Boolean(interval));
-  return coverageFromIntervals(overlapping.length, intervals, range);
+  const pauseIntervals = knownPauses
+    .map((pause) => clippedInterval(pause.start, pause.end, range))
+    .filter((interval): interval is Interval => Boolean(interval));
+  return {
+    // Retain the existing combined measure for callers that already use it.
+    combined: coverageFromIntervals(
+      overlapping.length,
+      [...basalIntervals, ...pauseIntervals],
+      range,
+    ),
+    timedBasal: coverageFromIntervals(overlapping.length, basalIntervals, range),
+    pumpPauses: coverageFromIntervals(knownPauses.length, pauseIntervals, range),
+  };
 }
 
 export function buildInsulinReconciliation(
@@ -339,9 +355,12 @@ export function buildInsulinReconciliation(
 export function buildDataCompletenessReport(
   data: TimelineData,
 ): DataCompletenessReport {
+  const basal = basalCoverage(data.basal, data.pumpStates ?? [], data.range);
   return {
     glucose: glucoseCoverage(data.glucose, data.range),
-    basal: basalCoverage(data.basal, data.pumpStates ?? [], data.range),
+    basal: basal.combined,
+    timedBasal: basal.timedBasal,
+    pumpPauses: basal.pumpPauses,
     bolusCount: data.boluses.filter(
       (delivery) =>
         delivery.timestamp >= data.range.start &&
