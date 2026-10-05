@@ -5,7 +5,7 @@ import type { TarvisEvidencePacket } from "./types";
 
 const CONTEXT_AREAS = [
   { label: "food", terms: /\b(?:food|meals?|carbs?|carbohydrates?|nutrition)\b/i, ids: ["food-context", "post-meal-pattern"] },
-  { label: "insulin", terms: /\b(?:insulin|bolus|basal)\b/i, ids: ["insulin-total-reconciliation", "insulin-change", "basal-data-completeness"] },
+  { label: "insulin", terms: /\b(?:insulin|bolus|basal)\b/i, ids: ["insulin-total-reconciliation", "insulin-change", "basal-daily-totals", "basal-data-completeness"] },
   { label: "activity", terms: /\b(?:activity|exercise|workouts?|steps?)\b/i, ids: ["activity-context", "health-connect-activity"] },
   { label: "sleep", terms: /\bsleep\b/i, ids: ["sleep-context"] },
 ] as const;
@@ -39,7 +39,10 @@ export function focusTarvisEpisodeReviewPacket(
   const priorRange = rangeLabel(packet.comparison.previousRange);
   const requested = CONTEXT_AREAS.filter(({ terms }) => terms.test(question));
   const context = requested.flatMap(({ ids }) => {
-    const finding = ids.map((id) => packet.findings.find((item) => item.id === id))
+    const rankedIds = /\bbasal\b/i.test(question) && (ids as readonly string[]).includes("basal-daily-totals")
+      ? ["insulin-total-reconciliation", "basal-daily-totals", ...ids.filter((id) => id !== "insulin-total-reconciliation" && id !== "basal-daily-totals")]
+      : ids;
+    const finding = rankedIds.map((id) => packet.findings.find((item) => item.id === id))
       .find((item) => item && item.evidenceIds.length <= 2);
     if (!finding) return [];
     if (finding.id === "insulin-change" &&

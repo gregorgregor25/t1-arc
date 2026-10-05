@@ -61,6 +61,10 @@ import {
 } from "./regionalFormat";
 import { getRuntimeRegionalDefaults } from "./regionalProfileRuntime";
 import { formatRegionalWallClock } from "./regionalWallClock";
+import {
+  summarizeInsulinByDay,
+  summarizeInsulinRange,
+} from "./timelineInsulinSummary";
 
 export type InsightCategory =
   | "glucose"
@@ -1541,6 +1545,67 @@ function insulinReconciliationSummary(
   return `${label}, Glooko reported ${regionalNumber(reconciliation.reportedTotalUnits, 1)} U across ${regionalNumber(reconciliation.reportedDays, 0)} complete day${reconciliation.reportedDays === 1 ? "" : "s"}, while the detailed basal and bolus rows from those same days totalled ${regionalNumber(reconciliation.organisedTotalUnits, 1)} U (difference ${signed(reconciliation.differenceUnits, " U")}).`;
 }
 
+function completeSourceBasalDays(data: TimelineData) {
+  const days = summarizeInsulinByDay(
+    data.basal,
+    data.boluses,
+    data.range,
+    data.dailyInsulinTotals ?? [],
+  );
+  const completeDays = days.filter(
+    (day) =>
+      day.start === zonedDateTimeToTimestamp(day.dateKey) &&
+      day.end === zonedDateTimeToTimestamp(addDays(day.dateKey, 1)),
+  );
+  const withBasal = completeDays.filter(
+    (day) =>
+      !day.partial &&
+      day.sourceTotal?.basalUnits !== undefined &&
+      day.sourceAlternatives.length === 0,
+  );
+  return { completeDays, withBasal };
+}
+
+function sourceInsulinBreakdownConsistent(data: TimelineData) {
+  return summarizeInsulinByDay(
+    data.basal,
+    data.boluses,
+    data.range,
+    data.dailyInsulinTotals ?? [],
+  ).every((day) => Math.abs(day.sourceMinusBreakdownUnits) <= 0.2);
+}
+
+function sourceBasalEvidence(
+  id: string,
+  label: string,
+  data: TimelineData,
+  days: ReturnType<typeof completeSourceBasalDays>["withBasal"],
+): EvidenceReference {
+  const totals = days.map((day) => day.sourceTotal!);
+  return {
+    id,
+    label,
+    description: `${regionalNumber(totals.length, 0)} selected source-reported basal total${totals.length === 1 ? "" : "s"} for complete ${getRuntimeRegionalDefaults().timeZone} calendar days`,
+    range: data.range,
+    recordIds: totals.map((total) => total.id),
+    examples: totals.slice(0, 2).map(dailyInsulinTotalPreview),
+  };
+}
+
+function sourceBasalSummary(
+  label: string,
+  days: ReturnType<typeof completeSourceBasalDays>,
+) {
+  if (!days.withBasal.length) return "";
+  const total = days.withBasal.reduce(
+    (sum, day) => sum + day.sourceTotal!.basalUnits!,
+    0,
+  );
+  const count = days.withBasal.length;
+  const complete = count === days.completeDays.length;
+  return `${label}: source-reported basal total ${regionalNumber(total, 1)} U across ${regionalNumber(count, 0)} of ${regionalNumber(days.completeDays.length, 0)} complete calendar day${days.completeDays.length === 1 ? "" : "s"} (${regionalNumber(total / count, 1)} U per recorded day${complete ? "" : "; missing days were not counted as zero"}).`;
+}
+
 function episodeEvidence(
   id: string,
   label: string,
@@ -1673,7 +1738,25 @@ function summarize(
   const insulinUnavailable = data.sources.some(
     (source) => source.label === "Insulin" && source.freshness === "missing",
   );
-  const insulin = calculateInsulinStats(data.basal, data.boluses, data.range);
+  const sourceInsulin = summarizeInsulinRange(
+    data.basal,
+    data.boluses,
+    data.range,
+    data.dailyInsulinTotals ?? [],
+  );
+  const hasSourceTotals = (data.dailyInsulinTotals?.length ?? 0) > 0;
+  const sourceInsulinComplete =
+    hasSourceTotals &&
+    sourceInsulin.sourceCoversEveryDay &&
+    sourceInsulin.sourceProvidesBasalEveryDay &&
+    sourceInsulin.sourceProvidesBolusEveryDay &&
+    !sourceInsulin.partial &&
+    sourceInsulin.sourceConflictCount === 0 &&
+    sourceInsulinBreakdownConsistent(data);
+  const insulinAmbiguous = hasSourceTotals && !sourceInsulinComplete;
+  const insulin = sourceInsulinComplete
+    ? sourceInsulin.stats
+    : calculateInsulinStats(data.basal, data.boluses, data.range);
   const meals = data.context.filter(
     (event): event is MealEvent => event.kind === "meal",
   );
@@ -1708,14 +1791,14 @@ function summarize(
     glucoseReadings: data.glucose.length,
     highGlucoseRuns: highGlucoseRuns.length,
     lowGlucoseRuns: lowGlucoseRuns.length,
-    insulinUnits: insulinUnavailable ? null : insulin.totalUnits,
-    insulinUnitsPerDay: insulinUnavailable
+    insulinUnits: insulinUnavailable || insulinAmbiguous ? null : insulin.totalUnits,
+    insulinUnitsPerDay: insulinUnavailable || insulinAmbiguous
       ? undefined
       : round(insulin.totalUnits / durationDays, 1),
-    basalUnitsPerDay: insulinUnavailable
+    basalUnitsPerDay: insulinUnavailable || insulinAmbiguous
       ? undefined
       : round(insulin.basalUnits / durationDays, 1),
-    bolusUnitsPerDay: insulinUnavailable
+    bolusUnitsPerDay: insulinUnavailable || insulinAmbiguous
       ? undefined
       : round(insulin.bolusUnits / durationDays, 1),
     mealCarbsPerDay: carbohydrateComparisonReady
@@ -2135,9 +2218,79 @@ export function buildInsightReport(
     !data.sources.some(
       (source) => source.label === "Insulin" && source.freshness === "missing",
     );
+  const currentSourceBasal = completeSourceBasalDays(currentData);
+  const previousSourceBasal = completeSourceBasalDays(previousData);
+  const hasSourceBasal =
+    currentSourceBasal.withBasal.length > 0 ||
+    previousSourceBasal.withBasal.length > 0;
+  if (hasSourceBasal) {
+    const bothPeriodsComplete =
+      currentSourceBasal.withBasal.length > 0 &&
+      previousSourceBasal.withBasal.length > 0 &&
+      currentSourceBasal.withBasal.length ===
+        currentSourceBasal.completeDays.length &&
+      previousSourceBasal.withBasal.length ===
+        previousSourceBasal.completeDays.length;
+    const recentAverage = currentSourceBasal.withBasal.length
+      ? currentSourceBasal.withBasal.reduce(
+          (sum, day) => sum + day.sourceTotal!.basalUnits!,
+          0,
+        ) / currentSourceBasal.withBasal.length
+      : 0;
+    const previousAverage = previousSourceBasal.withBasal.length
+      ? previousSourceBasal.withBasal.reduce(
+          (sum, day) => sum + day.sourceTotal!.basalUnits!,
+          0,
+        ) / previousSourceBasal.withBasal.length
+      : 0;
+    findings.push({
+      id: "basal-daily-totals",
+      kind: "observation",
+      category: "insulin",
+      title:
+        currentCompleteness.timedBasal.coveragePercent < 90 ||
+        previousCompleteness.timedBasal.coveragePercent < 90
+          ? "Daily basal totals are available; timing detail is limited"
+          : "Daily basal totals are available",
+      summary: [
+        sourceBasalSummary("Recent period", currentSourceBasal),
+        sourceBasalSummary("Previous period", previousSourceBasal),
+        bothPeriodsComplete
+          ? `The recent recorded-day average differed by ${signed(round(recentAverage - previousAverage, 1), " U/day")} from the previous period.`
+          : "The periods do not have a like-for-like complete-day comparison.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      caveat:
+        "These are source-reported daily amounts, not a timestamped basal delivery timeline. They cannot show when within a day basal was delivered or explain a glucose change. Partial days and days without a basal total are excluded from the average, not treated as zero; no insulin or treatment change is inferred.",
+      evidence: [
+        ...(currentSourceBasal.withBasal.length
+          ? [
+              sourceBasalEvidence(
+                "current-basal-daily-totals",
+                "Recent daily basal totals",
+                currentData,
+                currentSourceBasal.withBasal,
+              ),
+            ]
+          : []),
+        ...(previousSourceBasal.withBasal.length
+          ? [
+              sourceBasalEvidence(
+                "previous-basal-daily-totals",
+                "Previous daily basal totals",
+                previousData,
+                previousSourceBasal.withBasal,
+              ),
+            ]
+          : []),
+      ],
+    });
+  }
   if (
     insulinIsAvailable(currentData) &&
     insulinIsAvailable(previousData) &&
+    !hasSourceBasal &&
     (currentCompleteness.timedBasal.recordCount > 0 ||
       previousCompleteness.timedBasal.recordCount > 0 ||
       currentCompleteness.pumpPauses.recordCount > 0 ||
@@ -2440,6 +2593,36 @@ export function buildInsightReport(
     });
   }
 
+  const currentSourceInsulin = summarizeInsulinRange(
+    currentData.basal,
+    currentData.boluses,
+    currentData.range,
+    currentData.dailyInsulinTotals ?? [],
+  );
+  const previousSourceInsulin = summarizeInsulinRange(
+    previousData.basal,
+    previousData.boluses,
+    previousData.range,
+    previousData.dailyInsulinTotals ?? [],
+  );
+  const eitherPeriodHasDailyTotals =
+    (currentData.dailyInsulinTotals?.length ?? 0) > 0 ||
+    (previousData.dailyInsulinTotals?.length ?? 0) > 0;
+  const comparableSourceTotals =
+    currentSourceInsulin.sourceCoversEveryDay &&
+    previousSourceInsulin.sourceCoversEveryDay &&
+    currentSourceInsulin.sourceProvidesBasalEveryDay &&
+    previousSourceInsulin.sourceProvidesBasalEveryDay &&
+    currentSourceInsulin.sourceProvidesBolusEveryDay &&
+    previousSourceInsulin.sourceProvidesBolusEveryDay &&
+    !currentSourceInsulin.partial &&
+    !previousSourceInsulin.partial &&
+    currentSourceInsulin.sourceConflictCount === 0 &&
+    previousSourceInsulin.sourceConflictCount === 0 &&
+    sourceInsulinBreakdownConsistent(currentData) &&
+    sourceInsulinBreakdownConsistent(previousData) &&
+    !currentSourceInsulin.extraInjectionUnits &&
+    !previousSourceInsulin.extraInjectionUnits;
   if (
     current.insulinUnits !== null &&
     previous.insulinUnits !== null &&
@@ -2450,7 +2633,8 @@ export function buildInsightReport(
     current.bolusUnitsPerDay !== undefined &&
     previous.bolusUnitsPerDay !== undefined &&
     !currentInsulinMismatch &&
-    !previousInsulinMismatch
+    !previousInsulinMismatch &&
+    (!eitherPeriodHasDailyTotals || comparableSourceTotals)
   ) {
     const insulinDelta =
       current.insulinUnitsPerDay - previous.insulinUnitsPerDay;
@@ -2459,21 +2643,36 @@ export function buildInsightReport(
       kind: "observation",
       category: "insulin",
       title: `Daily delivered insulin changed by ${signed(insulinDelta, " U/day")}`,
-      summary: `Recent imported delivery records averaged ${regionalNumber(current.insulinUnitsPerDay, 1)} U/day (${regionalNumber(current.basalUnitsPerDay, 1)} basal and ${regionalNumber(current.bolusUnitsPerDay, 1)} bolus) versus ${regionalNumber(previous.insulinUnitsPerDay, 1)} U/day (${regionalNumber(previous.basalUnitsPerDay, 1)} basal and ${regionalNumber(previous.bolusUnitsPerDay, 1)} bolus).`,
+      summary: `Recent ${comparableSourceTotals ? "source-reported daily totals" : "imported delivery records"} averaged ${regionalNumber(current.insulinUnitsPerDay, 1)} U/day (${regionalNumber(current.basalUnitsPerDay, 1)} basal and ${regionalNumber(current.bolusUnitsPerDay, 1)} bolus) versus ${regionalNumber(previous.insulinUnitsPerDay, 1)} U/day (${regionalNumber(previous.basalUnitsPerDay, 1)} basal and ${regionalNumber(previous.bolusUnitsPerDay, 1)} bolus).`,
       caveat:
-        "This describes imported delivery history, not current pump state, insulin need, or dosing guidance. Uncovered basal time is reported separately.",
-      evidence: [
-        insulinEvidence(
-          "current-insulin",
-          "Recent insulin records",
-          currentData,
-        ),
-        insulinEvidence(
-          "previous-insulin",
-          "Previous insulin records",
-          previousData,
-        ),
-      ],
+        "This describes imported insulin history, not current pump state, insulin need, or dosing guidance. Daily source totals do not show when within a day basal was delivered.",
+      evidence: comparableSourceTotals
+        ? [
+            sourceBasalEvidence(
+              "current-insulin",
+              "Recent source-reported daily insulin totals",
+              currentData,
+              currentSourceBasal.withBasal,
+            ),
+            sourceBasalEvidence(
+              "previous-insulin",
+              "Previous source-reported daily insulin totals",
+              previousData,
+              previousSourceBasal.withBasal,
+            ),
+          ]
+        : [
+            insulinEvidence(
+              "current-insulin",
+              "Recent insulin records",
+              currentData,
+            ),
+            insulinEvidence(
+              "previous-insulin",
+              "Previous insulin records",
+              previousData,
+            ),
+          ],
     });
   }
 

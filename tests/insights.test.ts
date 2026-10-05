@@ -416,6 +416,148 @@ describe("evidence-backed insights", () => {
         (finding) => finding.id === "basal-data-completeness",
       ),
     ).toBe(false);
+    const dailyBasal = report.findings.find(
+      (finding) => finding.id === "basal-daily-totals",
+    );
+    expect(dailyBasal?.summary).toContain("20 U across 1 of 7 complete calendar days");
+    expect(dailyBasal?.summary).toContain("missing days were not counted as zero");
+    expect(dailyBasal?.summary).toContain("18 U across 1 of 7 complete calendar days");
+    expect(dailyBasal?.summary).not.toContain("differed by");
+    expect(dailyBasal?.evidence.map((reference) => reference.recordIds)).toEqual([
+      ["current-total"],
+      ["previous-total"],
+    ]);
+    expect(report.current.basalUnitsPerDay).toBeUndefined();
+    expect(report.findings.some((finding) => finding.id === "insulin-change")).toBe(false);
+  });
+
+  it("uses one authoritative basal total per complete day without inventing a timed timeline", async () => {
+    const now = Date.parse("2026-07-26T10:00:00+01:00");
+    const today = toDateKey(now);
+    const todayStart = dayRange(today, now).start;
+    const currentStart = dayRange(addDays(today, -7), now).start;
+    const previousStart = dayRange(addDays(today, -14), now).start;
+    const repository = createDemoRepository(now);
+    const [loadedCurrent, loadedPrevious] = await Promise.all([
+      repository.getTimeline({ start: currentStart, end: todayStart }),
+      repository.getTimeline({ start: previousStart, end: currentStart }),
+    ]);
+    const dailyTotals = (startDate: ReturnType<typeof toDateKey>, prefix: string, basalUnits: number, bolusUnits: number) =>
+      Array.from({ length: 7 }, (_, index) => {
+        const dateKey = addDays(startDate, index);
+        const day = dayRange(dateKey, now);
+        return {
+          id: `${prefix}-${index}`,
+          sourceId: "glooko-export",
+          sourceDeviceId: "pump",
+          timestamp: day.end - 1,
+          importedAt: now,
+          dateKey,
+          basalUnits,
+          bolusUnits,
+          totalUnits: basalUnits + bolusUnits,
+        };
+      });
+    const currentTotals = dailyTotals(addDays(today, -7), "current", 20, 10);
+    const previousTotals = dailyTotals(addDays(today, -14), "previous", 18, 8);
+    const firstCurrentTotal = currentTotals[0]!;
+    const current: TimelineData = {
+      ...loadedCurrent,
+      basal: [{
+        id: "zero-rate-pause",
+        sourceId: "glooko-export",
+        sourceDeviceId: "pump",
+        start: currentStart + 60_000,
+        end: currentStart + 120_000,
+        rateUnitsPerHour: 0,
+        units: 0,
+      }],
+      boluses: [],
+      dailyInsulinTotals: [
+        {
+          ...firstCurrentTotal,
+          id: "older-snapshot",
+          timestamp: firstCurrentTotal.timestamp - 60_000,
+          basalUnits: 19,
+          totalUnits: 29,
+        },
+        ...currentTotals,
+      ],
+    };
+    const previous: TimelineData = {
+      ...loadedPrevious,
+      basal: [],
+      boluses: [],
+      dailyInsulinTotals: previousTotals,
+    };
+
+    const report = buildInsightReport(current, previous, now);
+    const basal = report.findings.find((finding) => finding.id === "basal-daily-totals");
+    expect(basal?.summary).toContain("140 U across 7 of 7 complete calendar days (20 U per recorded day)");
+    expect(basal?.summary).toContain("126 U across 7 of 7 complete calendar days (18 U per recorded day)");
+    expect(basal?.summary).toContain("differed by +2 U/day");
+    expect(basal?.summary).not.toContain("older-snapshot");
+    expect(basal?.evidence[0]?.recordIds).toEqual(currentTotals.map((total) => total.id));
+    expect(basal?.evidence[0]?.recordIds).not.toContain("older-snapshot");
+    expect(basal?.evidence[1]?.recordIds).toEqual(previousTotals.map((total) => total.id));
+    expect(basal?.caveat).toContain("not a timestamped basal delivery timeline");
+    expect(report.current.basalUnitsPerDay).toBe(20);
+    expect(report.previous.basalUnitsPerDay).toBe(18);
+    const insulin = report.findings.find((finding) => finding.id === "insulin-change");
+    expect(insulin?.summary).toContain("source-reported daily totals averaged 30 U/day (20 basal and 10 bolus)");
+    expect(insulin?.evidence[0]?.recordIds).toEqual(currentTotals.map((total) => total.id));
+
+    const inconsistent = buildInsightReport(
+      {
+        ...current,
+        dailyInsulinTotals: currentTotals.map((total, index) =>
+          index === 0 ? { ...total, bolusUnits: 7 } : total,
+        ),
+      },
+      previous,
+      now,
+    );
+    expect(inconsistent.findings.find((finding) => finding.id === "basal-daily-totals")?.summary)
+      .toContain("140 U across 7 of 7 complete calendar days");
+    expect(inconsistent.findings.some((finding) => finding.id === "insulin-change")).toBe(false);
+    expect(inconsistent.current.insulinUnitsPerDay).toBeUndefined();
+  });
+
+  it("excludes partial-day snapshots and competing source groups from a basal average", async () => {
+    const now = Date.parse("2026-07-26T10:00:00+01:00");
+    const today = toDateKey(now);
+    const todayStart = dayRange(today, now).start;
+    const currentStart = dayRange(addDays(today, -7), now).start;
+    const previousStart = dayRange(addDays(today, -14), now).start;
+    const repository = createDemoRepository(now);
+    const [loadedCurrent, loadedPrevious] = await Promise.all([
+      repository.getTimeline({ start: currentStart, end: todayStart }),
+      repository.getTimeline({ start: previousStart, end: currentStart }),
+    ]);
+    const firstDate = addDays(today, -7);
+    const secondDate = addDays(today, -6);
+    const firstEnd = dayRange(firstDate, now).end;
+    const secondEnd = dayRange(secondDate, now).end;
+    const current: TimelineData = {
+      ...loadedCurrent,
+      range: { start: currentStart, end: now },
+      basal: [],
+      boluses: [],
+      dailyInsulinTotals: [
+        { id: "source-a", sourceId: "glooko-a", timestamp: firstEnd - 1, dateKey: firstDate, basalUnits: 20, totalUnits: 30 },
+        { id: "source-b", sourceId: "glooko-b", timestamp: firstEnd - 1, dateKey: firstDate, basalUnits: 21, totalUnits: 31 },
+        { id: "complete-second", sourceId: "glooko-a", timestamp: secondEnd - 1, dateKey: secondDate, basalUnits: 19, totalUnits: 29 },
+        { id: "today-so-far", sourceId: "glooko-a", timestamp: now - 60_000, importedAt: now, dateKey: today, basalUnits: 8, totalUnits: 12 },
+      ],
+    };
+    const previous: TimelineData = { ...loadedPrevious, basal: [], boluses: [], dailyInsulinTotals: [] };
+
+    const report = buildInsightReport(current, previous, now);
+    const basal = report.findings.find((finding) => finding.id === "basal-daily-totals");
+    expect(basal?.summary).toContain("19 U across 1 of 7 complete calendar days");
+    expect(basal?.summary).not.toContain("28 U");
+    expect(basal?.evidence[0]?.recordIds).toEqual(["complete-second"]);
+    expect(report.current.basalUnitsPerDay).toBeUndefined();
   });
 
   it("separates timed basal rows from source-labelled pauses in a limitation", async () => {

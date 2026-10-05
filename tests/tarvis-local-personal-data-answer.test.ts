@@ -253,6 +253,207 @@ describe("Tarv1s deterministic personal-data executor", () => {
     expect(result.answer.answer).toContain("Wednesday, 12 August 2026");
   });
 
+  it("uses saved daily basal totals despite a sparse zero-rate suspension", () => {
+    const result = execute("how much basal insulin yesterday?", (range) =>
+      timeline(range, {
+        basal: [
+          {
+            id: "one-minute-suspension",
+            start: range.start + 60 * 60_000,
+            end: range.start + 61 * 60_000,
+            rateUnitsPerHour: 0,
+            units: 0,
+            sourceId: "insulin-source",
+          },
+        ],
+        dailyInsulinTotals: [
+          {
+            id: "glooko-daily-basal",
+            timestamp: range.end - 1,
+            dateKey: toDateKey(range.start),
+            basalUnits: 18,
+            bolusUnits: 7,
+            totalUnits: 25,
+            sourceId: "insulin-source",
+            importedAt: range.end + 1_000,
+          },
+        ],
+        sources: [source("insulin-source", "Insulin")],
+      }),
+    );
+
+    expect(result.answer.headline).toBe("Basal insulin: 18.0 U");
+    expect(result.answer.answer).toContain("daily basal totals");
+    expect(result.answer.answer).toContain("18.0 U");
+    expect(result.answer.answer).toContain("cannot reconstruct when that entire amount was delivered");
+    expect(result.evidence[0]?.recordIds).toContain("glooko-daily-basal");
+    expect(result.answer.answer).not.toContain("uncovered time");
+  });
+
+  it("marks a selected conflicting basal source total as contested", () => {
+    const result = execute("how much basal insulin yesterday?", (range) =>
+      timeline(range, {
+        dailyInsulinTotals: [
+          {
+            id: "earlier-source",
+            timestamp: range.end - 2 * 60_000,
+            dateKey: toDateKey(range.start),
+            basalUnits: 18,
+            totalUnits: 25,
+            sourceId: "source-a",
+            importedAt: range.end + 1_000,
+          },
+          {
+            id: "selected-source",
+            timestamp: range.end - 60_000,
+            dateKey: toDateKey(range.start),
+            basalUnits: 22,
+            totalUnits: 30,
+            sourceId: "source-b",
+            importedAt: range.end + 2_000,
+          },
+        ],
+        sources: [source("source-a", "Insulin"), source("source-b", "Insulin")],
+      }),
+    );
+
+    expect(result.answer.headline).toBe("Basal insulin unavailable");
+    expect(result.answer.confidence).toBe("limited");
+    expect(result.answer.answer).toContain("22.0 U versus 18.0 U");
+    expect(result.answer.answer).toContain("cannot verify a single basal amount");
+    expect(result.answer.limitations.join(" ")).toContain("not added together");
+    expect(result.presentation.windows[0]?.metrics[0]?.value).toBeNull();
+    expect(result.evidence[0]?.recordIds).toEqual([
+      "selected-source",
+      "earlier-source",
+    ]);
+  });
+
+  it("labels today's lagged daily basal snapshot as recorded only so far", () => {
+    const result = execute("How much basal insulin today?", (range) =>
+      timeline(range, {
+        dailyInsulinTotals: [
+          {
+            id: "today-lagged-basal",
+            timestamp: range.end - 2 * 60 * 60_000,
+            dateKey: toDateKey(range.start),
+            basalUnits: 8,
+            bolusUnits: 4,
+            totalUnits: 12,
+            sourceId: "insulin-source",
+            importedAt: range.end - 60 * 60_000,
+          },
+        ],
+        sources: [source("insulin-source", "Insulin")],
+      }),
+    );
+
+    expect(result.answer.headline).toBe("Basal insulin recorded so far: 8.0 U");
+    expect(result.answer.confidence).toBe("limited");
+    expect(result.answer.answer).toContain("as of 18:00 on Thursday, 13 August 2026");
+    expect(result.answer.answer).toContain("snapshot does not establish basal delivery after that time");
+    expect(result.evidence[0]?.recordIds).toEqual(["today-lagged-basal"]);
+  });
+
+  it("does not turn an incomplete week of basal daily totals into a full-week total", () => {
+    const result = execute("What was my total basal insulin over the last seven days?", (range) => {
+      const firstDate = toDateKey(range.start);
+      const firstDayEnd = zonedDateTimeToTimestamp(addDays(firstDate, 1));
+      return timeline(range, {
+        dailyInsulinTotals: [
+          {
+            id: "one-day-basal",
+            timestamp: firstDayEnd - 1,
+            dateKey: firstDate,
+            basalUnits: 18,
+            bolusUnits: 7,
+            totalUnits: 25,
+            sourceId: "insulin-source",
+            importedAt: firstDayEnd + 1_000,
+          },
+        ],
+        sources: [source("insulin-source", "Insulin")],
+      });
+    });
+
+    expect(result.answer.headline).toBe("Basal insulin unavailable");
+    expect(result.answer.answer).toContain("basal totals for some requested dates");
+    expect(result.answer.answer).toContain(`${toDateKey(result.evidence[0]!.range.start)}: 18.0 U`);
+    expect(result.answer.answer).toContain("cannot give a reliable total for the whole period");
+    expect(result.presentation.windows[0]?.metrics[0]?.value).toBeNull();
+    expect(result.answer.limitations.join(" ")).toContain("not treated as zero");
+  });
+
+  it("labels an incomplete day as a source snapshot with its own as-of time", () => {
+    const result = execute("What was my total basal insulin over the last seven days?", (range) =>
+      timeline(range, {
+        dailyInsulinTotals: [
+          {
+            id: "today-so-far",
+            timestamp: range.end - 3 * 60 * 60_000,
+            dateKey: toDateKey(range.end - 1),
+            basalUnits: 8,
+            bolusUnits: 4,
+            totalUnits: 12,
+            sourceId: "insulin-source",
+            importedAt: range.end - 2 * 60 * 60_000,
+          },
+        ],
+        sources: [source("insulin-source", "Insulin")],
+      }),
+    );
+
+    expect(result.answer.headline).toBe("Basal insulin unavailable");
+    expect(result.answer.answer).toContain("8.0 U (source snapshot so far, as of 17:00");
+    expect(result.answer.answer).toContain("cannot give a reliable total for the whole period");
+    expect(result.presentation.windows[0]?.metrics[0]?.value).toBeNull();
+  });
+
+  it("does not use a whole-day basal amount for an hourly request", () => {
+    const result = execute("How much basal insulin did I use over the past three hours?", (range) =>
+      timeline(range, {
+        basal: [
+          {
+            id: "brief-zero-rate-basal",
+            start: range.start,
+            end: range.start + 60_000,
+            rateUnitsPerHour: 0,
+            units: 0,
+            sourceId: "insulin-source",
+          },
+        ],
+        pumpStates: [
+          {
+            id: "report-pause",
+            start: range.start + 60_000,
+            end: range.end,
+            kind: "automated-pause",
+            sourceId: "glooko-overview-pdf",
+          },
+        ],
+        dailyInsulinTotals: [
+          {
+            id: "whole-day-basal",
+            timestamp: range.end - 60_000,
+            dateKey: toDateKey(range.start),
+            basalUnits: 18,
+            bolusUnits: 7,
+            totalUnits: 25,
+            sourceId: "insulin-source",
+            importedAt: range.end,
+          },
+        ],
+        sources: [source("insulin-source", "Insulin")],
+      }),
+    );
+
+    expect(result.answer.headline).toBe("Basal insulin unavailable");
+    expect(result.answer.answer).toContain("specific hours requested");
+    expect(result.answer.answer).toContain("How much basal insulin on 2026-08-13?");
+    expect(result.answer.answer).not.toContain("18.0 U");
+    expect(result.presentation.windows[0]?.metrics[0]?.value).toBeNull();
+  });
+
   it("answers the exact screenshot bolus wording with the date and recorded dose times", () => {
     const result = execute(
       "How much bolus insulin did I take yesterday?",
@@ -375,7 +576,11 @@ describe("Tarv1s deterministic personal-data executor", () => {
       });
 
       expect(result.answer.headline).toBe(`${label} unavailable`);
-      expect(result.answer.answer).toContain("do not support a reliable");
+      expect(result.answer.answer).toContain(
+        label === "Basal insulin"
+          ? "cannot give a reliable total"
+          : "do not support a reliable",
+      );
       expect(result.answer.answer).not.toMatch(/Recorded .* was [0-9.]+ U/);
       expect(result.answer.limitations.join(" ")).toContain(
         "not treated as zero",

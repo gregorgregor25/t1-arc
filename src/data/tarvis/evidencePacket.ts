@@ -86,13 +86,16 @@ export function buildTarvisEvidencePacket(
   // unusually rich report reached the model-packet cap. Keep this typed,
   // safety-relevant finding ahead of the otherwise stable report order.
   const prioritizeSleep = options.question && requestsSleepEvidence(options.question);
+  const prioritizeBasal = options.question && /\bbasal\b/i.test(options.question);
+  const requestedFinding = ({ category, id }: InsightReport["findings"][number]) =>
+    (prioritizeSleep && category === "sleep") ||
+    (prioritizeBasal && id === "basal-daily-totals");
   const sourceFindings = [
     ...eligibleFindings.filter(({ id }) => id === "recorded-ketone-readings"),
-    ...(prioritizeSleep
-      ? eligibleFindings.filter(({ category, id }) => category === "sleep" && id !== "recorded-ketone-readings")
-      : []),
-    ...eligibleFindings.filter(({ category, id }) =>
-      id !== "recorded-ketone-readings" && (!prioritizeSleep || category !== "sleep")),
+    ...eligibleFindings.filter((finding) =>
+      finding.id !== "recorded-ketone-readings" && requestedFinding(finding)),
+    ...eligibleFindings.filter((finding) =>
+      finding.id !== "recorded-ketone-readings" && !requestedFinding(finding)),
   ].slice(0, MAX_FINDINGS);
   const findings = sourceFindings.map((finding) => {
     const evidenceIds: string[] = [];
@@ -175,16 +178,20 @@ export function selectTarvisEvidencePacket(
   const sleepFinding = requestedSleep
     ? packet.findings.find(({ category }) => category === "sleep")
     : undefined;
-  // A requested sleep finding must survive hosted ranking and the local
+  const basalFinding = /\bbasal\b/i.test(question)
+    ? packet.findings.find(({ id }) => id === "basal-daily-totals")
+    : undefined;
+  // Named evidence must survive hosted ranking and the local
   // fallback. Keep the established six-finding/twelve-reference boundary.
-  if (sleepFinding && !requiredIds.has(sleepFinding.id)) {
+  for (const finding of [sleepFinding, basalFinding]) {
+    if (!finding || requiredIds.has(finding.id)) continue;
     const requiredEvidence = new Set(packet.findings
       .filter(({ id }) => requiredIds.has(id))
       .flatMap(({ evidenceIds }) => evidenceIds));
-    sleepFinding.evidenceIds.forEach((id) => requiredEvidence.add(id));
+    finding.evidenceIds.forEach((id) => requiredEvidence.add(id));
     if (requiredIds.size < MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS &&
       requiredEvidence.size <= MAX_TARVIS_EVIDENCE_REFERENCES) {
-      requiredIds.add(sleepFinding.id);
+      requiredIds.add(finding.id);
     }
   }
   const candidates = relevantFindings.length ? relevantFindings : packet.findings;

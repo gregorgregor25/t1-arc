@@ -29,7 +29,10 @@ import type {
   EvidenceReference,
 } from "@/domain/insights";
 import { sourceSupports } from "@/domain/sourceCapabilities";
-import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
+import {
+  summarizeInsulinByDay,
+  summarizeInsulinRange,
+} from "@/domain/timelineInsulinSummary";
 import { toDateKey } from "@/domain/time";
 import { assessGlucoseTrend, presentTrend } from "@/domain/trend";
 import {
@@ -102,6 +105,7 @@ interface MetricResult {
   examples: EvidenceRecordPreview[];
   recordLabel: string;
   coveragePercent?: number;
+  partial?: boolean;
 }
 
 export interface LocalPersonalDataRanges {
@@ -470,7 +474,7 @@ function insulinResult(
     toDateKey(data.range.start) !== toDateKey(data.range.end - 1);
   const detailedBasal =
     (hasCapability(sources, "basal-events") || data.basal.length > 0) &&
-    completeness.basal.coveragePercent >= 95;
+    completeness.timedBasal.coveragePercent >= 95;
   // A connected source with no bolus rows is not, by itself, proof of zero.
   // Zero is authoritative only when a source daily total explicitly supplies
   // a zero bolus breakdown. Detailed-event fallback therefore needs at least
@@ -507,12 +511,97 @@ function insulinResult(
   const relevantBoluses = data.boluses.filter(({ timestamp }) =>
     inRange(timestamp, data.range),
   );
+  const conflictingBasalDays =
+    selected === "insulin.basal_total"
+      ? summarizeInsulinByDay(
+          data.basal,
+          data.boluses,
+          data.range,
+          data.dailyInsulinTotals,
+        ).filter(
+          (day) =>
+            day.sourceTotal?.basalUnits !== undefined &&
+            day.sourceAlternatives.some(
+              (alternative) =>
+                alternative.basalUnits !== undefined &&
+                Math.abs(
+                  alternative.basalUnits - day.sourceTotal!.basalUnits!,
+                ) > 0.1,
+            ),
+        )
+      : [];
   const sourceIds = new Set([
     ...summary.sourceTotals.map(({ id }) => id),
+    ...conflictingBasalDays.flatMap((day) =>
+      day.sourceAlternatives.map(({ id }) => id),
+    ),
     ...relevantBasal.map(({ id }) => id),
     ...relevantBoluses.map(({ id }) => id),
   ]);
+  if (conflictingBasalDays.length > 0) {
+    const disagreements = conflictingBasalDays.slice(0, 3).map((day) =>
+      `${day.dateKey}: ${[
+        day.sourceTotal!.basalUnits!,
+        ...day.sourceAlternatives.flatMap((alternative) =>
+          alternative.basalUnits === undefined
+            ? []
+            : [alternative.basalUnits],
+        ),
+      ]
+        .map((units) => `${formatTarvisFixedNumber(units, 1)} U`)
+        .join(" versus ")}`,
+    );
+    return {
+      metric: selected,
+      value: null,
+      unit: "U",
+      decimals: 1,
+      status: "limited",
+      label,
+      sentence: `Saved basal totals disagree between sources for ${disagreements.join("; ")}${conflictingBasalDays.length > 3 ? "; and other days" : ""}. I cannot verify a single basal amount for the requested period.`,
+      limitations: [
+        "Conflicting source totals were not added together or presented as one confirmed amount.",
+        ...(!available
+          ? ["Some requested dates also lack a usable daily basal total."]
+          : []),
+      ],
+      recordIds: [...sourceIds],
+      examples: insulinExamples(data, sourceIds),
+      recordLabel: "insulin records",
+    };
+  }
   if (!available) {
+    const requestedDateKeys = [
+      toDateKey(data.range.start),
+      toDateKey(data.range.end - 1),
+    ];
+    const savedDailyBasal = (data.dailyInsulinTotals ?? []).some(
+      (total) =>
+        total.basalUnits !== undefined &&
+        total.dateKey >= requestedDateKeys[0]! &&
+        total.dateKey <= requestedDateKeys[1]!,
+    );
+    const usableDailyBasalDays = summarizeInsulinByDay(
+      data.basal,
+      data.boluses,
+      data.range,
+      data.dailyInsulinTotals,
+    ).filter(
+      (day) => day.sourceTotal?.basalUnits !== undefined,
+    );
+    const savedDayDescriptions = usableDailyBasalDays.map((day) => {
+      const amount = `${day.dateKey}: ${formatTarvisFixedNumber(day.sourceTotal!.basalUnits!, 1)} U`;
+      if (!day.partial) return amount;
+      return `${amount} (source snapshot so far${day.sourceAsOf ? `, as of ${formatTarvisLocalDateTime(day.sourceAsOf)}` : ", as-of time unavailable"})`;
+    });
+    const dailyBasalExplanation =
+      selected === "insulin.basal_total" && savedDailyBasal
+        ? usableDailyBasalDays.length > 0
+          ? `I have basal totals for some requested dates, but not enough to calculate the exact period. ${savedDayDescriptions.length <= 7 ? `The available saved daily entries are ${savedDayDescriptions.join(", ")}. ` : ""}I cannot give a reliable total for the whole period.`
+          : spansMultipleLocalDays
+            ? "I have daily basal summaries for some of these dates, but they do not cover the exact requested hours or every day. Ask for a specific calendar-day basal summary instead."
+            : `I have a daily basal summary saved for ${requestedDateKeys[0]}, but it does not show how much basal was delivered during the specific hours requested. Ask "How much basal insulin on ${requestedDateKeys[0]}?" for the day-level amount.`
+        : null;
     return {
       metric: selected,
       value: null,
@@ -520,9 +609,11 @@ function insulinResult(
       decimals: 1,
       status: "unavailable",
       label,
-      sentence: connected(sources)
-        ? `The available insulin records do not support a reliable ${label.toLowerCase()} total for this period.`
-        : "No insulin source is connected for this period.",
+      sentence:
+        dailyBasalExplanation ??
+        (connected(sources)
+          ? `The available insulin records do not support a reliable ${label.toLowerCase()} total for this period.`
+          : "No insulin source is connected for this period."),
       limitations: [
         "Missing insulin records were not treated as zero delivery.",
       ],
@@ -546,6 +637,21 @@ function insulinResult(
           "boluses",
         )
       : "";
+  const basalDailyTotalsOnly =
+    selected === "insulin.basal_total" &&
+    authoritativeBasal &&
+    !detailedBasal;
+  const sourceBasalUnits = round(
+    summary.sourceTotals.reduce(
+      (sum, total) => sum + (total.basalUnits ?? 0),
+      0,
+    ),
+  );
+  const includesAdditionalBasalInjections =
+    selected === "insulin.basal_total" && value > sourceBasalUnits + 0.05;
+  const basalSentence = basalDailyTotalsOnly
+    ? `I have ${summary.partial ? "day-by-day basal snapshots" : "daily basal totals"} for this period. ${summary.sourceConflictCount > 0 ? "The selected saved source totals" : "Those saved totals"}${includesAdditionalBasalInjections ? ", plus separately recorded basal injections," : ""} show ${formatTarvisFixedNumber(value, 1)} U of recorded basal. ${summary.partial ? summary.sourceAsOf !== undefined ? `The latest saved source snapshot was as of ${formatTarvisLocalDateTime(summary.sourceAsOf)}; that snapshot does not establish basal delivery after that time. ` : "The saved source snapshot is partial and has no reliable as-of time, so this is not a total through the end of the requested period. " : ""}The timed basal records do not fully cover this period, so I cannot reconstruct when that entire amount was delivered.`
+    : null;
   return {
     metric: selected,
     value,
@@ -553,7 +659,12 @@ function insulinResult(
     decimals: 1,
     status,
     label,
-    sentence: `Recorded ${label.toLowerCase()} was ${formatTarvisFixedNumber(value, 1)} U, calculated from ${provenance}.${bolusTiming}`,
+    sentence:
+      basalSentence ??
+      `Recorded ${label.toLowerCase()} was ${formatTarvisFixedNumber(value, 1)} U, calculated from ${provenance}.${bolusTiming}`,
+    ...(selected === "insulin.basal_total" && summary.partial
+      ? { partial: true }
+      : {}),
     limitations: [
       ...(summary.partial
         ? [
@@ -999,7 +1110,7 @@ export function buildLocalPersonalDataAnswer({
         ? `${currentResult.label} unavailable`
         : previousResult
           ? `${currentResult.label} comparison`
-          : `${currentResult.label}: ${formatTarvisFixedNumber(currentResult.value, currentResult.decimals)} ${currentResult.unit}`,
+          : `${currentResult.metric === "insulin.basal_total" && currentResult.partial ? "Basal insulin recorded so far" : currentResult.label}: ${formatTarvisFixedNumber(currentResult.value, currentResult.decimals)} ${currentResult.unit}`,
     answer: previousResult
       ? comparisonSentence(
           currentResult,
