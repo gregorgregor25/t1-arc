@@ -50,6 +50,8 @@ packages produce 17 high-severity audit findings. Do not bypass this check or
 use the audit tool's incompatible Expo/React Native downgrades. The public
 privacy disclosure is published; exact public APK and device verification
 remain pending a passing release build. Version 1.7.14 is not yet published.
+The [dependency security review](DEPENDENCY_SECURITY_REVIEW.md) records bundle
+exposure checks and isolated tests of the proposed upstream patches.
 
 The 1.7.14 source adds **Continue with ChatGPT** alongside the three API-key
 providers. It uses an eligible ChatGPT plan; local answers remain available
