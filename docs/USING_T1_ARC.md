@@ -93,10 +93,11 @@ them back. Display choices in the demo are separate from your personal view.
 
 Open **Tarv1s** from the bottom navigation. It is the question interface.
 Some exact questions are answered locally.
-Broader questions require the user's own OpenAI, Google Gemini or Anthropic
-Claude API key and send a bounded evidence packet directly to the selected
-provider only after the user submits the question. Read the
-[Tarv1s BYOK guide](TARV1S_BYOK.md) before enabling it.
+Broader questions can use an eligible ChatGPT plan through **Continue with
+ChatGPT**, or the user's own OpenAI, Google Gemini or Anthropic Claude API key.
+ChatGPT model choices come from the connected account. A bounded evidence
+packet goes directly to the selected provider only after the user taps Send.
+Read the [Tarv1s connection guide](TARV1S_BYOK.md) before enabling either route.
 
 Starter questions reflect records available in the app. You can still ask in
 your own words. For a personal answer, **View calculation and records** opens
@@ -212,7 +213,8 @@ or an automatic upload.
 
 Keep a copy somewhere you choose outside the phone. A backup in Downloads alone
 will not protect you if the phone is lost. On a new phone, review the restore
-preview, reconnect your sources and API key, and grant Android permissions again.
+preview, reconnect your sources and chosen AI connection, and grant Android
+permissions again.
 Check the restored history before removing the old installation.
 
 Use **Erase all data from this device** only when you intend to remove health history,

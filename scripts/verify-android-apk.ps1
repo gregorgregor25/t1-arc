@@ -127,6 +127,7 @@ $requiredClasses = @(
   'expo.modules.ExpoModulesPackageList',
   $headlessLoaderClass,
   'io.github.gregorgregor25.t1arc.backup.T1ArcBackupCryptoModule',
+  'io.github.gregorgregor25.t1arc.chatgpt.T1ArcChatGptModule',
   'io.github.gregorgregor25.t1arc.glooko.T1ArcGlookoExportModule',
   'io.github.gregorgregor25.t1arc.glucosedisplay.T1ArcGlucoseDisplayModule',
   'io.github.gregorgregor25.t1arc.healthconnect.T1ArcHealthConnectModule',

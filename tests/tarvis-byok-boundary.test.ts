@@ -69,8 +69,10 @@ describe("Tarv1s BYOK boundary", () => {
     );
     expect(byokGuide).toContain("same setup.");
     expect(releaseStatus).toContain(
-      "the same direct bring-your-own-key Tarv1s route for every user",
+      "The API-key routes use each user's saved key and model.",
     );
+    expect(releaseStatus).toContain("ChatGPT is a separate, optional plan");
+    expect(releaseStatus).toContain("maintainer API key or hosted AI relay.");
     expect(releaseStatus).not.toContain(
       "Put the production OpenAI key in a T1 Arc backend",
     );

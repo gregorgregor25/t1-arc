@@ -1,8 +1,9 @@
 # Optional ChatGPT connection
 
-Status: implemented and verified in a private production-package phone build;
-**not yet published**. The latest public release remains 1.7.13. This private
-test does not verify the exact future public artifact or its release checks.
+Status: included in the 1.7.14 source and verified in a private
+production-package phone build. The private test is distinct from checks on
+the exact public APK; publication status is shown by the
+[GitHub releases](https://github.com/gregorgregor25/t1-arc/releases).
 
 On 4 October 2026, `1.7.14-private.5` (phone code 66) was installed in place
 with the production package and signer, retaining the owner's app data. The
@@ -29,7 +30,7 @@ typecheck and APK verification. OpenAI API-key Luna and GPT-6.1 Sol each
 completed the record-free question in earlier physical-phone checks. The
 existing Galaxy Watch 8 companion remained ready and accepted a queued glucose
 snapshot on private.5 (code 66); no companion reinstall, protocol change or
-watch debugging was needed. Final public build and CI verification remain.
+watch debugging was needed. The exact public build and CI have separate checks.
 
 ## Earlier private testing and resolved failures
 
@@ -178,9 +179,10 @@ separate app package and does not change the installed release's settings.
 
 ## Remaining release checks
 
-- Update the public privacy policy to disclose the optional ChatGPT route,
-  including sign-in and model-list traffic, local tokens, Send-only health
+- The public privacy policy was updated on 5 October 2026 with the optional
+  ChatGPT route, sign-in and model-list traffic, local tokens, Send-only health
   context and the provider's terms.
+- Resolve the dependency audit blockers recorded in `RELEASE_STATUS.md`.
 - Verify the exact intended public source, signed artifact and CI checks. The
   private phone tests do not stand in for that release verification.
 

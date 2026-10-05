@@ -166,6 +166,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease :app:lintRelease \
+            :t1arc-chatgpt:testReleaseUnitTest \
             :wear:assembleRelease :wear:testReleaseUnitTest :wear:lintRelease \
             :watchface-meridian:assembleRelease :watchface-meridian:lintRelease \
             :watchface-chronograph:assembleRelease :watchface-chronograph:lintRelease \

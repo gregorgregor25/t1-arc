@@ -4,10 +4,12 @@ Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic
 Claude API key. API-key connections follow the same setup. There is no bundled
 maintainer key, hidden free allowance or relay server in the normal app path.
 
-The current source adds **Continue with ChatGPT** as an independent option for
-eligible ChatGPT plans; it does not require an API key. It is awaiting
-live-account validation and release. See [ChatGPT setup and validation](CHATGPT_CONNECTION.md).
-Local answers and all three API-key options remain available.
+The 1.7.14 source includes **Continue with ChatGPT** as an independent option
+for eligible ChatGPT plans; it does not require an API key. Real-account phone
+validation is recorded in [ChatGPT setup and validation](CHATGPT_CONNECTION.md).
+Check the [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases)
+for public APK availability. Local answers and all three API-key options remain
+available.
 
 ## Choose a provider
 
@@ -24,7 +26,7 @@ saved key applies to the provider selected in settings; privacy erase removes al
 three keys, ChatGPT credentials and account mappings, the selected provider,
 safety identifier and usage counters.
 
-The current source's API-key choices are GPT-5.6 Luna, Terra and GPT-6.1 Sol; Gemini 3.8 Flash and 3.7
+The 1.7.14 source's API-key choices are GPT-5.6 Luna, Terra and GPT-6.1 Sol; Gemini 3.8 Flash and 3.7
 Flash; and Claude Haiku 4.5, Sonnet 5 and Opus 5.5. The defaults are Luna,
 Gemini 3.8 Flash and Claude Sonnet 5. There is no automatic model substitution
 and no Recommended badge. Token usage is recorded for all providers. The

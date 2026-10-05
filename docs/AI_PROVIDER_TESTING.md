@@ -2,9 +2,9 @@
 
 This records earlier provider choice checks performed for the 1.7.12 candidate
 and later private phone validation. The original comparison build was
-`1.7.12-provider-test.3`, version code 52. The latest public release is 1.7.13;
-the newer ChatGPT connection is still private and must be verified again on its
-exact public release artifact before publication.
+`1.7.12-provider-test.3`, version code 52. The 1.7.14 ChatGPT connection has
+private phone validation; verification on the exact public APK is a separate
+release check.
 
 ## Model choice
 
@@ -18,8 +18,8 @@ explicit action. Both answers and evidence planning use the selected model.
 Settings link to official pricing instead of displaying fixed prices or cost
 labels. No model has a Recommended label in this release.
 
-- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra`; the current unreleased source also offers
-  `gpt-6.1-sol`. A record-free HbA1c/time-in-range question completed through the
+- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra` and `gpt-6.1-sol` in the 1.7.14 source.
+  A record-free HbA1c/time-in-range question completed through the
   saved OpenAI API key on the owner's phone using private candidate
   `1.7.14-private.2` on 4 October 2026. This checks one inference and the guarded
   answer path, not general model accuracy. The default remains Luna.
@@ -176,10 +176,10 @@ make an AI provider request or change the Wear protocol.
 - Confirm the exact signed production build preserves the provider choices,
   secure keys, local counts and existing Wear companion protocol. The private
   phone build and passing older commits cannot stand in for release verification.
-- The public privacy policy already names Google and Anthropic but still needs
-  the optional ChatGPT plan route and its sign-in/model-list data flows before
-  that route is published. Review Google's account, billing, age and regional
-  terms for the intended audience.
+- The public privacy policy was updated on 5 October 2026 to disclose the
+  optional ChatGPT plan route and its sign-in/model-list data flows. Resolve
+  the dependency audit blockers in `RELEASE_STATUS.md` before publication.
+  Review Google's account, billing, age and regional terms for the intended audience.
 - Keep this as a phone-only change. There are no Wear OS code or protocol changes.
   The bundled companion's build version follows phone packaging metadata, but
   this does not require reinstalling a working companion or watch debugging.
