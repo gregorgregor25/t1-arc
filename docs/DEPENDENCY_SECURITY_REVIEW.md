@@ -90,3 +90,69 @@ verified. Pin the resulting dependency graph, rerun the regression and normal
 behaviour checks, then require the existing security and build checks to pass.
 The exact signed public APK still needs device/update verification, including
 the user's saved OpenAI provider and existing Wear companion compatibility.
+
+## Completed exposure assessment and proposed exception
+
+The following is a proposal for explicit owner approval, not an active audit
+exception. No workflow or branch/environment protection has been changed.
+
+### Execution evidence
+
+Both installed Metro file-map implementations use `micromatch.some` in their
+watcher `common.js` helpers. That API delegates to Picomatch, not the separate
+Micromatch `parse`, `braces` and `braceExpand` APIs that invoke Braces. The
+watcher patterns are generated from package.json, configured extensions and
+health-check names; discovered file paths are matching inputs, not patterns.
+
+A local CommonJS probe rejected Braces `compile`/`expand` calls and Forge RSA
+public-key construction, a prerequisite for its normal verification path.
+Self-tests deliberately invoked all three hooks and confirmed rejection.
+With this probe inherited through NODE_OPTIONS:
+
+- Android production prebuild with `--no-clean --no-install` completed; both
+  process reports recorded zero affected calls or module loads.
+- A cold production Android export (`--clear --source-maps --no-bytecode`)
+  completed. Braces modules were loaded 11 times, with zero compile/expand
+  calls. Forge was not loaded.
+- The new source map again contained 1,630 modules and none from the four
+  affected/tooling packages listed above.
+
+These are local Windows checks. They do not establish coverage of every
+JavaScript entry point or replace a Linux clean prebuild and Gradle release
+build. The probe deliberately blocks a conservative Forge prerequisite, not
+every cryptographic operation. It records no function inputs or credentials.
+
+The observed Android paths do not expose either reported vulnerable operation
+to user-supplied health records or network requests. The packages remain
+vulnerable in the dependency tree, and development/iOS/updates paths are not
+covered by the proposed Android release exception. Compromised dependencies
+or changes to build configuration remain separate risks.
+
+### Proposed approval scope and acceptance conditions
+
+Independent review considers a conditional exception defensible for owner
+consideration, with these limits:
+
+1. T1 Arc Android **1.7.14 only**, on the exact independently reviewed PR head.
+   Retain the lockfile hash recorded above and package versions Braces 3.0.3
+   and node-forge 1.4.0. Source/configuration or dependency drift requires
+   renewed assessment; approval does not extend to future releases.
+2. Only **GHSA-vfj7-8cjw-p6xm** and **GHSA-86w9-cpqp-85rv**, including findings
+   derived solely from those two advisories, may be accepted. Keep the full
+   audit report visible and preserve their high-severity classifications.
+3. Expire the exception at **2026-10-12 00:00 UTC**, even if no fix exists.
+   Fail closed on expiry, unrecognised findings, audit/network/report errors,
+   package/version/hash drift, or an incomplete evidence check. Do not disable
+   the audit command or use `continue-on-error` to ignore its result.
+4. Before accepting the exception, repeat guarded execution for the Linux
+   clean Android prebuild and actual Gradle release bundling path. Reject any
+   call to an affected function. Verify the exact APK's bundled code and
+   source-map evidence, rather than relying only on this local export.
+5. Keep branch reviews, environment protection, all other tests and final
+   device checks. Owner acceptance explicitly covers residual **build-tool
+   risk**, including the Forge signature-verification issue; it does not
+   assert that either library is fixed or universally unexploitable.
+
+This creates a possible controlled route to release without waiting for an
+upstream version. It still requires owner approval and successful execution of
+the conditions above. Until then, the existing failing audit remains binding.
