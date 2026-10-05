@@ -28,6 +28,16 @@ all platform configurations, or the security of the build environment.
 The reviewed package-lock.json SHA-256 was
 `32a613189bba624fafff09d4fb5ed7f55469296d75a18ca4c2e16ada71dc9bb1`.
 
+After Linux CI required current Expo compatibility patches, the dependency
+review was repeated on 5 October. Expo was updated to 57.0.26, alongside its
+background-task, camera, constants, document-picker, task-manager and
+modules-core patches. The reviewed CLI, Metro, Micromatch, Braces and Forge
+package versions/integrities and the advisory graph did not change. Expo
+dependency parity and all 21 Doctor checks passed. The **current pinned
+lockfile SHA-256** is
+`46a5236e77448db6bb8be995af93d6d68a9e1967f56950a3dfebef9c167354ae`.
+Fresh guarded Linux build evidence is still required for this refreshed graph.
+
 ## Candidate patches and isolated checks
 
 ### Braces
@@ -136,7 +146,7 @@ Independent review considered a conditional exception defensible for owner
 consideration. The approved limits are:
 
 1. T1 Arc Android **1.7.14 only**, on the exact independently reviewed PR head.
-   Retain the lockfile hash recorded above and package versions Braces 3.0.3
+   Retain the current pinned lockfile hash recorded above and package versions Braces 3.0.3
    and node-forge 1.4.0. Source/configuration or dependency drift requires
    renewed assessment; approval does not extend to future releases.
 2. Only **GHSA-vfj7-8cjw-p6xm** and **GHSA-86w9-cpqp-85rv**, including findings

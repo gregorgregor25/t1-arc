@@ -8,7 +8,7 @@ const release = Object.freeze({
   version: '1.7.14',
   versionCode: 68,
   applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: '32a613189bba624fafff09d4fb5ed7f55469296d75a18ca4c2e16ada71dc9bb1',
+  lockfileSha256: '46a5236e77448db6bb8be995af93d6d68a9e1967f56950a3dfebef9c167354ae',
   expiresAt: '2026-10-12T00:00:00Z',
 });
 
