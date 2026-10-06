@@ -124,6 +124,10 @@ The conversation list includes **Earlier conversations** for recovered or archiv
 answers associated with previous connections. They remain readable, with their
 original dates and evidence; they are not fresh answers about today.
 
+Tarv1s keeps the newest 30 exchanges within a storage-size limit. New answers
+can remove older conversations, including entries under Earlier conversations.
+Make an encrypted backup if you want to keep a copy of the current history.
+
 ### Keep something useful
 
 Choose **Save to notebook** under an answer. **Saved · Open notebook** opens the
