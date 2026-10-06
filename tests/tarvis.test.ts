@@ -43,7 +43,7 @@ describe("TARV1S evidence and spending guardrails", () => {
         (item) =>
           lookup.references.has(item.id) &&
           item.examples.length <= 5 &&
-          item.recordCount >= item.examples.length,
+          (item.recordCount ?? 0) >= item.examples.length,
       ),
     ).toBe(true);
   });
