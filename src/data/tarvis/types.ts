@@ -204,6 +204,8 @@ export interface TarvisResponse {
   modelRequestSent: boolean;
   /** Where the prose shown to the user came from. */
   answerSource: "hosted" | "local";
+  /** Evidence mode only: the provider returned a valid selection of approved finding IDs. Visible prose remains local. */
+  hostedEvidenceSelectionAccepted?: boolean;
   requestMetrics?: TarvisRequestMetrics;
 }
 

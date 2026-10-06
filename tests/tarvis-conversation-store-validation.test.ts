@@ -55,6 +55,47 @@ describe("stored Tarv1s conversation validation", () => {
     expect(validStoredTarvisExchange(validExchange())).toBe(true);
   });
 
+  it.each([true, false])("round-trips evidence selection validity %s without changing the local prose origin", (accepted) => {
+    const exchange = {
+      ...validExchange(),
+      modelRequestSent: true,
+      answerSource: "local" as const,
+      requestMetrics: { model: "test-model", inputTokens: 10, outputTokens: 5, totalTokens: 15, evidenceCharacters: 200 },
+      hostedEvidenceSelectionAccepted: accepted,
+    };
+    expect(validStoredTarvisExchange(exchange)).toBe(true);
+    const saved = JSON.parse(serializeTarvisConversation([exchange], 1_000));
+    expect(saved.exchanges[0].hostedEvidenceSelectionAccepted).toBe(accepted);
+    const restored = JSON.parse(validateSerializedTarvisConversation(JSON.stringify(saved)));
+    expect(restored.exchanges[0].hostedEvidenceSelectionAccepted).toBe(accepted);
+    expect(restored.exchanges[0].answerSource).toBe("local");
+  });
+
+  it("keeps the diagnostic absent on older conversations and rejects unsupported claims", () => {
+    const legacy = validExchange();
+    const migrated = JSON.parse(validateSerializedTarvisConversation(JSON.stringify({
+      schemaVersion: 1, updatedAt: 1_000, exchanges: [legacy],
+    })));
+    expect(migrated.exchanges[0]).not.toHaveProperty("hostedEvidenceSelectionAccepted");
+    const exchange = {
+      ...validExchange(), modelRequestSent: true, answerSource: "local" as const,
+      requestMetrics: { model: "test-model", inputTokens: 10, outputTokens: 5, totalTokens: 15, evidenceCharacters: 200 },
+      hostedEvidenceSelectionAccepted: true,
+    };
+    for (const impossible of [
+      { ...exchange, modelRequestSent: false },
+      { ...exchange, requestMetrics: undefined },
+      { ...exchange, answerSource: "hosted" },
+      { ...exchange, hostedEvidenceSelectionAccepted: "yes" },
+      { ...exchange, answer: { ...exchange.answer, responseKind: "general-education", evidenceIds: [] }, evidence: [] },
+    ]) {
+      expect(validStoredTarvisExchange(impossible)).toBe(false);
+      expect(() => validateSerializedTarvisConversation(JSON.stringify({
+        schemaVersion: 3, updatedAt: 1_000, exchanges: [impossible],
+      }))).toThrow("invalid Tarv1s conversation");
+    }
+  });
+
   it("preserves the local-only sharing marker through persistence validation", () => {
     const exchange = Object.assign(validExchange(), {
       modelSharing: "local-only" as const,

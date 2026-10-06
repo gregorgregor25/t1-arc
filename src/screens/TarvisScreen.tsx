@@ -244,6 +244,7 @@ interface ChatExchange {
   requestMetrics?: TarvisRequestMetrics;
   modelRequestSent: boolean;
   answerSource: "hosted" | "local";
+  hostedEvidenceSelectionAccepted?: boolean;
   modelSharing?: "local-only";
   guidanceSources: TarvisGuidanceReference[];
   answerBundle?: GlucoseAnswerBundleV2;
@@ -1479,6 +1480,9 @@ export function TarvisScreen({
       modelRequestSent:
         exchange.modelRequestSent ?? Boolean(exchange.requestMetrics),
       answerSource: exchange.answerSource ?? "local",
+      ...(exchange.hostedEvidenceSelectionAccepted !== undefined
+        ? { hostedEvidenceSelectionAccepted: exchange.hostedEvidenceSelectionAccepted }
+        : {}),
       modelSharing: exchange.modelSharing,
       guidanceSources: exchange.guidanceSources ?? [],
       answerBundle: exchange.answerBundle,
@@ -1752,6 +1756,9 @@ export function TarvisScreen({
       requestMetrics: exchange.requestMetrics,
       modelRequestSent: exchange.modelRequestSent,
       answerSource: exchange.answerSource,
+      ...(exchange.hostedEvidenceSelectionAccepted !== undefined
+        ? { hostedEvidenceSelectionAccepted: exchange.hostedEvidenceSelectionAccepted }
+        : {}),
       modelSharing: exchange.modelSharing,
       guidanceSources: exchange.guidanceSources,
       answerBundle: exchange.answerBundle,
@@ -1776,6 +1783,7 @@ export function TarvisScreen({
       requestMetrics,
       modelRequestSent = false,
       answerSource = "local",
+      hostedEvidenceSelectionAccepted,
       modelSharing,
       guidanceSources = [],
       answerBundle,
@@ -1789,6 +1797,7 @@ export function TarvisScreen({
       requestMetrics?: TarvisRequestMetrics;
       modelRequestSent?: boolean;
       answerSource?: "hosted" | "local";
+      hostedEvidenceSelectionAccepted?: boolean;
       modelSharing?: "local-only";
       guidanceSources?: TarvisGuidanceReference[];
       answerBundle?: GlucoseAnswerBundleV2;
@@ -1819,6 +1828,9 @@ export function TarvisScreen({
         requestMetrics,
         modelRequestSent,
         answerSource,
+        ...(hostedEvidenceSelectionAccepted !== undefined
+          ? { hostedEvidenceSelectionAccepted }
+          : {}),
         modelSharing,
         guidanceSources,
         answerBundle,
@@ -2544,6 +2556,7 @@ export function TarvisScreen({
             {
               answer: response.answer,
               answerSource: response.answerSource,
+              hostedEvidenceSelectionAccepted: response.hostedEvidenceSelectionAccepted,
               modelSharing: "local-only",
               modelRequestSent: response.modelRequestSent,
               evidenceLookup: {
@@ -2784,6 +2797,7 @@ export function TarvisScreen({
           {
             answer: response.answer,
             answerSource: response.answerSource,
+            hostedEvidenceSelectionAccepted: response.hostedEvidenceSelectionAccepted,
             modelRequestSent: true,
             modelSharing: "local-only",
             evidenceLookup: plannedEvidence,
@@ -3027,6 +3041,7 @@ export function TarvisScreen({
         {
           answer: response.answer,
           answerSource: response.answerSource,
+          hostedEvidenceSelectionAccepted: response.hostedEvidenceSelectionAccepted,
           modelRequestSent: response.modelRequestSent,
           evidenceLookup: evidenceForQuestion ?? {
             packet: evidence?.packet,

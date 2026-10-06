@@ -561,10 +561,13 @@ export async function askTarvis(
     const educationResult = responseMode === "general-education"
       ? parseTarvisGeneralEducationAnswer(outputText)
       : undefined;
+    const evidenceSelectionResult = selectedPacket && !isTarvisRetrospectiveEvidencePacket(selectedPacket)
+      ? parseTarvisEvidenceSelectionResult(outputText, selectedPacket)
+      : undefined;
     const parsedAnswer = selectedPacket
       ? isTarvisRetrospectiveEvidencePacket(selectedPacket)
         ? retrospectiveResult!.answer
-        : parseTarvisEvidenceSelectionResult(outputText, selectedPacket).answer
+        : evidenceSelectionResult!.answer
       : educationResult?.answer ?? parseTarvisReviewedKnowledgeAnswer(outputText, reviewedKnowledge);
     const coverageResult =
       selectedPacket && !isTarvisRetrospectiveEvidencePacket(selectedPacket)
@@ -585,6 +588,9 @@ export async function askTarvis(
       answerSource: (retrospectiveResult?.acceptedHostedAnswer || educationResult?.acceptedHostedAnswer)
         ? "hosted"
         : "local",
+      ...(evidenceSelectionResult
+        ? { hostedEvidenceSelectionAccepted: evidenceSelectionResult.acceptedHostedSelection }
+        : {}),
       requestMetrics: knownRequestMetrics,
     };
   } catch (error) {

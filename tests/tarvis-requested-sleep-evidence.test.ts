@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTarvisEvidencePacket,
+  currentPeriodTarvisEvidence,
   selectTarvisEvidencePacket,
 } from "@/data/tarvis/evidencePacket";
 import {
@@ -62,6 +63,70 @@ function packet(
 }
 
 describe("explicitly requested sleep evidence", () => {
+  const togetherQuestion = "What do my sleep and glucose records show together over the last seven days, without assuming one caused the other?";
+
+  it("gives a current-only sleep and glucose answer without repeated reference counts or prior data", () => {
+    const report = buildInsightReport(timeline(CURRENT, true), timeline(PREVIOUS, true), CURRENT.end);
+    report.previous.sleepMinutesPerNight = 9123;
+    const lookup = buildTarvisEvidencePacket(report, { question: togetherQuestion });
+    lookup.packet.evidence.find(({ id }) => id === "previous-glucose")!.description = "PRIOR_SECRET_9123";
+    lookup.packet.comparison.current.mealCarbsPerDay = 6543;
+    lookup.packet.findings.push(
+      { id: "repeated-glucose-a", category: "glucose", kind: "observation", title: "Old comparison", summary: "PRIOR_SECRET_9123", evidenceIds: ["current-glucose", "previous-glucose"] },
+      { id: "repeated-glucose-b", category: "glucose", kind: "observation", title: "Old comparison", summary: "PRIOR_SECRET_9123", evidenceIds: ["current-glucose", "previous-glucose"] },
+      { id: "glucose-timing", category: "glucose", kind: "observation", title: "Prior-period timing change", summary: "PRIOR_SECRET_9123", caveat: "This comparison needs 70% coverage and follows local clock boundaries.", evidenceIds: ["current-glucose", "previous-glucose"] },
+    );
+    lookup.packet.requiredFindingIds = ["repeated-glucose-b"];
+    const selected = selectTarvisEvidencePacket(togetherQuestion,
+      currentPeriodTarvisEvidence(lookup, report, togetherQuestion).packet);
+    const answer = localTarvisEvidenceFallback(selected);
+    expect(answer.headline).toBe("Sleep and glucose in the requested period");
+    expect(answer.answer).toContain("time in range");
+    expect(answer.answer).toContain("Recorded sleep averaged");
+    expect(answer.answer).toContain("cannot show whether sleep and glucose changed together over time");
+    expect(answer.answer).not.toContain("The requested period has");
+    expect(answer.answer).not.toContain("normalised glucose readings");
+    expect(selected.findings.filter(({ id }) => id.startsWith("repeated-glucose-")).map(({ id }) => id)).toEqual(["repeated-glucose-b"]);
+    expect(selected.findings.find(({ id }) => id === "glucose-timing")?.caveat).toContain("local clock boundaries");
+    expect(selected.findings.find(({ id }) => id === "glucose-timing")?.caveat).toContain("70% observed coverage");
+    expect(selected.requiredFindingIds).toContain("sleep-context");
+    expect(JSON.stringify(selected)).not.toContain("PRIOR_SECRET_9123");
+    expect(JSON.stringify(selected)).not.toContain("6543");
+    expect(JSON.stringify(selected)).not.toContain("previous-glucose");
+    expect(selected.comparison.previous).toBeUndefined();
+  });
+
+  it("describes missing sleep as unavailable rather than claiming a sleep-glucose relationship", () => {
+    const report = buildInsightReport(timeline(CURRENT, false), timeline(PREVIOUS, true), CURRENT.end);
+    const selected = selectTarvisEvidencePacket(togetherQuestion,
+      currentPeriodTarvisEvidence(buildTarvisEvidencePacket(report, { question: togetherQuestion }), report, togetherQuestion).packet);
+    const answer = localTarvisEvidenceFallback(selected);
+    expect(answer.headline).toBe("Sleep and glucose in the requested period");
+    expect(answer.answer).toContain("No recorded sleep summary is available for the requested period");
+    expect(answer.answer).toContain("does not prove that no sleep occurred");
+    expect(answer.answer).not.toContain("Recorded sleep averaged");
+    expect(JSON.stringify(selected)).not.toContain("previous-sleep");
+  });
+
+  it("does not turn missing glucose into zero observed episodes", () => {
+    const current = timeline(CURRENT, true);
+    current.glucose = [];
+    const report = buildInsightReport(current, timeline(PREVIOUS, true), CURRENT.end);
+    const selected = selectTarvisEvidencePacket(togetherQuestion,
+      currentPeriodTarvisEvidence(buildTarvisEvidencePacket(report, { question: togetherQuestion }), report, togetherQuestion).packet);
+    const answer = localTarvisEvidenceFallback(selected);
+    expect(answer.answer).toContain("No recorded glucose readings; glucose results are unavailable, not zero");
+    expect(answer.answer).not.toContain("time in range 0%");
+    expect(JSON.stringify(selected)).not.toContain("previous-glucose");
+  });
+
+  it("uses a general heading for an unqualified broad question", () => {
+    const question = "How am I doing this week?";
+    const report = buildInsightReport(timeline(CURRENT, true), timeline(PREVIOUS, true), CURRENT.end);
+    const scoped = currentPeriodTarvisEvidence(buildTarvisEvidencePacket(report, { question }), report, question);
+    expect(scoped.packet.comparison.headline).toBe("Your requested records");
+  });
+
   it("retains real sleep evidence ahead of the report cap and requires it in hosted and local answers", () => {
     expect(coordinateTarvisRequest({ question: QUESTION, asOf: CURRENT.end }).kind).toBe("model-evidence");
     const selected = packet(true, true, true);

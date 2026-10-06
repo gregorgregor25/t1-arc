@@ -215,7 +215,7 @@ describe("Tarv1s direct model-request shape", () => {
     mocks.chatGptSession.mockResolvedValue({ accessToken: "synthetic-session", accountId: "test-account", model: "account-model" });
   });
 
-  it("uses the ChatGPT session for guarded education and planning without loading an API key", async () => {
+  it("uses the ChatGPT session for guarded education, evidence and planning without loading an API key", async () => {
     mocks.loadProvider.mockResolvedValue("chatgpt");
     const completed = (text: string) => JSON.stringify({ status: "completed", output: [{ content: [{ type: "output_text", text }] }], usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 } });
     mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ kind: "explanation", headline: "About HbA1c", answer: "HbA1c reflects longer-term glucose exposure.", limitations: [] })));
@@ -223,6 +223,11 @@ describe("Tarv1s direct model-request shape", () => {
     expect(result.answerSource).toBe("hosted");
     expect(result.requestMetrics).toMatchObject({ model: "account-model", totalTokens: 30 });
     expect(result.requestMetrics?.estimatedCostUsd).toBeUndefined();
+    expect(result).not.toHaveProperty("hostedEvidenceSelectionAccepted");
+    mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ findingIds: ["glucose-change"] })));
+    const evidenceResult = await askTarvis("Why was my glucose different last week?", evidencePacket(), [], { epoch: 1 });
+    expect(evidenceResult.hostedEvidenceSelectionAccepted).toBe(true);
+    expect(evidenceResult.answerSource).toBe("local");
     const question = "I had a really high reading two days ago. Do you know why?";
     const options = buildTarvisEvidencePlanningOptions(question, Date.parse("2026-08-26T10:00:00+01:00"));
     mocks.chatGptRequest.mockResolvedValueOnce(completed(JSON.stringify({ kind: "glucose-episode", rangeOptionId: "range-1", eventOptionId: "event-high", categoryIds: ["glucose", "insulin", "food", "activity", "sleep", "context", "data-quality"], clarificationCode: "none" })));
@@ -543,8 +548,23 @@ describe("Tarv1s direct model-request shape", () => {
     });
     expect(result.answer.answer).toContain("variability was lower");
     expect(result.answerSource).toBe("local");
+    expect(result.hostedEvidenceSelectionAccepted).toBe(true);
     expect(result.modelRequestSent).toBe(true);
     expect(result.requestMetrics).toBeDefined();
+  });
+
+  it.each([
+    ["malformed JSON", "not-json"],
+    ["unknown finding", JSON.stringify({ findingIds: ["invented"] })],
+    ["valid empty selection", JSON.stringify({ findingIds: [] })],
+  ])("records evidence selection validity for %s without changing local prose", async (description, output) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response(output));
+    const result = await askTarvis("Why was my glucose different last week?", evidencePacket(), [], { epoch: 1 });
+    expect(result.modelRequestSent).toBe(true);
+    expect(result.requestMetrics).toBeDefined();
+    expect(result.answerSource).toBe("local");
+    expect(result.hostedEvidenceSelectionAccepted).toBe(description === "valid empty selection");
+    expect(result.answer.answer).toContain("Recorded variability was lower");
   });
 
   it("sends only the requested current records for fresh basal/glucose questions, retaining prior records for an explicit comparison", async () => {
@@ -608,6 +628,49 @@ describe("Tarv1s direct model-request shape", () => {
     expect(previousBody).not.toContain("6543");
     expect(previousBody).not.toContain("4321");
     expect(previousBody).not.toContain("FOOD_SECRET_7654");
+  });
+
+  it("keeps unrelated Health Connect source-choice details out of sleep and glucose model requests", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(JSON.stringify({ findingIds: [] })));
+    const source = evidencePacket();
+    const currentRange = source.comparison.currentRange;
+    const previousRange = source.comparison.previousRange!;
+    source.comparison.current.sleepMinutesPerNight = 420;
+    source.findings.push(
+      { id: "sleep-context", kind: "context-clue", category: "sleep", title: "Sleep comparison", summary: "Previous sleep differed", evidenceIds: ["current-sleep", "previous-sleep"] },
+      { id: "glucose-data-completeness", kind: "limitation", category: "data-quality", title: "Glucose coverage", summary: "Previous coverage differed", evidenceIds: ["current-completeness", "previous-completeness"] },
+      { id: "health-connect-source-choice", kind: "limitation", category: "data-quality", title: "Health source choice", summary: "UNRELATED_HEALTH_SECRET_4628", evidenceIds: ["current-health-source-choice", "previous-health-source-choice"] },
+    );
+    source.evidence.push(
+      { id: "current-sleep", label: "Current sleep", description: "Current sleep sessions", range: currentRange, recordCount: 2, examples: [] },
+      { id: "previous-sleep", label: "Previous sleep", description: "Previous sleep sessions", range: previousRange, recordCount: 2, examples: [] },
+      { id: "current-completeness", label: "Current glucose coverage", description: "Current glucose coverage", range: currentRange, recordCount: 100, examples: [] },
+      { id: "previous-completeness", label: "Previous glucose coverage", description: "Previous glucose coverage", range: previousRange, recordCount: 100, examples: [] },
+      { id: "current-health-source-choice", label: "UNRELATED_HEALTH_SECRET_4628", description: "UNRELATED_HEALTH_SECRET_4628", range: currentRange, recordCount: 1,
+        examples: [{ id: "unrelated-health", kind: "health-metric", timestamp: currentRange.start + 1, primary: "UNRELATED_HEALTH_SECRET_4628", secondary: "private fixture", sourceId: "fixture" }] },
+      { id: "previous-health-source-choice", label: "Previous health source", description: "UNRELATED_HEALTH_SECRET_4628", range: previousRange, recordCount: 1, examples: [] },
+    );
+    const report = { currentRange, current: source.comparison.current, findings: [] } as unknown as InsightReport;
+    const question = "What do my sleep and glucose records show together over the last seven days, without assuming one caused the other?";
+    const packet = selectTarvisEvidencePacket(question,
+      currentPeriodTarvisEvidence({ packet: source, references: new Map() }, report, question).packet);
+    expect(packet.findings.map(({ id }) => id)).toContain("glucose-data-completeness");
+    expect(packet.findings.map(({ id }) => id)).not.toContain("health-connect-source-choice");
+    expect(JSON.stringify(packet)).not.toContain("UNRELATED_HEALTH_SECRET_4628");
+    await askTarvis(question, packet, [], { epoch: 1 }, { packetIsPreselected: true });
+    const body = String(fetchSpy.mock.lastCall?.[1]?.body);
+    expect(body).not.toContain("UNRELATED_HEALTH_SECRET_4628");
+    expect(body).toContain("current-sleep");
+    expect(body).toContain("current-completeness");
+    expect(body).not.toContain("previous-sleep");
+
+    const sourceQuestion = "Why are my Health Connect source totals missing over the last seven days?";
+    const sourcePacket = selectTarvisEvidencePacket(sourceQuestion,
+      currentPeriodTarvisEvidence({ packet: source, references: new Map() }, report, sourceQuestion).packet);
+    const sourceFinding = sourcePacket.findings.find(({ id }) => id === "health-connect-source-choice");
+    expect(sourceFinding?.summary).toContain("Health Connect source records");
+    expect(sourceFinding?.summary).not.toContain("Sensor coverage");
+    expect(sourcePacket.evidence.map(({ id }) => id)).not.toContain("previous-health-source-choice");
   });
 
   it.each([
@@ -900,6 +963,7 @@ describe("Tarv1s direct model-request shape", () => {
       "capillary blood glucose monitoring",
     );
     expect(result.answerSource).toBe("local");
+    expect(result).not.toHaveProperty("hostedEvidenceSelectionAccepted");
     expect(result.modelRequestSent).toBe(true);
     expect(result.requestMetrics).toBeDefined();
   });

@@ -67,17 +67,26 @@ say when the available evidence is incomplete instead of filling in the gaps.
 For example, a Glooko import may provide daily basal totals without the timed
 delivery history. Tarv1s can use those totals for a day or week and explain why
 it cannot say when that basal was delivered. Sleep and glucose questions keep
-both kinds of records in view without treating their association as a cause.
-Supported exact questions are answered on the phone for free. For broader
-questions, you can optionally use an eligible ChatGPT plan through **Continue
-with ChatGPT**, or connect directly to OpenAI, Google Gemini or Anthropic Claude
-with your own API key. A question and any selected health context go to the
+both summaries in view, but period-level aggregates alone cannot show whether
+sleep and glucose changed together or establish a cause.
+Supported exact personal questions are answered on the phone for free, even
+when an AI connection is selected. For broader personal questions, the chosen
+model can select from locally approved findings or reviewed claims; the app
+assembles the factual answer from them on the phone. Some personal modes send
+bounded selected records, and a model call can occur even when the prose is
+assembled locally. General education can use the chosen provider without a new
+health-record packet. For optional AI, you can use an eligible ChatGPT plan
+through **Continue with ChatGPT**, or connect directly to OpenAI, Google Gemini
+or Anthropic Claude with your own API key. A question and any selected health
+context go to the
 chosen provider only when you tap Send. ChatGPT uses models offered to that
 account and never silently falls back to an API key.
 
-The ChatGPT route completed two record-free answers on a private production-
-package phone build. Personal-data answers and the exact public APK have
-separate release checks. See the
+The ChatGPT route completed two record-free answers on an earlier private
+production-package phone build. The signed 1.7.15 draft passed its build but was
+held after a current-period personal-answer presentation issue appeared during
+device testing. The corrected 1.7.16 APK and hosted personal answers still need
+their own checks. See the
 [ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
 
 The default OpenAI API model is **GPT-5.6 Luna**; GPT-6.1 Sol is another API

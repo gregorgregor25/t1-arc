@@ -1,6 +1,6 @@
 # T1 Arc vX.Y.Z
 
-<!-- Draft for 1.7.15. Replace every X.Y.Z and remaining verification
+<!-- Draft for 1.7.16. Replace every X.Y.Z and remaining verification
 placeholder, verify links against the exact release tag, and remove this
 comment before publication. -->
 
@@ -32,9 +32,13 @@ encrypted backup before updating.
   depends on that account's model list.
 - **Clearer personal-data answers.** Tarv1s now retains requested sleep records
   when comparing sleep with glucose. It can use imported daily basal totals for
-  sums, averages and comparisons, and explains when the source lacks the
-  hour-by-hour delivery detail needed for an hourly answer. Missing or
-  conflicting days are not counted as zero.
+  sums, averages and comparisons across corresponding complete calendar days,
+  and explains when the source lacks the hour-by-hour delivery detail needed
+  for an hourly answer. Missing or conflicting days are not counted as zero.
+  Supported exact calculations remain local even with an AI connection
+  selected. For broader personal questions, a provider may select locally
+  approved findings or reviewed claims; the app assembles the factual answer,
+  but a model call still occurred. Some modes send bounded selected records.
 - General diabetes explanations now reject a specific misleading claim that
   glucose readings alone establish the clinical severity of hypoglycaemia.
   AI answers still need review and must not be used to make treatment decisions.
