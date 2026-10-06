@@ -82,14 +82,19 @@ context go to the
 chosen provider only when you tap Send. ChatGPT uses models offered to that
 account and never silently falls back to an API key.
 
-The ChatGPT route completed two record-free answers on an earlier private
-production-package phone build. The signed 1.7.15 draft passed its build but was
-held after a current-period personal-answer presentation issue appeared during
-device testing. The signed 1.7.16 draft also remains unpublished: backup
-comparisons exposed a pre-existing Health Connect sync boundary issue. The
-1.7.17 candidate corrects that issue and requires its own signed-artifact and
-device/provider checks. See the
+The signed 1.7.17 phone build completed a targeted 16-question check: six each
+through ChatGPT and OpenAI, and two each through Claude and Gemini. Fourteen
+questions completed real provider requests; two used the local daily-basal
+fallback. The tested personal-data figures matched independent calculations
+from the phone's stored records. Some education wording was inaccurate and
+broader answers offered limited interpretation; improving those answers is
+planned for the next release. This is a bounded check, not a guarantee of every
+answer or a full four-provider test suite. See the
 [ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
+
+The 1.7.18 release carries those features forward and patches the `shell-quote`
+dependency after a fresh security audit blocked publication of 1.7.17. Its
+signed build and final verification will be recorded with the published release.
 
 The default OpenAI API model is **GPT-5.6 Luna**; GPT-6.1 Sol is another API
 choice when the user's API account has access. ChatGPT plan models come from

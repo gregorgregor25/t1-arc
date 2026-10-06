@@ -5,10 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const release = Object.freeze({
-  version: '1.7.17',
-  versionCode: 74,
+  version: '1.7.18',
+  versionCode: 76,
   applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: '550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9',
+  lockfileSha256: 'd18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7',
   expiresAt: '2026-10-12T00:00:00Z',
 });
 
@@ -25,7 +25,7 @@ const advisories = Object.freeze({
   }),
 });
 
-// The reviewed 1.7.17 production audit contained these 16 affected packages. A
+// The reviewed 1.7.18 production audit permits these same 16 affected packages. A
 // different package or installation path is a new finding, even if npm says it
 // is derived from one of the same advisories.
 const reviewedNodes = Object.freeze({
@@ -234,7 +234,7 @@ function main() {
     throw new Error(`Security audit blocked: ${evaluation.reason}`);
   }
   if (evaluation.classification === 'conditional-exception') {
-    console.log(`CONDITIONAL ANDROID 1.7.17 EXCEPTION: ${evaluation.reason}`);
+    console.log(`CONDITIONAL ANDROID 1.7.18 EXCEPTION: ${evaluation.reason}`);
     console.log('This audit result requires separate guarded Linux build, APK, review and device checks.');
   } else {
     console.log('Production dependency audit is clean.');

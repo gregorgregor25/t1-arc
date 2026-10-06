@@ -16,6 +16,13 @@ use SQLCipher. Provider credentials and the user's selected AI provider API
 keys and optional ChatGPT OAuth credentials use Android secure storage. Android
 system backup is disabled.
 
+Local copies can change when a connected source updates or deletes records.
+Tarv1s retains the newest 30 exchanges within a storage-size limit; saving new
+answers can remove older conversations from the phone. Make an encrypted
+portable backup first if you want to retain a copy. Deleting local records does
+not delete records held by Health Connect or another provider, and connected
+sources can import records again.
+
 User-created portable backups are passphrase encrypted. They exclude provider
 credentials, session tokens, browser cookies and replaceable source ZIP/PDF
 downloads. Temporary decrypted material is bounded and owned by the operation

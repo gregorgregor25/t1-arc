@@ -1,14 +1,20 @@
 # Optional ChatGPT connection
 
-Status: included in the corrected 1.7.17 candidate and verified for record-free
-questions in an earlier private production-package phone build. Personal-data
-questions and the corrected 1.7.17 candidate still need device checks. The
+Status: included in Android 1.7.18 with the same connection implementation
+as the verified, signed 1.7.17 candidate. The later version patches a build
+dependency after a fresh security audit; its final artifact acceptance is
+will be recorded with the published release. On the signed 1.7.17 phone build,
+ChatGPT completed six targeted questions: four
+personal questions through hosted evidence selection, one general-education
+answer and one local Q08 answer without a model call. Supported personal
+numeric facts agreed with independent checks of the phone's stored records.
+These checks do not guarantee the quality of every explanation. The
 signed 1.7.15 draft passed its build, but was held after a current-period
 personal-answer presentation regression appeared during device testing; that
 observation is not acceptance of a hosted personal answer. The signed 1.7.16
 draft also remains unpublished because phone backup comparisons exposed a
-pre-existing Health Connect sync boundary issue. Publication status
-is shown by the
+pre-existing Health Connect sync boundary issue. Publication status is shown by
+the
 [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases).
 
 On 4 October 2026, `1.7.14-private.5` (phone code 66) was installed in place
@@ -27,25 +33,29 @@ catalogue loaded again; Codex explicitly selected Luna, then deliberately
 switched from the still-active OpenAI API-key connection to ChatGPT. A second
 record-free answer completed with the title **HbA1c vs time in range**, the
 **General explanation · No personal records used** label and a **Using ChatGPT
-plan** footer. The account's five-model catalogue did not offer GPT-6.1, so no
-ChatGPT plan model outside that live list is promised. The owner's usual API-key choice is OpenAI
-Luna; Gemini was only a temporary QA selection.
+plan** footer. That earlier catalogue did not offer GPT-6.1. On signed
+1.7.17, the connected account offered GPT-6 Astra and GPT-5.6 Sol, Terra and
+Luna. No ChatGPT plan model outside the account's live list is promised;
+GPT-6.1 Sol remains an OpenAI API-key option. The owner's usual API-key choice
+is OpenAI Luna; Gemini was only a temporary QA selection.
 
 The private build passed 5,405 TypeScript tests, 28 native tests, lint,
 typecheck and APK verification. OpenAI API-key Luna and GPT-6.1 Sol each
 completed the record-free question in earlier physical-phone checks. The
 existing Galaxy Watch 8 companion remained ready and accepted a queued glucose
 snapshot on private.5 (code 66); no companion reinstall, protocol change or
-watch debugging was needed. The exact public build and CI have separate checks.
+watch debugging was needed. Exact 1.7.17 build and device checks are recorded
+in [release status](RELEASE_STATUS.md).
 
 ## Earlier private testing
 
 Earlier private builds exposed browser-return and response-stream errors. They
 were corrected before the successful private.5 checks described above. The
 response reader requires a completed SSE response and rejects refusals, partial
-answers and unframed content. These earlier checks do not establish that the
-corrected 1.7.17 APK answers personal questions correctly; that remains an
-explicit device release check.
+answers and unframed content. The later signed 1.7.17 phone check covered four
+targeted personal questions through the ChatGPT connection, with independent
+checks of their supported numeric facts. Answer quality outside those cases
+remains unverified.
 
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google
@@ -107,18 +117,18 @@ silently charge a saved API key. If already downgraded, reinstall the newer buil
 to change the selection, preserving app data. The development test APK uses a
 separate app package and does not change the installed release's settings.
 
-## Remaining release checks
+## 1.7.17 release check
 
 - The public privacy policy was updated on 5 October 2026 with the optional
   ChatGPT route, sign-in and model-list traffic, local tokens, Send-only health
   context and the provider's terms.
-- Complete the guarded 1.7.17 dependency review, audit and build checks
-  recorded in `RELEASE_STATUS.md`.
-- Verify the exact intended public source, signed artifact and CI checks. The
-  private phone tests do not stand in for that release verification.
-- Ask ChatGPT about the owner's glucose, sleep and basal records on the corrected
-  phone build. Compare supported totals and dates with the local records, and
-  confirm it explains missing basal timing without inventing hourly delivery.
+- The 1.7.17 guarded audit, signed build and artifact checks completed on the
+  reviewed source; see [release status](RELEASE_STATUS.md). The signed phone
+  update preserved the existing app data and selected provider.
+- Targeted ChatGPT questions about glucose, sleep and basal records completed.
+  Supported numeric facts matched the phone's records; missing basal timing
+  was not treated as zero or invented hourly delivery. Broad pattern
+  explanation remains an answer-quality improvement for a later release.
 
 Token-expiry renewal, a live plan-limit response and privacy erase during a
 pending request were not deliberately induced on the owner's phone. Their
