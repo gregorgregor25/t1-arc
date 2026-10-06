@@ -8,7 +8,7 @@ const release = Object.freeze({
   version: '1.7.17',
   versionCode: 74,
   applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: 'f7ebe35da26affad02aa07a8ed1f1ecffb14be3bdf3018b66d02ea61f4a9341f',
+  lockfileSha256: '550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9',
   expiresAt: '2026-10-12T00:00:00Z',
 });
 
@@ -25,7 +25,7 @@ const advisories = Object.freeze({
   }),
 });
 
-// The reviewed production audit contained these 17 affected packages. A
+// The reviewed 1.7.17 production audit contained these 16 affected packages. A
 // different package or installation path is a new finding, even if npm says it
 // is derived from one of the same advisories.
 const reviewedNodes = Object.freeze({
@@ -33,7 +33,6 @@ const reviewedNodes = Object.freeze({
   '@expo/code-signing-certificates': 'node_modules/@expo/code-signing-certificates',
   '@expo/metro': 'node_modules/@expo/metro',
   '@expo/metro-config': 'node_modules/expo/node_modules/@expo/metro-config',
-  '@expo/metro-file-map': 'node_modules/@expo/metro-file-map',
   '@react-native-community/datetimepicker': 'node_modules/@react-native-community/datetimepicker',
   '@react-native/community-cli-plugin': 'node_modules/@react-native/community-cli-plugin',
   '@react-native/virtualized-lists': 'node_modules/@react-native/virtualized-lists',

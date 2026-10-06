@@ -256,12 +256,23 @@ reconciliation issue. These checks cannot stand in for 1.7.17 acceptance.
 Android 1.7.17, phone code 74 and generated Wear code 75, carries forward the
 same two-advisory exception and unchanged **2026-10-12 00:00 UTC** expiry.
 The correction changes how absent Health Connect rows are reconciled at read
-boundaries. The watch glucose protocol is unchanged. No dependency version,
-package, integrity, override or advisory scope may change. The new committed
-lockfile LF SHA-256 is
-`f7ebe35da26affad02aa07a8ed1f1ecffb14be3bdf3018b66d02ea61f4a9341f`.
-Its two root-version fields changed from 1.7.16 to 1.7.17; the other 844 package
-entries and all dependency metadata are identical. That hash and version pin
-require independent review, followed by fresh
+boundaries. The watch glucose protocol is unchanged. The advisory scope and
+expiry have not expanded. During the first 1.7.17 CI run, Expo's live compatibility
+check required freshly published SDK 57 patches: `expo` 57.0.27,
+`expo-constants` 57.0.21 and `expo-sqlite` 57.0.4. The candidate updates those
+three direct dependencies and their resolved transitive patches; it does not
+disable or bypass that check. All 844 non-root installation paths remain
+present, with no added or removed paths; 25 non-root entries changed version
+and associated metadata. Several transitive resolutions also move within their
+unchanged permitted ranges; those are included in the reviewed graph rather
+than described as mandatory Expo changes. This graph needs fresh independent review rather
+than the earlier root-version-only comparison. The committed lockfile LF SHA-256 is
+`550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9`.
+A fresh production audit reported 16 high findings from the two original leaf
+advisories, with no other severity. `@expo/metro-file-map` is no longer affected
+and was removed from the affected-package allowlist. The affected leaf versions
+remain braces 3.0.3 and node-forge 1.4.0; the separately patched source-map-js
+remains 1.2.2. Unreviewed lock drift or a renewed finding on the patched Expo
+file-map package still fails closed. Review must be followed by fresh
 quality, audit, guarded signed build, exact downloaded-APK bundle comparison
 and device checks. Those 1.7.17 gates are pending.

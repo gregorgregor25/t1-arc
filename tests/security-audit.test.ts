@@ -91,7 +91,7 @@ describe('temporary production dependency audit exception', () => {
     expect(baseContext.lockfile.version).toBe('1.7.17');
     expect(baseContext.lockfile.packages[''].version).toBe('1.7.17');
     expect(lockfileBytes.includes(Buffer.from('\r\n'))).toBe(false);
-    expect(baseContext.lockfileSha256).toBe('f7ebe35da26affad02aa07a8ed1f1ecffb14be3bdf3018b66d02ea61f4a9341f');
+    expect(baseContext.lockfileSha256).toBe('550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9');
   });
 
   it('accepts only the two reviewed leaves and their reviewed derived path', () => {
@@ -156,6 +156,18 @@ describe('temporary production dependency audit exception', () => {
     expect(evaluateAuditReport(newPackage, baseContext).allowed).toBe(false);
     const moved = report({ braces: { ...bracesFinding(), nodes: ['node_modules/other/node_modules/braces'] } });
     expect(evaluateAuditReport(moved, baseContext).allowed).toBe(false);
+  });
+
+  it('rejects a renewed finding on the now-patched Expo Metro file map', () => {
+    const actual = report({
+      braces: bracesFinding(),
+      micromatch: micromatchFinding(),
+      '@expo/metro-file-map': {
+        name: '@expo/metro-file-map', severity: 'high', via: ['micromatch'],
+        nodes: ['node_modules/@expo/metro-file-map'],
+      },
+    });
+    expect(evaluateAuditReport(actual, baseContext).allowed).toBe(false);
   });
 
   it('accepts reviewed graph cycles that reach an approved advisory', () => {

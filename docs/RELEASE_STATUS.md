@@ -46,15 +46,19 @@ dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
 braces 3.0.3 ([advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm))
 and node-forge 1.4.0 ([advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv))
 have no published patched versions at the time of verification. Their dependent
-packages produce 17 high-severity audit findings. A newly recognized
+packages initially produced 17 high-severity audit findings. A newly recognized
 `source-map-js` advisory was fixed by updating that transitive package to its
 patched 1.2.2 release within PostCSS's existing version range; it is not part
 of the exception. The owner approved a
 conditional exception for Android 1.7.14 on 5 October and carried it into the
 unpublished 1.7.15 and 1.7.16 drafts. The corrected Android 1.7.17 candidate
-continues that same narrow scope without claiming a new waiver. Its lockfile
-must differ from the reviewed dependency graph only in root version metadata;
-the exact version and committed lock hash are pinned in the audit guard and
+continues that same two-advisory scope without claiming a new waiver. Its first
+CI run required newly published Expo SDK 57 patches: Expo 57.0.27, Constants
+57.0.21 and SQLite 57.0.4. Those updates and their resolved transitive patches
+receive a fresh graph review, exact lock hash pin and all original build checks.
+The resulting production audit contains 16 high findings from the same two
+advisories; Expo's patched file-map package is removed from the allowlist.
+The exact version and committed lock hash are pinned in the audit guard and
 recorded in the dependency review.
 It still expires 12 October 2026 at 00:00 UTC. The new version and lockfile hash
 must receive independent review; a fresh guarded Linux build, source-map
