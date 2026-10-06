@@ -92,6 +92,10 @@ planned for the next release. This is a bounded check, not a guarantee of every
 answer or a full four-provider test suite. See the
 [ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
 
+The 1.7.18 release carries those features forward and patches the `shell-quote`
+dependency after a fresh security audit blocked publication of 1.7.17. Its
+signed build and final verification will be recorded with the published release.
+
 The default OpenAI API model is **GPT-5.6 Luna**; GPT-6.1 Sol is another API
 choice when the user's API account has access. ChatGPT plan models come from
 the connected account and may differ. An illustrative Luna question

@@ -1,4 +1,4 @@
-# 1.7.14 dependency security review and 1.7.15–1.7.17 carry-forward
+# 1.7.14 dependency security review and 1.7.15–1.7.18 carry-forward
 
 Reviewed on 5 October 2026 against source commit
 `e505758596d0b7bfc599c6135756d6d1792840dc`. At that point the release
@@ -284,3 +284,23 @@ artifact and does not expand the advisory scope or move the **2026-10-12
 00:00 UTC** expiry. Neither dependency has thereby been fixed; later guarded
 builds still fail closed on expiry, drift or a new finding. Publication status
 is shown by [GitHub Releases](https://github.com/gregorgregor25/t1-arc/releases).
+
+## 1.7.18: patched shell-quote after a fresh publication audit
+
+A later audit on 6 October 2026 reported one additional critical finding:
+`shell-quote` 1.10.0, [GHSA-pqg4-j6r4-53mv](https://github.com/advisories/GHSA-pqg4-j6r4-53mv).
+The guard rejected it as a new affected package; the signed 1.7.17 draft was
+not published. React Native depends on this package through `react-devtools-core`.
+It appears in development tooling, but that is not a reason to bypass the audit.
+
+Android 1.7.18, phone code 76 and generated Wear code 77, updates the package
+to 1.12.0 within its existing compatible range. This is the only non-root
+lockfile package change from 1.7.17; root metadata changes to the new version.
+The normalized LF lockfile SHA-256 is
+`d18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7`.
+The corrected audit returns to the same 16 high findings from the two original
+advisories, with no critical finding. `shell-quote` is not added to an
+exception. The existing package/path scope and **2026-10-12 00:00 UTC** expiry
+are unchanged. New findings, drift, expiry or failed build evidence still
+block release. Fresh checks and the signed artifact identity are required for
+this source, as recorded in the release build and published release notes.

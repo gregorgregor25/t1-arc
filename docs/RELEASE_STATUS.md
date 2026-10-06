@@ -39,7 +39,20 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
-### 1.7.17 release verification and changes
+### 1.7.18 security refresh
+
+The final prepublication audit for 1.7.17 found the newly reported critical
+`shell-quote` advisory [GHSA-pqg4-j6r4-53mv](https://github.com/advisories/GHSA-pqg4-j6r4-53mv).
+That candidate remains unpublished. Android 1.7.18 updates only that transitive
+dependency to the compatible patched version 1.12.0, alongside release identity
+and the pinned lockfile fingerprint. The existing two-advisory exception is
+not expanded, and still expires **12 October 2026 at 00:00 UTC**. The AI,
+health-data and watch protocol implementations are unchanged from 1.7.17.
+The new source and signed artifacts require their own passing checks; the
+release's final artifact identity and verification will be recorded in
+[GitHub Releases](https://github.com/gregorgregor25/t1-arc/releases).
+
+### 1.7.17 feature verification carried into 1.7.18
 
 Release preparation on 5 October 2026 identified two outstanding production
 dependency advisories. The lockfile updates brace-expansion to 5.0.12, but

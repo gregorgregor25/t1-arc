@@ -1,7 +1,10 @@
 # Optional ChatGPT connection
 
-Status: included in the verified, signed Android 1.7.17 candidate. On the
-production-package phone, ChatGPT completed six targeted questions: four
+Status: included in Android 1.7.18 with the same connection implementation
+as the verified, signed 1.7.17 candidate. The later version patches a build
+dependency after a fresh security audit; its final artifact acceptance is
+will be recorded with the published release. On the signed 1.7.17 phone build,
+ChatGPT completed six targeted questions: four
 personal questions through hosted evidence selection, one general-education
 answer and one local Q08 answer without a model call. Supported personal
 numeric facts agreed with independent checks of the phone's stored records.
