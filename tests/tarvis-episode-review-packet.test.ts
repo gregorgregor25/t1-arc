@@ -64,8 +64,8 @@ describe("real-phone episode review relevance", () => {
 
   it("does not substitute zero for sparse or missing glucose", () => {
     const source = packet();
-    source.comparison.previous.glucoseReadings = 0;
-    source.comparison.previous.lowGlucoseRuns = null;
+    source.comparison.previous!.glucoseReadings = 0;
+    source.comparison.previous!.lowGlucoseRuns = null;
     expect(focusTarvisEpisodeReviewPacket(QUESTION, source, "low")).toBe(source);
   });
 
@@ -87,7 +87,7 @@ describe("real-phone episode review relevance", () => {
     const source = packet();
     source.comparison.current.basalUnitsPerDay = 0;
     source.comparison.current.bolusUnitsPerDay = 23;
-    source.comparison.previous.bolusUnitsPerDay = 27;
+    source.comparison.previous!.bolusUnitsPerDay = 27;
     const focused = focusTarvisEpisodeReviewPacket(QUESTION, source, "low");
     const insulin = focused.findings.find(({ id }) => id === "insulin-change");
     expect(insulin?.summary).toContain("not a comparison of complete insulin delivery");

@@ -129,17 +129,21 @@ export function tarvisEvidenceFindingOptions(packet: TarvisEvidencePacket) {
 }
 
 function coverageLimitations(packet: TarvisEvidencePacket) {
+  if (packet.requestedGlucose === false) return [];
   const windows = [
     { label: "Recent period", summary: packet.comparison.current },
-    { label: "Previous period", summary: packet.comparison.previous },
+    ...(packet.comparison.previous
+      ? [{ label: "Previous period", summary: packet.comparison.previous }]
+      : []),
   ];
   return windows.flatMap(({ label, summary }) => {
+    if (summary.glucoseReadings === undefined) return [];
     if (summary.glucoseReadings === 0) {
       return [
         `${label} has no glucose readings, so its glucose results are unavailable.`,
       ];
     }
-    if (summary.coveragePercent < MIN_COMPLETE_COVERAGE_PERCENT) {
+    if (summary.coveragePercent !== undefined && summary.coveragePercent < MIN_COMPLETE_COVERAGE_PERCENT) {
       return [
         `${label} has ${formatTarvisNumber(summary.coveragePercent, { maximumFractionDigits: 2 })}% sensor coverage, so its glucose results describe observed sensor time only.`,
       ];
@@ -160,8 +164,13 @@ function requestedSleepLimitation(
   if (packet.findings.some(({ category }) => category === "sleep")) {
     return "A recorded sleep finding is available, but this answer could not include its supporting evidence.";
   }
-  const recent = packet.comparison.current.sleepMinutesPerNight !== null;
-  const previous = packet.comparison.previous.sleepMinutesPerNight !== null;
+  const recent = packet.comparison.current.sleepMinutesPerNight != null;
+  if (!packet.comparison.previous) {
+    return recent
+      ? "A recorded sleep summary is available for the requested period, but this report has no evidence-backed sleep finding."
+      : "No recorded sleep summary is available for the requested period. This does not prove that no sleep occurred.";
+  }
+  const previous = packet.comparison.previous.sleepMinutesPerNight != null;
   if (!recent && !previous) {
     return "No recorded sleep summary is available for either period in the loaded data. This does not prove that no sleep occurred.";
   }
@@ -196,11 +205,11 @@ function answerFromFindings(
   ];
   const coverageComplete = [
     packet.comparison.current,
-    packet.comparison.previous,
+    ...(packet.comparison.previous ? [packet.comparison.previous] : []),
   ].every(
     (summary) =>
-      summary.glucoseReadings > 0 &&
-      summary.coveragePercent >= MIN_COMPLETE_COVERAGE_PERCENT,
+      summary.glucoseReadings !== undefined && summary.glucoseReadings > 0 &&
+      summary.coveragePercent !== undefined && summary.coveragePercent >= MIN_COMPLETE_COVERAGE_PERCENT,
   );
 
   return {

@@ -31,6 +31,7 @@ import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
 import {
   buildTarvisEvidencePacket,
+  currentPeriodTarvisEvidence,
   selectTarvisEvidencePacket,
 } from "@/data/tarvis/evidencePacket";
 import { localTarvisEvidenceFallback } from "@/data/tarvis/evidenceAnswerGuardrail";
@@ -2883,18 +2884,29 @@ export function TarvisScreen({
       if (plan.kind === 'model-evidence' && !rawEvidenceForQuestion) {
         throw new Error('Your local records could not be loaded for that question. Please try again.');
       }
+      const sourceReportForQuestion = reportForQuestion ?? defaultReportForQuestion ?? report;
+      if (plan.kind === "model-evidence" && !plan.includePreviousPeriod && !sourceReportForQuestion) {
+        throw new Error("The requested period could not be verified before sharing records. Please try again.");
+      }
+      const focusedEvidenceForQuestion = plan.kind === "model-evidence" && rawEvidenceForQuestion
+        ? {
+            ...rawEvidenceForQuestion,
+            packet: plan.episodeReviewKind
+              ? focusTarvisEpisodeReviewPacket(prompt, rawEvidenceForQuestion.packet, plan.episodeReviewKind)
+              : rawEvidenceForQuestion.packet,
+          }
+        : rawEvidenceForQuestion;
+      const scopedEvidenceForQuestion = plan.kind === "model-evidence" &&
+        focusedEvidenceForQuestion && !plan.includePreviousPeriod && sourceReportForQuestion
+          ? currentPeriodTarvisEvidence(focusedEvidenceForQuestion, sourceReportForQuestion, prompt)
+          : focusedEvidenceForQuestion;
       const evidenceForQuestion =
-        plan.kind === "model-evidence" && rawEvidenceForQuestion
+        plan.kind === "model-evidence" && scopedEvidenceForQuestion
           ? {
-              ...rawEvidenceForQuestion,
-              packet: selectTarvisEvidencePacket(
-                prompt,
-                plan.episodeReviewKind
-                  ? focusTarvisEpisodeReviewPacket(prompt, rawEvidenceForQuestion.packet, plan.episodeReviewKind)
-                  : rawEvidenceForQuestion.packet,
-              ),
+              ...scopedEvidenceForQuestion,
+              packet: selectTarvisEvidencePacket(prompt, scopedEvidenceForQuestion.packet),
             }
-          : rawEvidenceForQuestion;
+          : scopedEvidenceForQuestion;
       const localEvidenceAnswer =
         plan.kind === "model-evidence" && evidenceForQuestion
           ? localTarvisEvidenceFallback(evidenceForQuestion.packet)

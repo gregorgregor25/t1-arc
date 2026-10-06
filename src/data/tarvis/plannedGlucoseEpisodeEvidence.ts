@@ -223,9 +223,9 @@ function plannerCategoryForInsightCategory(
 }
 
 function redactUnselectedSummaryCategories(
-  summary: TarvisInsightWindowSummary,
+  summary: Partial<TarvisInsightWindowSummary>,
   categories: ReadonlySet<TarvisEvidenceCategory>,
-): TarvisInsightWindowSummary {
+): Partial<TarvisInsightWindowSummary> {
   const redacted = { ...summary };
   if (!categories.has("insulin")) {
     redacted.insulinUnits = null;
@@ -1333,10 +1333,12 @@ export async function loadPlannedGlucoseEpisodeEvidence({
     lookup.packet.comparison.current,
     categories,
   );
-  lookup.packet.comparison.previous = redactUnselectedSummaryCategories(
-    lookup.packet.comparison.previous,
-    categories,
-  );
+  if (lookup.packet.comparison.previous) {
+    lookup.packet.comparison.previous = redactUnselectedSummaryCategories(
+      lookup.packet.comparison.previous,
+      categories,
+    );
+  }
 
   // The generic packet builder gives manually logged ketones priority. For an
   // incident packet the event-specific menu must remain first, while ketones

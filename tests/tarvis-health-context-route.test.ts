@@ -5,8 +5,9 @@ import { coordinateTarvisRequest } from '@/data/tarvis/requestCoordinator';
 import { resolveTarvisLaunchContext } from '@/data/tarvis/conversationScope';
 import { createDemoRepository } from '@/data/demoRepository';
 import { loadInsightReportForRanges } from '@/data/insights/loadInsightReport';
-import { buildTarvisEvidencePacket, selectTarvisEvidencePacket } from '@/data/tarvis/evidencePacket';
+import { buildTarvisEvidencePacket, currentPeriodTarvisEvidence, selectTarvisEvidencePacket } from '@/data/tarvis/evidencePacket';
 import { buildSelectedHealthEvidencePacket } from '@/data/tarvis/selectedHealthEvidence';
+import { buildInsightReport } from '@/domain/insights';
 import { localTarvisEvidenceFallback } from '@/data/tarvis/evidenceAnswerGuardrail';
 import { buildHealthMetricSnapshot } from '@/data/healthConnect/healthMetricSnapshot';
 import type { DiabetesRepository } from '@/data/contracts';
@@ -129,6 +130,86 @@ describe('bounded Health evidence loading', () => {
       getLatestGlucose: vi.fn(), getSourceStatuses: vi.fn() };
   }
   it.each([
+    ['Nutrition', 'mealCarbsPerDay', 55, '55 g/day'],
+    ['Distance and climbing', 'distanceKilometresPerDay', 2.3, '2.3 km/day'],
+    ['Activity energy', 'activeCaloriesPerDay', 345, '345 kcal/day'],
+    ['Health Connect glucose', 'healthConnectBloodGlucoseMmolL', 7.1, '7.1 mmol/L'],
+  ] as const)('keeps the generated %s selected subject in a current-only provider packet', (label, field, amount, answerValue) => {
+    const entry = entryFor(range, label);
+    const plan = coordinateTarvisContextRequest({ question: entry.question, asOf, entryContext: entry, ownerIdentity: owner });
+    expect(plan.kind).toBe('model-evidence');
+    if (plan.kind !== 'model-evidence') return;
+    expect(plan.includePreviousPeriod).toBeUndefined();
+    const previousRange = { start: range.start - (range.end - range.start), end: range.start };
+    const report = buildInsightReport(dataFor(range), dataFor(previousRange), asOf);
+    Object.assign(report.current, { [field]: amount, stepsPerDay: 12345, sleepMinutesPerNight: 9876 });
+    Object.assign(report.previous, { [field]: 9123 });
+    const category = entry.healthMetric === 'nutrition' ? 'food'
+      : entry.healthMetric === 'health-glucose' ? 'vitals' : 'activity';
+    const selectedId = entry.healthMetric === 'nutrition' ? 'food-context'
+      : entry.healthMetric === 'health-glucose' ? 'health-connect-vitals' : 'health-connect-activity';
+    report.findings.push({
+      id: selectedId, kind: 'observation', category,
+      title: 'Selected subject', summary: `Current ${amount} versus PRIOR_HEALTH_9123`,
+      evidence: [
+        { id: 'current-selected-health', label: 'Current selected health', description: 'Selected current health records', range,
+          recordIds: ['current-record', 'unrelated-same-category-record'], examples: [{ id: 'current-record', kind: 'health-metric', timestamp: range.start + 1,
+            primary: 'UNRELATED_EXAMPLE_12345', secondary: 'fixture', sourceId: 'fixture' }] },
+        { id: 'previous-selected-health', label: 'Previous selected health', description: 'PRIOR_HEALTH_9123', range: previousRange,
+          recordIds: ['previous-record'], examples: [] },
+      ],
+    });
+    if (category === 'activity') report.findings.unshift({
+      id: 'activity-context', kind: 'context-clue', category: 'activity', title: 'Unrelated workout context',
+      summary: 'UNRELATED_ACTIVITY_CONTEXT_8765',
+      evidence: [{ id: 'current-unrelated-activity', label: 'Unrelated workout event',
+        description: 'UNRELATED_ACTIVITY_CONTEXT_8765', range, recordIds: ['unrelated-workout'], examples: [] }],
+    });
+    const scoped = currentPeriodTarvisEvidence(buildSelectedHealthEvidencePacket(report, entry.healthMetric!), report, entry.question);
+    const packet = selectTarvisEvidencePacket(entry.question, scoped.packet);
+    expect(packet.requiredFindingIds).toContain(selectedId);
+    expect(packet.findings.some(({ id }) => id === selectedId)).toBe(true);
+    expect(packet.comparison.current[field]).toBe(amount);
+    expect(packet.comparison.current.glucoseAverage).not.toBeUndefined();
+    expect(packet.comparison.previous).toBeUndefined();
+    expect(packet.evidence.some(({ id }) => id === 'current-selected-health')).toBe(true);
+    expect(packet.evidence.find(({ id }) => id === 'current-selected-health')?.recordCount).toBeUndefined();
+    expect(scoped.references.get('current-selected-health')?.recordIds).toEqual([]);
+    const wire = JSON.stringify(packet);
+    expect(wire).not.toContain('PRIOR_HEALTH_9123');
+    expect(wire).not.toContain('UNRELATED_EXAMPLE_12345');
+    expect(wire).not.toContain('UNRELATED_ACTIVITY_CONTEXT_8765');
+    if (entry.healthMetric === 'distance' || entry.healthMetric === 'energy') expect(wire).not.toContain('12345');
+    expect(localTarvisEvidenceFallback(packet).answer).toContain(answerValue);
+    expect(localTarvisEvidenceFallback(packet).headline).toContain('in the selected period');
+  });
+
+  it('does not claim a Health relationship when the selected label maps to no specific metric', () => {
+    const entry = entryFor(range, 'Unrecognized Health item');
+    expect(entry.healthMetric).toBe('health');
+    const previousRange = { start: range.start - (range.end - range.start), end: range.start };
+    const report = buildInsightReport(dataFor(range), dataFor(previousRange), asOf);
+    const packet = selectTarvisEvidencePacket(entry.question,
+      currentPeriodTarvisEvidence(buildSelectedHealthEvidencePacket(report, entry.healthMetric!), report, entry.question).packet);
+    expect(packet.comparison.headline).toBe('No specific Health metric selected');
+    expect(localTarvisEvidenceFallback(packet).answer).toContain('cannot establish a relationship with an unspecified Health measure');
+    expect(packet.comparison.previous).toBeUndefined();
+  });
+
+  it('keeps a selected distance aggregate available when the comparative Insights report has no activity finding', () => {
+    const entry = entryFor(range, 'Distance and climbing');
+    const previousRange = { start: range.start - (range.end - range.start), end: range.start };
+    const report = buildInsightReport(dataFor(range), dataFor(previousRange), asOf);
+    report.current.distanceKilometresPerDay = 2.3;
+    expect(report.findings.some(({ category }) => category === 'activity')).toBe(false);
+    const packet = selectTarvisEvidencePacket(entry.question,
+      currentPeriodTarvisEvidence(buildSelectedHealthEvidencePacket(report, entry.healthMetric!), report, entry.question).packet);
+    expect(packet.requiredFindingIds).toContain('selected-health-summary');
+    expect(packet.evidence.find(({ id }) => id === 'current-selected-health-summary')?.recordCount).toBeUndefined();
+    expect(localTarvisEvidenceFallback(packet).answer).toContain('2.3 km/day');
+    expect(packet.comparison.previous).toBeUndefined();
+  });
+  it.each([
     { name: 'current demo', isLatestCompletePeriod: true, reviewId: undefined, currentClock: true },
     { name: 'historical demo review', isLatestCompletePeriod: false, reviewId: undefined, currentClock: false },
     { name: 'saved demo review', isLatestCompletePeriod: true, reviewId: 'saved-demo', currentClock: false },
@@ -192,7 +273,7 @@ describe('bounded Health evidence loading', () => {
     expect(repo.getTimeline).toHaveBeenNthCalledWith(1, range);
     expect(mocks.health).toHaveBeenNthCalledWith(1, range);
     expect(mocks.health).toHaveBeenNthCalledWith(2, plan.evidenceRanges.previous);
-    expect(packet.evidence.some(item => item.recordCount > 0 && item.examples.some(example => example.id.startsWith(metric === 'Sleep' ? 'sleep:' : 'heart:')))).toBe(true);
+    expect(packet.evidence.some(item => (item.recordCount ?? 0) > 0 && item.examples.some(example => example.id.startsWith(metric === 'Sleep' ? 'sleep:' : 'heart:')))).toBe(true);
     const localAnswer = localTarvisEvidenceFallback(packet);
     expect(localAnswer.headline).toBe(`${metric} in the selected period`);
     const selectedFinding = packet.findings.find(finding => packet.requiredFindingIds?.includes(finding.id))!;

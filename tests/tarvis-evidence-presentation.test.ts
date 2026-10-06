@@ -451,7 +451,7 @@ describe("Tarv1s response-card evidence presentation", () => {
     expect(report.ready).toBe(false);
     expect(realPacket.comparison.current.coveragePercent).toBeLessThan(70);
     expect(realPacket.comparison.current.glucoseReadings).toBe(2);
-    expect(realPacket.comparison.previous.glucoseReadings).toBe(0);
+    expect(realPacket.comparison.previous!.glucoseReadings).toBe(0);
     expect(guarded.evidenceIds).toEqual([
       "current-coverage",
       "previous-coverage",

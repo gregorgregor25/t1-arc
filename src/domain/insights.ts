@@ -192,6 +192,8 @@ export interface InsightFinding {
   category: InsightCategory;
   title: string;
   summary: string;
+  /** Grounded current-window wording for provider requests without comparison. */
+  currentPeriodSummary?: string;
   caveat?: string;
   evidence: EvidenceReference[];
 }
@@ -1595,15 +1597,36 @@ function sourceBasalEvidence(
 function sourceBasalSummary(
   label: string,
   days: ReturnType<typeof completeSourceBasalDays>,
+  includeDailyDetails = false,
 ) {
-  if (!days.withBasal.length) return "";
+  if (!days.completeDays.length) return "";
+  const selectedDays = [...days.withBasal].sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+  const selectedDates = new Set(selectedDays.map(({ dateKey }) => dateKey));
+  const unavailableDays = days.completeDays
+    .filter(({ dateKey }) => !selectedDates.has(dateKey))
+    .sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+  // The seven-day basal question needs every supported dated value, not just
+  // the first one or two record previews. Keep this bounded for longer reports.
+  const dailyDetail = includeDailyDetails && days.completeDays.length <= 7
+    ? [
+        selectedDays.length
+          ? `Available daily basal totals: ${selectedDays.map((day) => `${day.dateKey}: ${regionalNumber(day.sourceTotal!.basalUnits!, 1)} U`).join("; ")}.`
+          : "",
+        unavailableDays.length
+          ? `No usable uncontested daily basal total for ${unavailableDays.map((day) => `${day.dateKey} (${day.sourceAlternatives.length ? "competing source totals" : day.partial ? "partial source snapshot" : "no recorded basal total"})`).join(", ")}; these dates were not counted as zero.`
+          : "",
+      ].filter(Boolean).join(" ")
+    : "";
+  if (!days.withBasal.length) {
+    return `${label}: no usable source-reported basal total across ${days.completeDays.length} complete calendar days. ${dailyDetail}`.trim();
+  }
   const total = days.withBasal.reduce(
     (sum, day) => sum + day.sourceTotal!.basalUnits!,
     0,
   );
   const count = days.withBasal.length;
   const complete = count === days.completeDays.length;
-  return `${label}: source-reported basal total ${regionalNumber(total, 1)} U across ${regionalNumber(count, 0)} of ${regionalNumber(days.completeDays.length, 0)} complete calendar day${days.completeDays.length === 1 ? "" : "s"} (${regionalNumber(total / count, 1)} U per recorded day${complete ? "" : "; missing days were not counted as zero"}).`;
+  return `${label}: source-reported basal total ${regionalNumber(total, 1)} U across ${regionalNumber(count, 0)} of ${regionalNumber(days.completeDays.length, 0)} complete calendar day${days.completeDays.length === 1 ? "" : "s"} (${regionalNumber(total / count, 1)} U per recorded day${complete ? "" : "; dates without a usable uncontested total were not counted as zero"}). ${dailyDetail}`.trim();
 }
 
 function episodeEvidence(
@@ -2007,6 +2030,50 @@ export function buildInsightReport(
   const findings: InsightFinding[] = [];
 
   if (!ready) {
+    // A glucose comparison may be unavailable while authoritative daily
+    // basal totals are still present. Preserve those current-day records for
+    // a basal question instead of treating sparse CGM as missing insulin.
+    const currentBasal = completeSourceBasalDays(currentData);
+    const previousBasal = completeSourceBasalDays(previousData);
+    const previousBasalAvailable = previousBasal.completeDays.length > 0 &&
+      !previousData.sources.some(
+        (source) => source.label === "Insulin" && source.freshness === "missing",
+      );
+    if (currentBasal.completeDays.length && !currentData.sources.some(
+      (source) => source.label === "Insulin" && source.freshness === "missing",
+    )) {
+      const currentPeriodSummary = sourceBasalSummary("Requested period", currentBasal, true);
+      findings.push({
+        id: "basal-daily-totals",
+        kind: "observation",
+        category: "insulin",
+        title: currentBasal.withBasal.length
+          ? "Daily basal totals are available; timing detail is limited"
+          : "No usable daily basal totals in the requested period",
+        summary: [
+          currentPeriodSummary,
+          previousBasalAvailable
+            ? sourceBasalSummary("Previous period", previousBasal)
+            : "Previous-period daily basal totals are unavailable, so the periods cannot be compared.",
+        ].join(" "),
+        currentPeriodSummary,
+        caveat: "These source-reported daily amounts cannot show when within a day basal was delivered. Missing or conflicting dates were not counted as zero; no insulin change is inferred.",
+        evidence: [
+          sourceBasalEvidence(
+            "current-basal-daily-totals",
+            "Recent daily basal totals",
+            currentData,
+            currentBasal.withBasal,
+          ),
+          ...(previousBasalAvailable ? [sourceBasalEvidence(
+            "previous-basal-daily-totals",
+            "Previous daily basal totals",
+            previousData,
+            previousBasal.withBasal,
+          )] : []),
+        ],
+      });
+    }
     findings.push({
       id: "baseline-limitation",
       kind: "limitation",
@@ -2253,7 +2320,7 @@ export function buildInsightReport(
           ? "Daily basal totals are available; timing detail is limited"
           : "Daily basal totals are available",
       summary: [
-        sourceBasalSummary("Recent period", currentSourceBasal),
+        sourceBasalSummary("Recent period", currentSourceBasal, true),
         sourceBasalSummary("Previous period", previousSourceBasal),
         bothPeriodsComplete
           ? `The recent recorded-day average differed by ${signed(round(recentAverage - previousAverage, 1), " U/day")} from the previous period.`
@@ -2261,10 +2328,11 @@ export function buildInsightReport(
       ]
         .filter(Boolean)
         .join(" "),
+      currentPeriodSummary: sourceBasalSummary("Requested period", currentSourceBasal, true),
       caveat:
         "These are source-reported daily amounts, not a timestamped basal delivery timeline. They cannot show when within a day basal was delivered or explain a glucose change. Partial days and days without a basal total are excluded from the average, not treated as zero; no insulin or treatment change is inferred.",
       evidence: [
-        ...(currentSourceBasal.withBasal.length
+        ...(currentSourceBasal.completeDays.length
           ? [
               sourceBasalEvidence(
                 "current-basal-daily-totals",

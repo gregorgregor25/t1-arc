@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { coordinateTarvisRequest } from "@/data/tarvis/requestCoordinator";
+import { resolveTarvisIntent } from "@/data/tarvis/intent";
+import { resolveTarvisIntentRange } from "@/data/tarvis/intentRange";
 
 const NOW = Date.parse("2026-08-13T20:00:00+01:00");
 
@@ -9,6 +11,95 @@ function plan(question: string) {
 }
 
 describe("Tarv1s production request coordinator", () => {
+  it.each([
+    ["2026-03-30T12:00:00+01:00", "2026-03-23T00:00:00Z", "2026-03-29T23:00:00Z"],
+    ["2026-10-26T12:00:00Z", "2026-10-18T23:00:00Z", "2026-10-26T00:00:00Z"],
+  ])("routes Q02 over seven completed local days across a clock change (%s)", (asOfText, startText, endText) => {
+    const asOf = Date.parse(asOfText);
+    for (const question of [
+      "What was my time in range over the last seven completed days?",
+      "What was my time in range over the past seven completed days?",
+    ]) {
+      const result = coordinateTarvisRequest({ question, asOf });
+      expect(result.kind).toBe("scoped-glucose");
+      if (result.kind !== "scoped-glucose") continue;
+      const range = resolveTarvisIntentRange({ asOf, intent: result.intent });
+      expect(range.status).toBe("resolved");
+      if (range.status === "resolved") expect(range.current).toEqual({ start: Date.parse(startText), end: Date.parse(endText) });
+    }
+    const bare = coordinateTarvisRequest({ question: "What was my time in range over the last seven days?", asOf });
+    expect(bare.kind).toBe("scoped-glucose");
+    if (bare.kind === "scoped-glucose") {
+      const range = resolveTarvisIntentRange({ asOf, intent: bare.intent });
+      expect(range.status).toBe("resolved");
+      if (range.status === "resolved") expect(range.current.end).toBe(asOf);
+    }
+  });
+
+  it("answers a daily basal summary with seven complete local days and no invented hourly timeline", () => {
+    const asOf = Date.parse("2026-10-06T09:50:49+01:00");
+    const expected = {
+      start: Date.parse("2026-09-29T00:00:00+01:00"),
+      end: Date.parse("2026-10-06T00:00:00+01:00"),
+    };
+    for (const question of [
+      "What do my daily basal totals show over the last seven completed days?",
+      "What do my daily basal totals show from 29 September to 5 October 2026?",
+    ]) {
+      const result = coordinateTarvisRequest({ question, asOf });
+      expect(result.kind).toBe("model-evidence");
+      if (result.kind !== "model-evidence") continue;
+      expect(result.evidenceRanges?.current).toEqual(expected);
+      expect(result.history).toEqual([]);
+    }
+  });
+
+  it("uses one stated period when comparing basal totals with glucose patterns", () => {
+    const asOf = Date.parse("2026-10-06T09:50:49+01:00");
+    const original = coordinateTarvisRequest({
+      question: "Compare my daily basal totals and glucose patterns over the last seven days, and explain what the lack of basal timing prevents you from concluding.",
+      asOf,
+    });
+    expect(original.kind).toBe("model-evidence");
+    if (original.kind === "model-evidence") {
+      expect(original.history).toEqual([]);
+      expect(original.evidenceRanges?.current).toEqual({
+        start: Date.parse("2026-09-30T00:00:00+01:00"),
+        end: asOf,
+      });
+    }
+    const dated = coordinateTarvisRequest({
+      question: "Compare my daily basal totals and glucose patterns from 29 September to 5 October 2026, and explain what the lack of basal timing prevents you from concluding.",
+      asOf,
+    });
+    expect(dated.kind).toBe("model-evidence");
+    if (dated.kind === "model-evidence") {
+      expect(dated.history).toEqual([]);
+      expect(dated.evidenceRanges?.current).toEqual({
+        start: Date.parse("2026-09-29T00:00:00+01:00"),
+        end: Date.parse("2026-10-06T00:00:00+01:00"),
+      });
+    }
+  });
+
+  it("preserves real period comparisons and rejects incompatible dated periods", () => {
+    const asOf = Date.parse("2026-10-06T09:50:49+01:00");
+    const previousQuestion = "Compare my daily basal totals and glucose patterns over the last seven days with the previous seven days.";
+    const previousResolution = resolveTarvisIntent(previousQuestion, { now: asOf, timezone: "Europe/London" });
+    expect(previousResolution.intent.comparison?.value.kind).toBe("previous_equal_period");
+    const previous = coordinateTarvisRequest({
+      question: previousQuestion,
+      asOf,
+    });
+    expect(previous.kind).toBe("model-evidence");
+    if (previous.kind === "model-evidence") expect(previous.evidenceRanges).toBeDefined();
+    const incompatible = coordinateTarvisRequest({
+      question: "Compare my daily basal totals and glucose patterns from 29 September to 5 October 2026 versus 22 to 28 September 2026.",
+      asOf,
+    });
+    expect(incompatible.kind).toBe("answer");
+  });
+
   it.each([
     "Show my saved insulin-to-carb ratios",
     "What are my configured grams of carbohydrate per unit?",

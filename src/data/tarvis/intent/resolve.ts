@@ -847,10 +847,17 @@ function scopeFromDuration(
     };
   }
   const before = durationContext(normalizedQuestion, duration);
+  const completedDays = /\bcompleted\b/i.test(duration.raw) || /\bcompleted\s+$/.test(before);
+  if (completedDays && duration.unit === "week") {
+    return {
+      problem: "unsupported_time_scope",
+      message: "Completed calendar weeks are not yet supported; please give exact start and end dates.",
+    };
+  }
   const isRolling =
     duration.unit === "minute" ||
     duration.unit === "hour" ||
-    /\bpast\s+(?:the\s+)?$/.test(before);
+    (!completedDays && /\bpast\s+(?:the\s+)?$/.test(before));
   if (isRolling) {
     return {
       scope: explicitField(
@@ -872,7 +879,7 @@ function scopeFromDuration(
         count,
         include: hasClockWindow
           ? "most_recent_completed_windows"
-          : /\bcompleted\s+$/.test(before)
+          : completedDays
             ? "completed_days"
             : "through_now",
       },
@@ -1333,6 +1340,41 @@ function comparisonField(
     literals.dates.length <= 1 &&
     literals.durations.length <= 1
   ) return undefined;
+  // In "compare basal totals and glucose patterns over the last seven days",
+  // the two subjects share the stated period. A comparison of periods still
+  // has a second comparison marker or names a previous period and fails closed.
+  if (scope && domains.length > 1 && literals.comparisons.length === 1 &&
+      source.kind === "compare" && !/\b(?:previous|prior|before that)\b/.test(normalizedQuestion)) {
+    const firstPeriodStart = Math.min(
+      ...literals.dates.map(({ start }) => start),
+      ...literals.durations.map(({ start }) => start),
+      normalizedQuestion.length,
+    );
+    // Literal offsets come from the original text. Typo correction may
+    // change normalized length, so slice an offset-stable lower-case copy.
+    const subjects = question.toLocaleLowerCase("en-GB").slice(source.end, firstPeriodStart);
+    const cues: Record<TarvisDomain, RegExp> = {
+      glucose: /\b(?:glucose|blood sugar|bg|cgm)\b/,
+      insulin: /\b(?:insulin|basal|bolus|pump)\b/,
+      food: /\b(?:food|meal|carbs?|carbohydrates?)\b/,
+      activity: /\b(?:activity|exercise|workout|steps?)\b/,
+      sleep: /\b(?:sleep|asleep)\b/,
+      health: /\b(?:health|weight|blood pressure|heart rate)\b/,
+      data_quality: /\b(?:coverage|gaps?|missing data)\b/,
+    };
+    const mentions = domains.map((domain) => {
+      const match = cues[domain].exec(subjects);
+      return match && { start: match.index, end: match.index + match[0].length };
+    });
+    if (mentions.every(Boolean)) {
+      const ordered = mentions.filter((mention): mention is { start: number; end: number } => Boolean(mention))
+        .sort((left, right) => left.start - right.start);
+      if (ordered.length === 2 &&
+          /\b(?:and|with|to|against)\b/.test(subjects.slice(ordered[0]!.end, ordered[1]!.start))) {
+        return undefined;
+      }
+    }
+  }
   // "Carbs yesterday versus bolus insulin" compares two quantities within
   // one scope, not yesterday with an unstated second period. Every comparison
   // marker must connect explicit metrics; a trailing "versus 2 weeks ago"

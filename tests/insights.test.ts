@@ -420,7 +420,7 @@ describe("evidence-backed insights", () => {
       (finding) => finding.id === "basal-daily-totals",
     );
     expect(dailyBasal?.summary).toContain("20 U across 1 of 7 complete calendar days");
-    expect(dailyBasal?.summary).toContain("missing days were not counted as zero");
+    expect(dailyBasal?.summary).toContain("dates without a usable uncontested total were not counted as zero");
     expect(dailyBasal?.summary).toContain("18 U across 1 of 7 complete calendar days");
     expect(dailyBasal?.summary).not.toContain("differed by");
     expect(dailyBasal?.evidence.map((reference) => reference.recordIds)).toEqual([
@@ -555,6 +555,8 @@ describe("evidence-backed insights", () => {
     const report = buildInsightReport(current, previous, now);
     const basal = report.findings.find((finding) => finding.id === "basal-daily-totals");
     expect(basal?.summary).toContain("19 U across 1 of 7 complete calendar days");
+    expect(basal?.summary).toContain(`${firstDate} (competing source totals)`);
+    expect(basal?.summary).toContain(`${secondDate}: 19 U`);
     expect(basal?.summary).not.toContain("28 U");
     expect(basal?.evidence[0]?.recordIds).toEqual(["complete-second"]);
     expect(report.current.basalUnitsPerDay).toBeUndefined();

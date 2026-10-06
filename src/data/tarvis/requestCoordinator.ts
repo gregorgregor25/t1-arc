@@ -163,6 +163,8 @@ export type TarvisRequestPlan =
   | {
       kind: "model-evidence";
       evidenceRanges?: TarvisEvidenceRanges;
+      /** Previous records leave the device only for an explicit comparison. */
+      includePreviousPeriod?: boolean;
       selectedHealthMetric?: TarvisHealthMetric;
       episodeReviewKind?: "low" | "high";
       history: TarvisConversationTurn[];
@@ -413,6 +415,7 @@ export function coordinateTarvisRequest({
     return {
       kind: "model-evidence",
       evidenceRanges: contextualEpisodeRanges.ranges,
+      includePreviousPeriod: resolution.intent.comparison?.value.kind === "previous_equal_period",
       episodeReviewKind: unresolvedEventKind,
       history: modelSafeTarvisHistory(conversationHistory),
     };
@@ -536,6 +539,7 @@ export function coordinateTarvisRequest({
     kind: "model-evidence",
     evidenceRanges:
       evidenceRequest.kind === "resolved" ? evidenceRequest.ranges : undefined,
+    includePreviousPeriod: resolution.intent.comparison?.value.kind === "previous_equal_period",
     history: modelSafeTarvisHistory(conversationHistory),
     intent,
   };

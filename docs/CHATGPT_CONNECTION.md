@@ -34,90 +34,14 @@ existing Galaxy Watch 8 companion remained ready and accepted a queued glucose
 snapshot on private.5 (code 66); no companion reinstall, protocol change or
 watch debugging was needed. The exact public build and CI have separate checks.
 
-## Earlier private testing and resolved failures
+## Earlier private testing
 
-The dated observations below explain how the private build reached the current
-result. Their then-unverified states are superseded by the successful private.5
-answer above; they do not describe the current release status.
-
-Validation on 2 October 2026: the full TypeScript test suite passed (5,365 tests),
-followed by five additional account-control and renewal-recovery tests. Nine Android protocol
-tests and native release lint passed, and the Android debug APK built. Typecheck
-and ESLint passed. The new module is included in pull-request native test/lint CI.
-An independent review found no remaining code blocker after recovery and token
-rotation fixes. Emulator checks confirmed settings navigation, all four provider
-choices and the ChatGPT sign-in/cancel controls. Browser launch reached Chrome's
-first-run screen, but the emulator process exited during Chrome startup on two
-attempts, including a graphics fallback. A successful browser round-trip and
-authenticated answer remain unverified. Automated tests used synthetic credentials
-and records. The subsequent live Gemini comparison and narrow answer-check fixes
-are documented in `AI_PROVIDER_TESTING.md`.
-
-Follow-up on 2 October 2026: a combined debug APK containing the chart, ChatGPT and
-Gemini changes was built for both ARM64 phones and x86_64 emulators. Its manifest,
-signature and embedded JavaScript were verified. The separate development package
-was installed on isolated Android 16 and Android 17 emulators. An existing desktop
-ChatGPT session reached T1 Arc's account-selection and plan-access consent screens,
-but this did not verify a completed connection in the Android app. One attempt
-expired during test setup; another lost its callback when the Android 16 emulator
-process crashed. Windows recorded a QEMU host access violation (`0xc0000005`), not
-an Android application crash. A fresh Android 17 test reached Google's passkey
-verification through the normal in-app sign-in flow. Physical-phone sign-in,
-account-model listing and a completed plan-backed answer still remain unverified.
-
-Physical-phone follow-up on 3 October 2026: the verified development APK was
-installed alongside the existing app on a Pixel 10 Pro XL. The normal system
-browser flow reached OpenAI consent. Although Edge still showed a loading consent
-screen, returning to T1 Arc completed the connection: the app displayed the
-validated account as connected and loaded five account-specific model choices.
-This confirms a real callback, token exchange and model-catalog request. It does
-not yet verify a completed plan-backed answer, token renewal, sign-out or plan
-limits. The cause of Edge's lingering loading screen remains unconfirmed; the
-tested APK's callback page provided manual return instructions only. The private
-phone update adds a package-specific **Return to T1 Arc** button and a bounded
-ten-minute browser authorization window. Native loopback tests and independent
-review cover the new page and request handling; its Edge return action still
-needs physical-phone verification.
-
-Physical-phone follow-up on 4 October 2026: the everyday production-package
-private update (`1.7.14-private.1`, phone code 58) retained the connected account.
-A manual model refresh completed and showed five account-specific models; it
-did not return GPT-6.1 Sol for this account. A new, record-free education question
-failed with an unreadable-response error. Sign-in and model listing therefore
-work on the everyday app, but a completed plan-backed answer is still unverified
-and blocks release. Gemini was restored as the active provider after the test.
-The next private candidate improves settings and separates request failures
-without exposing provider error bodies or credentials.
-
-The `1.7.14-private.2` candidate (phone code 60) was installed in place on the
-same phone. Its settings and model pickers were checked on-device. GPT-6.1 Sol
-completed the record-free education question through the saved OpenAI API key;
-the usual OpenAI Luna model was restored after that test. The ChatGPT model
-picker refreshed the account's five choices. Sending the same question through
-ChatGPT reached the stream-handling stage but failed as an unexpected stream.
-No completed ChatGPT answer has been verified. Release remains blocked on this
-live flow; further diagnostics use fixed categories without provider content.
-
-The next private phone candidate (`1.7.14-private.3`, code 62) isolated the
-response failure: HTTP 200 without a Content-Type header. The bounded diagnostic
-body was not ordinary JSON; this alone does not establish that it was a valid
-stream. The next source revision accepts an absent header only through the
-strict SSE parser. A fully terminated `response.completed` event containing a
-completed response is still mandatory. Explicit non-SSE media types, unframed
-JSON or HTML, empty bodies and partial answers remain failures. A successful
-plan-backed answer on the phone is still required before release.
-
-The private.4 phone candidate (code 64) then confirmed a completed SSE response
-despite the missing header. Tarv1s's answer extractor still reported no answer
-text, so a successful guarded answer remains unverified. The next revision
-assembles completed assistant message events before passing the response to
-the existing answer checks. It still requires successful terminal completion
-and rejects refused or incomplete responses; live verification remains required.
-
-The same private.3 phone update reported the existing Galaxy Watch companion as
-ready and successfully queued the latest glucose for it. No watch update or
-watch debugging was needed; the phone and watch continue to use the unchanged
-version 1 capability and data protocol.
+Earlier private builds exposed browser-return and response-stream errors. They
+were corrected before the successful private.5 checks described above. The
+response reader requires a completed SSE response and rejects refusals, partial
+answers and unframed content. These earlier checks do not establish that the
+corrected 1.7.15 APK answers personal questions correctly; that remains an
+explicit device release check.
 
 Tarv1s still answers supported local questions without an account. For broader
 AI questions, choose either **ChatGPT** or an API key for **OpenAI**, **Google

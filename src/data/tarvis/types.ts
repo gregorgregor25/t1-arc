@@ -1,4 +1,5 @@
 import { EvidenceReference, InsightReport } from "@/domain/insights";
+import type { TarvisHealthMetric } from "@/domain/tarvisEntry";
 
 export type TarvisConfidence = "high" | "moderate" | "limited";
 
@@ -7,7 +8,8 @@ export interface TarvisEvidenceItem {
   label: string;
   description: string;
   range: { start: number; end: number };
-  recordCount: number;
+  /** Omitted when a selected metric summary cannot identify its own source count. */
+  recordCount?: number;
   examples: {
     id: string;
     kind: string;
@@ -45,14 +47,30 @@ export interface TarvisEvidencePacket {
   requiredFindingIds?: string[];
   /** The question explicitly requested sleep; absence must be explained locally. */
   requestedSleep?: boolean;
+  /** Glucose coverage prose is relevant to this selected request. */
+  requestedGlucose?: boolean;
+  /** Set only by the validated selected-Health entry path. */
+  selectedHealthMetric?: TarvisHealthMetric;
+  selectedHealthCategory?: InsightReport["findings"][number]["category"];
   comparison: {
     currentRange: { start: number; end: number };
-    previousRange: { start: number; end: number };
     headline: string;
     summary: string;
-    current: TarvisInsightWindowSummary;
-    previous: TarvisInsightWindowSummary;
-  };
+  } & (
+    | {
+        /** Only the requested period is present in a non-comparison question. */
+        currentOnly: true;
+        current: Partial<TarvisInsightWindowSummary>;
+        previousRange?: never;
+        previous?: never;
+      }
+    | {
+        currentOnly?: false;
+        current: Partial<TarvisInsightWindowSummary>;
+        previousRange: { start: number; end: number };
+        previous: Partial<TarvisInsightWindowSummary>;
+      }
+  );
   findings: {
     id: string;
     kind: string;
