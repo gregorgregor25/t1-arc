@@ -1,10 +1,12 @@
 # Optional ChatGPT connection
 
-Status: included in the corrected 1.7.15 candidate and verified for record-free
+Status: included in the corrected 1.7.16 candidate and verified for record-free
 questions in an earlier private production-package phone build. Personal-data
-questions and the corrected candidate still need device checks. The private
-test is distinct from checks on
-the exact public APK; publication status is shown by the
+questions and the corrected 1.7.16 candidate still need device checks. The
+signed 1.7.15 draft passed its build, but was held after a current-period
+personal-answer presentation regression appeared during device testing; that
+observation is not acceptance of a hosted personal answer. Publication status
+is shown by the
 [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases).
 
 On 4 October 2026, `1.7.14-private.5` (phone code 66) was installed in place
@@ -40,7 +42,7 @@ Earlier private builds exposed browser-return and response-stream errors. They
 were corrected before the successful private.5 checks described above. The
 response reader requires a completed SSE response and rejects refusals, partial
 answers and unframed content. These earlier checks do not establish that the
-corrected 1.7.15 APK answers personal questions correctly; that remains an
+corrected 1.7.16 APK answers personal questions correctly; that remains an
 explicit device release check.
 
 Tarv1s still answers supported local questions without an account. For broader
@@ -108,7 +110,8 @@ separate app package and does not change the installed release's settings.
 - The public privacy policy was updated on 5 October 2026 with the optional
   ChatGPT route, sign-in and model-list traffic, local tokens, Send-only health
   context and the provider's terms.
-- Resolve the dependency audit blockers recorded in `RELEASE_STATUS.md`.
+- Complete the guarded 1.7.16 dependency review, audit and build checks
+  recorded in `RELEASE_STATUS.md`.
 - Verify the exact intended public source, signed artifact and CI checks. The
   private phone tests do not stand in for that release verification.
 - Ask ChatGPT about the owner's glucose, sleep and basal records on the corrected

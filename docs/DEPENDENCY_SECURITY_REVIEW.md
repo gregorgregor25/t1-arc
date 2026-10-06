@@ -1,8 +1,9 @@
-# 1.7.14 dependency security review and 1.7.15 carry-forward
+# 1.7.14 dependency security review and 1.7.15/1.7.16 carry-forward
 
 Reviewed on 5 October 2026 against source commit
-`e505758596d0b7bfc599c6135756d6d1792840dc`. The release remains blocked;
-this review does not waive the production dependency audit.
+`e505758596d0b7bfc599c6135756d6d1792840dc`. At that point the release
+was blocked; the later conditional, narrow exceptions below retain the full
+production audit and guard requirements.
 
 ## Dependency exposure
 
@@ -214,5 +215,35 @@ severity labels, guarded Linux clean prebuild and actual Gradle bundling,
 source-map inspection, exact signed APK bundle comparison, branch/environment
 protections and final device checks. It fails closed for new advisories,
 dependency or hash drift, missing evidence, audit errors and expiry. No other
-version or platform is covered. The signed 1.7.15 build and its fresh evidence
-are still pending; the 1.7.14 signed build does not fulfill these gates.
+version or platform is covered. At the time of this 1.7.15 scope review, its
+signed build and fresh evidence were pending; the 1.7.14 signed build did not
+fulfill those gates. The later 1.7.15 outcome and 1.7.16 scope follow below.
+
+## Corrected 1.7.16 candidate: unchanged advisory scope
+
+The protected 1.7.15 signing workflow
+[`37448754652`](https://github.com/gregorgregor25/t1-arc/actions/runs/37448754652)
+passed, but device testing found a current-period personal-answer presentation
+regression in Q18. That draft remains unpublished; its signed-build result does
+not establish acceptance of the corrected app. Preparation of **Android 1.7.16,
+phone code 72** continues the same narrowly approved conditional exception;
+this is no claim of a new waiver. The
+generated Wear companion uses code 73; its glucose protocol is unchanged.
+
+Compared with the independently reviewed 1.7.15 lockfile, the 1.7.16 lockfile
+changes only root package version metadata. No dependency package, version,
+integrity, override or advisory scope was added. Its SHA-256 is
+`9929a5cd1cef55c5ff829d6b162b8e7fbcf7f6bb9d3737225e880ab948f83ad6`.
+This version/hash assertion still requires independent verification on the
+intended 1.7.16 PR head.
+
+Only GHSA-vfj7-8cjw-p6xm for braces 3.0.3 and GHSA-86w9-cpqp-85rv for
+node-forge 1.4.0 remain excepted for this Android release path. The exception
+still expires **2026-10-12 00:00 UTC**. It does not cover the patched
+`source-map-js` advisory, new findings, iOS, other versions, or altered package
+graphs. Full audit visibility, severity labels, guarded Linux clean prebuild
+and actual Gradle bundling, source-map inspection, exact signed APK bundle
+comparison, unchanged branch/environment protections and final device checks
+remain mandatory. The 1.7.16 audit, guarded build, signed artifact comparison
+and physical-device acceptance are pending; the 1.7.15 checks cannot stand in
+for them.

@@ -4,7 +4,7 @@ Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic
 Claude API key. API-key connections follow the same setup. There is no bundled
 maintainer key, hidden free allowance or relay server in the normal app path.
 
-The corrected 1.7.15 candidate includes **Continue with ChatGPT** as an independent
+The corrected 1.7.16 candidate includes **Continue with ChatGPT** as an independent
 option for eligible ChatGPT plans; it does not require an API key. Real-account phone
 validation is recorded in [ChatGPT setup and validation](CHATGPT_CONNECTION.md).
 Check the [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases)
@@ -42,7 +42,14 @@ such as GPT-6.1 Sol is available there only if that account offers it.
 
 Requests go directly from the phone to the selected provider. The same bounded
 evidence planner, local calculations, output validation and treatment boundaries
-apply to every provider. General education sends no health records. Switching
+apply to every provider. Supported exact personal calculations stay on the phone
+even when a provider is selected. For broader personal questions, the model can
+choose from locally approved findings or reviewed claims, and T1 Arc assembles
+the factual answer from them. Some personal modes send bounded selected
+records; locally assembled prose does not mean no model call occurred. General
+education can use the chosen provider without a new health-record packet.
+Which route answered a particular question should be checked in its answer
+details rather than inferred from the active connection. Switching
 providers can send recent previously shared conversation to the new provider on
 the next question; start a new conversation to omit that history.
 

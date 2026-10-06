@@ -34,6 +34,7 @@ describe("requested daily basal evidence", () => {
     const question = "What do my daily basal totals show over the last seven completed days?";
     const scoped = currentPeriodTarvisEvidence(buildTarvisEvidencePacket(report, { question }), report, question);
     const packet = selectTarvisEvidencePacket(question, scoped.packet);
+    expect(packet.comparison.headline).toBe("Daily basal totals in the requested period");
     expect(packet.findings.find(({ id }) => id === "basal-daily-totals")?.summary).toContain("2026-10-04: 20 U");
     expect(localTarvisEvidenceFallback(packet).answer).toContain("140 U");
     expect(JSON.stringify(packet)).not.toContain("2026-09-21");

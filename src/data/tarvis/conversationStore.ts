@@ -100,6 +100,8 @@ export interface StoredTarvisExchange {
   modelRequestSent?: boolean;
   /** Identifies the origin of the prose shown to the user. */
   answerSource?: "hosted" | "local";
+  /** Evidence-mode selection validity; absent for older exchanges and other modes. */
+  hostedEvidenceSelectionAccepted?: boolean;
   /** Independently prevents a composite personal answer being sent later. */
   modelSharing?: "local-only";
   /** Locally selected, reviewed sources supporting displayed guidance. */
@@ -977,6 +979,8 @@ function validStoredTarvisExchangeForSchema(
     (value.answerSource !== undefined &&
       value.answerSource !== "hosted" &&
       value.answerSource !== "local") ||
+    (value.hostedEvidenceSelectionAccepted !== undefined &&
+      typeof value.hostedEvidenceSelectionAccepted !== "boolean") ||
     (value.modelSharing !== undefined && value.modelSharing !== "local-only") ||
     (value.guidanceSources !== undefined &&
       !validGuidanceReferences(value.guidanceSources)) ||
@@ -991,7 +995,11 @@ function validStoredTarvisExchangeForSchema(
     (exchange.answerSource === "hosted" &&
       (exchange.modelRequestSent !== true || !exchange.requestMetrics)) ||
     (exchange.modelRequestSent === false &&
-      exchange.requestMetrics !== undefined)
+      exchange.requestMetrics !== undefined) ||
+    (exchange.hostedEvidenceSelectionAccepted !== undefined &&
+      (exchange.modelRequestSent !== true || !exchange.requestMetrics ||
+        exchange.answerSource !== "local" ||
+        exchange.answer.responseKind === "general-education"))
   ) {
     return false;
   }
