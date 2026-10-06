@@ -27,6 +27,12 @@ Today is the main daily overview. It can show:
 Tap a card or chart section to inspect the records behind it. Missing data stays
 missing instead of being silently estimated.
 
+The Today glucose chart opens to the last **4 hours**. Choose **8h**, **12h** or
+**24h** to widen the view. Tap or drag the chart to inspect a reading and the
+nearby insulin, meal and note records. From the selected time you can add a meal
+or note, or open an existing editable meal or note. The chart shows recorded
+context; a nearby event does not prove what caused a glucose change.
+
 The **Glucose estimate · GMI** card uses the last 14 days of saved sensor readings
 and shows the period and sensor coverage. It updates as readings arrive. GMI is
 an estimate expressed like HbA1c, not a measured laboratory HbA1c result; sparse
@@ -102,6 +108,11 @@ Read the [Tarv1s connection guide](TARV1S_BYOK.md) before enabling either route.
 Starter questions reflect records available in the app. You can still ask in
 your own words. For a personal answer, **View calculation and records** opens
 supporting details; important gaps and limitations remain visible in the answer.
+If an import has daily basal totals but no detailed delivery history, Tarv1s can
+summarise those totals while explaining that it cannot locate the delivery by
+hour. Incomplete days and conflicting source totals should be named rather than
+filled in as zero. Sleep and glucose comparisons should retain both records and
+describe their relationship without assuming a cause.
 
 Where **Ask Tarv1s about this** is available, it opens a question about the
 selected period or event. Check the dates above the message, then tap Send. Merely

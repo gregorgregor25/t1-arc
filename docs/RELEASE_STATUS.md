@@ -39,25 +39,30 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
-### 1.7.14 changes
+### 1.7.15 candidate changes
 
 Release preparation on 5 October 2026 identified two outstanding production
 dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
 braces 3.0.3 ([advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm))
 and node-forge 1.4.0 ([advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv))
 have no published patched versions at the time of verification. Their dependent
-packages produce 17 high-severity audit findings. The owner approved a
-conditional exception for these two advisories in Android 1.7.14 only, expiring
-12 October 2026 at 00:00 UTC. The reviewed lockfile, guarded Linux build,
-source-map inspection and exact APK bundle comparison are mandatory; any new
-finding, failed evidence check or expired exception blocks release. Do not
-use the audit tool's incompatible Expo/React Native downgrades. The public
-privacy disclosure is published; exact public APK and device verification
-remain pending a passing release build. Version 1.7.14 is not yet published.
+packages produce 17 high-severity audit findings. A newly recognized
+`source-map-js` advisory was fixed by updating that transitive package to its
+patched 1.2.2 release within PostCSS's existing version range; it is not part
+of the exception. The owner approved a
+conditional exception for Android 1.7.14 on 5 October and agreed to carry the
+same narrow exception into this corrected Android 1.7.15 candidate on 6 October.
+It still expires 12 October 2026 at 00:00 UTC. The new version and lockfile hash
+must receive independent review; a fresh guarded Linux build, source-map
+inspection and exact signed APK bundle comparison are mandatory. New findings,
+dependency drift, failed evidence or expiry block release. Do not use the audit
+tool's incompatible Expo/React Native downgrades. The public privacy disclosure
+is published; the corrected signed APK and device checks are pending. The held
+1.7.14 draft has not been published and must not be published as-is.
 The [dependency security review](DEPENDENCY_SECURITY_REVIEW.md) records bundle
 exposure checks and isolated tests of the proposed upstream patches.
 
-The 1.7.14 source adds **Continue with ChatGPT** alongside the three API-key
+The 1.7.15 candidate includes **Continue with ChatGPT** alongside the three API-key
 providers. It uses an eligible ChatGPT plan; local answers remain available
 without any AI connection. In a signed, production-package private phone
 build, a real account completed two record-free answers with no API-key fallback.
@@ -66,7 +71,7 @@ returning-account reconnect through Edge's **Return to T1 Arc** link. OpenAI's
 API-key connection stayed active during reconnect until ChatGPT was explicitly
 selected. The account's own catalogue offered five models, without GPT-6.1.
 These private checks do not substitute for testing the exact public APK. See
-[connection details](CHATGPT_CONNECTION.md). The 1.7.14 source also adds a
+[connection details](CHATGPT_CONNECTION.md). The candidate also adds a
 targeted guard against the Gemini severity wording described below; that guard
 does not establish general clinical accuracy.
 
@@ -74,6 +79,15 @@ The Today chart now starts with a compact four-hour view, allows eight-,
 twelve- and twenty-four-hour views, and lets users inspect readings alongside
 nearby recorded meals and notes. OpenAI API-key users can select GPT-6.1 Sol;
 availability through a ChatGPT plan depends on that account's model catalogue.
+
+Tarv1s now keeps requested sleep records in personal glucose/sleep answers and
+distinguishes a request not to assume causation from an exclusion of records.
+When imports include daily basal totals but no detailed basal timeline, it can
+report supported daily sums, averages and comparisons while explaining that
+hourly delivery cannot be reconstructed. It excludes missing, partial and
+conflicting days from complete-period figures rather than treating them as zero.
+These corrections passed source tests and a private replay of the current phone
+insulin snapshot, but still require testing in the corrected signed APK.
 
 The private.5 phone update (code 66) retained the installed Galaxy Watch 8 companion:
 it remained ready and accepted a queued glucose snapshot. The watch protocol

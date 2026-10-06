@@ -1,7 +1,9 @@
 # Optional ChatGPT connection
 
-Status: included in the 1.7.14 source and verified in a private
-production-package phone build. The private test is distinct from checks on
+Status: included in the corrected 1.7.15 candidate and verified for record-free
+questions in an earlier private production-package phone build. Personal-data
+questions and the corrected candidate still need device checks. The private
+test is distinct from checks on
 the exact public APK; publication status is shown by the
 [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases).
 
@@ -185,6 +187,9 @@ separate app package and does not change the installed release's settings.
 - Resolve the dependency audit blockers recorded in `RELEASE_STATUS.md`.
 - Verify the exact intended public source, signed artifact and CI checks. The
   private phone tests do not stand in for that release verification.
+- Ask ChatGPT about the owner's glucose, sleep and basal records on the corrected
+  phone build. Compare supported totals and dates with the local records, and
+  confirm it explains missing basal timing without inventing hourly delivery.
 
 Token-expiry renewal, a live plan-limit response and privacy erase during a
 pending request were not deliberately induced on the owner's phone. Their

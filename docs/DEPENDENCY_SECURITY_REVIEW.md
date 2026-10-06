@@ -1,4 +1,4 @@
-# 1.7.14 dependency security review
+# 1.7.14 dependency security review and 1.7.15 carry-forward
 
 Reviewed on 5 October 2026 against source commit
 `e505758596d0b7bfc599c6135756d6d1792840dc`. The release remains blocked;
@@ -25,7 +25,7 @@ Its source map contained 1,630 modules and no modules from `braces`,
 for that JavaScript build configuration, not verification of a final signed APK,
 all platform configurations, or the security of the build environment.
 
-The reviewed package-lock.json SHA-256 was
+The initial 1.7.14 review's package-lock.json SHA-256 was
 `32a613189bba624fafff09d4fb5ed7f55469296d75a18ca4c2e16ada71dc9bb1`.
 
 After Linux CI required current Expo compatibility patches, the dependency
@@ -33,8 +33,8 @@ review was repeated on 5 October. Expo was updated to 57.0.26, alongside its
 background-task, camera, constants, document-picker, task-manager and
 modules-core patches. The reviewed CLI, Metro, Micromatch, Braces and Forge
 package versions/integrities and the advisory graph did not change. Expo
-dependency parity and all 21 Doctor checks passed. The **current pinned
-lockfile SHA-256** is
+dependency parity and all 21 Doctor checks passed. The **1.7.14 reviewed
+lockfile SHA-256** was
 `46a5236e77448db6bb8be995af93d6d68a9e1967f56950a3dfebef9c167354ae`.
 Fresh guarded Linux build evidence is still required for this refreshed graph.
 
@@ -143,12 +143,12 @@ or changes to build configuration remain separate risks.
 ### Approved scope and mandatory acceptance conditions
 
 Independent review considered a conditional exception defensible for owner
-consideration. The approved limits are:
+consideration. The 5 October approval for 1.7.14 had these limits:
 
 1. T1 Arc Android **1.7.14 only**, on the exact independently reviewed PR head.
    Retain the current pinned lockfile hash recorded above and package versions Braces 3.0.3
    and node-forge 1.4.0. Source/configuration or dependency drift requires
-   renewed assessment; approval does not extend to future releases.
+   renewed assessment; this original approval did not extend to future releases.
 2. Only **GHSA-vfj7-8cjw-p6xm** and **GHSA-86w9-cpqp-85rv**, including findings
    derived solely from those two advisories, may be accepted. Keep the full
    audit report visible and preserve their high-severity classifications.
@@ -175,3 +175,44 @@ checks the complete dependency graph, package identities, lock hash and expiry.
 Guard records are durable before a rejected call, so catching its exception
 cannot hide an attempted use. Bundle source maps are inspected and the exact
 generated bundle must match the bytes inside the signed APK before drafting.
+
+## Corrected 1.7.15 candidate: renewed scope
+
+On 6 October 2026 the owner asked to finish the corrected release after the
+1.7.14 signed draft was held for personal-answer defects, and agreed to carry
+the same exception into **Android 1.7.15, phone code 70**. The Wear companion
+uses code 71 under the existing even-phone/odd-Wear rule. This authorizes
+preparation and review; it does not claim that a new build or device check has
+passed. The 1.7.14 draft remains unpublished and must not be published as-is.
+
+The package-lock.json changes are the root package version fields from 1.7.14
+to 1.7.15 and one patched transitive dependency, `source-map-js` 1.2.1 to
+1.2.2. PostCSS already accepts `^1.2.1`; no direct dependency, override or
+other package-graph change was added. The 1.7.15 candidate lockfile SHA-256 is
+`ae84beab6e319bce89b43040b9e5097f197741d368ab6540155c7058e2a2e2cf`.
+An independent reviewer must confirm the lockfile diff and source changes on
+the intended PR head before accepting this renewed scope.
+
+The fresh 6 October audit surfaced a third, newly recognized high-severity
+finding: `source-map-js` 1.2.1,
+[GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+The advisory identifies 1.2.2 as patched for invalid indexed source-map
+section offsets. Updating that one package within PostCSS's existing range
+removes this finding rather than extending the exception. A clean `npm ci
+--ignore-scripts` resolved 1.2.2 through Expo Metro Config and PostCSS. An
+ordinary indexed map resolved its source location; negative, fractional,
+infinite and oversized line offsets, plus a nested offset exceeding the limit,
+were rejected. A fresh full npm audit reported 17 high findings, no others,
+and no `source-map-js`/GHSA-68fv-2mgg-jv7q finding. This local verification
+does not replace the required audit and guarded-build checks on the final PR
+head and protected release build.
+
+The renewed exception covers only GHSA-vfj7-8cjw-p6xm for braces 3.0.3 and
+GHSA-86w9-cpqp-85rv for node-forge 1.4.0 in the Android 1.7.15 release path.
+It keeps the unchanged **2026-10-12 00:00 UTC** expiry, full visible audit,
+severity labels, guarded Linux clean prebuild and actual Gradle bundling,
+source-map inspection, exact signed APK bundle comparison, branch/environment
+protections and final device checks. It fails closed for new advisories,
+dependency or hash drift, missing evidence, audit errors and expiry. No other
+version or platform is covered. The signed 1.7.15 build and its fresh evidence
+are still pending; the 1.7.14 signed build does not fulfill these gates.

@@ -2874,10 +2874,12 @@ export function TarvisScreen({
           : reportForQuestion
             ? plan.kind === 'model-evidence' && plan.selectedHealthMetric
               ? buildSelectedHealthEvidencePacket(reportForQuestion, plan.selectedHealthMetric)
-              : buildTarvisEvidencePacket(reportForQuestion)
+              : buildTarvisEvidencePacket(reportForQuestion, { question: prompt })
             : defaultReportForQuestion
-              ? buildTarvisEvidencePacket(defaultReportForQuestion)
-              : evidence;
+              ? buildTarvisEvidencePacket(defaultReportForQuestion, { question: prompt })
+              : report
+                ? buildTarvisEvidencePacket(report, { question: prompt })
+                : evidence;
       if (plan.kind === 'model-evidence' && !rawEvidenceForQuestion) {
         throw new Error('Your local records could not be loaded for that question. Please try again.');
       }

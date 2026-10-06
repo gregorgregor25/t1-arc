@@ -56,6 +56,7 @@ describe("Tarv1s production request coordinator", () => {
     "Did activity as well as insulin make me high on Saturday 8 August?",
     "Was my high on Saturday 8 August caused by activity plus food?",
     "Why did I go low yesterday? Look at exercise, meals and insulin.",
+    "Why was I high after breakfast yesterday?",
     "Investigate my high last Sunday and include activity records.",
   ])(
     "hands an open-ended personal glucose episode to the AI evidence planner: %s",
@@ -594,6 +595,53 @@ describe("Tarv1s production request coordinator", () => {
     expect(result.evidenceRanges?.current.end).toBe(
       Date.parse("2026-08-10T00:00:00+01:00"),
     );
+  });
+
+  it.each([
+    "What do my recorded sleep and glucose data show over the last 7 days? Compare them without assuming that one caused the other, and explain any missing data.",
+    "What do my recorded sleep and glucose data show over the last 7 days? Compare them and explain any missing data.",
+  ])("keeps a personal sleep and glucose review on the evidence route: %s", (question) => {
+    const result = plan(question);
+    expect(result.kind).toBe("model-evidence");
+    if (result.kind !== "model-evidence") throw new Error("Expected evidence");
+    expect(result.evidenceRanges).toBeDefined();
+    expect(result.history).toEqual([]);
+  });
+
+  it("does not discard a real record exclusion because the question says explain", () => {
+    const result = plan(
+      "Explain my glucose data over the last 7 days without calibration readings.",
+    );
+    expect(result.kind).toBe("answer");
+    if (result.kind !== "answer") throw new Error("Expected clarification");
+    expect(result.source).toBe("capability");
+    expect(result.answer.answer).toContain("exclusion");
+  });
+
+  it("keeps a hypothetical clinical definition on the record-free education route", () => {
+    const result = plan(
+      "What defines severe (level 3) hypoglycaemia? If a hypothetical CGM reading is 2.8 mmol/L and the person manages the low without anyone else's assistance, does that glucose number alone establish level 3?",
+    );
+    expect(result.kind).toBe("model-education");
+  });
+
+  it.each([
+    "Explain my low glucose readings over the last 7 days without anyone else's assistance.",
+    "Explain my glucose data over the last 7 days without anyone else's assistance.",
+    "Does glucose data over the last 7 days without calibration readings show patterns?",
+    "Explain glucose patterns without bolus readings.",
+  ])("keeps an actual filtered data request out of record-free education: %s", (question) => {
+    const result = plan(question);
+    expect(result.kind).toBe("answer");
+    if (result.kind !== "answer") throw new Error("Expected clarification");
+    expect(result.source).toBe("capability");
+  });
+
+  it("answers an ordinary sleep total on the phone", () => {
+    const result = plan("How much sleep did I record over the last 7 days?");
+    expect(result.kind).toBe("scoped-personal-data");
+    if (result.kind !== "scoped-personal-data") throw new Error("Expected local sleep calculation");
+    expect(result.intent.metrics.map(({ value }) => value)).toEqual(["sleep.duration"]);
   });
 
   it("fails closed instead of substituting the displayed report for an unsupported comparison", () => {

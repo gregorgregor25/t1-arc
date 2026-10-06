@@ -43,6 +43,8 @@ export interface TarvisEvidencePacket {
   generatedAt: number;
   /** Locally required findings that hosted ranking may not omit. */
   requiredFindingIds?: string[];
+  /** The question explicitly requested sleep; absence must be explained locally. */
+  requestedSleep?: boolean;
   comparison: {
     currentRange: { start: number; end: number };
     previousRange: { start: number; end: number };

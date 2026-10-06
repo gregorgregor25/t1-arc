@@ -3,8 +3,9 @@
 This records earlier provider choice checks performed for the 1.7.12 candidate
 and later private phone validation. The original comparison build was
 `1.7.12-provider-test.3`, version code 52. The 1.7.14 ChatGPT connection has
-private phone validation; verification on the exact public APK is a separate
-release check.
+record-free private phone validation; the corrected 1.7.15 candidate's personal
+data answers and verification on the exact public APK are separate release
+checks.
 
 ## Model choice
 
@@ -18,7 +19,7 @@ explicit action. Both answers and evidence planning use the selected model.
 Settings link to official pricing instead of displaying fixed prices or cost
 labels. No model has a Recommended label in this release.
 
-- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra` and `gpt-6.1-sol` in the 1.7.14 source.
+- OpenAI: `gpt-5.6-luna`, `gpt-5.6-terra` and `gpt-6.1-sol` in the candidate source.
   A record-free HbA1c/time-in-range question completed through the
   saved OpenAI API key on the owner's phone using private candidate
   `1.7.14-private.2` on 4 October 2026. This checks one inference and the guarded
@@ -173,6 +174,10 @@ make an AI provider request or change the Wear protocol.
 ## Final release verification
 
 - Run the repository quality workflow on the intended PR head.
+- Run the approved 30-question Tarv1s suite across the four connection choices,
+  distinguishing local answers from actual AI calls. Check numeric and dated
+  answers against the phone's stored records; restore the owner's OpenAI API
+  selection after testing. Report any skipped question or unavailable model.
 - Confirm the exact signed production build preserves the provider choices,
   secure keys, local counts and existing Wear companion protocol. The private
   phone build and passing older commits cannot stand in for release verification.

@@ -2,7 +2,7 @@ import type { TarvisAnswer, TarvisEvidencePacket } from "./types";
 import { formatTarvisNumber } from "./regionalNumberPresentation";
 
 export const MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS = 6;
-const MAX_EVIDENCE_REFERENCES = 12;
+export const MAX_TARVIS_EVIDENCE_REFERENCES = 12;
 const MIN_COMPLETE_COVERAGE_PERCENT = 70;
 
 interface ApprovedEvidenceFinding {
@@ -32,7 +32,7 @@ function approvedFindings(
     if (!id || !title || !summary || seenFindingIds.has(id)) continue;
     if (
       finding.evidenceIds.length === 0 ||
-      finding.evidenceIds.length > MAX_EVIDENCE_REFERENCES ||
+      finding.evidenceIds.length > MAX_TARVIS_EVIDENCE_REFERENCES ||
       new Set(finding.evidenceIds).size !== finding.evidenceIds.length ||
       finding.evidenceIds.some(
         (evidenceId) => !validEvidenceIds.has(evidenceId),
@@ -86,7 +86,7 @@ function withRequiredFindings(
   );
   if (
     selectedIds.size > MAX_TARVIS_EVIDENCE_FINDING_SELECTIONS ||
-    evidenceIds.size > MAX_EVIDENCE_REFERENCES
+    evidenceIds.size > MAX_TARVIS_EVIDENCE_REFERENCES
   ) {
     return [];
   }
@@ -97,7 +97,7 @@ function withRequiredFindings(
     const nextEvidenceIds = finding.evidenceIds.filter(
       (id) => !evidenceIds.has(id),
     );
-    if (evidenceIds.size + nextEvidenceIds.length > MAX_EVIDENCE_REFERENCES) {
+    if (evidenceIds.size + nextEvidenceIds.length > MAX_TARVIS_EVIDENCE_REFERENCES) {
       continue;
     }
     selectedIds.add(finding.id);
@@ -148,6 +148,32 @@ function coverageLimitations(packet: TarvisEvidencePacket) {
   });
 }
 
+function requestedSleepLimitation(
+  packet: TarvisEvidencePacket,
+  findings: readonly ApprovedEvidenceFinding[],
+) {
+  if (!packet.requestedSleep) return undefined;
+  const selectedIds = new Set(findings.map(({ id }) => id));
+  if (packet.findings.some(({ id, category }) => category === "sleep" && selectedIds.has(id))) {
+    return undefined;
+  }
+  if (packet.findings.some(({ category }) => category === "sleep")) {
+    return "A recorded sleep finding is available, but this answer could not include its supporting evidence.";
+  }
+  const recent = packet.comparison.current.sleepMinutesPerNight !== null;
+  const previous = packet.comparison.previous.sleepMinutesPerNight !== null;
+  if (!recent && !previous) {
+    return "No recorded sleep summary is available for either period in the loaded data. This does not prove that no sleep occurred.";
+  }
+  if (!recent) {
+    return "A sleep summary is available for the previous period, but none is available for the recent period, so sleep cannot be compared. This does not prove that no sleep occurred recently.";
+  }
+  if (!previous) {
+    return "A sleep summary is available for the recent period, but none is available for the previous period, so sleep cannot be compared. This does not prove that no sleep occurred previously.";
+  }
+  return "Recorded sleep summaries exist for both periods, but this report has no evidence-backed sleep finding to compare them.";
+}
+
 function answerFromFindings(
   packet: TarvisEvidencePacket,
   findings: readonly ApprovedEvidenceFinding[],
@@ -156,10 +182,12 @@ function answerFromFindings(
   const findingCopy = findings.map(
     ({ title, summary }) => `${title}. ${summary}`,
   );
-  const answer = [comparisonSummary, ...findingCopy]
+  const sleepLimitation = requestedSleepLimitation(packet, findings);
+  const answer = [comparisonSummary, ...findingCopy, sleepLimitation]
     .filter((value): value is string => Boolean(value))
     .join("\n\n");
   const limitations = [
+    ...(sleepLimitation ? [sleepLimitation] : []),
     ...coverageLimitations(packet),
     ...findings.flatMap(({ caveat }) => (caveat ? [caveat] : [])),
   ];
@@ -270,7 +298,7 @@ export function parseTarvisEvidenceSelectionResult(
       return { answer: fallbackAnswer(packet), acceptedHostedSelection: false };
     }
     finding.evidenceIds.forEach((id) => evidenceIds.add(id));
-    if (evidenceIds.size > MAX_EVIDENCE_REFERENCES) {
+    if (evidenceIds.size > MAX_TARVIS_EVIDENCE_REFERENCES) {
       return { answer: fallbackAnswer(packet), acceptedHostedSelection: false };
     }
     selected.push(finding);

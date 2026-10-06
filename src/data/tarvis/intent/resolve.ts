@@ -47,6 +47,17 @@ const APPROXIMATE_OR_ONE_SIDED_CLOCK_PATTERN =
   /\b(?:(?:at|before|after|until|by|since)\s+|(?:around|about|approximately|approx\.?|roughly|near|circa|close\s+to)\s+(?:(?:between|from)\s+)?)(?:midnight|noon|(?:[01]?\d|2[0-4])(?::[0-5]\d)?(?:\s*(?:a\.?\s*m\.?|p\.?\s*m\.?))?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:[- ](?:one|two|three|four))?)\b|\b(?:[01]?\d|2[0-4])(?::[0-5]\d)?[- ]?ish\b/;
 const UNREPRESENTED_EXCLUSION_PATTERN =
   /\b(?:exclude|excluding|except(?:\s+for)?|without|but\s+not|not\s+including|omit|omitting|ignore|ignoring|leave\s+out|leaving\s+out|filter(?:ing)?\s+out|drop|dropping|remove|removing|apart\s+from|other\s+than|save\s+for)\b/;
+// A request not to infer causation does not exclude records from the period.
+// Remove only these explicit reasoning caveats; any second, real exclusion
+// must still fail closed instead of silently widening the calculation.
+const NON_FILTER_CAUSAL_CAVEAT =
+  /\bwithout\s+assuming\s+(?:(?:that\s+)?one\s+(?:caused?|causes?)\s+the\s+other|causation|a\s+causal\s+(?:link|relationship))\b/gi;
+
+function hasUnrepresentedExclusion(question: string) {
+  return UNREPRESENTED_EXCLUSION_PATTERN.test(
+    question.replace(NON_FILTER_CAUSAL_CAVEAT, ""),
+  );
+}
 const UNREPRESENTED_RECORD_FILTER_PATTERN =
   /\b(?:(?:only|just|solely)\s+(?:(?:use|using|include|including)\s+)?(?:the\s+)?(?:calibration|calibrated|uncalibrated|manual|meter|finger(?:stick|[- ]prick)|sensor|cgm|measured|estimated|imported|live|dexcom|libre|glooko|nightscout|pump|device|source)\b|(?:using|from)\s+(?:only\s+)?(?:my\s+)?(?:dexcom|libre|glooko|nightscout|pump|meter|finger(?:stick|[- ]prick)|sensor|cgm|device|source)\b)/;
 const EVENT_RELATIVE_FILTER_PATTERN =
@@ -137,6 +148,16 @@ function normalizeQuestion(question: string) {
     normalized = normalized.replace(pattern, replacement);
   }
   return normalized;
+}
+
+function hasUnrepresentedRecordFilterNormalized(normalizedQuestion: string) {
+  return hasUnrepresentedExclusion(normalizedQuestion) ||
+    UNREPRESENTED_RECORD_FILTER_PATTERN.test(normalizedQuestion);
+}
+
+/** Shares the resolver's fail-closed record-filter check with request routing. */
+export function hasTarvisUnrepresentedRecordFilter(question: string) {
+  return hasUnrepresentedRecordFilterNormalized(normalizeQuestion(question));
 }
 
 function explicitField<T>(
@@ -621,7 +642,7 @@ function extractMetricCandidates(
     [
       "sleep.duration",
       "aggregate",
-      /\b(?:(?:sleep|asleep)\s+(?:time|duration|hours?)|how (?:long|many hours|much time)\s+(?:did i\s+)?sleep)\b/,
+      /\b(?:(?:sleep|asleep)\s+(?:time|duration|hours?)|how (?:long|many hours|much time)\s+(?:did i\s+)?sleep|how much sleep did i\s+(?:record|log|get|have))\b/,
     ],
     [
       "data_quality.coverage",
@@ -725,8 +746,7 @@ function inferDomains(
   const unrepresentedFilter =
     metricDomains.size > 0 &&
     (hasEventRelativeFilter(normalizedQuestion) ||
-      UNREPRESENTED_EXCLUSION_PATTERN.test(normalizedQuestion) ||
-      UNREPRESENTED_RECORD_FILTER_PATTERN.test(normalizedQuestion));
+      hasUnrepresentedRecordFilterNormalized(normalizedQuestion));
   const canInferMentionedDomain = (domain: TarvisDomain) =>
     !unrepresentedFilter || metricDomains.has(domain);
   const isExplicitDataQualityRequest =
@@ -975,10 +995,7 @@ function resolveTemporalScope(
         "Event-relative filters need an exact supported event timestamp and clock window; the filter was not ignored.",
     };
   }
-  if (
-    UNREPRESENTED_EXCLUSION_PATTERN.test(normalizedQuestion) ||
-    UNREPRESENTED_RECORD_FILTER_PATTERN.test(normalizedQuestion)
-  ) {
+  if (hasUnrepresentedRecordFilterNormalized(normalizedQuestion)) {
     return {
       problem: "ambiguous_time_scope",
       message:
@@ -1298,12 +1315,24 @@ function comparisonField(
   literals: ReturnType<typeof extractTarvisLiterals>,
   candidates: readonly MetricCandidate[],
   scope: TarvisTemporalScope | undefined,
+  domains: readonly TarvisDomain[],
 ): TarvisIntentField<TarvisComparison> | undefined {
   if (literals.comparisons.length === 0) return undefined;
   const source = literals.comparisons[0]!;
   if (/\bprevious\b|\bbefore\s+that\b/.test(normalizedQuestion)) {
     return explicitField({ kind: "previous_equal_period" }, source);
   }
+  // With one stated period and several health-data subjects, "compare them"
+  // refers to those subjects, not to an unstated second time period.
+  if (
+    scope &&
+    domains.length > 1 &&
+    literals.comparisons.length === 1 &&
+    source.kind === "compare" &&
+    /\bcompare\s+(?:them|these|the two)\b/.test(normalizedQuestion) &&
+    literals.dates.length <= 1 &&
+    literals.durations.length <= 1
+  ) return undefined;
   // "Carbs yesterday versus bolus insulin" compares two quantities within
   // one scope, not yesterday with an unstated second period. Every comparison
   // marker must connect explicit metrics; a trailing "versus 2 weeks ago"
@@ -1720,7 +1749,7 @@ export function resolveTarvisIntent(
   }
 
   draft.comparison = comparisonField(
-    question, normalizedQuestion, literals, explicitCandidates, draft.temporalScope?.value,
+    question, normalizedQuestion, literals, explicitCandidates, draft.temporalScope?.value, domains,
   );
   if (!draft.comparison && explicitFollowUp && history?.intent.comparison) {
     draft.comparison = inheritedField(history.intent.comparison, history);
