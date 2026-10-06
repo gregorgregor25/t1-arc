@@ -39,7 +39,7 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
-### 1.7.17 candidate changes
+### 1.7.17 release verification and changes
 
 Release preparation on 5 October 2026 identified two outstanding production
 dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
@@ -55,47 +55,50 @@ unpublished 1.7.15 and 1.7.16 drafts. The corrected Android 1.7.17 candidate
 continues that same two-advisory scope without claiming a new waiver. Its first
 CI run required newly published Expo SDK 57 patches: Expo 57.0.27, Constants
 57.0.21 and SQLite 57.0.4. Those updates and their resolved transitive patches
-receive a fresh graph review, exact lock hash pin and all original build checks.
+received fresh graph review, an exact lock hash pin and all original build checks.
 The resulting production audit contains 16 high findings from the same two
 advisories; Expo's patched file-map package is removed from the allowlist.
 The exact version and committed lock hash are pinned in the audit guard and
-recorded in the dependency review.
-It still expires 12 October 2026 at 00:00 UTC. The new version and lockfile hash
-must receive independent review; a fresh guarded Linux build, source-map
-inspection and exact signed APK bundle comparison are mandatory. New findings,
-dependency drift, failed evidence or expiry block release. Do not use the audit
-tool's incompatible Expo/React Native downgrades. The public privacy disclosure
-is published; the 1.7.17 signed APK and device checks are pending. The held
-1.7.14, 1.7.15 and 1.7.16 drafts have not been published and must not be published as-is.
+recorded in the dependency review. The exception still expires **12 October
+2026 at 00:00 UTC**; new findings, dependency drift, failed evidence or expiry
+block a new guarded build. The exact 1.7.17 source, lockfile, guarded Linux
+build, source map and signed APK bundle were independently checked. The public
+privacy disclosure is published. The signed phone APK from build run
+`37478472400` was verified on a Pixel 10 Pro XL running Android 17 and
+installed in place without removing the existing app. Publication status is
+shown by [GitHub Releases](https://github.com/gregorgregor25/t1-arc/releases).
+The held 1.7.14, 1.7.15 and 1.7.16 drafts have not been published and must
+not be published as-is.
 The [dependency security review](DEPENDENCY_SECURITY_REVIEW.md) records bundle
 exposure checks and isolated tests of the proposed upstream patches.
 
-The 1.7.17 candidate includes **Continue with ChatGPT** alongside the three API-key
+The 1.7.17 signed candidate includes **Continue with ChatGPT** alongside the three API-key
 providers. It uses an eligible ChatGPT plan; local answers remain available
 without any AI connection. In a signed, production-package private phone
 build, a real account completed two record-free answers with no API-key fallback.
 Codex also checked sign-out revocation, explicit sign-in cancellation and normal
 returning-account reconnect through Edge's **Return to T1 Arc** link. OpenAI's
 API-key connection stayed active during reconnect until ChatGPT was explicitly
-selected. The account's own catalogue offered five models, without GPT-6.1.
-These private checks do not substitute for testing the exact public APK. The
-signed 1.7.15 workflow passed, but on-device Q18 testing found a current-period
-personal-answer presentation regression, so that draft remains held. This does
-not establish whether the corrected 1.7.17 personal-answer route works. The
+selected. That earlier catalogue did not offer GPT-6.1. On the signed 1.7.17
+phone, the connected account offered GPT-6 Astra and GPT-5.6 Sol, Terra and
+Luna; GPT-6.1 Sol is an OpenAI API-key option, not a promised ChatGPT plan
+option. The signed 1.7.15 workflow passed, but on-device Q18 testing found a current-period
+personal-answer presentation regression, so that draft remains held. The
 1.7.16 signed build also passed, but publication was held after phone backup
 comparisons exposed a pre-existing Health Connect reconciliation boundary
 issue. A record overlapping the start of a read could be absent from that
 response yet included in local absence-based deletion. The 1.7.17 candidate
 aligns deletion with the complete read window; it still respects explicit
-Health Connect deletion events. This correction requires source regression
-checks and verification in the exact signed build. See
+Health Connect deletion events. Source regression checks, signed-build tests
+and the in-place phone update completed. See
 [connection details](CHATGPT_CONNECTION.md). The candidate also adds a
 targeted guard against the Gemini severity wording described below; that guard
 does not establish general clinical accuracy.
 
 The Today chart now starts with a compact four-hour view, allows eight-,
 twelve- and twenty-four-hour views, and lets users inspect readings alongside
-nearby recorded meals and notes. OpenAI API-key users can select GPT-6.1 Sol;
+nearby recorded meals and notes. The compact chart and meal inspector were
+checked on the signed phone. OpenAI API-key users can select GPT-6.1 Sol;
 availability through a ChatGPT plan depends on that account's model catalogue.
 
 Tarv1s now keeps requested sleep records in personal glucose/sleep answers and
@@ -111,21 +114,36 @@ hourly delivery cannot be reconstructed. It excludes missing, partial and
 conflicting days from complete-period figures rather than treating them as zero.
 Natural-language completed-day requests use full local calendar days, and
 cross-domain basal/glucose comparisons use the corresponding complete dates
-without claiming cause. These corrections passed source tests and a private
-replay of the current phone insulin snapshot, but still require testing in the
-corrected signed 1.7.17 APK.
+without claiming cause. These corrections passed source tests, private replay
+and targeted checks in the signed 1.7.17 APK.
 
 The 1.7.17 candidate adds comparisons across matched calendar dates. Sleep is
 grouped by the date its recorded sessions ended and shown beside that calendar
 day's glucose; this does not describe glucose during sleep. Daily basal totals
 are paired with the same date's glucose summaries. Comparisons require usable
 records and adequate sensor coverage, identify missing dates and never imply
-causation or basal delivery timing. These changes still need final source and
-signed-device validation.
+causation or basal delivery timing. Source tests and targeted signed-device
+checks completed.
 
-The private.5 phone update (code 66) retained the installed Galaxy Watch 8 companion:
-it remained ready and accepted a queued glucose snapshot. The watch protocol
-did not change, and no watch reinstall or debugging was required.
+The installed Galaxy Watch 8 companion remained connected with an active face;
+a glucose update was queued after the phone-only 1.7.17 update. The watch
+protocol did not change, and no companion reinstall or watch debugging was
+required. A visible acknowledgement on the watch screen was not captured.
+
+Targeted Tarv1s testing on the signed phone submitted **16 questions**: six
+each with ChatGPT and OpenAI, and two each with Claude and Gemini. Ten personal
+questions completed hosted evidence selection, four general-education questions
+completed through the selected provider, and two Q08 questions used the local
+route without a model call. The eight omitted provider/case combinations were
+not run. Tested personal numeric facts agreed with independent checks of the
+phone's stored records; this is a targeted check, not a full 30-question suite
+or a guarantee of answer quality. General-education Q25 answers had known
+inaccuracies, most notably Claude's 90-day and same-day-lab claims and its
+time-in-range wording. Broad Q22 answers were less useful than intended as
+they tended to list records rather than explain a pattern. These known
+answer-quality limits remain in this release, with improvements planned for
+the next version; see
+[provider validation](AI_PROVIDER_TESTING.md).
 
 ## Known limitations
 

@@ -2,10 +2,9 @@
 
 This records earlier provider choice checks performed for the 1.7.12 candidate
 and later private phone validation. The original comparison build was
-`1.7.12-provider-test.3`, version code 52. The 1.7.14 ChatGPT connection has
-record-free private phone validation; the corrected 1.7.17 candidate's personal
-data answers and verification on the exact public APK are separate release
-checks.
+`1.7.12-provider-test.3`, version code 52. The 1.7.14 ChatGPT connection had
+record-free private phone validation. Targeted personal-data and provider
+checks were then completed on the exact signed 1.7.17 phone build.
 
 The signed 1.7.15 workflow passed, but device testing exposed a current-period
 personal-answer presentation regression. The 1.7.15 draft remains unpublished.
@@ -14,9 +13,9 @@ passed, but publication was held when supported phone backups exposed a
 pre-existing Health Connect reconciliation boundary issue. Five targeted
 ChatGPT questions were submitted on 1.7.16. Independent checks confirmed the
 reviewed numbers, but two combined-data answers lacked useful comparison
-detail. These historical results do not establish acceptance of 1.7.17.
-The six-question check through each of the four provider options remains a
-separate final signed-build check, within the existing usage and spending caps.
+detail. These historical results do not establish acceptance of 1.7.17. The
+signed 1.7.17 check described below was deliberately narrower than six
+questions through every provider.
 
 ## Model choice
 
@@ -40,6 +39,33 @@ labels. No model has a Recommended label in this release.
 
 Google's current `AQ.` authorization keys and legacy `AIza` keys are accepted
 locally. Format validation is not an authentication check.
+
+## Signed 1.7.17 targeted phone check on 6 October 2026
+
+The production-signed 1.7.17 phone APK was installed in place on a Pixel 10
+Pro XL running Android 17. Six approved questions were submitted through each
+of ChatGPT and the OpenAI API-key route, plus two targeted questions each
+through Claude and Gemini. Those four
+questions covered combined personal data (Q18) and general education (Q25).
+The other eight provider/case combinations were **not run**. This was 16 phone
+Sends, not the full 30-question suite across four providers.
+
+Ten personal questions completed hosted evidence selection, four Q25 education
+questions completed through their selected provider, and two Q08 questions
+were answered locally without a model request. The supported personal numeric
+facts in these tested answers agreed with independent calculations from the
+phone's stored records. The saved full answers, selected route and model,
+Send-time question, and UI evidence were correlated privately. A correct route
+or number does not establish that the overall explanation is good.
+
+Q25 exposed answer-quality limits retained in this release.
+Claude's answer included inaccurate 90-day, same-day laboratory test and
+time-in-range stability claims. OpenAI and ChatGPT had milder precision
+problems; Gemini's Q25 answer was the clearest in this small check. The broad
+Q22 responses tended to list records rather than explain useful patterns.
+Improving these prompts and answer checks is planned for the next release;
+the tested app artifacts were not rebuilt. Do not use these
+answers as the sole basis for treatment decisions.
 
 ## ChatGPT and OpenAI private phone validation on 4 October 2026
 
@@ -182,28 +208,23 @@ readings. The 1.7.13 candidate corrects conversation validation for that case.
 Verify the saved no-data answer on the exact release artifact; this does not
 make an AI provider request or change the Wear protocol.
 
-## Final release verification
+## 1.7.17 release verification record
 
-- Run the repository quality workflow on the intended PR head.
-- Use the approved 30-question Tarv1s suite for repeatable release checks,
-  distinguishing local answers from actual AI calls. Check numeric and dated
-  answers against the phone's stored records; restore the owner's provider and
-  model after testing. Record the exact cases, routes and unavailable checks.
-  A full four-provider run needs a target that preserves existing conversations
-  and respects spending and request limits. Do not rotate the owner's saved
-  history to force a 120-case run; report a targeted run as targeted.
-- Confirm the exact signed production build preserves the provider choices,
-  secure keys, local counts and existing Wear companion protocol. The private
-  phone build and passing older commits cannot stand in for release verification.
-- The public privacy policy was updated on 5 October 2026 to disclose the
-  optional ChatGPT plan route and its sign-in/model-list data flows. Resolve
-  the dependency audit blockers in `RELEASE_STATUS.md` before publication.
-  Review Google's account, billing, age and regional terms for the intended audience.
-- Keep this as a phone-only change. There are no Wear OS code or protocol changes.
-  The bundled companion's build version follows phone packaging metadata, but
-  this does not require reinstalling a working companion or watch debugging.
-  The owner confirmed a fresh reading, trend and reading age on the installed
-  watch after the private phone update. Check release-artifact compatibility.
+- Repository quality, the guarded dependency audit, signed build and exact
+  artifact checks completed for source `d0db9ca88990590b59717df4c9fde3e57c60ff2d`.
+  See [release status](RELEASE_STATUS.md) for the unchanged, time-limited
+  two-advisory security exception.
+- The signed phone APK installed over the existing app, keeping its local data
+  and saved provider choices. The targeted 16-question run above distinguished
+  actual model calls from local answers. The owner's usual OpenAI selection was
+  restored after testing. Eight planned provider/case combinations remained
+  untested; a full 120-answer comparison was not claimed.
+- This is a phone-only update with no Wear OS code or glucose-protocol change.
+  The existing Galaxy Watch 8 companion stayed connected with an active face
+  and queued glucose; a visible watch-screen acknowledgement was not captured.
+  Reinstalling the companion or enabling watch debugging was unnecessary.
+- The public privacy policy discloses the optional ChatGPT route. Provider
+  account, billing, age, region, privacy and retention terms still apply.
 
 ## Safe phone updates
 

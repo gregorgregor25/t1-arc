@@ -99,8 +99,9 @@ Proceed when either an appropriately reviewed patched upstream distribution
 is available, or a genuine compatible replacement/removal is implemented and
 verified. Pin the resulting dependency graph, rerun the regression and normal
 behaviour checks, then require the existing security and build checks to pass.
-The exact signed public APK still needs device/update verification, including
-the user's saved OpenAI provider and existing Wear companion compatibility.
+At that initial review stage, the exact signed public APK still needed
+device/update verification, including the user's saved OpenAI provider and
+existing Wear companion compatibility. The 1.7.17 outcome is recorded below.
 
 ## Completed exposure assessment and approved conditional exception
 
@@ -251,7 +252,7 @@ from clean source `1ae30d3639e3b2ccafb10b110366296f8c1bf2c5`. Publication remain
 held because phone backups exposed a pre-existing Health Connect read-window
 reconciliation issue. These checks cannot stand in for 1.7.17 acceptance.
 
-## Health Connect correction in the 1.7.17 candidate
+## Health Connect correction and 1.7.17 signed-build outcome
 
 Android 1.7.17, phone code 74 and generated Wear code 75, carries forward the
 same two-advisory exception and unchanged **2026-10-12 00:00 UTC** expiry.
@@ -265,14 +266,21 @@ disable or bypass that check. All 844 non-root installation paths remain
 present, with no added or removed paths; 25 non-root entries changed version
 and associated metadata. Several transitive resolutions also move within their
 unchanged permitted ranges; those are included in the reviewed graph rather
-than described as mandatory Expo changes. This graph needs fresh independent review rather
-than the earlier root-version-only comparison. The committed lockfile LF SHA-256 is
+than described as mandatory Expo changes. This graph received independent
+review rather than the earlier root-version-only comparison. The committed
+lockfile LF SHA-256 is
 `550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9`.
 A fresh production audit reported 16 high findings from the two original leaf
 advisories, with no other severity. `@expo/metro-file-map` is no longer affected
 and was removed from the affected-package allowlist. The affected leaf versions
 remain braces 3.0.3 and node-forge 1.4.0; the separately patched source-map-js
 remains 1.2.2. Unreviewed lock drift or a renewed finding on the patched Expo
-file-map package still fails closed. Review must be followed by fresh
-quality, audit, guarded signed build, exact downloaded-APK bundle comparison
-and device checks. Those 1.7.17 gates are pending.
+file-map package still fails closed. Quality checks, the full guarded audit,
+Linux signed build, source-map inspection and exact downloaded-APK bundle
+comparison completed for source `d0db9ca88990590b59717df4c9fde3e57c60ff2d`
+in workflow `37478472400`. The signed phone APK then installed in place on a
+Pixel 10 Pro XL running Android 17. This evidence applies to that exact
+artifact and does not expand the advisory scope or move the **2026-10-12
+00:00 UTC** expiry. Neither dependency has thereby been fixed; later guarded
+builds still fail closed on expiry, drift or a new finding. Publication status
+is shown by [GitHub Releases](https://github.com/gregorgregor25/t1-arc/releases).
