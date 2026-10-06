@@ -64,6 +64,10 @@ how meals, insulin and activity lined up with glucose.
 
 Tarv1s keeps supporting dates and records attached to its answers. It should
 say when the available evidence is incomplete instead of filling in the gaps.
+For example, a Glooko import may provide daily basal totals without the timed
+delivery history. Tarv1s can use those totals for a day or week and explain why
+it cannot say when that basal was delivered. Sleep and glucose questions keep
+both kinds of records in view without treating their association as a cause.
 Supported exact questions are answered on the phone for free. For broader
 questions, you can optionally use an eligible ChatGPT plan through **Continue
 with ChatGPT**, or connect directly to OpenAI, Google Gemini or Anthropic Claude
@@ -72,10 +76,13 @@ chosen provider only when you tap Send. ChatGPT uses models offered to that
 account and never silently falls back to an API key.
 
 The ChatGPT route completed two record-free answers on a private production-
-package phone build. The exact public APK has separate release checks. See the
+package phone build. Personal-data answers and the exact public APK have
+separate release checks. See the
 [ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
 
-The default OpenAI model is **GPT-5.6 Luna**. An illustrative Luna question
+The default OpenAI API model is **GPT-5.6 Luna**; GPT-6.1 Sol is another API
+choice when the user's API account has access. ChatGPT plan models come from
+the connected account and may differ. An illustrative Luna question
 costs **less than half a US cent**, but usage varies with the question and
 answer. Each provider bills its own API usage; T1 Arc adds no markup. Check the
 provider's official pricing before use. [See the Luna cost example](docs/TARV1S_BYOK.md#openai-luna-cost-example).
@@ -152,6 +159,9 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
 ### Bring diabetes records together
 
 - Show current glucose, direction, freshness and recent history.
+- Explore the Today glucose chart in a compact four-hour view, switch to eight,
+  twelve or twenty-four hours, and tap or drag to inspect a reading and nearby
+  meal, insulin or note context. Add a meal or note at the selected time.
 - Put glucose, basal insulin, bolus insulin, food and context on an inspectable
   timeline.
 - Connect to LibreLinkUp, Dexcom Share, Nightscout, Medtrum EasyFollow, xDrip,

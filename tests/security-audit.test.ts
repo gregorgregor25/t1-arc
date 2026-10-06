@@ -109,8 +109,9 @@ describe('temporary production dependency audit exception', () => {
     ['expiry', { now: new Date('2026-10-12T00:00:00Z') }],
     ['invalid clock', { now: new Date('invalid') }],
     ['lock hash drift', { lockfileSha256: '0'.repeat(64) }],
-    ['app version drift', { appConfig: { expo: { version: '1.7.15', android: baseContext.appConfig.expo.android } } }],
-    ['Android code drift', { appConfig: { expo: { ...baseContext.appConfig.expo, android: { ...baseContext.appConfig.expo.android, versionCode: 69 } } } }],
+    ['app version drift', { appConfig: { expo: { version: '1.7.16', android: baseContext.appConfig.expo.android } } }],
+    ['previous release version', { appConfig: { expo: { version: '1.7.14', android: { ...baseContext.appConfig.expo.android, versionCode: 68 } } } }],
+    ['Android code drift', { appConfig: { expo: { ...baseContext.appConfig.expo, android: { ...baseContext.appConfig.expo.android, versionCode: 71 } } } }],
     ['dependency drift', { lockfile: { ...baseContext.lockfile, packages: { ...baseContext.lockfile.packages, 'node_modules/braces': { version: '3.0.4' } } } }],
   ])('rejects %s while an exception is needed', (_label, change) => {
     expect(evaluateAuditReport(report({ braces: bracesFinding() }), {

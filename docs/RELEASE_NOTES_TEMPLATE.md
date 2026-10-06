@@ -1,6 +1,6 @@
 # T1 Arc vX.Y.Z
 
-<!-- Draft for 1.7.14. Replace every X.Y.Z and remaining verification
+<!-- Draft for 1.7.15. Replace every X.Y.Z and remaining verification
 placeholder, verify links against the exact release tag, and remove this
 comment before publication. -->
 
@@ -30,6 +30,11 @@ encrypted backup before updating.
   selection clearer. OpenAI API-key users can choose GPT-6.1 Sol; the OpenAI
   Luna default is unchanged. GPT-6.1 availability through a ChatGPT plan
   depends on that account's model list.
+- **Clearer personal-data answers.** Tarv1s now retains requested sleep records
+  when comparing sleep with glucose. It can use imported daily basal totals for
+  sums, averages and comparisons, and explains when the source lacks the
+  hour-by-hour delivery detail needed for an hourly answer. Missing or
+  conflicting days are not counted as zero.
 - General diabetes explanations now reject a specific misleading claim that
   glucose readings alone establish the clinical severity of hypoglycaemia.
   AI answers still need review and must not be used to make treatment decisions.
@@ -86,6 +91,8 @@ need reinstalling solely because the phone version increased.
 - Backup and restore with synthetic records: pass/fail.
 - Today chart, ChatGPT answer, all saved-provider choices and existing watch
   companion: list the routes exercised on this exact APK and their results.
+- Personal glucose/sleep and daily-basal answers: record exact-APK results
+  against the phone's source records, including a missing-hourly-detail question.
 - Food catalogue, offline barcode, label review and recipe portions: list the
   routes exercised on this exact APK, with any untested limits.
 - Manual update check and public release metadata: pass/fail.

@@ -1,11 +1,11 @@
-# Tarv1s and your AI provider API key
+# Tarv1s AI connections
 
 Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic
 Claude API key. API-key connections follow the same setup. There is no bundled
 maintainer key, hidden free allowance or relay server in the normal app path.
 
-The 1.7.14 source includes **Continue with ChatGPT** as an independent option
-for eligible ChatGPT plans; it does not require an API key. Real-account phone
+The corrected 1.7.15 candidate includes **Continue with ChatGPT** as an independent
+option for eligible ChatGPT plans; it does not require an API key. Real-account phone
 validation is recorded in [ChatGPT setup and validation](CHATGPT_CONNECTION.md).
 Check the [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases)
 for public APK availability. Local answers and all three API-key options remain
@@ -26,7 +26,7 @@ saved key applies to the provider selected in settings; privacy erase removes al
 three keys, ChatGPT credentials and account mappings, the selected provider,
 safety identifier and usage counters.
 
-The 1.7.14 source's API-key choices are GPT-5.6 Luna, Terra and GPT-6.1 Sol; Gemini 3.8 Flash and 3.7
+The candidate's API-key choices are GPT-5.6 Luna, Terra and GPT-6.1 Sol; Gemini 3.8 Flash and 3.7
 Flash; and Claude Haiku 4.5, Sonnet 5 and Opus 5.5. The defaults are Luna,
 Gemini 3.8 Flash and Claude Sonnet 5. There is no automatic model substitution
 and no Recommended badge. Token usage is recorded for all providers. The
@@ -37,6 +37,8 @@ or Claude price is inferred from OpenAI rates. Check the selected provider's
 [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing),
 also linked in settings. ChatGPT, Gemini and Claude chat subscriptions are
 separate from API billing.
+ChatGPT plan models are fetched from the signed-in account; an API-key model
+such as GPT-6.1 Sol is available there only if that account offers it.
 
 Requests go directly from the phone to the selected provider. The same bounded
 evidence planner, local calculations, output validation and treatment boundaries
@@ -116,6 +118,13 @@ Simple results lead with the answer. **View calculation and records** opens the
 supporting details. Missing data and other limitations that affect an answer
 remain visible; a shorter presentation does not mean the app filled gaps or
 became more certain.
+
+Daily basal totals can answer day-level or complete-day comparisons even when
+the source has no detailed delivery timeline. Tarv1s should say so plainly and
+avoid calculating an hourly amount from a whole-day total. It should also flag
+partial or disagreeing source totals instead of treating missing insulin as
+zero. Questions combining sleep and glucose should show the available records
+and their dates without claiming one caused the other.
 
 ## Save an answer or prepare appointment notes
 
