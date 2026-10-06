@@ -175,9 +175,9 @@ function extractDurations(
 ): TarvisDurationLiteral[] {
   const durations: TarvisDurationLiteral[] = [];
   for (const number of numbers) {
-    const suffix = question.slice(number.end, number.end + 18);
+    const suffix = question.slice(number.end, number.end + 28);
     const unitMatch =
-      /^(?:\s*|-)(minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|wks?|w|months?|mos?)\b/i.exec(
+      /^(?:\s*|-)(?:completed\s+)?(minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|wks?|w|months?|mos?)\b/i.exec(
         suffix,
       );
     if (!unitMatch) continue;
@@ -185,6 +185,7 @@ function extractDurations(
     if (!unitRaw) continue;
     const unit = durationUnit(unitRaw);
     if (!unit) continue;
+    if (/\bcompleted\b/i.test(unitMatch[0]) && unit !== "day" && unit !== "week") continue;
     const end = number.end + unitMatch[0].length;
     durations.push({
       raw: question.slice(number.start, end),

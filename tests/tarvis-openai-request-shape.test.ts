@@ -9,6 +9,10 @@ import {
   planTarvisEvidenceRequest,
 } from "@/data/tarvis/openAiClient";
 import { buildTarvisEvidencePlanningOptions } from "@/data/tarvis/evidencePlanner";
+import { currentPeriodTarvisEvidence, selectTarvisEvidencePacket } from "@/data/tarvis/evidencePacket";
+import { buildSelectedHealthEvidencePacket } from "@/data/tarvis/selectedHealthEvidence";
+import type { InsightReport } from "@/domain/insights";
+import { createTarvisHealthEntry } from "@/domain/tarvisEntry";
 import {
   NICE_TYPE_1_CHILD_SICK_DAY_KNOWLEDGE,
   NICE_TYPE_1_EXERCISE_KNOWLEDGE,
@@ -541,6 +545,117 @@ describe("Tarv1s direct model-request shape", () => {
     expect(result.answerSource).toBe("local");
     expect(result.modelRequestSent).toBe(true);
     expect(result.requestMetrics).toBeDefined();
+  });
+
+  it("sends only the requested current records for fresh basal/glucose questions, retaining prior records for an explicit comparison", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      response(JSON.stringify({ findingIds: [] })),
+    );
+    const source = evidencePacket();
+    source.comparison.summary = "PRIOR_SECRET_9123 was compared with current records";
+    source.comparison.previous!.glucoseAverage = 876.5;
+    source.comparison.current.sleepMinutesPerNight = 9876;
+    source.comparison.current.mealCarbsPerDay = 6543;
+    source.comparison.current.bolusUnitsPerDay = 4321;
+    source.findings.push({
+      id: "basal-daily-totals", kind: "observation", category: "insulin",
+      title: "Daily basal totals", summary: "Current 20 U; PRIOR_SECRET_9123 previous 91 U",
+      evidenceIds: ["current-basal-daily-totals", "previous-basal-daily-totals"],
+    });
+    source.findings.push({
+      id: "food-sentinel", kind: "observation", category: "food",
+      title: "Food records", summary: "FOOD_SECRET_7654",
+      evidenceIds: ["current-food-sentinel"],
+    });
+    source.evidence.push(
+      { id: "current-basal-daily-totals", label: "Current basal", description: "Current basal totals", range: source.comparison.currentRange, recordCount: 7, examples: [] },
+      { id: "previous-basal-daily-totals", label: "Previous basal", description: "PRIOR_SECRET_9123 previous basal", range: source.comparison.previousRange!, recordCount: 7, examples: [] },
+      { id: "current-food-sentinel", label: "Food data", description: "FOOD_SECRET_7654", range: source.comparison.currentRange, recordCount: 1, examples: [] },
+    );
+    source.evidence[1]!.description = "PRIOR_SECRET_9123 previous glucose";
+    const report = {
+      currentRange: source.comparison.currentRange,
+      current: source.comparison.current,
+      findings: [{ id: "basal-daily-totals", currentPeriodSummary: "Requested period: seven recorded daily basal totals of 20 U each; timing unavailable." }],
+    } as unknown as InsightReport;
+
+    for (const question of [
+      "What do my daily basal totals show over the last seven completed days?",
+      "Compare my daily basal totals and glucose patterns over the last seven days, and explain what the lack of basal timing prevents you from concluding.",
+    ]) {
+      const packet = selectTarvisEvidencePacket(question,
+        currentPeriodTarvisEvidence({ packet: source, references: new Map() }, report, question).packet);
+      await askTarvis(question, packet, [], { epoch: 1 }, { packetIsPreselected: true });
+      const body = String(fetchSpy.mock.lastCall?.[1]?.body);
+      expect(body).not.toContain("PRIOR_SECRET_9123");
+      expect(body).not.toContain("876.5");
+      expect(body).not.toContain("9876");
+      expect(body).not.toContain("6543");
+      expect(body).not.toContain("4321");
+      expect(body).not.toContain("FOOD_SECRET_7654");
+      const input = JSON.parse((JSON.parse(body) as { input: { content: { text: string }[] }[] }).input[0]!.content[0]!.text);
+      expect(input.recentConversation).toEqual([]);
+      expect(input.evidencePacket.comparison.previous).toBeUndefined();
+      if (question.startsWith("Compare")) expect(input.evidencePacket.comparison.summary).toContain("72.3%");
+    }
+
+    const previousQuestion = "Compare my daily basal totals and glucose patterns over the last seven days with the previous seven days.";
+    const previousPacket = selectTarvisEvidencePacket(previousQuestion, source);
+    await askTarvis(previousQuestion, previousPacket, [], { epoch: 1 }, { packetIsPreselected: true });
+    const previousBody = String(fetchSpy.mock.lastCall?.[1]?.body);
+    expect(previousBody).toContain("PRIOR_SECRET_9123");
+    expect(previousBody).not.toContain("9876");
+    expect(previousBody).not.toContain("6543");
+    expect(previousBody).not.toContain("4321");
+    expect(previousBody).not.toContain("FOOD_SECRET_7654");
+  });
+
+  it.each([
+    ["Nutrition", "food", "mealCarbsPerDay", 55],
+    ["Distance and climbing", "activity", "distanceKilometresPerDay", 2.3],
+    ["Health Connect glucose", "vitals", "healthConnectBloodGlucoseMmolL", 7.1],
+  ] as const)("sends the generated %s Health subject and glucose without unrelated or previous records", async (label, category, field, amount) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(JSON.stringify({ findingIds: [] })));
+    const currentRange = { start: Date.parse("2026-09-07T00:00:00+01:00"), end: Date.parse("2026-09-08T00:00:00+01:00") };
+    const previousRange = { start: Date.parse("2026-09-06T00:00:00+01:00"), end: currentRange.start };
+    const entry = createTarvisHealthEntry(currentRange, label);
+    const selectedId = entry.healthMetric === "nutrition" ? "food-context"
+      : entry.healthMetric === "health-glucose" ? "health-connect-vitals" : "health-connect-activity";
+    const current = { ...evidencePacket().comparison.current, [field]: amount,
+      sleepMinutesPerNight: 9876, stepsPerDay: 12345, activeCaloriesPerDay: 6543 };
+    const report = {
+      generatedAt: currentRange.end, currentRange, previousRange, current,
+      previous: { ...current, [field]: 9123 }, ready: true,
+      headline: "PRIOR_HEALTH_9123", summary: "PRIOR_HEALTH_9123",
+      findings: [{
+        id: selectedId, kind: "observation", category,
+        title: "Selected health subject", summary: "CURRENT versus PRIOR_HEALTH_9123",
+        evidence: [
+          { id: "current-selected-health", label: "Current health", description: "Current source-selected health records", range: currentRange,
+            recordIds: ["current-record", "unrelated-same-category-record"], examples: [{ id: "current-record", kind: "health-metric", timestamp: currentRange.start + 1,
+              primary: "UNRELATED_EXAMPLE_12345", secondary: "fixture", sourceId: "fixture" }] },
+          { id: "previous-selected-health", label: "Previous health", description: "PRIOR_HEALTH_9123", range: previousRange,
+            recordIds: ["previous-record"], examples: [] },
+        ],
+      }],
+    } as unknown as InsightReport;
+    const lookup = buildSelectedHealthEvidencePacket(report, entry.healthMetric!);
+    const packet = selectTarvisEvidencePacket(entry.question,
+      currentPeriodTarvisEvidence(lookup, report, entry.question).packet);
+    await askTarvis(entry.question, packet, [], { epoch: 1 }, { packetIsPreselected: true });
+    const body = String(fetchSpy.mock.lastCall?.[1]?.body);
+    expect(body).not.toContain("PRIOR_HEALTH_9123");
+    expect(body).not.toContain("UNRELATED_EXAMPLE_12345");
+    expect(body).not.toContain("9876");
+    expect(body).not.toContain("12345");
+    expect(body).not.toContain("6543");
+    const input = JSON.parse((JSON.parse(body) as { input: { content: { text: string }[] }[] }).input[0]!.content[0]!.text);
+    expect(input.recentConversation).toEqual([]);
+    expect(input.evidencePacket.comparison.previous).toBeUndefined();
+    expect(input.evidencePacket.comparison.current[field]).toBe(amount);
+    expect(input.evidencePacket.comparison.current.glucoseAverage).toBe(7.4);
+    expect(input.evidencePacket.evidence.find(({ id }: { id: string }) => id === "current-selected-health")?.recordCount).toBeUndefined();
+    expect(input.approvedFindingOptions.some(({ id }: { id: string }) => id === selectedId)).toBe(true);
   });
 
   it("fails an injected personal prose field closed to local copy", async () => {

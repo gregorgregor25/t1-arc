@@ -20,14 +20,18 @@ export function focusTarvisEpisodeReviewPacket(
   kind: "low" | "high",
 ): TarvisEvidencePacket {
   const { current, previous } = packet.comparison;
+  const previousRange = packet.comparison.previousRange;
+  if (!previous || !previousRange) return packet;
   // Retain the established missing/sparse-history path, including its evidence.
-  if ([current, previous].some((summary) => summary.glucoseReadings < 100 || summary.coveragePercent < 70)) {
+  if ([current, previous].some((summary) =>
+    summary.glucoseReadings === undefined || summary.glucoseReadings < 100 ||
+    summary.coveragePercent === undefined || summary.coveragePercent < 70)) {
     return packet;
   }
   const glucoseIds = ["current-glucose", "previous-glucose"];
   if (!glucoseIds.every((id) => packet.evidence.some((item) => item.id === id))) return packet;
   const metric = kind === "low" ? "lowGlucoseRuns" : "highGlucoseRuns";
-  if (current[metric] === null || previous[metric] === null) return packet;
+  if (current[metric] == null || previous[metric] == null) return packet;
   const count = (value: number) => formatTarvisNumber(value, { maximumFractionDigits: 0 });
   const format = getCachedDateTimeFormat(getRuntimeRegionalDefaults().locale, {
     timeZone: packet.timezone, day: "numeric", month: "short", year: "numeric",
@@ -36,7 +40,7 @@ export function focusTarvisEpisodeReviewPacket(
   const rangeLabel = (range: { start: number; end: number }) =>
     `${format.format(range.start)} to ${format.format(range.end)}`;
   const recentRange = rangeLabel(packet.comparison.currentRange);
-  const priorRange = rangeLabel(packet.comparison.previousRange);
+  const priorRange = rangeLabel(previousRange);
   const requested = CONTEXT_AREAS.filter(({ terms }) => terms.test(question));
   const context = requested.flatMap(({ ids }) => {
     const rankedIds = /\bbasal\b/i.test(question) && (ids as readonly string[]).includes("basal-daily-totals")

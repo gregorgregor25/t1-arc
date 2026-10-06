@@ -9,6 +9,18 @@ const HEALTH_CATEGORIES: Partial<Record<TarvisHealthMetric, InsightCategory>> = 
   oxygen: 'vitals', 'respiratory-rate': 'vitals', hrv: 'vitals', 'vo2-max': 'vitals',
   temperature: 'vitals', 'cycle-context': 'context',
 };
+const HEALTH_FINDINGS: Partial<Record<TarvisHealthMetric, readonly string[]>> = {
+  sleep: ['recorded-sleep-current-period', 'sleep-context'], nutrition: ['food-context'],
+  weight: ['weight-context'], 'blood-pressure': ['health-connect-vitals'],
+  'heart-rate': ['health-connect-heart-rate'], steps: ['health-connect-activity'],
+  hydration: ['health-connect-hydration'], distance: ['health-connect-activity'],
+  energy: ['health-connect-activity'], workouts: ['activity-context'],
+  'body-composition': ['health-connect-body-composition'],
+  'health-glucose': ['health-connect-vitals'], oxygen: ['health-connect-vitals'],
+  'respiratory-rate': ['health-connect-vitals'], hrv: ['health-connect-vitals'],
+  'vo2-max': ['health-connect-vitals'], temperature: ['health-connect-vitals'],
+  'cycle-context': ['recorded-context-notes'],
+};
 
 /** Keep the explicitly selected Health subject ahead of generic report findings. */
 export function buildSelectedHealthEvidencePacket(report: InsightReport, metric: TarvisHealthMetric) {
@@ -21,10 +33,13 @@ export function buildSelectedHealthEvidencePacket(report: InsightReport, metric:
   // Required findings are still locally evidence-validated by the existing
   // model selection and no-key fallback paths. No new relationship is invented
   // when the report only contains insufficient-coverage limitations.
-  const requiredFindingIds = lookup.packet.findings.filter(finding => finding.category === category && finding.evidenceIds.length > 0)
+  const requestedIds = HEALTH_FINDINGS[metric] ?? [];
+  const requiredFindingIds = lookup.packet.findings.filter(finding => requestedIds.includes(finding.id) && finding.evidenceIds.length > 0)
     .slice(0, 2).map(finding => finding.id);
   const subject = HEALTH_METRIC_LABELS[metric];
-  return { ...lookup, packet: { ...lookup.packet, requiredFindingIds, comparison: {
+  return { ...lookup, packet: { ...lookup.packet, requiredFindingIds,
+    selectedHealthMetric: metric, selectedHealthCategory: category,
+    comparison: {
     ...lookup.packet.comparison,
     headline: `${subject[0]!.toUpperCase()}${subject.slice(1)} in the selected period`,
     // The selected evidence-backed finding should be the first answer text.

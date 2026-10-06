@@ -30,6 +30,35 @@ function expectReady(question: string) {
 }
 
 describe("Tarv1s literal extraction", () => {
+  it("retains the completed-day modifier with its source number", () => {
+    const question = "What was my TIR over the last seven completed days?";
+    const literals = extractTarvisLiterals(question, { now: NOW, timezone: "Europe/London" });
+    expect(literals.durations.map(({ raw, value, unit }) => ({ raw, value, unit }))).toEqual([
+      { raw: "seven completed days", value: 7, unit: "day" },
+    ]);
+    const intent = expectReady(question);
+    expect(intent.intent.temporalScope.value).toEqual({
+      kind: "recent_local_days",
+      count: 7,
+      include: "completed_days",
+    });
+    expect(expectReady("What was my TIR over the last seven days?").intent.temporalScope.value)
+      .toMatchObject({ include: "through_now" });
+  });
+
+  it("does not reinterpret a completed-hour phrase as a completed-day scope", () => {
+    const question = "What was my TIR over the last seven completed hours?";
+    const resolution = resolve(question);
+    expect(resolution.outcome.status).not.toBe("ready");
+  });
+
+  it("does not reinterpret completed calendar weeks as a count of completed days", () => {
+    const resolution = resolve("What was my TIR over the last two completed weeks?");
+    expect(resolution.outcome).toMatchObject({ status: "unsupported" });
+    expect(expectReady("What was my TIR over the last two weeks?").intent.temporalScope.value)
+      .toMatchObject({ kind: "recent_local_days", count: 14, include: "through_now" });
+  });
+
   it("preserves written and digit numbers with their exact source spans", () => {
     const question =
       "Compare the last three days with the past 24h and below 4,0 mmol/L";

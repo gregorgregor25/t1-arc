@@ -86,8 +86,8 @@ interface QuestionSignals {
 
 const MIN_SUMMARY_COVERAGE_PERCENT = 70;
 
-function coverageStatus(summary: TarvisInsightWindowSummary) {
-  if (summary.glucoseReadings === 0) return "unavailable" as const;
+function coverageStatus(summary: Partial<TarvisInsightWindowSummary>) {
+  if (!summary.glucoseReadings || summary.coveragePercent === undefined) return "unavailable" as const;
   return summary.coveragePercent < MIN_SUMMARY_COVERAGE_PERCENT
     ? ("limited" as const)
     : ("sufficient" as const);
@@ -154,7 +154,7 @@ function resolvedQuestionSignals(
 }
 
 function metricsFor(
-  summary: TarvisInsightWindowSummary,
+  summary: Partial<TarvisInsightWindowSummary>,
   signals: QuestionSignals,
 ): TarvisEvidenceMetric[] {
   const metrics: TarvisEvidenceMetric[] = [];
@@ -167,7 +167,7 @@ function metricsFor(
       id: "average-glucose",
       label: observedLabel("Average glucose"),
       value:
-        status === "unavailable" || summary.glucoseAverage === null
+        status === "unavailable" || summary.glucoseAverage == null
           ? null
           : glucoseFromMmolL(summary.glucoseAverage, regional.glucoseUnit),
       decimals: regional.glucoseUnit === "mgDl" ? 0 : 1,
@@ -178,7 +178,7 @@ function metricsFor(
     metrics.push({
       id: "low-events",
       label: observedLabel("Sustained lows"),
-      value: status === "unavailable" ? null : summary.lowGlucoseRuns,
+      value: status === "unavailable" ? null : summary.lowGlucoseRuns ?? null,
       decimals: 0,
     });
   }
@@ -186,7 +186,7 @@ function metricsFor(
     metrics.push({
       id: "high-events",
       label: observedLabel("Sustained highs"),
-      value: status === "unavailable" ? null : summary.highGlucoseRuns,
+      value: status === "unavailable" ? null : summary.highGlucoseRuns ?? null,
       decimals: 0,
     });
   }
@@ -195,21 +195,21 @@ function metricsFor(
       {
         id: "time-below-range",
         label: observedLabel("Below range"),
-        value: status === "unavailable" ? null : summary.timeBelowPercent,
+        value: status === "unavailable" ? null : summary.timeBelowPercent ?? null,
         decimals: 1,
         unit: "%",
       },
       {
         id: "time-in-range",
         label: observedLabel("In range"),
-        value: status === "unavailable" ? null : summary.timeInRangePercent,
+        value: status === "unavailable" ? null : summary.timeInRangePercent ?? null,
         decimals: 1,
         unit: "%",
       },
       {
         id: "time-above-range",
         label: observedLabel("Above range"),
-        value: status === "unavailable" ? null : summary.timeAbovePercent,
+        value: status === "unavailable" ? null : summary.timeAbovePercent ?? null,
         decimals: 1,
         unit: "%",
       },
@@ -283,11 +283,11 @@ function windowsFor(
   const windowFor = (
     label: string,
     range: { start: number; end: number },
-    summary: TarvisInsightWindowSummary,
+    summary: Partial<TarvisInsightWindowSummary>,
   ): TarvisEvidenceWindowPresentation => ({
     label,
     range,
-    recordCount: summary.glucoseReadings,
+    recordCount: summary.glucoseReadings ?? 0,
     coveragePercent: summary.coveragePercent,
     coverageStatus: coverageStatus(summary),
     metrics: metricsFor(summary, signals),
@@ -299,7 +299,7 @@ function windowsFor(
       packet.comparison.current,
     ),
   ];
-  if (signals.comparison) {
+  if (signals.comparison && packet.comparison.previous && packet.comparison.previousRange) {
     windows.push(
       windowFor(
         "Previous period",
@@ -350,7 +350,7 @@ function relevantCoverageEvidenceIds(
 ) {
   const ranges = [
     { preferredId: "current-glucose", range: packet.comparison.currentRange },
-    ...(signals.comparison
+    ...(signals.comparison && packet.comparison.previousRange
       ? [
           {
             preferredId: "previous-glucose",

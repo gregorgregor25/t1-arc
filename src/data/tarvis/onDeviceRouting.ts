@@ -50,7 +50,7 @@ const ANALYTIC_OR_TIME_CUE =
 const EDUCATIONAL_QUESTION =
   /\b(?:what (?:does|is|are)|what's|explain|meaning of|why (?:can|does|do)|how (?:does|do|can)|can|does|dawn phenomenon|time in range actually mean)\b/i;
 const EVIDENCE_SYNTHESIS_QUESTION =
-  /\b(?:why was|usually|patterns?|linked|associated|relationship|make a difference|making (?:the )?.*unreliable|what changed|how (?:have|has|was|were) .*\b(?:been|doing)|how was (?:my )?(?:bg|glucose|blood sugar|sugars?)|quick summary|summari[sz]e|worth reviewing|what should i discuss|discuss with my|was .*\bbad|spot any|seem to|(?:basal|bolus|insulin|carbs?|carbohydrates?).*\b(?:higher|lower|more|less)\b|did i eat more)\b/i;
+  /\b(?:why was|usually|patterns?|linked|associated|relationship|make a difference|making (?:the )?.*unreliable|what changed|what do my daily basal totals? show|how (?:have|has|was|were) .*\b(?:been|doing)|how was (?:my )?(?:bg|glucose|blood sugar|sugars?)|quick summary|summari[sz]e|worth reviewing|what should i discuss|discuss with my|was .*\bbad|spot any|seem to|(?:basal|bolus|insulin|carbs?|carbohydrates?).*\b(?:higher|lower|more|less)\b|did i eat more)\b/i;
 const PERSONAL_EVIDENCE_QUESTION =
   /\bmy\s+(?:recorded\s+)?(?:glucose|blood sugar|sugars?|bg|cgm|sensor|readings?|levels?|numbers?|insulin|basal|bolus|pump|carbs?|meals?|food|activity|exercise|sleep|health data|records?|history|time in range|tir|patterns?)\b|\b(?:today|yesterday|last (?:night|week|month)|past \d+|previous period)\b/i;
 const AMBIGUOUS_PERSONAL_RECORD_RETRIEVAL =

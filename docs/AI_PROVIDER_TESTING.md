@@ -174,10 +174,13 @@ make an AI provider request or change the Wear protocol.
 ## Final release verification
 
 - Run the repository quality workflow on the intended PR head.
-- Run the approved 30-question Tarv1s suite across the four connection choices,
+- Use the approved 30-question Tarv1s suite for repeatable release checks,
   distinguishing local answers from actual AI calls. Check numeric and dated
-  answers against the phone's stored records; restore the owner's OpenAI API
-  selection after testing. Report any skipped question or unavailable model.
+  answers against the phone's stored records; restore the owner's provider and
+  model after testing. Record the exact cases, routes and unavailable checks.
+  A full four-provider run needs a target that preserves existing conversations
+  and respects spending and request limits. Do not rotate the owner's saved
+  history to force a 120-case run; report a targeted run as targeted.
 - Confirm the exact signed production build preserves the provider choices,
   secure keys, local counts and existing Wear companion protocol. The private
   phone build and passing older commits cannot stand in for release verification.
