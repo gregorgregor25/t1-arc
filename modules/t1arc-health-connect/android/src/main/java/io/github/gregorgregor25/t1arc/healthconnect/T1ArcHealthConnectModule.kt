@@ -678,7 +678,8 @@ private suspend fun readWorkoutPage(
       val page =
         readPage(client, PowerRecord::class, timeRange, origins, actualToken) { record ->
           record.samples.map { sample ->
-            commonRecord(record.metadata, "workout_power", sample.time, sample.time) +
+            commonRecord(record.metadata, "workout_power", sample.time, sample.time)
+              .withParentBounds(record.startTime, record.endTime) +
               mapOf(
                 "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
                 "parentExternalId" to record.metadata.id,
@@ -693,7 +694,8 @@ private suspend fun readWorkoutPage(
       val page =
         readPage(client, SpeedRecord::class, timeRange, origins, actualToken) { record ->
           record.samples.map { sample ->
-            commonRecord(record.metadata, "workout_speed", sample.time, sample.time) +
+            commonRecord(record.metadata, "workout_speed", sample.time, sample.time)
+              .withParentBounds(record.startTime, record.endTime) +
               mapOf(
                 "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
                 "parentExternalId" to record.metadata.id,
@@ -710,7 +712,8 @@ private suspend fun readWorkoutPage(
       val page =
         readPage(client, StepsCadenceRecord::class, timeRange, origins, actualToken) { record ->
           record.samples.map { sample ->
-            commonRecord(record.metadata, "walking_cadence", sample.time, sample.time) +
+            commonRecord(record.metadata, "walking_cadence", sample.time, sample.time)
+              .withParentBounds(record.startTime, record.endTime) +
               mapOf(
                 "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
                 "parentExternalId" to record.metadata.id,
@@ -734,7 +737,8 @@ private suspend fun readWorkoutPage(
           actualToken,
         ) { record ->
           record.samples.map { sample ->
-            commonRecord(record.metadata, "cycling_cadence", sample.time, sample.time) +
+            commonRecord(record.metadata, "cycling_cadence", sample.time, sample.time)
+              .withParentBounds(record.startTime, record.endTime) +
               mapOf(
                 "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
                 "parentExternalId" to record.metadata.id,
@@ -766,7 +770,8 @@ private suspend fun readHeartRatePage(
     val heartRate =
       readPage(client, HeartRateRecord::class, timeRange, origins, actualToken) { record ->
         record.samples.map { sample ->
-          commonRecord(record.metadata, "heart_rate", sample.time, sample.time) +
+          commonRecord(record.metadata, "heart_rate", sample.time, sample.time)
+            .withParentBounds(record.startTime, record.endTime) +
             mapOf(
               "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
               "parentExternalId" to record.metadata.id,
@@ -923,7 +928,9 @@ private suspend fun readVitalsPage(
     "pressure" -> {
       val page =
         readPage(client, BloodPressureRecord::class, timeRange, origins, actualToken) { record ->
-          val common = commonRecord(record.metadata, "blood_pressure_systolic", record.time, record.time)
+          val common =
+            commonRecord(record.metadata, "blood_pressure_systolic", record.time, record.time)
+              .withParentBounds(record.time, record.time)
           listOf(
             common +
               mapOf(
@@ -1190,7 +1197,8 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
       listOf(normalizeExerciseSession(record))
     is PowerRecord ->
       record.samples.map { sample ->
-        commonRecord(record.metadata, "workout_power", sample.time, sample.time) +
+        commonRecord(record.metadata, "workout_power", sample.time, sample.time)
+          .withParentBounds(record.startTime, record.endTime) +
           mapOf(
             "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
             "parentExternalId" to record.metadata.id,
@@ -1200,7 +1208,8 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
       }
     is SpeedRecord ->
       record.samples.map { sample ->
-        commonRecord(record.metadata, "workout_speed", sample.time, sample.time) +
+        commonRecord(record.metadata, "workout_speed", sample.time, sample.time)
+          .withParentBounds(record.startTime, record.endTime) +
           mapOf(
             "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
             "parentExternalId" to record.metadata.id,
@@ -1210,7 +1219,8 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
       }
     is StepsCadenceRecord ->
       record.samples.map { sample ->
-        commonRecord(record.metadata, "walking_cadence", sample.time, sample.time) +
+        commonRecord(record.metadata, "walking_cadence", sample.time, sample.time)
+          .withParentBounds(record.startTime, record.endTime) +
           mapOf(
             "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
             "parentExternalId" to record.metadata.id,
@@ -1220,7 +1230,8 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
       }
     is CyclingPedalingCadenceRecord ->
       record.samples.map { sample ->
-        commonRecord(record.metadata, "cycling_cadence", sample.time, sample.time) +
+        commonRecord(record.metadata, "cycling_cadence", sample.time, sample.time)
+          .withParentBounds(record.startTime, record.endTime) +
           mapOf(
             "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
             "parentExternalId" to record.metadata.id,
@@ -1230,7 +1241,8 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
       }
     is HeartRateRecord ->
       record.samples.map { sample ->
-        commonRecord(record.metadata, "heart_rate", sample.time, sample.time) +
+        commonRecord(record.metadata, "heart_rate", sample.time, sample.time)
+          .withParentBounds(record.startTime, record.endTime) +
           mapOf(
             "externalId" to "${record.metadata.id}:${sample.time.toEpochMilli()}",
             "parentExternalId" to record.metadata.id,
@@ -1370,7 +1382,7 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
           "blood_pressure_systolic",
           record.time,
           record.time,
-        )
+        ).withParentBounds(record.time, record.time)
       listOf(
         common +
           mapOf(
@@ -1468,6 +1480,16 @@ private fun commonRecord(
     "deviceModel" to metadata.device?.model,
     "deviceType" to metadata.device?.type,
   )
+
+private fun Map<String, Any?>.withParentBounds(
+  startTime: Instant,
+  endTime: Instant,
+): Map<String, Any?> =
+  this +
+    mapOf(
+      "parentStartTimeMs" to startTime.toEpochMilli().toDouble(),
+      "parentEndTimeMs" to endTime.toEpochMilli().toDouble(),
+    )
 
 private fun normalizeExerciseSession(
   record: ExerciseSessionRecord,

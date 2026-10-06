@@ -83,7 +83,8 @@ describe("explicitly requested sleep evidence", () => {
     expect(answer.headline).toBe("Sleep and glucose in the requested period");
     expect(answer.answer).toContain("time in range");
     expect(answer.answer).toContain("Recorded sleep averaged");
-    expect(answer.answer).toContain("cannot show whether sleep and glucose changed together over time");
+    expect(answer.answer).toContain("sleep ending dates and same-calendar-day CGM can be read side by side");
+    expect(answer.answer).toContain("does not establish a cause");
     expect(answer.answer).not.toContain("The requested period has");
     expect(answer.answer).not.toContain("normalised glucose readings");
     expect(selected.findings.filter(({ id }) => id.startsWith("repeated-glucose-")).map(({ id }) => id)).toEqual(["repeated-glucose-b"]);

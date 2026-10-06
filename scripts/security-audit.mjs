@@ -5,10 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const release = Object.freeze({
-  version: '1.7.16',
-  versionCode: 72,
+  version: '1.7.17',
+  versionCode: 74,
   applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: '9929a5cd1cef55c5ff829d6b162b8e7fbcf7f6bb9d3737225e880ab948f83ad6',
+  lockfileSha256: '550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9',
   expiresAt: '2026-10-12T00:00:00Z',
 });
 
@@ -25,7 +25,7 @@ const advisories = Object.freeze({
   }),
 });
 
-// The reviewed production audit contained these 17 affected packages. A
+// The reviewed 1.7.17 production audit contained these 16 affected packages. A
 // different package or installation path is a new finding, even if npm says it
 // is derived from one of the same advisories.
 const reviewedNodes = Object.freeze({
@@ -33,7 +33,6 @@ const reviewedNodes = Object.freeze({
   '@expo/code-signing-certificates': 'node_modules/@expo/code-signing-certificates',
   '@expo/metro': 'node_modules/@expo/metro',
   '@expo/metro-config': 'node_modules/expo/node_modules/@expo/metro-config',
-  '@expo/metro-file-map': 'node_modules/@expo/metro-file-map',
   '@react-native-community/datetimepicker': 'node_modules/@react-native-community/datetimepicker',
   '@react-native/community-cli-plugin': 'node_modules/@react-native/community-cli-plugin',
   '@react-native/virtualized-lists': 'node_modules/@react-native/virtualized-lists',
@@ -235,7 +234,7 @@ function main() {
     throw new Error(`Security audit blocked: ${evaluation.reason}`);
   }
   if (evaluation.classification === 'conditional-exception') {
-    console.log(`CONDITIONAL ANDROID 1.7.16 EXCEPTION: ${evaluation.reason}`);
+    console.log(`CONDITIONAL ANDROID 1.7.17 EXCEPTION: ${evaluation.reason}`);
     console.log('This audit result requires separate guarded Linux build, APK, review and device checks.');
   } else {
     console.log('Production dependency audit is clean.');

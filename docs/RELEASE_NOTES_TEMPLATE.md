@@ -1,6 +1,6 @@
 # T1 Arc vX.Y.Z
 
-<!-- Draft for 1.7.16. Replace every X.Y.Z and remaining verification
+<!-- Draft for 1.7.17. Replace every X.Y.Z and remaining verification
 placeholder, verify links against the exact release tag, and remove this
 comment before publication. -->
 
@@ -35,6 +35,9 @@ encrypted backup before updating.
   sums, averages and comparisons across corresponding complete calendar days,
   and explains when the source lacks the hour-by-hour delivery detail needed
   for an hourly answer. Missing or conflicting days are not counted as zero.
+  Matched dates can show sleep or daily basal alongside that calendar day's
+  glucose, with sensor coverage and gaps stated. Sleep uses its session-ending
+  date; the comparison is not glucose during sleep and does not establish cause.
   Supported exact calculations remain local even with an AI connection
   selected. For broader personal questions, a provider may select locally
   approved findings or reviewed claims; the app assembles the factual answer,
@@ -42,6 +45,9 @@ encrypted backup before updating.
 - General diabetes explanations now reject a specific misleading claim that
   glucose readings alone establish the clinical severity of hypoglycaemia.
   AI answers still need review and must not be used to make treatment decisions.
+- Health Connect sync preserves records crossing the boundary of its read
+  window. Absence from a partial window is not treated as proof of deletion;
+  explicit source deletion events are still respected.
 - Existing local data, saved API keys and provider choice are retained by an
   in-place update. Back up your data before updating; do not uninstall first.
 

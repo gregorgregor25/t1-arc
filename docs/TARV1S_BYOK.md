@@ -4,7 +4,7 @@ Broader Tarv1s questions can use your own OpenAI, Google Gemini or Anthropic
 Claude API key. API-key connections follow the same setup. There is no bundled
 maintainer key, hidden free allowance or relay server in the normal app path.
 
-The corrected 1.7.16 candidate includes **Continue with ChatGPT** as an independent
+The corrected 1.7.17 candidate includes **Continue with ChatGPT** as an independent
 option for eligible ChatGPT plans; it does not require an API key. Real-account phone
 validation is recorded in [ChatGPT setup and validation](CHATGPT_CONNECTION.md).
 Check the [GitHub releases](https://github.com/gregorgregor25/t1-arc/releases)

@@ -85,8 +85,10 @@ account and never silently falls back to an API key.
 The ChatGPT route completed two record-free answers on an earlier private
 production-package phone build. The signed 1.7.15 draft passed its build but was
 held after a current-period personal-answer presentation issue appeared during
-device testing. The corrected 1.7.16 APK and hosted personal answers still need
-their own checks. See the
+device testing. The signed 1.7.16 draft also remains unpublished: backup
+comparisons exposed a pre-existing Health Connect sync boundary issue. The
+1.7.17 candidate corrects that issue and requires its own signed-artifact and
+device/provider checks. See the
 [ChatGPT connection guide](docs/CHATGPT_CONNECTION.md) for setup and evidence.
 
 The default OpenAI API model is **GPT-5.6 Luna**; GPT-6.1 Sol is another API

@@ -62,19 +62,45 @@ export function buildHealthConnectReconciliationFilter(
   const sourceFilter = preferredSourcePackage
     ? ' AND source_package = ?'
     : '';
+  const safePayload =
+    "CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END";
+  const parentStart =
+    `json_extract(${safePayload}, '$.parentStartTimeMs')`;
+  const parentEnd =
+    `json_extract(${safePayload}, '$.parentEndTimeMs')`;
+  // A paged read cannot prove absence for intervals crossing either bound.
+  // Sample rows carry their sample time, not their parent interval bounds;
+  // legacy samples without parent bounds stay until an explicit change-feed
+  // deletion, while new bounded samples can be reconciled on a full scan.
   return {
     whereSql: `
       kind IN (${kindPlaceholders})
       AND reconciliation_scope = 'current'
-      AND start_ms < ?
-      AND end_ms >= ?
+      AND (
+        (parent_external_id IS NULL
+         AND start_ms >= ?
+         AND start_ms < ?
+         AND (end_ms IS NULL OR end_ms <= ?))
+        OR
+        (parent_external_id IS NOT NULL
+         AND typeof(${parentStart}) IN ('integer', 'real')
+         AND typeof(${parentEnd}) IN ('integer', 'real')
+         AND ${parentStart} >= ?
+         AND ${parentStart} < ?
+         AND ${parentEnd} <= ?
+         AND ${parentEnd} >= ${parentStart})
+      )
       AND imported_at_ms <> ?
       ${sourceFilter}
     `,
     parameters: [
       ...kinds,
+      startTimeMs,
+      endTimeMs,
       endTimeMs,
       startTimeMs,
+      endTimeMs,
+      endTimeMs,
       importedAt,
       ...(preferredSourcePackage ? [preferredSourcePackage] : []),
     ],

@@ -13,6 +13,7 @@ const persistence = vi.hoisted(() => {
   const transactionEvents: string[][] = [];
   const recordWritesPerTransaction: number[] = [];
   const recordDeletesPerTransaction: number[] = [];
+  const recordPayloads: string[] = [];
   const sourceWritesPerTransaction: number[] = [];
   const withT1ArcTransaction = vi.fn(
     async (work: (database: Record<string, unknown>) => Promise<unknown>) => {
@@ -32,6 +33,9 @@ const persistence = vi.hoisted(() => {
           events.push('write');
           if (/INSERT INTO health_connect_records/.test(sql)) {
             recordWrites += 1;
+            if (typeof parameters[11] === 'string') {
+              recordPayloads.push(parameters[11]);
+            }
           }
           if (/DELETE FROM health_connect_records/.test(sql)) {
             // The filter binds each id once for external_id and once for
@@ -66,6 +70,7 @@ const persistence = vi.hoisted(() => {
     },
     activeTransactionEvents: () => activeTransactionEvents,
     recordDeletesPerTransaction,
+    recordPayloads,
     recordWritesPerTransaction,
     sourceWritesPerTransaction,
     transactionEvents,
@@ -129,6 +134,7 @@ describe('Health Connect write batching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     persistence.recordDeletesPerTransaction.length = 0;
+    persistence.recordPayloads.length = 0;
     persistence.recordWritesPerTransaction.length = 0;
     persistence.sourceWritesPerTransaction.length = 0;
     persistence.transactionEvents.length = 0;
@@ -159,6 +165,32 @@ describe('Health Connect write batching', () => {
       1,
     ]);
     expect(persistence.sourceWritesPerTransaction).toEqual([1, 1, 1]);
+  });
+
+  it('retains sampled parent interval bounds in the local record payload', async () => {
+    const sampled: HealthConnectRecord = {
+      ...stepRecord(1),
+      externalId: 'heart-parent:sample',
+      parentExternalId: 'heart-parent',
+      kind: 'heart_rate',
+      startTimeMs: 1_500,
+      endTimeMs: 1_500,
+      parentStartTimeMs: 900,
+      parentEndTimeMs: 1_600,
+      value: 82,
+      unit: 'bpm',
+    };
+
+    await writeHealthConnectPageInBatches([sampled], [], 123_000, lease);
+
+    expect(persistence.recordPayloads).toHaveLength(1);
+    expect(JSON.parse(persistence.recordPayloads[0]!)).toMatchObject({
+      parentExternalId: 'heart-parent',
+      startTimeMs: 1_500,
+      endTimeMs: 1_500,
+      parentStartTimeMs: 900,
+      parentEndTimeMs: 1_600,
+    });
   });
 
   it('bounds and de-duplicates change-page deletions', async () => {

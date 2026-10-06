@@ -43,6 +43,8 @@ export interface HealthConnectSource {
 export interface HealthConnectRecord {
   externalId: string;
   parentExternalId?: string | null;
+  parentStartTimeMs?: number;
+  parentEndTimeMs?: number;
   kind:
     | 'steps'
     | 'distance'

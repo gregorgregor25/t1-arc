@@ -41,6 +41,7 @@ import {
   toDateKey,
   zonedDateTimeToTimestamp,
 } from "./time";
+import type { DateKey } from "./time";
 import type {
   EvidenceClockWindowOccurrence,
   EvidenceClockWindowSegment,
@@ -260,6 +261,8 @@ export interface InsightReport {
   current: InsightWindowSummary;
   previous: InsightWindowSummary;
   findings: InsightFinding[];
+  /** Locally calculated same-date observations for a single requested period. */
+  currentOnlyPairFindings?: InsightFinding[];
 }
 
 export interface InsightAnswer {
@@ -2012,6 +2015,154 @@ export function glucoseTimeByDayPart(
   });
 }
 
+const MAX_DISPLAYED_PAIRED_DAYS = 7;
+const MIN_PAIRED_DAY_CGM_COVERAGE_PERCENT = 70;
+
+function completeCalendarGlucoseDays(data: TimelineData) {
+  const days: {
+    dateKey: DateKey;
+    range: { start: number; end: number };
+    readings: GlucoseReading[];
+    glucose: ReturnType<typeof calculateGlucoseStats>;
+  }[] = [];
+  const glucoseByDate = new Map<DateKey, GlucoseReading[]>();
+  for (const reading of data.glucose) {
+    if (reading.timestamp < data.range.start || reading.timestamp >= data.range.end) continue;
+    const key = toDateKey(reading.timestamp);
+    const existing = glucoseByDate.get(key) ?? [];
+    existing.push(reading);
+    glucoseByDate.set(key, existing);
+  }
+  let dateKey = toDateKey(data.range.start);
+  const lastDate = toDateKey(Math.max(data.range.start, data.range.end - 1));
+  while (dateKey <= lastDate) {
+    const range = {
+      start: zonedDateTimeToTimestamp(dateKey),
+      end: zonedDateTimeToTimestamp(addDays(dateKey, 1)),
+    };
+    if (range.start >= data.range.start && range.end <= data.range.end) {
+      const readings = glucoseByDate.get(dateKey) ?? [];
+      days.push({ dateKey, range, readings, glucose: calculateGlucoseStats(readings, range) });
+    }
+    dateKey = addDays(dateKey, 1);
+  }
+  return days;
+}
+
+function pairedDayDetails(paired: string[], missing: string[]) {
+  if (!paired.length && !missing.length)
+    return "No complete local calendar day falls inside the requested period, so day pairs are unavailable.";
+  const pairedShown = paired.slice(-MAX_DISPLAYED_PAIRED_DAYS);
+  const missingShown = missing.slice(-MAX_DISPLAYED_PAIRED_DAYS);
+  return [
+    pairedShown.length
+      ? `${paired.length > pairedShown.length ? `Latest ${pairedShown.length} of ${paired.length} paired dates` : "Paired dates"}: ${pairedShown.join("; ")}.`
+      : "No dates had both usable records and adequate same-date sensor coverage.",
+    missingShown.length
+      ? `${missing.length > missingShown.length ? `Latest ${missingShown.length} of ${missing.length} unpaired dates` : "Unpaired dates"}: ${missingShown.join("; ")}. Missing values were not treated as zero.`
+      : "All complete dates had a usable pair.",
+  ].join(" ");
+}
+
+function currentOnlyPairedFindings(data: TimelineData): InsightFinding[] {
+  const days = completeCalendarGlucoseDays(data);
+  const basalDays = completeSourceBasalDays(data);
+  const basalByDate = new Map(basalDays.withBasal.map((day) => [day.dateKey, day]));
+  const basalStatusByDate = new Map(basalDays.completeDays.map((day) => [day.dateKey, day]));
+  const insulinSourceMissing = data.sources.some(
+    (source) => source.label === "Insulin" && source.freshness === "missing",
+  );
+  const selectedSleeps = data.context.filter(
+    (event): event is SleepEvent => event.kind === "sleep",
+  );
+  const sleepsByEndingDate = new Map<DateKey, SleepEvent[]>();
+  let boundarySleeps = 0;
+  for (const sleep of new Map(selectedSleeps.map((event) => [event.id, event])).values()) {
+    if (sleep.start < data.range.start || sleep.end === undefined ||
+        sleep.end >= data.range.end || sleep.end <= sleep.start ||
+        !Number.isFinite(sleep.durationMinutes) || sleep.durationMinutes <= 0) {
+      boundarySleeps += 1;
+      continue;
+    }
+    const dateKey = toDateKey(sleep.end);
+    const entries = sleepsByEndingDate.get(dateKey) ?? [];
+    entries.push(sleep);
+    sleepsByEndingDate.set(dateKey, entries);
+  }
+
+  const sleepPairs: string[] = [];
+  const sleepMissing: string[] = [];
+  const sleepPairRecordIds: string[][] = [];
+  const basalPairs: string[] = [];
+  const basalMissing: string[] = [];
+  const basalPairRecordIds: string[][] = [];
+  for (const day of days) {
+    const cgmReady = day.readings.length > 0 &&
+      day.glucose.coveragePercent >= MIN_PAIRED_DAY_CGM_COVERAGE_PERCENT &&
+      day.glucose.averageMmolL !== null;
+    const cgmDetail = cgmReady
+      ? `same-date CGM ${regionalNumber(day.glucose.timeInRangePercent, 1)}% in range, mean ${regionalGlucose(day.glucose.averageMmolL!)} (${regionalNumber(day.glucose.coveragePercent, 1)}% observed)`
+      : undefined;
+    const sleeps = sleepsByEndingDate.get(day.dateKey) ?? [];
+    if (sleeps.length && cgmReady) {
+      const recordedMinutes = sleeps.reduce((total, sleep) => total + sleep.durationMinutes, 0);
+      sleepPairs.push(`${day.dateKey}: ${sleeps.length} recorded sleep ${sleeps.length === 1 ? "session" : "sessions"} ending that day (${regionalNumber(recordedMinutes / 60, 1)} h across recorded sessions); ${cgmDetail}`);
+      sleepPairRecordIds.push([...sleeps.map(({ id }) => id), ...day.readings.map(({ id }) => id)]);
+      if (sleepPairRecordIds.length > MAX_DISPLAYED_PAIRED_DAYS) sleepPairRecordIds.shift();
+    } else {
+      sleepMissing.push(`${day.dateKey} (${sleeps.length
+        ? `CGM coverage ${regionalNumber(day.glucose.coveragePercent, 1)}% or glucose mean unavailable`
+        : "no complete recorded sleep session ending that day"})`);
+    }
+
+    const basal = insulinSourceMissing ? undefined : basalByDate.get(day.dateKey);
+    if (basal && cgmReady) {
+      basalPairs.push(`${day.dateKey}: source-reported basal ${regionalNumber(basal.sourceTotal!.basalUnits!, 1)} U; ${cgmDetail}`);
+      basalPairRecordIds.push([basal.sourceTotal!.id, ...day.readings.map(({ id }) => id)]);
+      if (basalPairRecordIds.length > MAX_DISPLAYED_PAIRED_DAYS) basalPairRecordIds.shift();
+    } else {
+      const status = basalStatusByDate.get(day.dateKey);
+      basalMissing.push(`${day.dateKey} (${!basal
+        ? insulinSourceMissing ? "insulin source unavailable" : status?.sourceAlternatives.length
+          ? "conflicting daily basal totals" : status?.partial
+          ? "partial daily insulin source" : "no usable source-reported daily basal total"
+        : `CGM coverage ${regionalNumber(day.glucose.coveragePercent, 1)}% or glucose mean unavailable`})`);
+    }
+  }
+  const makeReference = (id: string, label: string, recordBatches: string[][], pairCount: number): EvidenceReference => ({
+    id,
+    label,
+    description: `${regionalNumber(pairCount, 0)} complete same-date pairs calculated from selected local records; record references cover only the latest ${Math.min(pairCount, MAX_DISPLAYED_PAIRED_DAYS)} displayed pairs; no individual record examples are shared`,
+    range: data.range,
+    recordIds: [...new Set(recordBatches.flat())],
+    examples: [],
+  });
+  const findings: InsightFinding[] = [
+    {
+      id: "current-sleep-glucose-day-pairs",
+      kind: sleepPairs.length ? "context-clue" : "limitation",
+      category: "sleep",
+      title: "Recorded sleep and same-date glucose",
+      summary: "Current-period day pairs are available separately from the two-period Insights comparison.",
+      currentPeriodSummary: `Across ${regionalNumber(sleepPairs.length, 0)} of ${regionalNumber(days.length, 0)} complete local calendar days, a recorded sleep session ending that day could be paired with adequately observed CGM for that same day. ${pairedDayDetails(sleepPairs, sleepMissing)}${boundarySleeps ? ` ${regionalNumber(boundarySleeps, 0)} sleep session${boundarySleeps === 1 ? "" : "s"} crossing the requested boundary or lacking complete timing were excluded from these pairs.` : ""}`,
+      caveat: "Same-date CGM describes the calendar day, not glucose during sleep. These observations cannot establish that sleep caused a glucose pattern.",
+      evidence: [makeReference("current-sleep-glucose-pairs", "Recorded sleep and same-date CGM", sleepPairRecordIds, sleepPairs.length)],
+    },
+    {
+      id: "current-basal-glucose-day-pairs",
+      kind: basalPairs.length ? "context-clue" : "limitation",
+      category: "insulin",
+      title: "Daily basal totals and same-date glucose",
+      summary: "Current-period day pairs are available separately from the two-period Insights comparison.",
+      currentPeriodSummary: `Across ${regionalNumber(basalPairs.length, 0)} of ${regionalNumber(days.length, 0)} complete local calendar days, a usable source-reported basal total could be paired with adequately observed CGM for the same date. ${pairedDayDetails(basalPairs, basalMissing)}`,
+      caveat: "Daily basal totals have no delivery times; same-date CGM cannot show when basal was delivered, explain glucose changes or guide a dose change.",
+      evidence: [makeReference("current-basal-glucose-pairs", "Source daily basal totals and same-date CGM", basalPairRecordIds, basalPairs.length)],
+    },
+  ];
+  return findings.filter((finding) =>
+    finding.category === "sleep" ? selectedSleeps.length > 0 : basalDays.withBasal.length > 0);
+}
+
 export function buildInsightReport(
   currentData: TimelineData,
   previousData: TimelineData,
@@ -2028,6 +2179,7 @@ export function buildInsightReport(
     current.glucoseReadings >= 100 &&
     previous.glucoseReadings >= 100;
   const findings: InsightFinding[] = [];
+  const currentOnlyPairFindings = currentOnlyPairedFindings(currentData);
 
   if (!ready) {
     // A glucose comparison may be unavailable while authoritative daily
@@ -2097,6 +2249,7 @@ export function buildInsightReport(
       current,
       previous,
       findings,
+      currentOnlyPairFindings,
     };
   }
 
@@ -3429,6 +3582,7 @@ export function buildInsightReport(
     current,
     previous,
     findings,
+    currentOnlyPairFindings,
   };
 }
 

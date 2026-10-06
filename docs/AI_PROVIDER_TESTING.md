@@ -3,14 +3,20 @@
 This records earlier provider choice checks performed for the 1.7.12 candidate
 and later private phone validation. The original comparison build was
 `1.7.12-provider-test.3`, version code 52. The 1.7.14 ChatGPT connection has
-record-free private phone validation; the corrected 1.7.16 candidate's personal
+record-free private phone validation; the corrected 1.7.17 candidate's personal
 data answers and verification on the exact public APK are separate release
 checks.
 
 The signed 1.7.15 workflow passed, but device testing exposed a current-period
 personal-answer presentation regression. The 1.7.15 draft remains unpublished.
-The issue is being corrected for 1.7.16; neither that earlier build nor its
-device finding establishes hosted personal-answer acceptance for 1.7.16.
+The presentation correction was included in 1.7.16. Its signed workflow
+passed, but publication was held when supported phone backups exposed a
+pre-existing Health Connect reconciliation boundary issue. Five targeted
+ChatGPT questions were submitted on 1.7.16. Independent checks confirmed the
+reviewed numbers, but two combined-data answers lacked useful comparison
+detail. These historical results do not establish acceptance of 1.7.17.
+The six-question check through each of the four provider options remains a
+separate final signed-build check, within the existing usage and spending caps.
 
 ## Model choice
 

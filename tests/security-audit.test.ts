@@ -84,6 +84,16 @@ function micromatchFinding(via: unknown[] = ['braces']) {
 }
 
 describe('temporary production dependency audit exception', () => {
+  it('binds the corrected 1.7.17 phone release to the reviewed LF lockfile', () => {
+    expect(baseContext.appConfig.expo.version).toBe('1.7.17');
+    expect(baseContext.appConfig.expo.android.versionCode).toBe(74);
+    expect(baseContext.packageConfig.version).toBe('1.7.17');
+    expect(baseContext.lockfile.version).toBe('1.7.17');
+    expect(baseContext.lockfile.packages[''].version).toBe('1.7.17');
+    expect(lockfileBytes.includes(Buffer.from('\r\n'))).toBe(false);
+    expect(baseContext.lockfileSha256).toBe('550d9537bbcdf0ace0ca44d57ca8d6044444e44e41018d76bfe0a8df59efb6b9');
+  });
+
   it('accepts only the two reviewed leaves and their reviewed derived path', () => {
     const actual = report({
       braces: bracesFinding(),
@@ -110,7 +120,7 @@ describe('temporary production dependency audit exception', () => {
     ['invalid clock', { now: new Date('invalid') }],
     ['lock hash drift', { lockfileSha256: '0'.repeat(64) }],
     ['app version drift', { appConfig: { expo: { version: '0.0.0', android: baseContext.appConfig.expo.android } } }],
-    ['previous release version', { appConfig: { expo: { version: '1.7.14', android: { ...baseContext.appConfig.expo.android, versionCode: 68 } } } }],
+    ['previous release version', { appConfig: { expo: { version: '1.7.16', android: { ...baseContext.appConfig.expo.android, versionCode: 72 } } } }],
     ['Android code drift', { appConfig: { expo: { ...baseContext.appConfig.expo, android: { ...baseContext.appConfig.expo.android, versionCode: baseContext.appConfig.expo.android.versionCode + 2 } } } }],
     ['dependency drift', { lockfile: { ...baseContext.lockfile, packages: { ...baseContext.lockfile.packages, 'node_modules/braces': { version: '3.0.4' } } } }],
   ])('rejects %s while an exception is needed', (_label, change) => {
@@ -146,6 +156,18 @@ describe('temporary production dependency audit exception', () => {
     expect(evaluateAuditReport(newPackage, baseContext).allowed).toBe(false);
     const moved = report({ braces: { ...bracesFinding(), nodes: ['node_modules/other/node_modules/braces'] } });
     expect(evaluateAuditReport(moved, baseContext).allowed).toBe(false);
+  });
+
+  it('rejects a renewed finding on the now-patched Expo Metro file map', () => {
+    const actual = report({
+      braces: bracesFinding(),
+      micromatch: micromatchFinding(),
+      '@expo/metro-file-map': {
+        name: '@expo/metro-file-map', severity: 'high', via: ['micromatch'],
+        nodes: ['node_modules/@expo/metro-file-map'],
+      },
+    });
+    expect(evaluateAuditReport(actual, baseContext).allowed).toBe(false);
   });
 
   it('accepts reviewed graph cycles that reach an approved advisory', () => {
