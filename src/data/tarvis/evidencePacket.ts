@@ -502,12 +502,37 @@ export function currentPeriodTarvisEvidence(
       evidenceIds: [unavailableBasalReference.id],
     });
   }
+  // These are locally computed, current-period pairs. Keep them out of a
+  // single-domain request, including the basal-only and sleep-only routes.
+  const pairedFindings = (!selectedHealthMetric || selectedHealthMetric === "sleep") && requestedGlucose
+    ? (report.currentOnlyPairFindings ?? []).filter((finding) =>
+        finding.id === "current-sleep-glucose-day-pairs"
+          ? requestsSleepEvidence(question)
+          : !selectedHealthMetric && finding.id === "current-basal-glucose-day-pairs" && /\bbasal\b/i.test(question))
+    : [];
+  const pairReferences: EvidenceReference[] = [];
+  for (const finding of pairedFindings) {
+    const reference = finding.evidence[0];
+    if (!reference || reference.range.start !== range.start || reference.range.end !== range.end ||
+        !finding.currentPeriodSummary) continue;
+    pairReferences.push(reference);
+    currentItems.push({
+      id: reference.id, label: reference.label, description: reference.description,
+      range: { ...range }, recordCount: undefined, examples: [],
+    });
+    findings.push({
+      id: finding.id, kind: finding.kind, category: finding.category,
+      title: finding.title, summary: finding.currentPeriodSummary,
+      caveat: finding.caveat, evidenceIds: [reference.id],
+    });
+  }
   const usedIds = new Set(findings.flatMap(({ evidenceIds }) => evidenceIds));
   const selectedHealthDescription = selectedHealthMetric
     ? `Selected ${HEALTH_METRIC_LABELS[selectedHealthMetric]} summary for this requested period; an exact subject-specific source-record count is not available in this packet`
     : undefined;
   const evidence = currentItems.filter(({ id }) => usedIds.has(id)).map((item) =>
-    selectedHealthDescription && item.id !== "current-glucose"
+    selectedHealthDescription && item.id !== "current-glucose" &&
+      !pairReferences.some(({ id }) => id === item.id)
       ? { ...item, label: `Selected ${HEALTH_METRIC_LABELS[selectedHealthMetric!]} summary`,
           description: selectedHealthDescription, recordCount: undefined, examples: [] }
       : item);
@@ -524,7 +549,9 @@ export function currentPeriodTarvisEvidence(
       ? `Recorded sleep averaged ${value(recordedCurrent.sleepMinutesPerNight / 60)} hours per night in this period.`
       : undefined,
     !selectedHealthMetric && categories.has("sleep") && requestedGlucose
-      ? "The available period-level records cannot show whether sleep and glucose changed together over time or whether one caused the other."
+      ? findings.some(({ id, kind }) => id === "current-sleep-glucose-day-pairs" && kind !== "limitation")
+        ? "Recorded sleep ending dates and same-calendar-day CGM can be read side by side below; this is not glucose measured during sleep and does not establish a cause."
+        : "The available period-level records cannot show whether sleep and glucose changed together over time or whether one caused the other."
       : undefined,
     !selectedHealthMetric && categories.has("food") && recordedCurrent.mealCarbsPerDay !== null
       ? `Recorded meal carbohydrates averaged ${value(recordedCurrent.mealCarbsPerDay)} g per day in this period.`
@@ -561,6 +588,7 @@ export function currentPeriodTarvisEvidence(
     requiredFindingIds: [
       ...(lookup.packet.requiredFindingIds?.filter((id) => findings.some((finding) => finding.id === id)) ?? []),
       ...(selectedHealthSummaryReference ? ["selected-health-summary"] : []),
+      ...pairedFindings.filter((finding) => findings.some(({ id }) => id === finding.id)).map(({ id }) => id),
     ],
   };
   return {
@@ -575,6 +603,7 @@ export function currentPeriodTarvisEvidence(
       ] as const),
       ...(unavailableBasalReference ? [[unavailableBasalReference.id, unavailableBasalReference] as const] : []),
       ...(selectedHealthSummaryReference ? [[selectedHealthSummaryReference.id, selectedHealthSummaryReference] as const] : []),
+      ...pairReferences.map((reference) => [reference.id, reference] as const),
     ]),
   };
 }

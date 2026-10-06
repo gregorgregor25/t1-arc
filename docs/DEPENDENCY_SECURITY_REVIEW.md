@@ -1,4 +1,4 @@
-# 1.7.14 dependency security review and 1.7.15/1.7.16 carry-forward
+# 1.7.14 dependency security review and 1.7.15–1.7.17 carry-forward
 
 Reviewed on 5 October 2026 against source commit
 `e505758596d0b7bfc599c6135756d6d1792840dc`. At that point the release
@@ -244,6 +244,24 @@ still expires **2026-10-12 00:00 UTC**. It does not cover the patched
 graphs. Full audit visibility, severity labels, guarded Linux clean prebuild
 and actual Gradle bundling, source-map inspection, exact signed APK bundle
 comparison, unchanged branch/environment protections and final device checks
-remain mandatory. The 1.7.16 audit, guarded build, signed artifact comparison
-and physical-device acceptance are pending; the 1.7.15 checks cannot stand in
-for them.
+remain mandatory. The 1.7.16 audit, guarded build and downloaded signed-artifact
+comparison passed. Its signing workflow was
+[`37460460216`](https://github.com/gregorgregor25/t1-arc/actions/runs/37460460216),
+from clean source `1ae30d3639e3b2ccafb10b110366296f8c1bf2c5`. Publication remains
+held because phone backups exposed a pre-existing Health Connect read-window
+reconciliation issue. These checks cannot stand in for 1.7.17 acceptance.
+
+## Health Connect correction in the 1.7.17 candidate
+
+Android 1.7.17, phone code 74 and generated Wear code 75, carries forward the
+same two-advisory exception and unchanged **2026-10-12 00:00 UTC** expiry.
+The correction changes how absent Health Connect rows are reconciled at read
+boundaries. The watch glucose protocol is unchanged. No dependency version,
+package, integrity, override or advisory scope may change. The new committed
+lockfile LF SHA-256 is
+`f7ebe35da26affad02aa07a8ed1f1ecffb14be3bdf3018b66d02ea61f4a9341f`.
+Its two root-version fields changed from 1.7.16 to 1.7.17; the other 844 package
+entries and all dependency metadata are identical. That hash and version pin
+require independent review, followed by fresh
+quality, audit, guarded signed build, exact downloaded-APK bundle comparison
+and device checks. Those 1.7.17 gates are pending.

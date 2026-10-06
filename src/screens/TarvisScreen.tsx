@@ -1273,6 +1273,7 @@ function TarvisConversationHistory({
                     </Text>
                   </View>
                   <Pressable
+                    testID={`tarvis-history-options-${thread.id}`}
                     accessibilityLabel={`Conversation options for ${thread.title}`}
                     accessibilityRole="button"
                     hitSlop={8}

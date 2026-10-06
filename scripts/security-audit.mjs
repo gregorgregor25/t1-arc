@@ -5,10 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const release = Object.freeze({
-  version: '1.7.16',
-  versionCode: 72,
+  version: '1.7.17',
+  versionCode: 74,
   applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: '9929a5cd1cef55c5ff829d6b162b8e7fbcf7f6bb9d3737225e880ab948f83ad6',
+  lockfileSha256: 'f7ebe35da26affad02aa07a8ed1f1ecffb14be3bdf3018b66d02ea61f4a9341f',
   expiresAt: '2026-10-12T00:00:00Z',
 });
 
@@ -235,7 +235,7 @@ function main() {
     throw new Error(`Security audit blocked: ${evaluation.reason}`);
   }
   if (evaluation.classification === 'conditional-exception') {
-    console.log(`CONDITIONAL ANDROID 1.7.16 EXCEPTION: ${evaluation.reason}`);
+    console.log(`CONDITIONAL ANDROID 1.7.17 EXCEPTION: ${evaluation.reason}`);
     console.log('This audit result requires separate guarded Linux build, APK, review and device checks.');
   } else {
     console.log('Production dependency audit is clean.');

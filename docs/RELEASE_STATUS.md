@@ -39,7 +39,7 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
-### 1.7.16 candidate changes
+### 1.7.17 candidate changes
 
 Release preparation on 5 October 2026 identified two outstanding production
 dependency advisories. The lockfile updates brace-expansion to 5.0.12, but
@@ -51,21 +51,22 @@ packages produce 17 high-severity audit findings. A newly recognized
 patched 1.2.2 release within PostCSS's existing version range; it is not part
 of the exception. The owner approved a
 conditional exception for Android 1.7.14 on 5 October and carried it into the
-unpublished 1.7.15 draft. The corrected Android 1.7.16 candidate continues that
-same narrow scope without claiming a new waiver. The 1.7.16 lockfile differs from the
-1.7.15 reviewed lockfile only in root version metadata; its SHA-256 is
-`9929a5cd1cef55c5ff829d6b162b8e7fbcf7f6bb9d3737225e880ab948f83ad6`.
+unpublished 1.7.15 and 1.7.16 drafts. The corrected Android 1.7.17 candidate
+continues that same narrow scope without claiming a new waiver. Its lockfile
+must differ from the reviewed dependency graph only in root version metadata;
+the exact version and committed lock hash are pinned in the audit guard and
+recorded in the dependency review.
 It still expires 12 October 2026 at 00:00 UTC. The new version and lockfile hash
 must receive independent review; a fresh guarded Linux build, source-map
 inspection and exact signed APK bundle comparison are mandatory. New findings,
 dependency drift, failed evidence or expiry block release. Do not use the audit
 tool's incompatible Expo/React Native downgrades. The public privacy disclosure
-is published; the 1.7.16 signed APK and device checks are pending. The held
-1.7.14 and 1.7.15 drafts have not been published and must not be published as-is.
+is published; the 1.7.17 signed APK and device checks are pending. The held
+1.7.14, 1.7.15 and 1.7.16 drafts have not been published and must not be published as-is.
 The [dependency security review](DEPENDENCY_SECURITY_REVIEW.md) records bundle
 exposure checks and isolated tests of the proposed upstream patches.
 
-The 1.7.16 candidate includes **Continue with ChatGPT** alongside the three API-key
+The 1.7.17 candidate includes **Continue with ChatGPT** alongside the three API-key
 providers. It uses an eligible ChatGPT plan; local answers remain available
 without any AI connection. In a signed, production-package private phone
 build, a real account completed two record-free answers with no API-key fallback.
@@ -76,7 +77,14 @@ selected. The account's own catalogue offered five models, without GPT-6.1.
 These private checks do not substitute for testing the exact public APK. The
 signed 1.7.15 workflow passed, but on-device Q18 testing found a current-period
 personal-answer presentation regression, so that draft remains held. This does
-not establish whether the corrected 1.7.16 personal-answer route works. See
+not establish whether the corrected 1.7.17 personal-answer route works. The
+1.7.16 signed build also passed, but publication was held after phone backup
+comparisons exposed a pre-existing Health Connect reconciliation boundary
+issue. A record overlapping the start of a read could be absent from that
+response yet included in local absence-based deletion. The 1.7.17 candidate
+aligns deletion with the complete read window; it still respects explicit
+Health Connect deletion events. This correction requires source regression
+checks and verification in the exact signed build. See
 [connection details](CHATGPT_CONNECTION.md). The candidate also adds a
 targeted guard against the Gemini severity wording described below; that guard
 does not establish general clinical accuracy.
@@ -101,7 +109,15 @@ Natural-language completed-day requests use full local calendar days, and
 cross-domain basal/glucose comparisons use the corresponding complete dates
 without claiming cause. These corrections passed source tests and a private
 replay of the current phone insulin snapshot, but still require testing in the
-corrected signed 1.7.16 APK.
+corrected signed 1.7.17 APK.
+
+The 1.7.17 candidate adds comparisons across matched calendar dates. Sleep is
+grouped by the date its recorded sessions ended and shown beside that calendar
+day's glucose; this does not describe glucose during sleep. Daily basal totals
+are paired with the same date's glucose summaries. Comparisons require usable
+records and adequate sensor coverage, identify missing dates and never imply
+causation or basal delivery timing. These changes still need final source and
+signed-device validation.
 
 The private.5 phone update (code 66) retained the installed Galaxy Watch 8 companion:
 it remained ready and accepted a queued glucose snapshot. The watch protocol
@@ -112,6 +128,14 @@ did not change, and no watch reinstall or debugging was required.
 - **Imports can be delayed.** Glooko is historical data, not live pump status.
   Health Connect and Hevy depend on their originating apps and Android scheduling.
   A successful check does not guarantee new records.
+- **Older sampled Health Connect records need a refresh for complete bounds.**
+  Newly read samples retain their original interval boundaries. Older imported
+  samples without those boundaries stay protected during absence-based cleanup;
+  a missing partial-window result does not prove they were deleted. A full
+  Health Connect re-read can populate bounds for records still available from
+  the source. Explicit source deletion events remain respected. If a legacy
+  sample's parent was deleted before bounds were stored and its change token
+  has expired, a full scan cannot safely identify that sample as stale.
 - **Label recognition needs review.** Small print, curved packs, glare,
   decimals and multiple columns can cause missing or incorrect values. Check
   every proposed amount against the pack; manual entry remains available.
