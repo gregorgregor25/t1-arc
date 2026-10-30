@@ -11,11 +11,21 @@ import { describe, expect, it } from 'vitest';
 import { evaluateAuditReport } from '../scripts/security-audit.mjs';
 
 const lockfileBytes = readFileSync(new URL('../package-lock.json', import.meta.url));
+const currentLockfile = JSON.parse(lockfileBytes.toString('utf8'));
+const currentLockfileSha256 = createHash('sha256').update(lockfileBytes).digest('hex');
+// Reconstruct a synthetic historical approved context to exercise the fail-closed evaluator.
+// The current lockfile has moved on and must never inherit that exception.
 const baseContext = {
   appConfig: JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8')),
   packageConfig: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
-  lockfile: JSON.parse(lockfileBytes.toString('utf8')),
-  lockfileSha256: createHash('sha256').update(lockfileBytes).digest('hex'),
+  lockfile: {
+    ...currentLockfile,
+    packages: {
+      ...currentLockfile.packages,
+      'node_modules/node-forge': { ...currentLockfile.packages['node_modules/node-forge'], version: '1.4.0' },
+    },
+  },
+  lockfileSha256: 'd18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7',
   now: new Date('2026-10-06T12:00:00Z'),
 };
 
@@ -84,15 +94,19 @@ function micromatchFinding(via: unknown[] = ['braces']) {
 }
 
 describe('temporary production dependency audit exception', () => {
-  it('binds the corrected 1.7.18 phone release to the reviewed LF lockfile and patched shell-quote', () => {
+  it('keeps the 1.7.18 release identity but invalidates its old exception after dependency updates', () => {
     expect(baseContext.appConfig.expo.version).toBe('1.7.18');
     expect(baseContext.appConfig.expo.android.versionCode).toBe(76);
     expect(baseContext.packageConfig.version).toBe('1.7.18');
     expect(baseContext.lockfile.version).toBe('1.7.18');
     expect(baseContext.lockfile.packages[''].version).toBe('1.7.18');
-    expect(baseContext.lockfile.packages['node_modules/shell-quote'].version).toBe('1.12.0');
+    expect(currentLockfile.packages['node_modules/shell-quote'].version).toBe('1.12.0');
+    expect(currentLockfile.packages['node_modules/node-forge'].version).toBe('1.4.2');
     expect(lockfileBytes.includes(Buffer.from('\r\n'))).toBe(false);
-    expect(baseContext.lockfileSha256).toBe('d18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7');
+    expect(currentLockfileSha256).not.toBe(baseContext.lockfileSha256);
+    expect(evaluateAuditReport(report({ braces: bracesFinding() }), {
+      ...baseContext, lockfile: currentLockfile, lockfileSha256: currentLockfileSha256,
+    }).allowed).toBe(false);
   });
 
   it('accepts only the two reviewed leaves and their reviewed derived path', () => {

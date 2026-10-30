@@ -5,6 +5,25 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # SDK and tooling majors require a coordinated native/toolchain migration.
+    # Keep compatible patches flowing while SDK 57 and React Native 0.86 ship.
+    ignore:
+      - dependency-name: expo
+        versions: [">=58.0.0"]
+      - dependency-name: "expo-*"
+        versions: [">=58.0.0"]
+      - dependency-name: "@expo/*"
+        versions: [">=58.0.0"]
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
+      - dependency-name: eslint
+        versions: [">=10.0.0"]
+      - dependency-name: eslint-config-expo
+        versions: [">=58.0.0"]
+      - dependency-name: react-native-safe-area-context
+        versions: [">=5.8.0"]
+      - dependency-name: react-native-screens
+        versions: [">=4.27.0"]
     groups:
       expo-runtime:
         patterns:
