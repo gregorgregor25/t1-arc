@@ -1,5 +1,10 @@
 # 1.7.14 dependency security review and 1.7.15–1.7.18 carry-forward
 
+This is a historical record. Its high-severity exceptions expired on 12 October
+2026 and have been removed from the audit gate. See the
+[30 October dependency review](DEPENDENCY_MIGRATION_NOTES.md) for the patched
+Zod override and the separate, temporary low-severity deepmerge allowance.
+
 Reviewed on 5 October 2026 against source commit
 `e505758596d0b7bfc599c6135756d6d1792840dc`. At that point the release
 was blocked; the later conditional, narrow exceptions below retain the full

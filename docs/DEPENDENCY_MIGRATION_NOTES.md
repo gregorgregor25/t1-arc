@@ -8,16 +8,27 @@ exception was [withdrawn on 23 October](https://github.com/advisories/GHSA-vfj7-
 The [forge 1.4.1 security fixes](https://github.com/digitalbazaar/forge/blob/main/CHANGELOG.md)
 are included in 1.4.2.
 
-The current production audit still reports a high-severity
-[Zod advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) through
-Expo CLI and lower-severity
-[deepmerge findings](https://github.com/advisories/GHSA-gcqx-w48m-w2h4).
-Expo SDK 57's latest CLI depends on `zod ^3.25.76`; the available patched Zod
-version is 4.6.6, outside that range. Deepmerge 4.3.1 is the latest published
-version and has no patched release. The security audit remains fail-closed.
+The high-severity [Zod advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
+is addressed with an exact override to the patched Zod 4.6.7 root API. Expo
+SDK 57's CLI declares Zod 3, so regression checks exercise its actual DevTools
+and MCP schemas against the override. Do not redirect imports to `zod/v3`:
+the compatibility implementation still processes oversized constrained arrays.
+
+The low-severity [deepmerge advisory](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
+remains in 4.3.1, with no patched upstream release. Its only direct production
+consumer is Expo's build-time configuration package. The app does not import
+deepmerge. Configuration and plugin changes must come from reviewed source.
+Downgrading to 4.1.1 is not a fix: that version lacks the later prototype-property
+guard, despite falling outside the advisory's published range.
+
+The audit gate permits only this reviewed low advisory and its exact expected
+dependency graph until 13 November 2026. It retains npm's complete report and
+labels the result `reviewed-low`, never clean. New advisories, dependency drift,
+an expired review, and every high or critical finding block the build. Reassess
+this allowance and remove it when a compatible upstream fix is available.
 Do not use `npm audit fix --force`: its suggested Expo downgrade is incompatible
-with this app. Assess a compatible upstream fix or the SDK 58 migration before
-clearing the high advisory.
+with this app. SDK 58 still depends on the same affected packages and does not
+itself resolve these advisories.
 
 [Expo's SDK matrix](https://docs.expo.dev/versions/v58.0.0/) requires React
 Native 0.88 and React 19.3 for SDK 58. The automated Expo 58 PR retains React

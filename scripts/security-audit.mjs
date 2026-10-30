@@ -1,50 +1,25 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const release = Object.freeze({
-  version: '1.7.18',
-  versionCode: 76,
-  applicationId: 'io.github.gregorgregor25.t1arc',
-  lockfileSha256: 'd18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7',
-  expiresAt: '2026-10-12T00:00:00Z',
+// The only reviewed residual finding is a low-severity build-tool advisory.
+// It is intentionally temporary; a new graph or advisory needs a new review.
+const REVIEW_EXPIRES_AT = '2026-11-13T00:00:00Z';
+const DEEPMERGE_ADVISORY = Object.freeze({
+  source: 1243505,
+  url: 'https://github.com/advisories/GHSA-gcqx-w48m-w2h4',
+  range: '>=4.2.0 <=4.3.1',
 });
-
-const advisories = Object.freeze({
-  braces: Object.freeze({
-    version: '3.0.3',
-    source: 1240992,
-    url: 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm',
-  }),
-  'node-forge': Object.freeze({
-    version: '1.4.0',
-    source: 1240912,
-    url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
-  }),
-});
-
-// The reviewed 1.7.18 production audit permits these same 16 affected packages. A
-// different package or installation path is a new finding, even if npm says it
-// is derived from one of the same advisories.
-const reviewedNodes = Object.freeze({
-  '@expo/cli': 'node_modules/expo/node_modules/@expo/cli',
-  '@expo/code-signing-certificates': 'node_modules/@expo/code-signing-certificates',
-  '@expo/metro': 'node_modules/@expo/metro',
-  '@expo/metro-config': 'node_modules/expo/node_modules/@expo/metro-config',
-  '@react-native-community/datetimepicker': 'node_modules/@react-native-community/datetimepicker',
-  '@react-native/community-cli-plugin': 'node_modules/@react-native/community-cli-plugin',
-  '@react-native/virtualized-lists': 'node_modules/@react-native/virtualized-lists',
-  braces: 'node_modules/braces',
-  expo: 'node_modules/expo',
-  metro: 'node_modules/metro',
-  'metro-config': 'node_modules/metro-config',
-  'metro-file-map': 'node_modules/metro-file-map',
-  'metro-transform-worker': 'node_modules/metro-transform-worker',
-  micromatch: 'node_modules/micromatch',
-  'node-forge': 'node_modules/node-forge',
-  'react-native': 'node_modules/react-native',
+const reviewed = Object.freeze({
+  deepmerge: { path: 'node_modules/deepmerge', version: '4.3.1', via: [] },
+  '@expo/config': { path: 'node_modules/@expo/config', version: '57.0.10', via: ['deepmerge'] },
+  '@expo/local-build-cache-provider': { path: 'node_modules/@expo/local-build-cache-provider', version: '57.0.9', via: ['@expo/config'] },
+  '@expo/metro-config': { path: 'node_modules/expo/node_modules/@expo/metro-config', version: '57.0.13', via: ['@expo/config'] },
+  '@expo/prebuild-config': { path: 'node_modules/@expo/prebuild-config', version: '57.0.19', via: ['@expo/config'] },
+  '@expo/cli': { path: 'node_modules/expo/node_modules/@expo/cli', version: '57.0.32', via: ['@expo/config', '@expo/metro-config', '@expo/prebuild-config'] },
+  expo: { path: 'node_modules/expo', version: '57.0.31', via: ['@expo/cli', '@expo/config', '@expo/local-build-cache-provider', '@expo/metro-config'] },
+  '@react-native-community/datetimepicker': { path: 'node_modules/@react-native-community/datetimepicker', version: '9.1.0', via: ['expo'] },
 });
 
 function isRecord(value) {
@@ -77,118 +52,75 @@ function validAuditEnvelope(report) {
   );
 }
 
-/** A pure, fail-closed evaluation of npm's unmodified audit JSON. */
+function sameStrings(actual, expected) {
+  return Array.isArray(actual) && actual.length === expected.length &&
+    actual.every((item) => typeof item === 'string') &&
+    [...actual].sort().every((item, index) => item === [...expected].sort()[index]);
+}
+
+/** Evaluate unmodified npm audit JSON. Unknown findings always fail closed. */
 export function evaluateAuditReport(report, context) {
   if (!validAuditEnvelope(report)) return reject('Malformed or incomplete npm audit report.');
   const findings = report.vulnerabilities;
   const names = Object.keys(findings);
+  const counts = report.metadata.vulnerabilities;
+  const actualCounts = { info: 0, low: 0, moderate: 0, high: 0, critical: 0 };
+  for (const [name, finding] of Object.entries(findings)) {
+    if (!isRecord(finding) || finding.name !== name ||
+        !Object.hasOwn(actualCounts, finding.severity)) {
+      return reject('Malformed audit finding.');
+    }
+    actualCounts[finding.severity]++;
+  }
+  if (Object.keys(actualCounts).some((severity) => actualCounts[severity] !== counts[severity])) {
+    return reject('Audit severity counts disagree with findings.');
+  }
+  if (counts.high > 0 || counts.critical > 0) {
+    return reject('High or critical production advisory detected.');
+  }
   if (names.length === 0) {
     return { allowed: true, classification: 'clean', reason: 'No production advisories reported.' };
   }
-
-  if (!isRecord(context) || !isRecord(context.appConfig) ||
-      !isRecord(context.packageConfig) || !isRecord(context.lockfile) ||
-      !isRecord(context.lockfile.packages) ||
-      context.appConfig?.expo?.version !== release.version ||
-      context.appConfig?.expo?.android?.versionCode !== release.versionCode ||
-      context.appConfig?.expo?.android?.package !== release.applicationId ||
-      context.packageConfig.version !== release.version ||
-      context.lockfile.version !== release.version ||
-      context.lockfile.packages['']?.version !== release.version ||
-      context.lockfileSha256 !== release.lockfileSha256) {
-    return reject('Release version, Android identity or lockfile differs from approved scope.');
+  if (counts.info > 0 || counts.moderate > 0 || counts.low !== Object.keys(reviewed).length ||
+      !sameStrings(names, Object.keys(reviewed))) {
+    return reject('An unreviewed production advisory is present.');
   }
-
+  if (!isRecord(context) || !isRecord(context.lockfile) ||
+      !isRecord(context.lockfile.packages) || !isRecord(context.packageConfig) ||
+      context.packageConfig.version !== context.lockfile.version ||
+      context.lockfile.packages['']?.version !== context.packageConfig.version) {
+    return reject('Dependency context is incomplete or inconsistent.');
+  }
   const now = context.now instanceof Date ? context.now.getTime() : NaN;
-  if (!Number.isFinite(now) || now >= Date.parse(release.expiresAt)) {
-    return reject('Security exception is expired or the clock is invalid.');
+  if (!Number.isFinite(now) || now >= Date.parse(REVIEW_EXPIRES_AT)) {
+    return reject('The reviewed low-severity finding has expired or the clock is invalid.');
   }
-  if (names.some((name) => !Object.hasOwn(reviewedNodes, name)) ||
-      names.length > Object.keys(reviewedNodes).length) {
-    return reject('Audit contains a new affected package.');
-  }
-  const counts = report.metadata.vulnerabilities;
-  if (counts.high !== names.length ||
-      ['info', 'low', 'moderate', 'critical'].some((key) => counts[key] !== 0)) {
-    return reject('Audit contains a finding outside the approved high-severity scope.');
-  }
-
   for (const name of names) {
     const finding = findings[name];
-    const reviewedPath = reviewedNodes[name];
-    if (!isRecord(finding) || finding.name !== name ||
-        finding.severity !== 'high' ||
-        !Array.isArray(finding.via) || finding.via.length === 0 ||
-        !Array.isArray(finding.nodes) || finding.nodes.length !== 1 ||
-        finding.nodes[0] !== reviewedPath ||
-        !isRecord(context.lockfile.packages[reviewedPath]) ||
-        typeof context.lockfile.packages[reviewedPath].version !== 'string') {
-      return reject(`Finding for ${name} differs from the reviewed installation.`);
+    const expected = reviewed[name];
+    if (finding.severity !== 'low' ||
+        !sameStrings(finding.nodes, [expected.path]) ||
+        context.lockfile.packages[expected.path]?.version !== expected.version ||
+        !Array.isArray(finding.via)) {
+      return reject('A reviewed finding changed severity, path or installed version: ' + name);
     }
-    if (Object.hasOwn(advisories, name) &&
-        context.lockfile.packages[reviewedPath].version !== advisories[name].version) {
-      return reject(`Affected ${name} version differs from approved scope.`);
-    }
-  }
-
-  // npm's affected-package graph contains legitimate cycles (Metro and
-  // Metro Config). Validate every edge first, then propagate approved roots
-  // to a fixed point. A rootless cycle remains rejected.
-  const roots = new Map(names.map((name) => [name, new Set()]));
-  const links = new Map();
-  for (const name of names) {
-    const finding = findings[name];
-    const dependencies = [];
-    let directCount = 0;
-    for (const via of finding.via) {
-      if (typeof via === 'string') {
-        if (!Object.hasOwn(findings, via)) {
-          return reject(`Missing linked audit finding ${via}.`);
-        }
-        dependencies.push(via);
-      } else if (isRecord(via)) {
-        const expected = advisories[name];
-        if (!expected || via.name !== name || via.dependency !== name ||
-            via.source !== expected.source || via.url !== expected.url ||
-            via.severity !== 'high') {
-          return reject(`Unrecognised advisory on ${name}.`);
-        }
-        directCount++;
-        roots.get(name).add(name);
-      } else {
-        return reject(`Malformed advisory link on ${name}.`);
+    if (name === 'deepmerge') {
+      if (finding.via.length !== 1 || !isRecord(finding.via[0]) ||
+          finding.via[0].name !== name || finding.via[0].dependency !== name ||
+          finding.via[0].source !== DEEPMERGE_ADVISORY.source ||
+          finding.via[0].url !== DEEPMERGE_ADVISORY.url ||
+          finding.via[0].range !== DEEPMERGE_ADVISORY.range ||
+          finding.via[0].severity !== 'low') {
+        return reject('The reviewed deepmerge advisory changed.');
       }
-    }
-    if (Object.hasOwn(advisories, name) ?
-        (directCount !== 1 || finding.via.length !== 1) : directCount !== 0) {
-      return reject(`Additional or missing direct advisory on ${name}.`);
-    }
-    links.set(name, dependencies);
-  }
-  let changed;
-  do {
-    changed = false;
-    for (const name of names) {
-      for (const dependency of links.get(name)) {
-        for (const root of roots.get(dependency)) {
-          if (!roots.get(name).has(root)) {
-            roots.get(name).add(root);
-            changed = true;
-          }
-        }
-      }
-    }
-  } while (changed);
-  for (const name of names) {
-    if (roots.get(name).size === 0) {
-      return reject(`No approved advisory root for ${name}.`);
+    } else if (!sameStrings(finding.via, expected.via)) {
+      return reject('The reviewed advisory graph changed: ' + name);
     }
   }
-
   return {
     allowed: true,
-    classification: 'conditional-exception',
-    reason: `Only the two reviewed build-tool advisories and their reviewed derived findings remain; exception expires ${release.expiresAt}.`,
+    classification: 'reviewed-low',
+    reason: 'Only the reviewed deepmerge build-tool advisory and its exact derived graph remain; review expires ' + REVIEW_EXPIRES_AT + '.',
     findings: names.length,
   };
 }
@@ -205,48 +137,34 @@ function main() {
   const onWindows = process.platform === 'win32';
   const audit = spawnSync(onWindows ? 'cmd.exe' : 'npm',
     onWindows ? ['/d', '/s', '/c', 'npm audit --omit=dev --json'] : ['audit', '--omit=dev', '--json'], {
-      cwd: root,
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
+      cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
     });
-  // Keep the entire raw report, including npm's error JSON when present.
   writeFileSync(resolve(args[1]), audit.stdout ?? '', 'utf8');
   if (audit.error || ![0, 1].includes(audit.status)) {
-    throw new Error(`npm audit failed to run reliably: ${audit.error?.message ?? audit.status}`);
+    throw new Error('npm audit failed to run reliably: ' + (audit.error?.message ?? audit.status));
   }
   let report;
-  try {
-    report = JSON.parse(audit.stdout);
-  } catch {
-    throw new Error('npm audit returned malformed JSON.');
-  }
-  const lockfileBuffer = readFileSync(resolve(root, 'package-lock.json'));
+  try { report = JSON.parse(audit.stdout); }
+  catch { throw new Error('npm audit returned malformed JSON.'); }
   const evaluation = evaluateAuditReport(report, {
-    appConfig: JSON.parse(readFileSync(resolve(root, 'app.json'), 'utf8')),
     packageConfig: JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')),
-    lockfile: JSON.parse(lockfileBuffer.toString('utf8')),
-    lockfileSha256: createHash('sha256').update(lockfileBuffer).digest('hex'),
+    lockfile: JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8')),
     now: new Date(),
   });
-  if (audit.status === 0 && evaluation.classification !== 'clean' ||
-      audit.status === 1 && evaluation.classification === 'clean' ||
+  if ((audit.status === 0 && evaluation.classification !== 'clean') ||
+      (audit.status === 1 && evaluation.classification === 'clean') ||
       !evaluation.allowed) {
-    throw new Error(`Security audit blocked: ${evaluation.reason}`);
+    throw new Error('Security audit blocked: ' + evaluation.reason);
   }
-  if (evaluation.classification === 'conditional-exception') {
-    console.log(`CONDITIONAL ANDROID 1.7.18 EXCEPTION: ${evaluation.reason}`);
-    console.log('This audit result requires separate guarded Linux build, APK, review and device checks.');
+  if (evaluation.classification === 'reviewed-low') {
+    console.warn('REVIEWED LOW-SEVERITY FINDING: ' + evaluation.reason);
   } else {
     console.log('Production dependency audit is clean.');
   }
-  console.log(`Full npm audit JSON: ${resolve(args[1])}`);
+  console.log('Full npm audit JSON: ' + resolve(args[1]));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    main();
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+  try { main(); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
 }
