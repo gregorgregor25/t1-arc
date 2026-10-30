@@ -22,6 +22,7 @@ import {
 import { AppScreen } from "@/components/AppScreen";
 import { AppInfoCard } from "@/components/AppInfoCard";
 import { SupportReportCard } from "@/components/SupportReportCard";
+import { FeatureEntry } from '@/components/FeatureEntry';
 import { PrivacyPolicyLink } from "@/components/PrivacyPolicyLink";
 import { AutomationStatusCard } from "@/components/AutomationStatusCard";
 import { DexcomClarityImportCard } from "@/components/DexcomClarityImportCard";
@@ -489,6 +490,8 @@ export function SourcesScreen({
         />
       ) : !activeSource ? (
         <View style={styles.overviewSections}>
+          <FeatureEntry title="Share feedback" detail="Help shape T1 Arc and manage your weekly reminder" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} />
+          <FeatureEntry title="Cycle tracking" detail="Periods, symptoms and cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
           <SectionCard style={styles.disclosureShell}>
             <Pressable
               accessibilityRole="button"
@@ -1058,7 +1061,7 @@ export function SourcesScreen({
       ) : null}
 
       {activeSource === "support" ? (
-        <View style={styles.settingsSections}><SupportReportCard /></View>
+        <View style={styles.settingsSections}><FeatureEntry title="Share feedback" detail="Suggest a feature, email support or visit the community" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} /><SupportReportCard /></View>
       ) : null}
 
       {activeSource === "profile" ? (

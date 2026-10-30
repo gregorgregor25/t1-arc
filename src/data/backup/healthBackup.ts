@@ -3,6 +3,7 @@ import { File, FileMode, Paths, type FileHandle } from 'expo-file-system';
 import { BackupRestoreError } from './restoreError';
 import { captureBackupSourceOwners, restoreBackupSourceOwners, validateBackupSourceOwners, type BackupSourceOwners } from './sourceRecoveryIdentity';
 import { validatePersonalObservation } from '@/domain/personalObservations';
+import { parseCycleDate, validatePeriodDates } from '@/domain/cycleTracking';
 import { NUTRITION_SOURCE_KEY, validateNutritionSource } from '@/domain/nutritionSource';
 
 import {
@@ -41,7 +42,7 @@ import {
 } from '@/data/migration/migrationFormat';
 
 export const HEALTH_BACKUP_FORMAT = 't1arc-health-backup';
-export const HEALTH_BACKUP_VERSION = 21;
+export const HEALTH_BACKUP_VERSION = 22;
 export const HEALTH_BACKUP_MIME = 'application/vnd.t1arc.health-backup';
 export const HEALTH_BACKUP_EXTENSION = '.t1arc';
 
@@ -417,6 +418,8 @@ const BACKUP_TABLE_DEFINITIONS = {
   // the full metadata table: it also contains device-bound sync state.
   portable_app_state: ['key', 'value'],
   food_photos: ['id', 'food_id', 'log_id', 'recipe_id', 'image_data', 'source_url', 'created_at_ms'],
+  cycle_periods: ['id', 'start_date', 'end_date', 'created_at_ms', 'updated_at_ms'],
+  cycle_days: ['date', 'flow', 'symptoms_json', 'notes', 'created_at_ms', 'updated_at_ms'],
 } as const;
 
 export type BackupTableName = keyof typeof BACKUP_TABLE_DEFINITIONS;
@@ -516,6 +519,8 @@ const BACKUP_TABLE_INTRODUCED_VERSION: Partial<
   Record<BackupTableName, number>
 > = {
   food_photos: 20,
+  cycle_periods: 22,
+  cycle_days: 22,
   import_source_payloads: 3,
   notification_source_events: 4,
   insight_reports: 4,
@@ -1211,6 +1216,28 @@ function validateRow(
       );
     }
   }
+  if (table === 'cycle_periods') {
+    if (typeof value.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(value.id) ||
+        typeof value.start_date !== 'string' ||
+        (value.end_date !== null && typeof value.end_date !== 'string')) {
+      throw new Error('The backup contains an invalid cycle period.');
+    }
+    validatePeriodDates(value.start_date, value.end_date ?? undefined);
+  }
+  if (table === 'cycle_days') {
+    if (typeof value.date !== 'string' || typeof value.symptoms_json !== 'string' ||
+        value.symptoms_json.length > 2_000 ||
+        (value.flow !== null && !['spotting', 'light', 'medium', 'heavy'].includes(String(value.flow))) ||
+        (value.notes !== null && (typeof value.notes !== 'string' || value.notes.length > 2_000))) {
+      throw new Error('The backup contains an invalid cycle day.');
+    }
+    parseCycleDate(value.date);
+    let symptoms: unknown;
+    try { symptoms = JSON.parse(value.symptoms_json); } catch { throw new Error('The backup contains invalid cycle symptoms.'); }
+    if (!Array.isArray(symptoms) || symptoms.length > 20 || symptoms.some((item) => typeof item !== 'string' || !item.trim() || item.length > 80)) {
+      throw new Error('The backup contains invalid cycle symptoms.');
+    }
+  }
   if (table === 'food_photos') {
     validateFoodPhoto(value.image_data);
     const owners = [['food', value.food_id], ['meal', value.log_id], ['recipe', value.recipe_id]].filter(([, id]) => id !== null);
@@ -1488,6 +1515,7 @@ export function validateHealthBackupDocument(
       18,
       19,
       20,
+      21,
       HEALTH_BACKUP_VERSION,
     ].includes(manifest.version as number)
   ) {
@@ -1586,7 +1614,7 @@ export function validateCurrentContainerManifest(
   }
   if (
     value.format !== HEALTH_BACKUP_FORMAT ||
-    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, HEALTH_BACKUP_VERSION].includes(
+    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, HEALTH_BACKUP_VERSION].includes(
       value.version as number,
     )
   ) {

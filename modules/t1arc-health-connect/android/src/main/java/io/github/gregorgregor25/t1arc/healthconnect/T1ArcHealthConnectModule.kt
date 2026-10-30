@@ -1050,6 +1050,9 @@ private suspend fun readCyclePage(
               "menstruation_period",
               record.startTime,
               record.endTime,
+            ) + mapOf(
+              "startZoneOffsetSeconds" to record.startZoneOffset?.totalSeconds,
+              "endZoneOffsetSeconds" to record.endZoneOffset?.totalSeconds,
             )
           )
         }
@@ -1066,7 +1069,7 @@ private suspend fun readCyclePage(
         ) { record ->
           listOf(
             commonRecord(record.metadata, "menstruation_flow", record.time, record.time) +
-              mapOf("flow" to record.flow)
+              mapOf("flow" to record.flow, "startZoneOffsetSeconds" to record.zoneOffset?.totalSeconds)
           )
         }
       page.copy(nextPageToken = page.nextPageToken?.let { "flow:$it" } ?: "ovulation:")
@@ -1332,12 +1335,15 @@ private fun normalizeRecord(record: Record): List<Map<String, Any?>> =
           "menstruation_period",
           record.startTime,
           record.endTime,
+        ) + mapOf(
+          "startZoneOffsetSeconds" to record.startZoneOffset?.totalSeconds,
+          "endZoneOffsetSeconds" to record.endZoneOffset?.totalSeconds,
         )
       )
     is MenstruationFlowRecord ->
       listOf(
         commonRecord(record.metadata, "menstruation_flow", record.time, record.time) +
-          mapOf("flow" to record.flow)
+          mapOf("flow" to record.flow, "startZoneOffsetSeconds" to record.zoneOffset?.totalSeconds)
       )
     is OvulationTestRecord ->
       listOf(

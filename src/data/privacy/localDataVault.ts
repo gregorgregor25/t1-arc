@@ -13,6 +13,7 @@ import { clearHevyConnection } from "@/data/hevy/secureStore";
 import { invalidateHevyConnectionOwnership } from "@/data/hevy/repository";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
 import { clearBackupStatus } from "@/data/backup/backupStatus";
+import { disableCommunityReminderForErasureAsync } from "@/data/feedback/communityReminder";
 import { INSIGHT_REVIEW_PREFERENCES_DB_KEY } from "@/data/insights/insightReviewMetadata";
 import { clearLibreLinkUpCredentials } from "@/data/libreLinkUp/secureStore";
 import { clearMedtrumConnection } from "@/data/medtrum/secureStore";
@@ -86,7 +87,9 @@ async function getLocalDataSummaryFromDatabase(
        ) AS insulin_records,
        (
          (SELECT COUNT(*) FROM context_events) +
-         (SELECT COUNT(*) FROM context_notes)
+         (SELECT COUNT(*) FROM context_notes) +
+         (SELECT COUNT(*) FROM cycle_periods) +
+         (SELECT COUNT(*) FROM cycle_days)
        ) AS context_records,
        (SELECT COUNT(*) FROM food_logs) AS food_logs,
        (SELECT COUNT(*) FROM food_recipes) AS food_recipes,
@@ -204,6 +207,7 @@ export async function invalidateLocalDataWritesForErase() {
  * is cleared at intent creation and again inside the final writer boundary.
  */
 export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
+  await disableCommunityReminderForErasureAsync();
   const preparedIntent = await prepareLocalDataEraseIntent();
   const before = await withT1ArcSanitizedEraseTransaction(
     async (transaction) => {
@@ -235,6 +239,8 @@ export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
         "DELETE FROM food_logs",
         "DELETE FROM hevy_workouts",
         "DELETE FROM context_notes",
+        "DELETE FROM cycle_days",
+        "DELETE FROM cycle_periods",
         "DELETE FROM context_events",
         "DELETE FROM insulin_daily_totals",
         "DELETE FROM insulin_bolus",
@@ -401,6 +407,7 @@ export async function resumePendingLocalDataErase() {
       resetGlucoseAlertState(),
       clearInsightReviewPreferences(),
       clearBackupStatus(),
+      disableCommunityReminderForErasureAsync(),
     ]);
     await eraseLocalHealthData();
     // The database erase deliberately replaces source metadata. Re-plan from

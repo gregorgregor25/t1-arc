@@ -9,6 +9,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Platform,
   Pressable,
   StyleSheet,
@@ -32,6 +33,9 @@ import { OnboardingScreen } from "@/screens/OnboardingScreen";
 import { HealthScreen } from "@/screens/RecordsScreen";
 import { SourcesScreen } from "@/screens/SourcesScreen";
 import { TodayScreen } from "@/screens/TodayScreen";
+import { CycleTrackingScreen } from '@/screens/CycleTrackingScreen';
+import { FeedbackScreen } from '@/screens/FeedbackScreen';
+import { initializeCommunityReminderAsync } from '@/data/feedback/communityReminder';
 import { useAppTheme } from "@/theme/theme";
 
 import { APP_LINK_PREFIXES, isSafeNavigationLink } from "./appLinks";
@@ -44,6 +48,8 @@ export type RootTabParamList = {
   Today: { action?: "log-food" | "log-context" | "trend-details"; request?: string } | undefined;
   History: { focus?: "glucose" | "insulin"; request?: string; selectedRange?: HistoryRangeSelection } | undefined;
   Health: undefined;
+  Cycle: undefined;
+  Feedback: undefined;
   Insights: { entry?: TarvisEntry; settings?: boolean } | undefined;
   Sources: { focused?: boolean; source?: SourceJump } | undefined;
 };
@@ -58,6 +64,8 @@ const linking: LinkingOptions<RootTabParamList> = {
       Today: "today/:action?",
       History: "history",
       Health: "health",
+      Cycle: "cycle",
+      Feedback: "feedback",
       Insights: "insights",
       Sources: "sources/:source?",
     },
@@ -74,6 +82,8 @@ const ICONS: Record<
   Today: { active: "pulse", inactive: "pulse-outline" },
   History: { active: "calendar", inactive: "calendar-outline" },
   Health: { active: "fitness", inactive: "fitness-outline" },
+  Cycle: { active: "calendar", inactive: "calendar-outline" },
+  Feedback: { active: "chatbubble", inactive: "chatbubble-outline" },
   Insights: {
     active: "chatbubble-ellipses",
     inactive: "chatbubble-ellipses-outline",
@@ -147,6 +157,16 @@ export function AppNavigator() {
       setClearingTourState(false);
     }
   }
+
+  useEffect(() => {
+    if (entry !== 'app') return;
+    // Reminder failures must not prevent access to health records. The feedback
+    // screen exposes permission and scheduling status with a retry control.
+    const reconcile = () => { void initializeCommunityReminderAsync().catch(() => undefined); };
+    reconcile();
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') reconcile(); });
+    return () => subscription.remove();
+  }, [entry]);
 
   if (entry === "loading") {
     return <AppStartupScreen />;
@@ -291,6 +311,8 @@ export function AppNavigator() {
         <Tab.Screen name="Today" component={TodayScreen} />
         <Tab.Screen name="History" component={HistoryScreen} />
         <Tab.Screen name="Health" component={HealthScreen} />
+        <Tab.Screen name="Cycle" component={CycleTrackingScreen} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, tabBarStyle: { display: 'none' } }} />
+        <Tab.Screen name="Feedback" component={FeedbackScreen} options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' }, tabBarStyle: { display: 'none' } }} />
         <Tab.Screen
           name="Insights"
           component={InsightsScreen}
