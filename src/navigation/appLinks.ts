@@ -1,4 +1,5 @@
 export const APP_LINK_PREFIXES: string[] = ['t1arc://'];
+export const COMMUNITY_SUBREDDIT_URL = 'https://www.reddit.com/r/T1Arc/';
 
 /** Reject malformed/oversized intents before the navigation query decoder. */
 export function isSafeNavigationLink(url: string): boolean {

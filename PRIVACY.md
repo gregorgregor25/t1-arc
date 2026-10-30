@@ -10,6 +10,19 @@ build must review the exact build, hosting, support and store configuration.
 
 ## Local storage
 
+Manual cycle periods, flow, symptoms and notes are stored in the encrypted local
+health database. They are included in user-created encrypted portable backups
+and removed by local health-data erasure. Cycle tracking can display existing
+Health Connect menstrual records without writing changes back to Health Connect.
+Manual cycle entries are not automatically added to AI prompts or support reports.
+
+The optional weekly feedback reminder is scheduled locally on Android, with a
+separate notification channel and an off switch on the Share feedback screen.
+Its enabled state and scheduling timestamps are stored on the device; no server
+registration or activity tracking is needed. Phone notification permissions still
+apply. Full local-data erasure disables the reminder. Opening email or Reddit is
+an explicit user action; the email shortcut includes a subject, not health data.
+
 Health records, imported provider records, food logs, context, Insights and
 Tarv1s conversation state are stored on the Android device. Health databases
 use SQLCipher. Provider credentials and the user's selected AI provider API

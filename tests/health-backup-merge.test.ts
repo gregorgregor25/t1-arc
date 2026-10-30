@@ -382,6 +382,7 @@ function streamedNotificationBackup(rows: Record<string, any>[], sourceVersion =
   const encoder = new TextEncoder();
   const sourceCounts = { ...backup.manifest.counts } as Record<string, number>;
   if (sourceVersion < 20) delete sourceCounts.food_photos;
+  if (sourceVersion < 22) { delete sourceCounts.cycle_periods; delete sourceCounts.cycle_days; }
   const manifest = encoder.encode(JSON.stringify({ ...backup.manifest, counts: sourceCounts, version: sourceVersion }));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('notification_source_events');
   const uri = `file:///notification-restore-${mocks.files.size}.container`;
@@ -406,7 +407,6 @@ function streamedNotificationBackup(rows: Record<string, any>[], sourceVersion =
 
 function streamedPortableConversationMigration(value: string) {
   const backup = emptyBackup();
-  backup.manifest.version = 16;
   const row = { key: TARVIS_CONVERSATION_STORAGE_KEY, value };
   backup.tables.portable_app_state = [row];
   backup.manifest.counts.portable_app_state = 1;
@@ -416,6 +416,8 @@ function streamedPortableConversationMigration(value: string) {
   const encoder = new TextEncoder();
   const legacyCounts = { ...document.manifest.counts } as Record<string, number>;
   delete legacyCounts.food_photos;
+  delete legacyCounts.cycle_periods;
+  delete legacyCounts.cycle_days;
   const manifest = encoder.encode(JSON.stringify({ ...document.manifest, counts: legacyCounts, version: 16 }));
   const payload = encoder.encode(JSON.stringify(row));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('portable_app_state');
@@ -574,6 +576,7 @@ function streamedVersionedBackup(options: {
   const backup = emptyBackup();
   backup.manifest.version = options.version;
   if (options.version < 20) delete backup.manifest.counts.food_photos;
+  if (options.version < 22) { delete backup.manifest.counts.cycle_periods; delete backup.manifest.counts.cycle_days; }
   if (options.version < 13) {
     delete backup.manifest.counts.hevy_workouts;
   }

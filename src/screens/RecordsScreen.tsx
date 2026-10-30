@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 import { AppScreen, SectionHeading } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import { DateNavigator } from "@/components/DateNavigator";
+import { FeatureEntry } from '@/components/FeatureEntry';
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorCard } from "@/components/ErrorCard";
 import { HealthMetricCards } from "@/components/HealthMetricCards";
@@ -70,6 +71,7 @@ export function HealthScreen() {
         onRefresh={() => void refreshData()}
         trailing={<AppMenuButton />}
       >
+        <FeatureEntry title="Cycle tracking" detail="Log periods, symptoms and your cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
         <DateNavigator
           date={selectedDate}
           canGoBack={selectedDate > earliestDate}

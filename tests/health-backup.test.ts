@@ -124,14 +124,39 @@ function genuineVersionOneBackupWithHealthConnectPreference() {
 }
 
 describe('health backup validation', () => {
+  it('carries private cycle entries in v22 and reads v21 without inventing them', () => {
+    const backup = emptyBackup();
+    backup.tables.cycle_periods = [{ id: '11111111-1111-4111-8111-111111111111', start_date: '2026-04-01', end_date: '2026-04-05', created_at_ms: 1, updated_at_ms: 1 }];
+    backup.tables.cycle_days = [{ date: '2026-04-02', flow: 'medium', symptoms_json: '["Cramps"]', notes: 'Rested', created_at_ms: 1, updated_at_ms: 1 }];
+    backup.manifest.counts.cycle_periods = 1;
+    backup.manifest.counts.cycle_days = 1;
+    backup.manifest.totalRecords = 2;
+    expect(validateHealthBackupDocument(backup).tables.cycle_days).toHaveLength(1);
+    backup.tables.cycle_days[0]!.date = '2026-02-30';
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/valid calendar date/);
+
+    const previous = emptyBackup();
+    previous.manifest.version = 21;
+    delete previous.tables.cycle_periods;
+    delete previous.tables.cycle_days;
+    delete previous.manifest.counts.cycle_periods;
+    delete previous.manifest.counts.cycle_days;
+    expect(validateHealthBackupDocument(previous).tables.cycle_periods).toEqual([]);
+  });
+
   it('opens version 19 backups without inventing photos or changing existing stream indexes', () => {
     const backup = emptyBackup();
     backup.manifest.version = 19;
     delete backup.tables.food_photos;
     delete backup.manifest.counts.food_photos;
+    delete backup.tables.cycle_periods;
+    delete backup.tables.cycle_days;
+    delete backup.manifest.counts.cycle_periods;
+    delete backup.manifest.counts.cycle_days;
     expect(validateHealthBackupDocument(backup).tables.food_photos).toEqual([]);
     expect(validateCurrentContainerManifest(backup.manifest).counts.food_photos).toBe(0);
-    expect(BACKUP_TABLE_NAMES.at(-1)).toBe('food_photos');
+    expect(BACKUP_TABLE_NAMES.at(-3)).toBe('food_photos');
+    expect(BACKUP_TABLE_NAMES.at(-1)).toBe('cycle_days');
   });
   it('preserves lab provenance and migrates version 18 observations without inventing results', () => {
     const backup = emptyBackup();
@@ -663,10 +688,14 @@ describe('health backup validation', () => {
     delete backup.manifest.counts.hevy_workouts;
     delete backup.manifest.counts.portable_app_state;
     delete backup.manifest.counts.food_photos;
+    delete backup.manifest.counts.cycle_periods;
+    delete backup.manifest.counts.cycle_days;
     delete backup.tables.food_photos;
     delete backup.tables.glooko_report_payloads;
     delete backup.tables.hevy_workouts;
     delete backup.tables.portable_app_state;
+    delete backup.tables.cycle_periods;
+    delete backup.tables.cycle_days;
 
     const parsed = validateHealthBackupDocument(backup);
 
@@ -909,6 +938,8 @@ describe('health backup validation', () => {
     delete backup.manifest.counts.hevy_workouts;
     delete backup.manifest.counts.portable_app_state;
     delete backup.manifest.counts.food_photos;
+    delete backup.manifest.counts.cycle_periods;
+    delete backup.manifest.counts.cycle_days;
     delete backup.tables.food_photos;
 
     const manifest = validateCurrentContainerManifest(backup.manifest);

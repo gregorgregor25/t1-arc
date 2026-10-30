@@ -946,6 +946,27 @@ async function openAndMigrate() {
     CREATE INDEX IF NOT EXISTS idx_automation_runs_connector_time
       ON automation_runs(connector, started_at_ms DESC);
 
+    CREATE TABLE IF NOT EXISTS cycle_periods (
+      id TEXT NOT NULL PRIMARY KEY,
+      start_date TEXT NOT NULL,
+      end_date TEXT,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      CHECK (end_date IS NULL OR end_date >= start_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cycle_periods_start
+      ON cycle_periods(start_date DESC);
+
+    CREATE TABLE IF NOT EXISTS cycle_days (
+      date TEXT NOT NULL PRIMARY KEY,
+      flow TEXT CHECK (flow IN ('spotting', 'light', 'medium', 'heavy')),
+      symptoms_json TEXT NOT NULL,
+      notes TEXT,
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL
+    );
+
   `);
 
   // CREATE TABLE IF NOT EXISTS does not add fields to an installed database.
