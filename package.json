@@ -58,7 +58,8 @@
     "metro": "0.84.5",
     "metro-config": "0.84.5",
     "metro-transform-worker": "0.84.5",
-    "node-forge": "1.4.2"
+    "node-forge": "1.4.2",
+    "zod": "4.6.7"
   },
   "scripts": {
     "start": "expo start",

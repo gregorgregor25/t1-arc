@@ -1,280 +1,159 @@
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
 import { describe, expect, it } from 'vitest';
-
-// The script deliberately stays runnable by Node without a TS loader in CI.
 import { evaluateAuditReport } from '../scripts/security-audit.mjs';
 
-const lockfileBytes = readFileSync(new URL('../package-lock.json', import.meta.url));
-const currentLockfile = JSON.parse(lockfileBytes.toString('utf8'));
-const currentLockfileSha256 = createHash('sha256').update(lockfileBytes).digest('hex');
-// Reconstruct a synthetic historical approved context to exercise the fail-closed evaluator.
-// The current lockfile has moved on and must never inherit that exception.
-const baseContext = {
-  appConfig: JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8')),
-  packageConfig: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
-  lockfile: {
-    ...currentLockfile,
-    packages: {
-      ...currentLockfile.packages,
-      'node_modules/node-forge': { ...currentLockfile.packages['node_modules/node-forge'], version: '1.4.0' },
+const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const packageConfig = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const context = { lockfile, packageConfig, now: new Date('2026-10-30T12:00:00Z') };
+type Finding = { name: string; severity: string; nodes: string[]; via: (string | Record<string, unknown>)[] };
+const reviewed = {
+  deepmerge: ['node_modules/deepmerge', []],
+  '@expo/config': ['node_modules/@expo/config', ['deepmerge']],
+  '@expo/local-build-cache-provider': ['node_modules/@expo/local-build-cache-provider', ['@expo/config']],
+  '@expo/metro-config': ['node_modules/expo/node_modules/@expo/metro-config', ['@expo/config']],
+  '@expo/prebuild-config': ['node_modules/@expo/prebuild-config', ['@expo/config']],
+  '@expo/cli': ['node_modules/expo/node_modules/@expo/cli', ['@expo/config', '@expo/metro-config', '@expo/prebuild-config']],
+  expo: ['node_modules/expo', ['@expo/cli', '@expo/config', '@expo/local-build-cache-provider', '@expo/metro-config']],
+  '@react-native-community/datetimepicker': ['node_modules/@react-native-community/datetimepicker', ['expo']],
+} as const;
+
+function lowReport() {
+  const vulnerabilities: Record<string, Finding> = Object.fromEntries(Object.entries(reviewed).map(([name, [path, via]]) => [
+    name,
+    {
+      name, severity: 'low', nodes: [path],
+      via: name === 'deepmerge' ? [{
+        source: 1243505, name, dependency: name, severity: 'low',
+        url: 'https://github.com/advisories/GHSA-gcqx-w48m-w2h4',
+        range: '>=4.2.0 <=4.3.1',
+      }] : [...via],
     },
-  },
-  lockfileSha256: 'd18397e12a360ed6b2f1b2767cb22ba45fce0e147f8f4da3c1ce497981802cd7',
-  now: new Date('2026-10-06T12:00:00Z'),
-};
-
-const dependencyCounts = {
-  prod: 520,
-  dev: 314,
-  optional: 58,
-  peer: 3,
-  peerOptional: 0,
-  total: 844,
-};
-
-function report(vulnerabilities: Record<string, unknown>) {
-  const high = Object.keys(vulnerabilities).length;
+  ]));
   return {
-    auditReportVersion: 2,
-    vulnerabilities,
+    auditReportVersion: 2, vulnerabilities,
     metadata: {
-      vulnerabilities: { info: 0, low: 0, moderate: 0, high, critical: 0, total: high },
-      dependencies: dependencyCounts,
+      vulnerabilities: { info: 0, low: 8, moderate: 0, high: 0, critical: 0, total: 8 },
+      dependencies: { prod: 520, dev: 314, optional: 58, peer: 3, peerOptional: 0, total: 844 },
     },
   };
 }
 
-function bracesFinding() {
-  return {
-    name: 'braces',
-    severity: 'high',
-    via: [{
-      source: 1240992,
-      name: 'braces',
-      dependency: 'braces',
-      title: 'braces vulnerable to stack-exhaustion denial of service through deeply nested patterns',
-      url: 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm',
-      severity: 'high',
-      range: '<=3.0.3',
-    }],
-    nodes: ['node_modules/braces'],
-  };
+function cleanReport() {
+  const report = lowReport();
+  report.vulnerabilities = {};
+  report.metadata.vulnerabilities = { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 };
+  return report;
 }
 
-function forgeFinding() {
-  return {
-    name: 'node-forge',
-    severity: 'high',
-    via: [{
-      source: 1240912,
-      name: 'node-forge',
-      dependency: 'node-forge',
-      title: 'node-forge RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements',
-      url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
-      severity: 'high',
-      range: '<=1.4.0',
-    }],
-    nodes: ['node_modules/node-forge'],
-  };
+function altered(change: (report: ReturnType<typeof lowReport>) => void) {
+  const report = lowReport();
+  change(report);
+  return report;
 }
 
-function micromatchFinding(via: unknown[] = ['braces']) {
-  return {
-    name: 'micromatch',
-    severity: 'high',
-    via,
-    nodes: ['node_modules/micromatch'],
-  };
-}
-
-describe('temporary production dependency audit exception', () => {
-  it('keeps the 1.7.18 release identity but invalidates its old exception after dependency updates', () => {
-    expect(baseContext.appConfig.expo.version).toBe('1.7.18');
-    expect(baseContext.appConfig.expo.android.versionCode).toBe(76);
-    expect(baseContext.packageConfig.version).toBe('1.7.18');
-    expect(baseContext.lockfile.version).toBe('1.7.18');
-    expect(baseContext.lockfile.packages[''].version).toBe('1.7.18');
-    expect(currentLockfile.packages['node_modules/shell-quote'].version).toBe('1.12.0');
-    expect(currentLockfile.packages['node_modules/node-forge'].version).toBe('1.4.2');
-    expect(lockfileBytes.includes(Buffer.from('\r\n'))).toBe(false);
-    expect(currentLockfileSha256).not.toBe(baseContext.lockfileSha256);
-    expect(evaluateAuditReport(report({ braces: bracesFinding() }), {
-      ...baseContext, lockfile: currentLockfile, lockfileSha256: currentLockfileSha256,
-    }).allowed).toBe(false);
+describe('production dependency security gate', () => {
+  it('accepts clean production audits regardless of expired review', () => {
+    expect(evaluateAuditReport(cleanReport(), { ...context, now: new Date('2027-01-01') }))
+      .toMatchObject({ allowed: true, classification: 'clean' });
   });
 
-  it('accepts only the two reviewed leaves and their reviewed derived path', () => {
-    const actual = report({
-      braces: bracesFinding(),
-      'node-forge': forgeFinding(),
-      micromatch: micromatchFinding(),
-    });
-    expect(evaluateAuditReport(actual, baseContext)).toMatchObject({
-      allowed: true,
-      classification: 'conditional-exception',
-      findings: 3,
-    });
-  });
-
-  it('allows a genuinely clean report after the exception expires', () => {
-    expect(evaluateAuditReport(report({}), {
-      ...baseContext,
-      now: new Date('2026-10-20T00:00:00Z'),
-      lockfileSha256: 'a changed but fully patched lockfile',
-    })).toMatchObject({ allowed: true, classification: 'clean' });
+  it('retains the exact known low build-tool advisory as a visible temporary review', () => {
+    expect(evaluateAuditReport(lowReport(), context))
+      .toMatchObject({ allowed: true, classification: 'reviewed-low', findings: 8 });
   });
 
   it.each([
-    ['expiry', { now: new Date('2026-10-12T00:00:00Z') }],
+    ['expiry', { now: new Date('2026-11-13T00:00:00Z') }],
     ['invalid clock', { now: new Date('invalid') }],
-    ['lock hash drift', { lockfileSha256: '0'.repeat(64) }],
-    ['app version drift', { appConfig: { expo: { version: '0.0.0', android: baseContext.appConfig.expo.android } } }],
-    ['previous release version', { appConfig: { expo: { version: '1.7.17', android: { ...baseContext.appConfig.expo.android, versionCode: 74 } } } }],
-    ['Android code drift', { appConfig: { expo: { ...baseContext.appConfig.expo, android: { ...baseContext.appConfig.expo.android, versionCode: baseContext.appConfig.expo.android.versionCode + 2 } } } }],
-    ['dependency drift', { lockfile: { ...baseContext.lockfile, packages: { ...baseContext.lockfile.packages, 'node_modules/braces': { version: '3.0.4' } } } }],
-  ])('rejects %s while an exception is needed', (_label, change) => {
-    expect(evaluateAuditReport(report({ braces: bracesFinding() }), {
-      ...baseContext,
-      ...change,
-    }).allowed).toBe(false);
+    ['locked dependency drift', { lockfile: { ...lockfile, packages: {
+      ...lockfile.packages, 'node_modules/deepmerge': { ...lockfile.packages['node_modules/deepmerge'], version: '4.3.2' },
+    } } }],
+    ['root version mismatch', { packageConfig: { ...packageConfig, version: '0.0.0' } }],
+  ])('rejects %s while low finding remains', (_label, alteredContext) => {
+    expect(evaluateAuditReport(lowReport(), { ...context, ...alteredContext }).allowed).toBe(false);
   });
 
-  it('rejects an additional direct advisory hidden under an approved derived package', () => {
-    const actual = report({
-      braces: bracesFinding(),
-      micromatch: micromatchFinding([
-        'braces',
-        { name: 'micromatch', dependency: 'micromatch', source: 99,
-          url: 'https://github.com/advisories/GHSA-new', severity: 'high' },
-      ]),
+  it('rejects high and critical advisories even with a reviewed low graph', () => {
+    for (const severity of ['high', 'critical'] as const) {
+      const report = altered((value) => {
+        value.vulnerabilities.deepmerge!.severity = severity;
+        value.metadata.vulnerabilities.low = 7;
+        value.metadata.vulnerabilities[severity] = 1;
+      });
+      expect(evaluateAuditReport(report, context).allowed).toBe(false);
+    }
+  });
+
+  it('rejects an added low advisory even if its metadata is consistent', () => {
+    const report = altered((value) => {
+      value.vulnerabilities['new-package'] = {
+        name: 'new-package', severity: 'low', nodes: ['node_modules/new-package'],
+        via: ['deepmerge'],
+      };
+      value.metadata.vulnerabilities.low = 9;
+      value.metadata.vulnerabilities.total = 9;
     });
-    expect(evaluateAuditReport(actual, baseContext).allowed).toBe(false);
+    expect(evaluateAuditReport(report, context).allowed).toBe(false);
   });
 
-  it('rejects an extra advisory on a reviewed leaf', () => {
-    const leaf = bracesFinding();
-    leaf.via.push({ ...leaf.via[0]!, source: 42 });
-    expect(evaluateAuditReport(report({ braces: leaf }), baseContext).allowed).toBe(false);
-  });
-
-  it('rejects new affected packages or installation paths', () => {
-    const newPackage = report({
-      braces: bracesFinding(),
-      'new-pkg': { name: 'new-pkg', severity: 'high', via: ['braces'], nodes: ['node_modules/new-pkg'] },
+  it('rejects moved nodes, an extra direct advisory, missing links and rootless cycles', () => {
+    const moved = altered((value) => { value.vulnerabilities.deepmerge!.nodes = ['node_modules/x/node_modules/deepmerge']; });
+    expect(evaluateAuditReport(moved, context).allowed).toBe(false);
+    const extra = altered((value) => { value.vulnerabilities.deepmerge!.via.push({ source: 1 }); });
+    expect(evaluateAuditReport(extra, context).allowed).toBe(false);
+    const missing = altered((value) => { value.vulnerabilities['@expo/config']!.via = ['absent']; });
+    expect(evaluateAuditReport(missing, context).allowed).toBe(false);
+    const cycle = altered((value) => {
+      value.vulnerabilities['@expo/config']!.via = ['@expo/cli'];
+      value.vulnerabilities['@expo/cli']!.via = ['@expo/config'];
     });
-    expect(evaluateAuditReport(newPackage, baseContext).allowed).toBe(false);
-    const moved = report({ braces: { ...bracesFinding(), nodes: ['node_modules/other/node_modules/braces'] } });
-    expect(evaluateAuditReport(moved, baseContext).allowed).toBe(false);
+    expect(evaluateAuditReport(cycle, context).allowed).toBe(false);
   });
 
-  it('rejects a renewed critical shell-quote advisory instead of extending the exception', () => {
-    const critical = report({
-      braces: bracesFinding(),
-      'shell-quote': {
-        name: 'shell-quote', severity: 'critical',
-        via: [{ name: 'shell-quote', dependency: 'shell-quote', source: 0,
-          url: 'https://github.com/advisories/GHSA-pqg4-j6r4-53mv', severity: 'critical' }],
-        nodes: ['node_modules/shell-quote'],
-      },
-    });
-    critical.metadata.vulnerabilities.high = 1;
-    critical.metadata.vulnerabilities.critical = 1;
-    expect(evaluateAuditReport(critical, baseContext)).toMatchObject({ allowed: false });
-  });
-
-  it('rejects a renewed finding on the now-patched Expo Metro file map', () => {
-    const actual = report({
-      braces: bracesFinding(),
-      micromatch: micromatchFinding(),
-      '@expo/metro-file-map': {
-        name: '@expo/metro-file-map', severity: 'high', via: ['micromatch'],
-        nodes: ['node_modules/@expo/metro-file-map'],
-      },
-    });
-    expect(evaluateAuditReport(actual, baseContext).allowed).toBe(false);
-  });
-
-  it('accepts reviewed graph cycles that reach an approved advisory', () => {
-    const actual = report({
-      braces: bracesFinding(),
-      micromatch: micromatchFinding(),
-      'metro-file-map': {
-        name: 'metro-file-map', severity: 'high', via: ['micromatch'],
-        nodes: ['node_modules/metro-file-map'],
-      },
-      metro: {
-        name: 'metro', severity: 'high', via: ['metro-config', 'metro-file-map'],
-        nodes: ['node_modules/metro'],
-      },
-      'metro-config': {
-        name: 'metro-config', severity: 'high', via: ['metro'],
-        nodes: ['node_modules/metro-config'],
-      },
-    });
-    expect(evaluateAuditReport(actual, baseContext).allowed).toBe(true);
-  });
-
-  it('rejects missing links and rootless cycles in the propagated advisory graph', () => {
-    const missing = report({ micromatch: micromatchFinding() });
-    expect(evaluateAuditReport(missing, baseContext).allowed).toBe(false);
-    const cycle = report({
-      micromatch: micromatchFinding(['metro-file-map']),
-      'metro-file-map': {
-        name: 'metro-file-map', severity: 'high', via: ['micromatch'],
-        nodes: ['node_modules/metro-file-map'],
-      },
-    });
-    expect(evaluateAuditReport(cycle, baseContext).allowed).toBe(false);
-  });
-
-  it('rejects malformed, partial and error audit reports', () => {
-    expect(evaluateAuditReport({}, baseContext).allowed).toBe(false);
-    const missingMetadata = { auditReportVersion: 2, vulnerabilities: { braces: bracesFinding() } };
-    expect(evaluateAuditReport(missingMetadata, baseContext).allowed).toBe(false);
-    const errorReport = { ...report({}), error: { code: 'EAUDIT' } };
-    expect(evaluateAuditReport(errorReport, baseContext).allowed).toBe(false);
-    const falseCounts = report({ braces: bracesFinding() });
-    falseCounts.metadata.vulnerabilities.high = 0;
-    expect(evaluateAuditReport(falseCounts, baseContext).allowed).toBe(false);
-    const mixedSeverity = report({ braces: bracesFinding() });
-    mixedSeverity.metadata.vulnerabilities.high = 0;
-    mixedSeverity.metadata.vulnerabilities.moderate = 1;
-    expect(evaluateAuditReport(mixedSeverity, baseContext).allowed).toBe(false);
+  it('rejects spoofed severity counts, malformed envelopes and audit errors', () => {
+    const counts = altered((value) => { value.metadata.vulnerabilities.low = 7; value.metadata.vulnerabilities.high = 1; });
+    expect(evaluateAuditReport(counts, context).allowed).toBe(false);
+    const finding = altered((value) => { value.vulnerabilities.deepmerge!.severity = 'high'; });
+    expect(evaluateAuditReport(finding, context).allowed).toBe(false);
+    expect(evaluateAuditReport({}, context).allowed).toBe(false);
+    expect(evaluateAuditReport({ ...lowReport(), error: { code: 'EAUDIT' } }, context).allowed).toBe(false);
   });
 
   it.each([
-    ['clean result from npm', report({}), 0, true],
-    ['audit command fails with no findings', report({}), 1, false],
-    ['npm falsely exits clean with an advisory', report({ braces: bracesFinding() }), 0, false],
-    ['npm reports an error', { ...report({}), error: { code: 'EAUDIT' } }, 1, false],
-  ])('preserves the raw report and handles %s', (_label, payload, npmStatus, allowed) => {
+    ['clean report', cleanReport(), 0, true],
+    ['reviewed low report', lowReport(), 1, true],
+    ['audit command failure without findings', cleanReport(), 1, false],
+    ['npm falsely exits clean with findings', lowReport(), 0, false],
+    ['npm error JSON', { ...lowReport(), error: { code: 'EAUDIT' } }, 1, false],
+    ['malformed JSON', '{bad', 1, false],
+  ])('preserves raw audit JSON and handles %s', (_label, payload, npmStatus, allowed) => {
     const temp = mkdtempSync(join(tmpdir(), 't1arc-security-audit-'));
     const fakeNpm = join(temp, process.platform === 'win32' ? 'npm.cmd' : 'npm');
     const fakePayload = join(temp, 'audit.json');
     const output = join(temp, 'output.json');
-    const json = JSON.stringify(payload);
+    const raw = typeof payload === 'string' ? payload : JSON.stringify(payload);
     try {
-      writeFileSync(fakePayload, json);
+      writeFileSync(fakePayload, raw);
       writeFileSync(fakeNpm, process.platform === 'win32'
-        ? `@echo off\r\ntype "%~dp0audit.json"\r\nexit /b ${npmStatus}\r\n`
-        : `#!/bin/sh\ncat "$(dirname "$0")/audit.json"\nexit ${npmStatus}\n`);
+        ? '@echo off\r\ntype "%~dp0audit.json"\r\nexit /b ' + npmStatus + '\r\n'
+        : '#!/bin/sh\ncat "$(dirname "$0")/audit.json"\nexit ' + npmStatus + '\n');
       if (process.platform !== 'win32') chmodSync(fakeNpm, 0o755);
       const root = fileURLToPath(new URL('..', import.meta.url));
-      const result = spawnSync(process.execPath,
-        ['scripts/security-audit.mjs', '--report', output], {
-          cwd: root,
-          encoding: 'utf8',
-          env: { ...process.env, PATH: `${temp}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}` },
-        });
+      const result = spawnSync(process.execPath, ['scripts/security-audit.mjs', '--report', output], {
+        cwd: root, encoding: 'utf8',
+        env: { ...process.env, PATH: temp + (process.platform === 'win32' ? ';' : ':') + (process.env.PATH ?? '') },
+      });
       expect(result.error).toBeUndefined();
       expect(result.status === 0).toBe(allowed);
-      expect(readFileSync(output, 'utf8')).toBe(json);
+      expect(readFileSync(output, 'utf8')).toBe(raw);
+      if (allowed && _label === 'reviewed low report') {
+        expect(result.stdout + result.stderr).toContain('REVIEWED LOW-SEVERITY FINDING');
+        expect(result.stdout + result.stderr).not.toContain('Production dependency audit is clean.');
+      }
     } finally {
       for (const path of [fakeNpm, fakePayload, output]) {
         try { unlinkSync(path); } catch { /* Output may not exist after an early failure. */ }
