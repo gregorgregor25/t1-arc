@@ -39,6 +39,26 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.7.19 candidate: cycle tracking and feedback
+
+This candidate adds optional menstrual cycle tracking with a calendar, period
+history, daily flow and symptoms, and encrypted backup support. Imported Health
+Connect records remain read-only. Estimated period dates appear only when there
+is enough consistent history and are not contraception or medical guidance.
+
+The new feedback screen offers email and Reddit, with an optional weekly local
+reminder. The reminder defaults on when notification permission is available
+and can be disabled in the feedback screen. No Reddit account is needed to send
+feedback by email.
+
+The candidate also updates compatible dependencies and fixes the high-severity
+Zod advisory. A narrowly reviewed, temporary low-severity build-tool finding
+remains documented in [the dependency review](DEPENDENCY_MIGRATION_NOTES.md).
+The Wear protocol is unchanged; a working installed companion does not need
+reinstallation just because the phone version increases. Signed-artifact and
+owner-phone acceptance are still pending. See GitHub Releases for the latest
+published version.
+
 ### 1.7.18 security refresh
 
 The final prepublication audit for 1.7.17 found the newly reported critical
