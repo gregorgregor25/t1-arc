@@ -46,7 +46,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - run: npm ci
+      - run: npm ci --include=dev
       - name: Generate native project and record dependency exposure
         env:
           NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs

@@ -21,6 +21,10 @@ const reviewed = Object.freeze({
   expo: { path: 'node_modules/expo', version: '57.0.31', via: ['@expo/cli', '@expo/config', '@expo/local-build-cache-provider', '@expo/metro-config'] },
   '@react-native-community/datetimepicker': { path: 'node_modules/@react-native-community/datetimepicker', version: '9.1.0', via: ['expo'] },
 });
+// npm's advisory graph sometimes omits this optional Expo peer edge. Both
+// shapes must still contain every other reviewed node and the same advisory.
+const reviewedNames = Object.keys(reviewed);
+const reviewedCoreNames = reviewedNames.filter((name) => name !== '@react-native-community/datetimepicker');
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -81,8 +85,8 @@ export function evaluateAuditReport(report, context) {
   if (names.length === 0) {
     return { allowed: true, classification: 'clean', reason: 'No production advisories reported.' };
   }
-  if (counts.info > 0 || counts.moderate > 0 || counts.low !== Object.keys(reviewed).length ||
-      !sameStrings(names, Object.keys(reviewed))) {
+  if (counts.info > 0 || counts.moderate > 0 || counts.low !== names.length ||
+      !(sameStrings(names, reviewedNames) || sameStrings(names, reviewedCoreNames))) {
     return reject('An unreviewed production advisory is present.');
   }
   if (!isRecord(context) || !isRecord(context.lockfile) ||
@@ -95,12 +99,16 @@ export function evaluateAuditReport(report, context) {
   if (!Number.isFinite(now) || now >= Date.parse(REVIEW_EXPIRES_AT)) {
     return reject('The reviewed low-severity finding has expired or the clock is invalid.');
   }
+  for (const expected of Object.values(reviewed)) {
+    if (context.lockfile.packages[expected.path]?.version !== expected.version) {
+      return reject('A reviewed installed dependency changed: ' + expected.path);
+    }
+  }
   for (const name of names) {
     const finding = findings[name];
     const expected = reviewed[name];
     if (finding.severity !== 'low' ||
         !sameStrings(finding.nodes, [expected.path]) ||
-        context.lockfile.packages[expected.path]?.version !== expected.version ||
         !Array.isArray(finding.via)) {
       return reject('A reviewed finding changed severity, path or installed version: ' + name);
     }

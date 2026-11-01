@@ -317,14 +317,23 @@ because npm newly reported moderate advisories for `glob` and `minimatch`:
 [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
 and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 The affected dependencies were in the Expo build/configuration graph. The
-audit policy correctly rejected the new findings; it was not amended.
+audit policy correctly rejected the new findings.
 
 The lockfile now pins `glob` 14.0.3 and scopes `minimatch` 11.0.3 to
-`@expo/fingerprint`. This crosses the upstream `glob` major range, so Expo
-compatibility checks, prebuild, bundling and the exact APK still need fresh
-validation. The scoped override leaves the older `minimatch` used by ESLint
-and its plugins untouched. After a clean `npm ci`, `npm audit --omit=dev`
-reported zero moderate, high or critical findings; the fail-closed production
-audit accepted only the existing eight low-severity `deepmerge` graph nodes
-under their unchanged 13 November 2026 expiry. This does not clear the
-device-level AAPS and Wear checks.
+`@expo/fingerprint`. This crosses the upstream `glob` major range. Expo
+dependency parity, project health and Android prebuild passed locally; Linux
+bundling and the exact APK still need fresh validation. The scoped override
+leaves the older `minimatch` used by ESLint and its plugins untouched. After a
+clean `npm ci`, `npm audit --omit=dev` reported zero moderate, high or critical
+findings.
+
+The same lockfile produced seven low-severity `deepmerge` graph nodes in a
+fresh npm audit and eight with cached audit metadata. The extra derived node
+was `@react-native-community/datetimepicker`, connected through an optional
+Expo peer edge. Both npm 10.9.9 and 11.10.1 produced the seven-node shape
+with fresh caches, so pinning the npm client would not resolve this. The
+fail-closed audit now accepts only those exact seven- or eight-node shapes,
+verifies the installed versions of all eight reviewed packages even when npm
+omits the peer edge, and keeps the original leaf advisory, severity, graph
+paths and 13 November 2026 expiry. Any new finding or other graph drift still
+blocks. Device-level AAPS and Wear checks remain outstanding.

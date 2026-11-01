@@ -42,6 +42,14 @@ function lowReport() {
   };
 }
 
+function lowCoreReport() {
+  const report = lowReport();
+  delete report.vulnerabilities['@react-native-community/datetimepicker'];
+  report.metadata.vulnerabilities.low = 7;
+  report.metadata.vulnerabilities.total = 7;
+  return report;
+}
+
 function cleanReport() {
   const report = lowReport();
   report.vulnerabilities = {};
@@ -64,6 +72,28 @@ describe('production dependency security gate', () => {
   it('retains the exact known low build-tool advisory as a visible temporary review', () => {
     expect(evaluateAuditReport(lowReport(), context))
       .toMatchObject({ allowed: true, classification: 'reviewed-low', findings: 8 });
+    expect(evaluateAuditReport(lowCoreReport(), context))
+      .toMatchObject({ allowed: true, classification: 'reviewed-low', findings: 7 });
+  });
+
+  it('rejects any other missing node from the reviewed low graph', () => {
+    const report = altered((value) => {
+      delete value.vulnerabilities['@expo/config'];
+      value.metadata.vulnerabilities.low = 7;
+      value.metadata.vulnerabilities.total = 7;
+    });
+    expect(evaluateAuditReport(report, context).allowed).toBe(false);
+  });
+
+  it('checks the installed datepicker version even when npm omits its peer edge', () => {
+    const changedLockfile = { ...lockfile, packages: {
+      ...lockfile.packages,
+      'node_modules/@react-native-community/datetimepicker': {
+        ...lockfile.packages['node_modules/@react-native-community/datetimepicker'],
+        version: '9.1.1',
+      },
+    } };
+    expect(evaluateAuditReport(lowCoreReport(), { ...context, lockfile: changedLockfile }).allowed).toBe(false);
   });
 
   it.each([
@@ -126,6 +156,7 @@ describe('production dependency security gate', () => {
   it.each([
     ['clean report', cleanReport(), 0, true],
     ['reviewed low report', lowReport(), 1, true],
+    ['reviewed low core report', lowCoreReport(), 1, true],
     ['audit command failure without findings', cleanReport(), 1, false],
     ['npm falsely exits clean with findings', lowReport(), 0, false],
     ['npm error JSON', { ...lowReport(), error: { code: 'EAUDIT' } }, 1, false],
