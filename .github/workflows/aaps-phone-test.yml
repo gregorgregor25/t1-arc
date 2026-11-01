@@ -1,0 +1,137 @@
+name: AAPS phone test candidate
+
+on:
+  push:
+    branches:
+      - codex/aaps-local-source
+
+# This workflow receives no production environment or signing secrets. Its
+# artifact must be re-signed with the installed phone's key before installation.
+permissions:
+  contents: read
+
+concurrency:
+  group: t1arc-aaps-phone-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Check candidate source
+    if: github.repository == 'gregorgregor25/t1-arc' && github.ref == 'refs/heads/codex/aaps-local-source'
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+
+  build-phone:
+    name: Build phone APK for local signing
+    needs: quality
+    if: github.repository == 'gregorgregor25/t1-arc' && github.ref == 'refs/heads/codex/aaps-local-source'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NODE_ENV: production
+      T1ARC_WATCH_INSTALLER: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Generate native project and record dependency exposure
+        env:
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: prebuild
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Confirm exact clean source
+        run: |
+          node -e 'const source = require("./scripts/build-source.cjs").readBuildSource(process.cwd()); if (source.commit !== process.env.GITHUB_SHA || source.modified !== false) { throw new Error("Candidate requires the exact clean workflow commit."); }'
+      - name: Create a disposable intermediate signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          store="$RUNNER_TEMP/aaps-intermediate.p12"
+          alias='aaps-intermediate'
+          password="$(openssl rand -base64 32)"
+          echo "::add-mask::$password"
+          printf 'T1ARC_RELEASE_STORE_FILE=%s\n' "$store" >> "$GITHUB_ENV"
+          printf 'T1ARC_RELEASE_KEY_ALIAS=%s\n' "$alias" >> "$GITHUB_ENV"
+          printf 'T1ARC_RELEASE_STORE_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
+          printf 'T1ARC_RELEASE_KEY_PASSWORD=%s\n' "$password" >> "$GITHUB_ENV"
+          export T1ARC_TEMP_SIGN_PASSWORD="$password"
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$store" \
+            -storepass:env T1ARC_TEMP_SIGN_PASSWORD \
+            -keypass:env T1ARC_TEMP_SIGN_PASSWORD \
+            -alias "$alias" -keyalg RSA -keysize 3072 \
+            -validity 2 -dname 'CN=T1 Arc intermediate CI only'
+      - name: Build and test ARM64 phone release
+        working-directory: android
+        env:
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/dependency-exposure-guard.cjs
+          T1ARC_EXPOSURE_DIR: ${{ runner.temp }}/t1arc-exposure
+          T1ARC_EXPOSURE_STAGE: signed-build
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease :app:lintRelease \
+            :t1arc-glucose-display:testReleaseUnitTest \
+            :t1arc-glucose-display:lintRelease \
+            -PreactNativeArchitectures=arm64-v8a --no-build-cache --no-daemon
+      - name: Verify embedded code and source identity
+        shell: pwsh
+        run: |
+          $check = @{
+            ApkPath = './android/app/build/outputs/apk/release/app-release.apk'
+            ExpectedApplicationId = 'io.github.gregorgregor25.t1arc'
+            ExpectedSourceCommit = $env:GITHUB_SHA
+            RequireCleanSource = $true
+          }
+          $mapping = './android/app/build/outputs/mapping/release/mapping.txt'
+          if (Test-Path -LiteralPath $mapping) { $check.MappingPath = $mapping }
+          ./scripts/verify-android-apk.ps1 @check
+      - name: Verify embedded JavaScript and dependency exposure
+        run: |
+          node scripts/verify-dependency-exposure.mjs \
+            --evidence-dir "$RUNNER_TEMP/t1arc-exposure" \
+            --require-stage prebuild --require-stage signed-build \
+            --source-map android/app/build/generated/sourcemaps/react/release/index.android.bundle.map \
+            --bundle android/app/build/generated/assets/react/release/index.android.bundle
+          python scripts/verify-apk-js-bundle.py \
+            android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/generated/assets/react/release/index.android.bundle
+      - name: Prepare intermediate artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          cp android/app/build/outputs/apk/release/app-release.apk candidate/aaps-intermediate.apk
+          if test -f android/app/build/outputs/mapping/release/mapping.txt; then
+            cp android/app/build/outputs/mapping/release/mapping.txt candidate/mapping.txt
+          fi
+          node -e 'const fs=require("fs");const app=require("./app.json").expo;fs.writeFileSync("candidate/source.json",JSON.stringify({sourceCommit:process.env.GITHUB_SHA,applicationId:app.android.package,version:app.version,versionCode:app.android.versionCode,signer:"DISPOSABLE CI SIGNER - RESIGN LOCALLY BEFORE INSTALL",watchInstallerBundled:false,mappingIncluded:fs.existsSync("candidate/mapping.txt")},null,2)+"\n")'
+          (
+            cd candidate
+            files=(aaps-intermediate.apk source.json)
+            if test -f mapping.txt; then files+=(mapping.txt); fi
+            sha256sum "${files[@]}" > SHA256SUMS
+          )
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aaps-phone-intermediate-${{ github.sha }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Remove disposable signer
+        if: always()
+        run: rm -f "$T1ARC_RELEASE_STORE_FILE"
