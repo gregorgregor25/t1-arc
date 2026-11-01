@@ -309,3 +309,22 @@ exception. The existing package/path scope and **2026-10-12 00:00 UTC** expiry
 are unchanged. New findings, drift, expiry or failed build evidence still
 block release. Fresh checks and the signed artifact identity are required for
 this source, as recorded in the release build and published release notes.
+
+## 1.7.20 AAPS phone test: glob and minimatch patches
+
+On 1 November 2026, the branch quality audit blocked the AAPS phone test
+because npm newly reported moderate advisories for `glob` and `minimatch`:
+[GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
+and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+The affected dependencies were in the Expo build/configuration graph. The
+audit policy correctly rejected the new findings; it was not amended.
+
+The lockfile now pins `glob` 14.0.3 and scopes `minimatch` 11.0.3 to
+`@expo/fingerprint`. This crosses the upstream `glob` major range, so Expo
+compatibility checks, prebuild, bundling and the exact APK still need fresh
+validation. The scoped override leaves the older `minimatch` used by ESLint
+and its plugins untouched. After a clean `npm ci`, `npm audit --omit=dev`
+reported zero moderate, high or critical findings; the fail-closed production
+audit accepted only the existing eight low-severity `deepmerge` graph nodes
+under their unchanged 13 November 2026 expiry. This does not clear the
+device-level AAPS and Wear checks.
