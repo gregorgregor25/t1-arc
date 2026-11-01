@@ -57,6 +57,7 @@ import {
 } from "@/domain/timelineSampling";
 import {
   describeInsulinTimelineFidelity,
+  hasInsulinDeliveryEvidence,
   selectLatestInsulinDailyTotals,
   summarizeInsulinByDay,
 } from "@/domain/timelineInsulinSummary";
@@ -304,6 +305,7 @@ function Inspector({
   dailyTotal,
   pumpStates,
   insulinAvailable,
+  insulinNotConnected,
   showBasal,
   showBolus,
   showGlucose,
@@ -319,6 +321,7 @@ function Inspector({
   dailyTotal?: InsulinDailyTotal;
   pumpStates: PumpStateInterval[];
   insulinAvailable: boolean;
+  insulinNotConnected: boolean;
   showBasal: boolean;
   showBolus: boolean;
   showGlucose: boolean;
@@ -415,7 +418,9 @@ function Inspector({
             <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
               <Text style={{ color: colors.insulin }}>Insulin  </Text>
               {!insulinAvailable
-                ? "Not connected"
+                ? insulinNotConnected
+                  ? "Not connected"
+                  : "No delivery data in this range"
                 : insulinParts.length
                   ? insulinParts.join("  ·  ")
                   : "No timed delivery near this point"}
@@ -575,14 +580,7 @@ export function CombinedTimeline({
   const activityLaneY = ACTIVITY_LANE_Y * verticalScale;
   const pauseLaneY = PAUSE_LANE_Y * verticalScale;
   const stateLaneHeight = Math.max(5, STATE_LANE_HEIGHT * verticalScale);
-  const insulinAvailable =
-    data.basal.length > 0 ||
-    data.boluses.length > 0 ||
-    (data.dailyInsulinTotals?.length ?? 0) > 0 ||
-    (data.pumpStates?.length ?? 0) > 0 ||
-    !data.sources.some(
-      (source) => source.label === "Insulin" && source.freshness === "missing",
-    );
+  const insulinAvailable = hasInsulinDeliveryEvidence(data);
   const insulinFidelity = useMemo(
     () => describeInsulinTimelineFidelity(data),
     [data],
@@ -1149,7 +1147,9 @@ export function CombinedTimeline({
                       >
                         {insulinAvailable
                           ? "INSULIN"
-                          : "INSULIN — NOT CONNECTED"}
+                          : insulinFidelity.kind === 'not-connected'
+                            ? "INSULIN — NOT CONNECTED"
+                            : "INSULIN — NO DELIVERY DATA"}
                       </SvgText>
                     ) : null}
                     {showDailyInsulinSummary ? (
@@ -1468,6 +1468,7 @@ export function CombinedTimeline({
                 dailyTotal={selectedDailyTotal}
                 pumpStates={selectedPumpStates}
                 insulinAvailable={insulinAvailable}
+                insulinNotConnected={insulinFidelity.kind === 'not-connected'}
                 showBasal={visibleLayers.basal}
                 showBolus={visibleLayers.bolus}
                 showGlucose={visibleLayers.glucose}
@@ -1491,7 +1492,7 @@ export function CombinedTimeline({
                       : hasReportedBasal
                         ? "Drag across the chart for exact glucose, daily basal total and bolus data."
                         : "Drag across the chart for exact glucose and bolus data."
-                  : "Gaps in the glucose line are missing readings. No synthetic insulin is mixed into this personal timeline."}
+                  : "Gaps in the glucose line are missing readings. No insulin delivery amounts are recorded for this period."}
               </Text>
             ) : null}
           </>

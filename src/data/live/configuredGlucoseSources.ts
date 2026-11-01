@@ -1,4 +1,7 @@
 import { GlucoseSource } from '@/data/contracts';
+import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import { getSelectedGlucoseSourceId } from '@/data/aaps/localAapsSource';
+import { AAPS_LOCAL_SOURCE_ID, AAPS_NO_SOURCE_ID } from '@/data/aaps/types';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { loadOwnedDexcomShareConnection } from '@/data/dexcomShare/secureStore';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
@@ -42,6 +45,11 @@ export async function configuredGlucoseSources(
   const scopedHistory =
     history?.withWriteLease(writeLease) ??
     new SqliteGlucoseHistoryStore(writeLease);
+  const selected = await getSelectedGlucoseSourceId();
+  if (selected === AAPS_LOCAL_SOURCE_ID) {
+    return [new AapsGlucoseSource(scopedHistory)];
+  }
+  if (selected === AAPS_NO_SOURCE_ID) return [];
   const [libre, nightscout, xdrip, dexcomShare, medtrum] =
     await Promise.all([
       loadOwnedLibreLinkUpConnection(writeLease),
@@ -122,7 +130,9 @@ export async function configuredGlucoseSources(
       ),
     );
   }
-  return sources;
+  return selected === undefined
+    ? sources
+    : sources.filter((source) => source.sourceId === selected);
 }
 
 export async function refreshConfiguredGlucoseSources(

@@ -291,6 +291,16 @@ export function TodayGlanceCard({
       ],
       onPress: onOpenInsulin,
     });
+  } else if (insulin) {
+    metrics.push({
+      id: "insulin",
+      label: "Insulin",
+      value: "No data",
+      detail: "No delivery records for today",
+      icon: "water-outline",
+      tone: colors.insulin,
+      onPress: onOpenInsulin,
+    });
   }
   if (meals.length > 0) {
     metrics.push({

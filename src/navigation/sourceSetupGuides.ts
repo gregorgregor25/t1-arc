@@ -5,6 +5,18 @@ import type { SourceJump } from "./sourceNavigation";
 export const SOURCE_SETUP_GUIDES: Partial<
   Record<SourceJump, SourceSetupGuideContent>
 > = {
+  aaps: {
+    title: "AAPS local",
+    intro:
+      "Read glucose and AAPS-calculated IOB and COB from AndroidAPS on this phone, including when the internet is unavailable.",
+    steps: [
+      "Keep Juggluco sending glucose to AAPS through its existing xDrip broadcast setup.",
+      "In AAPS, open Config Builder, then Synchronization, and enable External Companion Apps.",
+      "Return here and choose Use AAPS as glucose source.",
+      "Wait for a new AAPS update, then compare its glucose and time with AAPS. Check IOB and COB below the glucose card on Today.",
+    ],
+    note: "This is a read-only local feed. No notification-access permission or Nightscout connection is needed. AAPS IOB and COB are estimates, not delivered doses or meal records. The existing watch companion receives glucose through T1 Arc; IOB and COB appear on the phone only. If AAPS stops updating, T1 Arc shows stale or missing data until you choose a source yourself.",
+  },
   libre: {
     title: "LibreLinkUp",
     intro:

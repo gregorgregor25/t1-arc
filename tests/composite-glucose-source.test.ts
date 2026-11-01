@@ -69,6 +69,59 @@ class FakeSource implements GlucoseSource {
 }
 
 describe('composite glucose source', () => {
+  it('pins AAPS across latest, history, refresh and status without cloud fallback', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([
+      reading('aaps-local', 6.4, NOW - 13 * 60_000),
+      reading('t1arc-librelinkup', 9.1, NOW - 30_000),
+    ]);
+    const aaps = new FakeSource('aaps-local', store, []);
+    const cloud = new FakeSource('t1arc-librelinkup', store, []);
+    const source = new CompositeGlucoseSource(
+      [aaps, cloud], store, async () => 'aaps-local',
+    );
+
+    await source.refresh();
+    expect(aaps.refreshCalls).toBe(1);
+    expect(cloud.refreshCalls).toBe(0);
+    expect((await source.getLatestReading())?.sourceId).toBe('aaps-local');
+    expect((await source.getReadings({ start: NOW - 20 * 60_000, end: NOW + 1 }))
+      .map((value) => value.sourceId)).toEqual(['aaps-local']);
+    await expect(source.getStatus(NOW)).resolves.toMatchObject({
+      freshness: 'stale',
+      dataThrough: NOW - 13 * 60_000,
+    });
+  });
+
+  it('shows missing data after an explicit stop despite saved cloud and AAPS rows', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([
+      reading('aaps-local', 6.4, NOW - 60_000),
+      reading('t1arc-librelinkup', 9.1, NOW),
+    ]);
+    const source = new CompositeGlucoseSource([], store, async () => 'none');
+    await expect(source.getLatestReading()).resolves.toBeUndefined();
+    await expect(source.getReadings({ start: NOW - 5 * 60_000, end: NOW + 1 }))
+      .resolves.toEqual([]);
+    await expect(source.getStatus(NOW)).resolves.toMatchObject({
+      freshness: 'missing',
+      isLive: false,
+    });
+  });
+
+  it('discards a glucose read when selection changes during the database read', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([reading('aaps-local', 6.4, NOW)]);
+    let selection = { sourceId: 'aaps-local', generation: 3 };
+    const original = store.getLatestReading.bind(store);
+    store.getLatestReading = async (sourceId?: string) => {
+      const found = await original(sourceId);
+      selection = { sourceId: 'aaps-local', generation: 5 };
+      return found;
+    };
+    const source = new CompositeGlucoseSource([], store, async () => selection);
+    await expect(source.getLatestReading()).resolves.toBeUndefined();
+  });
   it('retains provenance while preferring the first source at an exact duplicate timestamp', async () => {
     const store = new MemoryGlucoseHistoryStore();
     const preferred = new FakeSource(

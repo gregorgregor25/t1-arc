@@ -307,6 +307,7 @@ describe("local data erase", () => {
       );
     }
     expect(sql).toContain("DELETE FROM health_connect_preferences");
+    expect(sql).toContain("DELETE FROM aaps_status_observations");
     expect(
       sql.some((statement) =>
         statement.includes("INSERT INTO health_connect_preferences"),

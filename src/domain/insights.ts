@@ -1754,6 +1754,21 @@ function average(values: number[]) {
     : null;
 }
 
+function hasTimedInsulinDeliveryInRange(data: TimelineData) {
+  return data.basal.some(
+    (delivery) =>
+      delivery.units > 0 &&
+      delivery.end > delivery.start &&
+      delivery.start < data.range.end &&
+      delivery.end > data.range.start,
+  ) || data.boluses.some(
+    (delivery) =>
+      delivery.units > 0 &&
+      delivery.timestamp >= data.range.start &&
+      delivery.timestamp < data.range.end,
+  );
+}
+
 function summarize(
   data: TimelineData,
   health?: InsightHealthContext,
@@ -1780,6 +1795,13 @@ function summarize(
     sourceInsulin.sourceConflictCount === 0 &&
     sourceInsulinBreakdownConsistent(data);
   const insulinAmbiguous = hasSourceTotals && !sourceInsulinComplete;
+  // A stale importer can leave an entirely empty newer window. No rows means
+  // unknown delivery, not a measured zero. Complete source-reported daily
+  // totals, including explicit zero totals, are the separate valid evidence.
+  const insulinWithoutEvidence =
+    !sourceInsulinComplete && !hasTimedInsulinDeliveryInRange(data);
+  const insulinSummaryUnavailable =
+    insulinUnavailable || insulinAmbiguous || insulinWithoutEvidence;
   const insulin = sourceInsulinComplete
     ? sourceInsulin.stats
     : calculateInsulinStats(data.basal, data.boluses, data.range);
@@ -1817,14 +1839,14 @@ function summarize(
     glucoseReadings: data.glucose.length,
     highGlucoseRuns: highGlucoseRuns.length,
     lowGlucoseRuns: lowGlucoseRuns.length,
-    insulinUnits: insulinUnavailable || insulinAmbiguous ? null : insulin.totalUnits,
-    insulinUnitsPerDay: insulinUnavailable || insulinAmbiguous
+    insulinUnits: insulinSummaryUnavailable ? null : insulin.totalUnits,
+    insulinUnitsPerDay: insulinSummaryUnavailable
       ? undefined
       : round(insulin.totalUnits / durationDays, 1),
-    basalUnitsPerDay: insulinUnavailable || insulinAmbiguous
+    basalUnitsPerDay: insulinSummaryUnavailable
       ? undefined
       : round(insulin.basalUnits / durationDays, 1),
-    bolusUnitsPerDay: insulinUnavailable || insulinAmbiguous
+    bolusUnitsPerDay: insulinSummaryUnavailable
       ? undefined
       : round(insulin.bolusUnits / durationDays, 1),
     mealCarbsPerDay: carbohydrateComparisonReady

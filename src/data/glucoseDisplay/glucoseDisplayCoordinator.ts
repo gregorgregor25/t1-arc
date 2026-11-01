@@ -1,4 +1,5 @@
 import { CompositeGlucoseSource } from '@/data/live/CompositeGlucoseSource';
+import { AAPS_HISTORICAL_SOURCE_ID, AAPS_LOCAL_SOURCE_ID, AAPS_RESTORED_SOURCE_ID } from '@/data/aaps/types';
 import T1ArcGlucoseDisplay, {
   type GlucoseDisplayStatus,
 } from '../../../modules/t1arc-glucose-display';
@@ -116,6 +117,9 @@ function beginForegroundSync() {
 }
 
 function displaySourceLabel(sourceId: string) {
+  if (sourceId === AAPS_LOCAL_SOURCE_ID) return 'AndroidAPS local';
+  if (sourceId === AAPS_RESTORED_SOURCE_ID) return 'Restored AndroidAPS history';
+  if (sourceId === AAPS_HISTORICAL_SOURCE_ID) return 'Earlier AndroidAPS history';
   if (sourceId === DIRECT_LIBRE_LINKUP_SOURCE_ID) {
     return 'T1 Arc direct LibreLinkUp';
   }
@@ -176,9 +180,11 @@ function displayTrendOrReadingTrend(
 
 type PreparedGlucoseDisplayPublication =
   | { kind: 'unsupported' }
-  | { kind: 'missing' }
+  | { kind: 'missing'; selectedSourceId?: string; selectionGeneration: number }
   | {
       kind: 'unchanged';
+      selectedSourceId?: string;
+      selectionGeneration: number;
       sourceIds: string[];
       reading: GlucoseReading;
       trend: GlucoseReading['trend'];
@@ -186,6 +192,8 @@ type PreparedGlucoseDisplayPublication =
     }
   | {
       kind: 'reading';
+      selectedSourceId?: string;
+      selectionGeneration: number;
       sourceIds: string[];
       widgetHistory: { mmolL: number; timestampMs: number }[];
       reading: GlucoseReading;
@@ -270,12 +278,19 @@ async function prepareGlucoseDisplayPublication(
 
   const store = new SqliteGlucoseHistoryStore();
   await store.initialize();
+  const selection = await T1ArcGlucoseDisplay.getAapsLocalStatusAsync();
+  const selectedSourceId = selection.selectedSourceId;
+  const selectionGeneration = selection.selectionGeneration;
+  if (selectedSourceId === AAPS_LOCAL_SOURCE_ID) {
+    const { drainAapsLocalReadings } = await import('@/data/aaps/localAapsSource');
+    await drainAapsLocalReadings();
+  }
   const sources = await configuredGlucoseSources(store, { writeLease: lease, includeUnconfiguredNotification: true });
   const sourceIds = sources.map((source) => source.sourceId);
-  const composite = new CompositeGlucoseSource(sources, store);
+  const composite = new CompositeGlucoseSource(sources, store, async () => selectedSourceId);
   const reading = await composite.getLatestReading();
   if (!reading) {
-    return { kind: 'missing' };
+    return { kind: 'missing', selectedSourceId, selectionGeneration };
   }
   const sourceLabel = displaySourceLabel(reading.sourceId);
   if (
@@ -289,6 +304,8 @@ async function prepareGlucoseDisplayPublication(
     // reconcile so stale and repeat policies continue to advance with wall time.
     return {
       kind: 'unchanged',
+      selectedSourceId,
+      selectionGeneration,
       sourceIds,
       reading,
       trend: displayTrendOrReadingTrend(display.latestTrend, reading.trend),
@@ -301,6 +318,7 @@ async function prepareGlucoseDisplayPublication(
       start: reading.timestamp - WEAR_HISTORY_WINDOW_MS,
       end: reading.timestamp + 1,
     },
+    selectedSourceId === undefined ? undefined : selectedSourceId,
   );
   const cardReadings = composite.selectReadings(historyReadings);
   const recentReadings =
@@ -313,6 +331,8 @@ async function prepareGlucoseDisplayPublication(
   const trend = assessGlucoseTrend(reading, recentReadings);
   return {
     kind: 'reading',
+    selectedSourceId,
+    selectionGeneration,
     sourceIds,
     widgetHistory: cardReadings.map((point) => ({ mmolL: point.mmolL, timestampMs: point.timestamp })),
     reading,
@@ -338,17 +358,24 @@ async function preparedPublicationStillCurrent(
   prepared: PreparedGlucoseDisplayPublication,
 ) {
   if (prepared.kind === 'unsupported') return true;
+  const selection = await T1ArcGlucoseDisplay.getAapsLocalStatusAsync();
+  if (
+    selection.selectedSourceId !== prepared.selectedSourceId ||
+    selection.selectionGeneration !== prepared.selectionGeneration
+  ) return false;
   const ids = prepared.kind === 'missing' ? [] : prepared.sourceIds;
-  const preferred = ids.length ? `CASE WHEN source_id IN (${ids.map(() => '?').join(',')}) THEN 0 ELSE 1 END,` : '';
-  const priority = ids.length ? `CASE source_id ${ids.map((_, index) => `WHEN ? THEN ${index}`).join(' ')} ELSE ${ids.length} END,` : '';
+  const scoped = prepared.selectedSourceId;
+  const preferred = scoped === undefined && ids.length ? `CASE WHEN source_id IN (${ids.map(() => '?').join(',')}) THEN 0 ELSE 1 END,` : '';
+  const priority = scoped === undefined && ids.length ? `CASE source_id ${ids.map((_, index) => `WHEN ? THEN ${index}`).join(' ')} ELSE ${ids.length} END,` : '';
   const latest = await transaction.getFirstAsync<PublicationIdentityRow>(
     `SELECT id, source_id, timestamp_ms, received_at_ms, mmol_l, trend,
             source_device_id
        FROM glucose_readings
+      ${scoped === undefined ? '' : 'WHERE source_id = ?'}
       ORDER BY ${preferred} timestamp_ms DESC, ${priority} received_at_ms DESC,
                source_device_id ASC, id ASC
       LIMIT 1`,
-    ...ids, ...ids,
+    ...(scoped === undefined ? [...ids, ...ids] : [scoped]),
   );
   if (prepared.kind === 'missing') return !latest;
   if (!latest || rowPublicationIdentity(latest) !== prepared.latestIdentity) {
@@ -372,9 +399,11 @@ async function preparedPublicationStillCurrent(
             source_device_id
        FROM glucose_readings
       WHERE timestamp_ms >= ? AND timestamp_ms < ?
+      ${scoped === undefined ? '' : 'AND source_id = ?'}
       ORDER BY timestamp_ms ASC, source_device_id ASC, id ASC`,
     prepared.reading.timestamp - WEAR_HISTORY_WINDOW_MS,
     prepared.reading.timestamp + 1,
+    ...(scoped === undefined ? [] : [scoped]),
   );
   return (
     JSON.stringify(history.map(rowPublicationIdentity)) ===
@@ -388,14 +417,19 @@ async function commitPreparedGlucoseDisplayPublication(
 ) {
   if (prepared.kind === 'unsupported') return true;
   if (prepared.kind === 'missing') {
-    await T1ArcGlucoseDisplay.updatePrivateGlucoseForWriteEpochAsync(
-      lease.epoch,
-      null,
-      [],
-      'No personal glucose reading',
-    );
-    await reconcileGlucoseAlerts(undefined).catch(() => undefined);
-    return true;
+    let published = true;
+    if (prepared.selectedSourceId === undefined) {
+      published = await T1ArcGlucoseDisplay.updatePrivateGlucoseForWriteEpochAsync(
+        lease.epoch, null, [], 'No personal glucose reading',
+      );
+    } else {
+      published = await T1ArcGlucoseDisplay.updateSelectedGlucoseForWriteEpochAsync(
+        lease.epoch, prepared.selectionGeneration, null, [],
+        'No personal glucose reading',
+      );
+    }
+    if (published) await reconcileGlucoseAlerts(undefined).catch(() => undefined);
+    return published;
   }
   if (prepared.kind === 'unchanged') {
     await reconcileGlucoseAlerts(prepared.reading, prepared.trend).catch(
@@ -404,10 +438,7 @@ async function commitPreparedGlucoseDisplayPublication(
     return true;
   }
 
-  const historyUpdated =
-    await T1ArcGlucoseDisplay.updatePrivateGlucoseForWriteEpochAsync(
-      lease.epoch,
-      {
+  const snapshot = {
         mmolL: prepared.reading.mmolL,
         trend: prepared.trend.direction,
         timestampMs: prepared.reading.timestamp,
@@ -417,14 +448,21 @@ async function commitPreparedGlucoseDisplayPublication(
         sourceCheckedAt: prepared.sourceCheckedAt,
         trendOrigin: prepared.trend.origin,
         widgetHistory: prepared.widgetHistory,
-      },
-      prepared.history,
-      'No personal glucose reading',
-    );
-  await reconcileGlucoseAlerts(
-    prepared.reading,
-    prepared.trend.direction,
-  ).catch(() => undefined);
+      };
+  const historyUpdated = prepared.selectedSourceId === undefined
+    ? await T1ArcGlucoseDisplay.updatePrivateGlucoseForWriteEpochAsync(
+        lease.epoch, snapshot, prepared.history, 'No personal glucose reading',
+      )
+    : await T1ArcGlucoseDisplay.updateSelectedGlucoseForWriteEpochAsync(
+        lease.epoch, prepared.selectionGeneration, snapshot, prepared.history,
+        'No personal glucose reading',
+      );
+  if (historyUpdated || prepared.selectedSourceId === undefined) {
+    await reconcileGlucoseAlerts(
+      prepared.reading,
+      prepared.trend.direction,
+    ).catch(() => undefined);
+  }
   return historyUpdated;
 }
 

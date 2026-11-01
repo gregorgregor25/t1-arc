@@ -38,6 +38,19 @@ export interface InsulinRangeSummary {
   sourceConflictCount: number;
 }
 
+/** A source status or old import is not evidence of delivery in this range. */
+export function hasInsulinDeliveryEvidence(
+  data: Pick<TimelineData, 'basal' | 'boluses' | 'dailyInsulinTotals' | 'range'>,
+) {
+  const { range } = data;
+  if (
+    data.basal.some((record) => record.start < range.end && record.end > range.start) ||
+    data.boluses.some((record) => record.timestamp >= range.start && record.timestamp < range.end)
+  ) return true;
+  if (!data.dailyInsulinTotals?.length) return false;
+  return summarizeInsulinRange([], [], range, data.dailyInsulinTotals).sourceTotals.length > 0;
+}
+
 export interface DailyInsulinTotalSelection {
   dateKey: string;
   total: InsulinDailyTotal;
@@ -203,7 +216,7 @@ export function describeInsulinTimelineFidelity(
       kind: 'no-records',
       label: 'No insulin records in this range',
       detail:
-        'An insulin source is connected, but it supplied no records for these dates.',
+        'No insulin delivery amounts are recorded for these dates.',
     };
   }
   return {

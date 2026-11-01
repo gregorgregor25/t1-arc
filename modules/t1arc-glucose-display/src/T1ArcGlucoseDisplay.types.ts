@@ -124,4 +124,35 @@ export interface GlucoseDisplayPublicationSnapshot {
   trendOrigin: GlucoseDisplayTrendOrigin;
 }
 
+export interface AapsLocalReading {
+  id: string;
+  receivedAt: number;
+  writeEpoch: number;
+  selectionGeneration: number;
+  glucoseMgdl?: number;
+  glucoseTimestamp?: number;
+  trend?: string;
+  rawTrend?: string;
+  deltaMgdl?: number;
+  avgDeltaMgdl?: number;
+  iobUnits?: number;
+  bolusIobUnits?: number;
+  basalIobUnits?: number;
+  cobGrams?: number;
+  futureCarbsGrams?: number;
+  displayUnits?: string;
+}
+
+export interface AapsLocalStatus {
+  supported: boolean;
+  selectedSourceId?: string;
+  selectionGeneration: number;
+  writeEpoch: number;
+  lastReceivedAt?: number;
+  latestGlucoseTimestamp?: number;
+  latest?: AapsLocalReading;
+  bufferedCount: number;
+  droppedCount?: number;
+}
+
 export type { GlucoseAppearanceSettings };

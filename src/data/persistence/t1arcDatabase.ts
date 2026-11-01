@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
+import { AAPS_STATUS_OBSERVATIONS_CREATE_SQL } from '@/data/aaps/schema';
 
 import {
   ensureGlucoseReadingDeviceIdentity,
@@ -415,6 +416,8 @@ async function openAndMigrate() {
     );
 
     ${GLUCOSE_READINGS_CREATE_SQL}
+
+    ${AAPS_STATUS_OBSERVATIONS_CREATE_SQL}
 
     CREATE INDEX IF NOT EXISTS idx_glucose_timestamp
       ON glucose_readings(timestamp_ms);

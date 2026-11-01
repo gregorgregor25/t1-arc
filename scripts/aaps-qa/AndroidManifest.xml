@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="info.nightscout.androidaps"
+  android:versionCode="900001" android:versionName="t1arc-synthetic-qa">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+    </intent>
+  </queries>
+  <application android:label="Synthetic AAPS sender (QA only)" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <activity android:name=".QaSender" android:exported="true" />
+    <receiver android:name=".QaSenderReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="info.nightscout.androidaps.qa.SEND" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

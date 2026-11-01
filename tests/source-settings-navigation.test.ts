@@ -14,6 +14,7 @@ import type { SourceJump } from "@/navigation/sourceNavigation";
 
 const EXPECTED_SOURCE_JUMPS = [
   "profile",
+  "aaps",
   "libre",
   "dexcom",
   "nightscout",

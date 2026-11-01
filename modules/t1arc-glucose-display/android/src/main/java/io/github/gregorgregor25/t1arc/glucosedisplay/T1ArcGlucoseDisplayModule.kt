@@ -1025,8 +1025,7 @@ internal object T1ArcGlucosePublicationGate {
       requested = bridgeEpoch(requestedEpoch),
       readCurrent = { storedEpoch(context) },
       persistEpochAndClearSnapshot = { next ->
-        T1ArcGlucoseDisplayState.preferences(context)
-          .edit()
+        val editor = T1ArcGlucoseDisplayState.preferences(context).edit()
           .putLong(GLUCOSE_PUBLICATION_EPOCH_KEY, next)
           // Persist the epoch and remove the recoverable private snapshot in
           // one disk commit. A process death before the remaining surface
@@ -1034,7 +1033,8 @@ internal object T1ArcGlucosePublicationGate {
           // snapshot from the preceding privacy epoch.
           .remove(SNAPSHOT_PAYLOAD_KEY)
           .remove(SNAPSHOT_IV_KEY)
-          .commit()
+        if (next > storedEpoch(context)) AapsLocalStore.clearForErase(context, editor)
+        editor.commit()
       },
       mutation = mutation,
     )
@@ -1402,6 +1402,7 @@ private fun applyPrivateGlucosePublication(
   snapshot: GlucoseDisplaySnapshot?,
   history: List<GlucoseHistoryPoint>,
   missingSourceLabel: String,
+  wearWaitSeconds: Long = 5L,
 ): Boolean {
   T1ArcGlucosePhoneSurfaceGate.mutate {
     if (snapshot == null) {
@@ -1434,13 +1435,46 @@ private fun applyPrivateGlucosePublication(
   }.getOrNull()
   val currentPublished =
     currentTask != null && runCatching {
-      Tasks.await(currentTask, 5, TimeUnit.SECONDS)
+      Tasks.await(currentTask, wearWaitSeconds, TimeUnit.SECONDS)
     }.isSuccess
   val historyPublished =
     historyTask != null && runCatching {
-      Tasks.await(historyTask, 5, TimeUnit.SECONDS)
+      Tasks.await(historyTask, wearWaitSeconds, TimeUnit.SECONDS)
     }.isSuccess
   return currentPublished && historyPublished
+}
+
+/** Called inside the same native epoch gate as source changes and privacy erase. */
+internal fun publishAapsLocalReading(
+  context: Context,
+  epoch: Long,
+  reading: AapsLocalReading,
+) {
+  if (AapsLocalStore.selectedSource(context) != AAPS_SOURCE_ID ||
+      reading.selectionGeneration != AapsLocalStore.generation(context) ||
+      reading.writeEpoch != epoch) return
+  val mgdl = reading.glucoseMgdl ?: return
+  val timestamp = reading.glucoseTimestamp ?: return
+  val previous = T1ArcGlucoseDisplayState.snapshot(context)
+    ?.takeIf { it.sourceLabel == "AndroidAPS local" }
+  val mmolL = mgdl / 18.016
+  if (!mmolL.isFinite() || mmolL !in 0.5..40.0) return
+  if (!AapsStatusPolicy.publishGlucose(previous?.timestampMs, previous?.mmolL,
+      previous?.trend, timestamp, mmolL, reading.trend ?: "unknown")) return
+  val history = glucoseWidgetHistory(
+    (previous?.widgetHistory ?: emptyList()).filterNot { it.timestampMs == timestamp } +
+      GlucoseHistoryPoint(mmolL, timestamp),
+    timestamp,
+  )
+  val snapshot = GlucoseDisplaySnapshot(
+    mmolL = mmolL, trend = reading.trend ?: "unknown",
+    trendOrigin = if (reading.trend == null) "unavailable" else "source",
+    timestampMs = timestamp, sourceLabel = "AndroidAPS local",
+    sourceHasError = false, widgetHistory = history,
+    sourceIsLive = true, sourceCheckedAt = reading.receivedAt,
+  )
+  applyPrivateGlucosePublication(context, epoch, snapshot, history,
+    "AndroidAPS local reading unavailable", wearWaitSeconds = 3L)
 }
 
 private fun clearPrivateGlucosePublication(
@@ -2705,6 +2739,23 @@ class T1ArcGlucoseDisplayService : Service() {
     @Volatile var running = false
     @Volatile private var instance: T1ArcGlucoseDisplayService? = null
 
+    fun requestAapsSync(context: Context) {
+      val service = instance
+      if (service != null && service.serviceAlive) {
+        service.handler.post { if (service.serviceAlive) service.requestHeadlessSync(DISPLAY_SYNC_REASON) }
+        return
+      }
+      if (!T1ArcGlucoseDisplayState.headlessTaskActive.compareAndSet(false, true)) return
+      try {
+        context.startService(Intent(context, T1ArcLibreHeadlessService::class.java)
+          .putExtra(HEADLESS_REASON_EXTRA, DISPLAY_SYNC_REASON))
+      } catch (_: Exception) {
+        // Background service launch can be denied. The encrypted native queue
+        // and Wear publication remain available; UI/collector startup drains it.
+        T1ArcGlucoseDisplayState.headlessTaskActive.set(false)
+      }
+    }
+
     fun headlessTaskFinished() {
       instance?.let { service ->
         service.handler.post {
@@ -3274,8 +3325,10 @@ private object T1ArcGlucoseSurfaceStartupReconciler {
 class T1ArcGlucoseDisplayModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("T1ArcGlucoseDisplay")
+    Events("onAapsReading")
 
     OnCreate {
+      AapsLocalEvents.emit = { sendEvent("onAapsReading", mapOf("changed" to true)) }
       appContext.reactContext?.let(T1ArcGlucoseSurfaceStartupReconciler::reconcileOnce)
     }
 
@@ -3295,6 +3348,46 @@ class T1ArcGlucoseDisplayModule : Module() {
     AsyncFunction("getPrivateGlucoseWriteEpochAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)
       T1ArcGlucosePublicationGate.observeCurrent(context) { it.toDouble() }
+    }
+
+    AsyncFunction("getAapsLocalStatusAsync") Coroutine { ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->
+        AapsLocalStore.status(context, epoch)
+      }
+    }
+
+    AsyncFunction("setLocalGlucoseSourceAsync") Coroutine {
+        sourceId: String, writeEpoch: Double ->
+      val context = requireNotNull(appContext.reactContext)
+      require(sourceId in setOf(
+        AAPS_SOURCE_ID, "none", "t1arc-librelinkup", "nightscout",
+        "dexcom-share", "medtrum-easyfollow", "xdrip-local",
+        "android-notification",
+      )) { "Glucose source is not supported." }
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        if (AapsLocalStore.selectedSource(context) != sourceId) {
+          AapsLocalStore.select(context, sourceId)
+          clearPrivateGlucosePublication(context, epoch, "No reading from selected glucose source")
+        }
+        AapsLocalStore.status(context, epoch)
+      }
+    }
+
+    AsyncFunction("peekAapsReadingsAsync") Coroutine { limit: Int ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->
+        AapsLocalStore.peek(context, limit, epoch).map(AapsLocalReading::asMap)
+      }
+    }
+
+    AsyncFunction("acknowledgeAapsReadingsAsync") Coroutine {
+        ids: List<String>, selectionGeneration: Double, writeEpoch: Double ->
+      val context = requireNotNull(appContext.reactContext)
+      val generation = requireNotNull(GlucosePublicationEpochPolicy.parseBridgeEpoch(selectionGeneration))
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        AapsLocalStore.acknowledge(context, ids.toSet(), generation, epoch)
+      }
     }
 
     AsyncFunction("getWatchFaceStatusAsync") Coroutine { ->
@@ -3577,6 +3670,9 @@ class T1ArcGlucoseDisplayModule : Module() {
       val parsedSnapshot = snapshotFromBridgeMap(snapshot)
       val history = historyFromBridgeMaps(readings)
       T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        check(AapsLocalStore.selectedSource(context) == null) {
+          "An explicit glucose source owns publication."
+        }
         applyPrivateGlucosePublication(
           context,
           epoch,
@@ -3584,6 +3680,40 @@ class T1ArcGlucoseDisplayModule : Module() {
           history,
           missingSourceLabel,
         )
+      }
+    }
+
+    AsyncFunction("updateSelectedGlucoseForWriteEpochAsync") Coroutine {
+        writeEpoch: Double,
+        selectionGeneration: Double,
+        snapshot: Map<String, Any?>?,
+        readings: List<Map<String, Any?>>,
+        missingSourceLabel: String,
+      ->
+      val context = requireNotNull(appContext.reactContext)
+      val generation = requireNotNull(GlucosePublicationEpochPolicy.parseBridgeEpoch(selectionGeneration))
+      val parsedSnapshot = snapshotFromBridgeMap(snapshot)
+      val history = historyFromBridgeMaps(readings)
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        check(AapsLocalStore.selectedSource(context) != null &&
+          AapsLocalStore.generation(context) == generation) {
+          "The glucose source selection has changed."
+        }
+        check(AapsLocalStore.selectedSource(context) != "none" || parsedSnapshot == null) {
+          "No glucose source is selected."
+        }
+        if (AapsLocalStore.selectedSource(context) == AAPS_SOURCE_ID) {
+          val native = T1ArcGlucoseDisplayState.snapshot(context)
+            ?.takeIf { it.sourceLabel == "AndroidAPS local" }
+          if (native != null && (parsedSnapshot == null ||
+              parsedSnapshot.timestampMs < native.timestampMs ||
+              (parsedSnapshot.timestampMs == native.timestampMs &&
+                (parsedSnapshot.mmolL != native.mmolL ||
+                  (native.trend != "unknown" && parsedSnapshot.trend != native.trend))))) {
+            return@mutateForEpoch false
+          }
+        }
+        applyPrivateGlucosePublication(context, epoch, parsedSnapshot, history, missingSourceLabel)
       }
     }
 

@@ -89,7 +89,8 @@ async function getLocalDataSummaryFromDatabase(
          (SELECT COUNT(*) FROM context_events) +
          (SELECT COUNT(*) FROM context_notes) +
          (SELECT COUNT(*) FROM cycle_periods) +
-         (SELECT COUNT(*) FROM cycle_days)
+         (SELECT COUNT(*) FROM cycle_days) +
+         (SELECT COUNT(*) FROM aaps_status_observations)
        ) AS context_records,
        (SELECT COUNT(*) FROM food_logs) AS food_logs,
        (SELECT COUNT(*) FROM food_recipes) AS food_recipes,
@@ -242,6 +243,7 @@ export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
         "DELETE FROM cycle_days",
         "DELETE FROM cycle_periods",
         "DELETE FROM context_events",
+        "DELETE FROM aaps_status_observations",
         "DELETE FROM insulin_daily_totals",
         "DELETE FROM insulin_bolus",
         "DELETE FROM insulin_basal",

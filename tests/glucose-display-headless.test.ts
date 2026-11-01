@@ -10,6 +10,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getDisplayStatus: vi.fn(),
+  getAapsStatus: vi.fn(),
   updateMissing: vi.fn(),
   updateReading: vi.fn(),
   updateHistory: vi.fn(),
@@ -51,10 +52,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../modules/t1arc-glucose-display', () => ({
   default: {
     getStatusAsync: mocks.getDisplayStatus,
+    getAapsLocalStatusAsync: mocks.getAapsStatus,
     updateMissingAsync: mocks.updateMissing,
     updateReadingAsync: mocks.updateReading,
     updateHistoryAsync: mocks.updateHistory,
     updatePrivateGlucoseForWriteEpochAsync: mocks.updatePrivate,
+    updateSelectedGlucoseForWriteEpochAsync: mocks.updatePrivate,
   },
 }));
 
@@ -108,6 +111,13 @@ async function flushMicrotasks() {
 describe('glucose display Headless JS settlement', () => {
   beforeEach(() => {
     mocks.getDisplayStatus.mockReset().mockResolvedValue({ supported: false });
+    mocks.getAapsStatus.mockReset().mockResolvedValue({
+      supported: true,
+      selectedSourceId: undefined,
+      selectionGeneration: 0,
+      writeEpoch: 7,
+      bufferedCount: 0,
+    });
     mocks.updateMissing.mockReset().mockResolvedValue(undefined);
     mocks.updateReading.mockReset().mockResolvedValue(undefined);
     mocks.updateHistory.mockReset().mockResolvedValue(true);

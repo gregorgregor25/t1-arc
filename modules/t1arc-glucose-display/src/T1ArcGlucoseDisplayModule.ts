@@ -8,6 +8,8 @@ import {
   GlucoseAlertChannelStatus,
   GlucoseDisplayHistoryPoint,
   GlucoseDisplayPublicationSnapshot,
+  AapsLocalReading,
+  AapsLocalStatus,
   GlucoseDisplayStatus,
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
@@ -17,11 +19,22 @@ import {
   WatchFaceResult,
 } from './T1ArcGlucoseDisplay.types';
 
-declare class T1ArcGlucoseDisplayModule extends NativeModule<
-  Record<string, never>
-> {
+declare class T1ArcGlucoseDisplayModule extends NativeModule<{
+  onAapsReading: (event: { changed: boolean }) => void;
+}> {
   getStatusAsync(): Promise<GlucoseDisplayStatus>;
   getPrivateGlucoseWriteEpochAsync(): Promise<number>;
+  getAapsLocalStatusAsync(): Promise<AapsLocalStatus>;
+  setLocalGlucoseSourceAsync(sourceId: string, writeEpoch: number): Promise<AapsLocalStatus>;
+  peekAapsReadingsAsync(limit: number): Promise<AapsLocalReading[]>;
+  acknowledgeAapsReadingsAsync(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
+  updateSelectedGlucoseForWriteEpochAsync(
+    writeEpoch: number,
+    selectionGeneration: number,
+    snapshot: GlucoseDisplayPublicationSnapshot | null,
+    readings: GlucoseDisplayHistoryPoint[],
+    missingSourceLabel: string,
+  ): Promise<boolean>;
   getWearStatusAsync(): Promise<WearCompanionStatus>;
   getWatchFaceStatusAsync(): Promise<WatchFaceDeviceStatus[]>;
   installBundledWatchFaceAsync(nodeId: string, faceId: WatchFaceId): Promise<WatchFaceResult>;

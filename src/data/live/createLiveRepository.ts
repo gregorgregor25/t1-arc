@@ -2,6 +2,7 @@ import {
   CombinedDiabetesRepository,
   GlucoseSource,
 } from '@/data/contracts';
+import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { DexcomShareConnection } from '@/data/dexcomShare/types';
@@ -43,7 +44,7 @@ export function createLiveRepository(
   const healthRecords = new SqliteHealthRecordStore(writeLease);
   const glucoseHistory = new SqliteGlucoseHistoryStore(writeLease);
   const notificationSource = new NotificationGlucoseSource(glucoseHistory);
-  const glucoseSources: GlucoseSource[] = [notificationSource];
+  const glucoseSources: GlucoseSource[] = [notificationSource, new AapsGlucoseSource(glucoseHistory)];
   const nightscoutHealthRecords = sourceWriteLeases.nightscout
     ? healthRecords.withSourceWriteLease(sourceWriteLeases.nightscout)
     : undefined;
@@ -102,7 +103,10 @@ export function createLiveRepository(
     );
   }
   return new CombinedDiabetesRepository(
-    new CompositeGlucoseSource(glucoseSources, glucoseHistory),
+    new CompositeGlucoseSource(glucoseSources, glucoseHistory, async () => {
+      const { getSelectedGlucoseSourceState } = await import('@/data/aaps/localAapsSource');
+      return getSelectedGlucoseSourceState();
+    }),
     new ImportedInsulinSource(healthRecords, nightscoutTreatments),
     new StoredContextSource(healthRecords),
   );

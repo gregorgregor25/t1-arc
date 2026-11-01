@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
+import { AapsSourceCard } from "@/components/AapsSourceCard";
 import { AppInfoCard } from "@/components/AppInfoCard";
 import { SupportReportCard } from "@/components/SupportReportCard";
 import { FeatureEntry } from '@/components/FeatureEntry';
@@ -1047,6 +1048,12 @@ export function SourcesScreen({
       ) : null}
 
       {activeSource === 'libre' ? <ConnectionHistoryCard /> : null}
+
+      {activeSource === "aaps" ? (
+        <View style={styles.settingsSections}>
+          <AapsSourceCard onDataChanged={showChangedPersonalData} />
+        </View>
+      ) : null}
 
       {activeSource === "region" ? (
         <View style={styles.settingsSections}>

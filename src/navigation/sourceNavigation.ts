@@ -3,6 +3,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 export type SourceJump =
   | "profile"
   | "libre"
+  | "aaps"
   | "dexcom"
   | "medtrum"
   | "nightscout"
@@ -52,6 +53,12 @@ export const SOURCE_MENU_SECTIONS: {
     id: "glucose",
     title: "Glucose connections",
     items: [
+      {
+        source: "aaps",
+        label: "AAPS local",
+        detail: "Glucose, IOB and COB on this phone",
+        icon: "pulse-outline",
+      },
       {
         source: "libre",
         label: "LibreLinkUp",

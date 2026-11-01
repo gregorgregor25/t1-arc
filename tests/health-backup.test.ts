@@ -124,6 +124,67 @@ function genuineVersionOneBackupWithHealthConnectPreference() {
 }
 
 describe('health backup validation', () => {
+  it('retains AAPS estimate snapshots without activating restored status', () => {
+    const backup = emptyBackup();
+    const observation = {
+      id: 'aaps-status-1', received_at_ms: 1_730_000_000_000,
+      write_epoch: 4, selection_generation: 2,
+      glucose_timestamp_ms: 1_729_999_980_000, glucose_mgdl: 137,
+      trend: 'slightUp', raw_trend: 'FortyFiveUp', delta_mgdl: 4, avg_delta_mgdl: 3,
+      iob_units: -0.25, bolus_iob_units: 0, basal_iob_units: -0.25,
+      cob_grams: 0, future_carbs_grams: 12, display_units: 'mmol',
+    };
+    backup.tables.aaps_status_observations = [observation];
+    backup.manifest.counts.aaps_status_observations = 1;
+    backup.manifest.totalRecords = 1;
+    expect(validateHealthBackupDocument(backup).tables.aaps_status_observations).toEqual([observation]);
+    const restored = backupRestoreBinding('aaps_status_observations', observation);
+    expect(restored.columns.at(-1)).toBe('reconciliation_scope');
+    expect(restored.values.at(-1)).toBe('restored');
+    expect(restored.values[restored.columns.indexOf('cob_grams')]).toBe(0);
+    expect(restored.values[restored.columns.indexOf('iob_units')]).toBe(-0.25);
+
+    backup.tables.aaps_status_observations = [{ ...observation, cob_grams: null }];
+    expect(validateHealthBackupDocument(backup).tables.aaps_status_observations[0]?.cob_grams).toBeNull();
+    backup.tables.aaps_status_observations = [{ ...observation, cob_grams: -1 }];
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/invalid AAPS status/);
+
+    const older = emptyBackup();
+    older.manifest.version = 22;
+    delete older.tables.aaps_status_observations;
+    delete older.manifest.counts.aaps_status_observations;
+    expect(validateHealthBackupDocument(older).tables.aaps_status_observations).toEqual([]);
+  });
+
+  it('rebases imported AAPS glucose and its sync cursor as historical source data', () => {
+    const row = {
+      id: 'aaps-local:1730000000000', source_id: 'aaps-local',
+      timestamp_ms: 1_730_000_000_000, received_at_ms: 1_730_000_001_000,
+      mmol_l: 7.1, trend: 'up', quality: 'measured',
+      source_factory_timestamp: null, source_local_timestamp: null,
+      timestamp_discrepancy_minutes: null, imported_at_ms: null,
+      source_file: null, source_row: null, source_device_id: null,
+    };
+    const restored = backupRestoreBinding('glucose_readings', row);
+    expect(restored.values[restored.columns.indexOf('id')]).toBe('aaps-restored:aaps-local:1730000000000');
+    expect(restored.values[restored.columns.indexOf('source_id')]).toBe('aaps-restored');
+    expect(restored.values[restored.columns.indexOf('source_device_id')]).toBe(
+      'restored:aaps-local:1730000000000:',
+    );
+    const cursor = backupRestoreBinding('source_sync_state', {
+      source_id: 'aaps-local', last_attempt_at_ms: null,
+      last_success_at_ms: null, last_error_code: null,
+      last_error_message: null, record_count: 1,
+    });
+    expect(cursor.values[cursor.columns.indexOf('source_id')]).toBe('aaps-restored');
+    const roundTrip = backupRestoreBinding('glucose_readings', {
+      ...row, source_id: 'aaps-restored', id: 'aaps-restored:aaps-local:1730000000000',
+    });
+    expect(roundTrip.values[roundTrip.columns.indexOf('id')]).toBe(
+      'aaps-restored:aaps-local:1730000000000',
+    );
+  });
+
   it('carries private cycle entries in v22 and reads v21 without inventing them', () => {
     const backup = emptyBackup();
     backup.tables.cycle_periods = [{ id: '11111111-1111-4111-8111-111111111111', start_date: '2026-04-01', end_date: '2026-04-05', created_at_ms: 1, updated_at_ms: 1 }];
@@ -153,10 +214,13 @@ describe('health backup validation', () => {
     delete backup.tables.cycle_days;
     delete backup.manifest.counts.cycle_periods;
     delete backup.manifest.counts.cycle_days;
+    delete backup.manifest.counts.aaps_status_observations;
+    delete backup.tables.aaps_status_observations;
     expect(validateHealthBackupDocument(backup).tables.food_photos).toEqual([]);
     expect(validateCurrentContainerManifest(backup.manifest).counts.food_photos).toBe(0);
-    expect(BACKUP_TABLE_NAMES.at(-3)).toBe('food_photos');
-    expect(BACKUP_TABLE_NAMES.at(-1)).toBe('cycle_days');
+    expect(BACKUP_TABLE_NAMES.at(-4)).toBe('food_photos');
+    expect(BACKUP_TABLE_NAMES.at(-2)).toBe('cycle_days');
+    expect(BACKUP_TABLE_NAMES.at(-1)).toBe('aaps_status_observations');
   });
   it('preserves lab provenance and migrates version 18 observations without inventing results', () => {
     const backup = emptyBackup();
@@ -690,6 +754,8 @@ describe('health backup validation', () => {
     delete backup.manifest.counts.food_photos;
     delete backup.manifest.counts.cycle_periods;
     delete backup.manifest.counts.cycle_days;
+    delete backup.manifest.counts.aaps_status_observations;
+    delete backup.tables.aaps_status_observations;
     delete backup.tables.food_photos;
     delete backup.tables.glooko_report_payloads;
     delete backup.tables.hevy_workouts;
@@ -940,6 +1006,7 @@ describe('health backup validation', () => {
     delete backup.manifest.counts.food_photos;
     delete backup.manifest.counts.cycle_periods;
     delete backup.manifest.counts.cycle_days;
+    delete backup.manifest.counts.aaps_status_observations;
     delete backup.tables.food_photos;
 
     const manifest = validateCurrentContainerManifest(backup.manifest);

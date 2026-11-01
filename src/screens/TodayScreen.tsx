@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
+import { AapsContextCard } from "@/components/AapsContextCard";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
@@ -31,7 +32,7 @@ import type { FoodLog } from "@/data/food/types";
 import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualContext";
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
-import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
+import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
 import { dayRange } from "@/domain/time";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
@@ -54,7 +55,7 @@ const CONTEXT_PADDING_MS = 45 * 60_000;
 export function TodayScreen() {
   const route = useRoute<RouteProp<RootTabParamList, "Today">>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
-  const { deleteManualContext, now, ownerIdentity, refreshData, sourceError, syncing, today } =
+  const { dataMode, deleteManualContext, now, ownerIdentity, refreshData, revision, sourceError, syncing, today } =
     useDataContext();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("4h");
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
@@ -101,9 +102,6 @@ export function TodayScreen() {
   const heroTimeline = useTimeline(heroRange, `today:${today}:hero`);
   const glucoseSource = latest.sources.find(
     (source) => source.label === "Glucose",
-  );
-  const insulinSource = todayTimeline.data?.sources.find(
-    (source) => source.label === "Insulin",
   );
   const trendAssessment = useMemo(
     () =>
@@ -221,6 +219,7 @@ export function TodayScreen() {
             }
           />
         )}
+        {dataMode === "live" ? <AapsContextCard now={now} revision={revision} /> : null}
         <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
         <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (
@@ -235,7 +234,7 @@ export function TodayScreen() {
           glucoseLabel={`Last ${RANGE_HOURS[rangeChoice]} hours`}
           health={dailyHealth.metrics}
           insulin={insulinSummary?.stats}
-          insulinAvailable={insulinSource?.freshness !== "missing"}
+          insulinAvailable={Boolean(todayTimeline.data && hasInsulinDeliveryEvidence(todayTimeline.data))}
           range={dayRange(today, now)}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {

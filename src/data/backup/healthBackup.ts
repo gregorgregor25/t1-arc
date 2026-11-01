@@ -35,6 +35,7 @@ import {
 import { backfillNativeFoodLogContextNutrition } from '@/data/food/foodLogContextBackfill';
 import { runExclusiveLocalDataMutation } from '@/data/privacy/localDataMutationCoordinator';
 import { readLocalDataWriteEpochFromDatabase } from '@/data/privacy/localDataWriteEpoch';
+import { AAPS_LOCAL_SOURCE_ID, AAPS_RESTORED_SOURCE_ID } from '@/data/aaps/types';
 import {
   MAINTAINER_MIGRATION_APPLIED_KEY,
   MaintainerMigrationMetadata,
@@ -42,7 +43,7 @@ import {
 } from '@/data/migration/migrationFormat';
 
 export const HEALTH_BACKUP_FORMAT = 't1arc-health-backup';
-export const HEALTH_BACKUP_VERSION = 22;
+export const HEALTH_BACKUP_VERSION = 23;
 export const HEALTH_BACKUP_MIME = 'application/vnd.t1arc.health-backup';
 export const HEALTH_BACKUP_EXTENSION = '.t1arc';
 
@@ -420,6 +421,24 @@ const BACKUP_TABLE_DEFINITIONS = {
   food_photos: ['id', 'food_id', 'log_id', 'recipe_id', 'image_data', 'source_url', 'created_at_ms'],
   cycle_periods: ['id', 'start_date', 'end_date', 'created_at_ms', 'updated_at_ms'],
   cycle_days: ['date', 'flow', 'symptoms_json', 'notes', 'created_at_ms', 'updated_at_ms'],
+  aaps_status_observations: [
+    'id',
+    'received_at_ms',
+    'write_epoch',
+    'selection_generation',
+    'glucose_timestamp_ms',
+    'glucose_mgdl',
+    'trend',
+    'raw_trend',
+    'delta_mgdl',
+    'avg_delta_mgdl',
+    'iob_units',
+    'bolus_iob_units',
+    'basal_iob_units',
+    'cob_grams',
+    'future_carbs_grams',
+    'display_units',
+  ],
 } as const;
 
 export type BackupTableName = keyof typeof BACKUP_TABLE_DEFINITIONS;
@@ -451,6 +470,7 @@ const HEALTH_BACKUP_EXCLUDED_COLUMNS: Partial<
   health_connect_records: ['reconciliation_scope'],
   health_connect_sync_state: ['changes_token', 'changes_token_source_package'],
   notification_source_events: ['reconciliation_scope'],
+  aaps_status_observations: ['reconciliation_scope'],
 };
 
 function representedDatabaseColumns(table: BackupTableName) {
@@ -532,6 +552,7 @@ const BACKUP_TABLE_INTRODUCED_VERSION: Partial<
   glooko_report_payloads: 12,
   hevy_workouts: 13,
   portable_app_state: 14,
+  aaps_status_observations: 23,
 };
 
 function backupTableNamesForVersion(version: number) {
@@ -1146,6 +1167,22 @@ export function backupRestoreBinding(
       column === 'payload_base64' ? 'payload_bytes' : column,
     );
   const values = backupColumns.map((column) => {
+      // An imported phone's AAPS glucose is historical even when this phone
+      // currently has the local AAPS receiver selected. Keep a distinct
+      // source and identity so it cannot become the live/watch reading or
+      // collide with this phone's reading at the same sensor timestamp.
+      if (row.source_id === AAPS_LOCAL_SOURCE_ID) {
+        if (table === 'glucose_readings') {
+          if (column === 'id') return `${AAPS_RESTORED_SOURCE_ID}:${row.id}`;
+          if (column === 'source_id') return AAPS_RESTORED_SOURCE_ID;
+          if (column === 'source_device_id') {
+            return `restored:${row.id}:${row.source_device_id ?? ''}`;
+          }
+        }
+        if (table === 'source_sync_state' && column === 'source_id') {
+          return AAPS_RESTORED_SOURCE_ID;
+        }
+      }
       if (column === 'payload_base64') {
         return backupBase64ToBytes(String(row[column] ?? ''));
       }
@@ -1159,6 +1196,10 @@ export function backupRestoreBinding(
     values.push('restored');
   }
   if (table === 'notification_source_events') {
+    columns.push('reconciliation_scope');
+    values.push('restored');
+  }
+  if (table === 'aaps_status_observations') {
     columns.push('reconciliation_scope');
     values.push('restored');
   }
@@ -1214,6 +1255,42 @@ function validateRow(
       throw new Error(
         `${table} row ${rowIndex + 1} contains an invalid ${column} value.`,
       );
+    }
+  }
+  if (table === 'aaps_status_observations') {
+    const finiteNumberOrNull = (item: unknown) =>
+      item === null || (typeof item === 'number' && Number.isFinite(item));
+    const nullableNumbers = [
+      'glucose_timestamp_ms', 'glucose_mgdl', 'delta_mgdl',
+      'avg_delta_mgdl', 'iob_units', 'bolus_iob_units',
+      'basal_iob_units', 'cob_grams', 'future_carbs_grams',
+    ];
+    if (
+      typeof value.id !== 'string' || !value.id || value.id.length > 256 ||
+      typeof value.received_at_ms !== 'number' ||
+      !Number.isSafeInteger(value.received_at_ms) || value.received_at_ms <= 0 ||
+      typeof value.write_epoch !== 'number' ||
+      !Number.isSafeInteger(value.write_epoch) || value.write_epoch < 0 ||
+      typeof value.selection_generation !== 'number' ||
+      !Number.isSafeInteger(value.selection_generation) || value.selection_generation < 0 ||
+      nullableNumbers.some((column) => !finiteNumberOrNull(value[column])) ||
+      (value.glucose_timestamp_ms !== null &&
+        (typeof value.glucose_timestamp_ms !== 'number' ||
+          !Number.isSafeInteger(value.glucose_timestamp_ms) ||
+          value.glucose_timestamp_ms <= 0)) ||
+      (value.glucose_mgdl !== null &&
+        (typeof value.glucose_mgdl !== 'number' ||
+          value.glucose_mgdl <= 0 || value.glucose_timestamp_ms === null)) ||
+      (value.cob_grams !== null &&
+        (typeof value.cob_grams !== 'number' || value.cob_grams < 0)) ||
+      (value.trend !== null &&
+        (typeof value.trend !== 'string' || value.trend.length > 50)) ||
+      (value.raw_trend !== null &&
+        (typeof value.raw_trend !== 'string' || value.raw_trend.length > 100)) ||
+      (value.display_units !== null &&
+        (typeof value.display_units !== 'string' || value.display_units.length > 32))
+    ) {
+      throw new Error(`The backup contains an invalid AAPS status observation.`);
     }
   }
   if (table === 'cycle_periods') {
@@ -1516,6 +1593,7 @@ export function validateHealthBackupDocument(
       19,
       20,
       21,
+      22,
       HEALTH_BACKUP_VERSION,
     ].includes(manifest.version as number)
   ) {
@@ -1614,7 +1692,7 @@ export function validateCurrentContainerManifest(
   }
   if (
     value.format !== HEALTH_BACKUP_FORMAT ||
-    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, HEALTH_BACKUP_VERSION].includes(
+    ![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, HEALTH_BACKUP_VERSION].includes(
       value.version as number,
     )
   ) {

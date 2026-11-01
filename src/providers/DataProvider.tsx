@@ -13,6 +13,7 @@ import {
 import { AppState, Linking } from "react-native";
 
 import T1ArcGlucoseDisplay from "../../modules/t1arc-glucose-display";
+import { stopAapsLocalSourceForDemoInTransaction } from "@/data/aaps/localAapsSource";
 import T1ArcGlookoExport from "../../modules/t1arc-glooko-export";
 import T1ArcNotificationSource from "../../modules/t1arc-notification-source";
 import {
@@ -597,6 +598,14 @@ export function DataProvider({ children }: PropsWithChildren) {
           // Capture before SecureStore credentials. Every source created below
           // carries this exact generation through its eventual DB commits.
           writeLease ??= await acquireLocalDataWriteLease();
+          if (requestedMode === "demo") {
+            // Reconcile immediately on a demo configuration, including a
+            // resumed configuration after process death. The later save-mode
+            // transaction repeats this under the writer lock to close races.
+            await withLocalDataWriteLeaseTransaction(writeLease, () =>
+              stopAapsLocalSourceForDemoInTransaction(writeLease!),
+            );
+          }
           const [
             libreOwned,
             nightscoutOwned,
@@ -678,9 +687,12 @@ export function DataProvider({ children }: PropsWithChildren) {
                 )
               : [];
 
-          await withLocalDataWriteLeaseTransaction(writeLease, () =>
-            saveDataMode(mode),
-          );
+          await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+            if (mode === "demo") {
+              await stopAapsLocalSourceForDemoInTransaction(writeLease!);
+            }
+            await saveDataMode(mode);
+          });
           // Publish the verified owner and local repository before registering
           // optional background jobs or scanning historical bounds. Live chat
           // must not wait on those tasks to open its saved conversations.
@@ -802,7 +814,9 @@ export function DataProvider({ children }: PropsWithChildren) {
   const observeLatestStoredGlucose = useCallback(async () => {
     if (repositoryState.mode !== "live") return false;
     try {
-      const reading = await glucoseHistoryStore.current.getLatestReading();
+      // Use the same explicit source scope as Today and the native display.
+      // A newer cached cloud row must not mask a fresh local AAPS update.
+      const reading = await repositoryState.repository?.getLatestGlucose();
       return observeGlucoseReadingForPublication(
         glucosePublicationWatermark.current,
         reading,
@@ -812,7 +826,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       // user's glucose history having been removed.
       return false;
     }
-  }, [repositoryState.mode]);
+  }, [repositoryState.mode, repositoryState.repository]);
 
   const publishLatestStoredGlucose = useCallback(async () => {
     if (!(await observeLatestStoredGlucose())) return false;
@@ -930,6 +944,29 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
+    if (!repositoryState.ready || repositoryState.mode !== "live") return;
+    // Native intake persists and forwards glucose even when React is asleep.
+    // Coalesce status bursts before draining that queue into encrypted history
+    // and refreshing the visible phone cards. Resume/polling handles missed events.
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const subscription = T1ArcGlucoseDisplay.addListener("onAapsReading", () => {
+      if (AppState.currentState !== "active" || pending !== undefined) return;
+      pending = setTimeout(() => {
+        pending = undefined;
+        void refreshGlucoseSilently().then(() => {
+          // An AAPS status can change IOB/COB while its glucose is unchanged.
+          setNow(Date.now());
+          setRevision((value) => value + 1);
+        });
+      }, 250);
+    });
+    return () => {
+      if (pending !== undefined) clearTimeout(pending);
+      subscription.remove();
+    };
+  }, [refreshGlucoseSilently, repositoryState.mode, repositoryState.ready]);
+
+  useEffect(() => {
     const reconcileClock = () => {
       const observedAt = Date.now();
       setNow((previous) => nextPresentationClock(previous, observedAt));
@@ -1036,6 +1073,9 @@ export function DataProvider({ children }: PropsWithChildren) {
     async (mode: DataMode, operationLease?: LocalDataWriteLease) => {
       const writeLease = operationLease ?? (await acquireLocalDataWriteLease());
       await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+        if (mode === "demo") {
+          await stopAapsLocalSourceForDemoInTransaction(writeLease);
+        }
         setRepositoryState((state) => ({ ...state, ready: false }));
         await saveDataMode(mode);
       });
