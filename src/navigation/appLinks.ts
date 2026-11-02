@@ -1,5 +1,6 @@
 export const APP_LINK_PREFIXES: string[] = ['t1arc://'];
 export const COMMUNITY_SUBREDDIT_URL = 'https://www.reddit.com/r/T1Arc/';
+export const GITHUB_REPOSITORY_URL = 'https://github.com/gregorgregor25/t1-arc';
 
 /** Reject malformed/oversized intents before the navigation query decoder. */
 export function isSafeNavigationLink(url: string): boolean {

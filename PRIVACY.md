@@ -20,8 +20,11 @@ The optional weekly feedback reminder is scheduled locally on Android, with a
 separate notification channel and an off switch on the Share feedback screen.
 Its enabled state and scheduling timestamps are stored on the device; no server
 registration or activity tracking is needed. Phone notification permissions still
-apply. Full local-data erasure disables the reminder. Opening email or Reddit is
-an explicit user action; the email shortcut includes a subject, not health data.
+apply. Full local-data erasure disables the reminder. Opening email, Reddit or
+GitHub is an explicit user action; the email shortcut includes a subject, not
+health data. The GitHub link opens the public repository without health records
+or tracking parameters. Users choose whether to star it on GitHub; T1 Arc does
+not sign in to GitHub or check star status.
 
 Health records, imported provider records, food logs, context, Insights and
 Tarv1s conversation state are stored on the Android device. Health databases
