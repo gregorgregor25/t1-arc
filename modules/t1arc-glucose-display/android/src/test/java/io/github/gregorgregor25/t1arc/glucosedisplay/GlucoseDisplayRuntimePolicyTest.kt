@@ -412,4 +412,21 @@ class GlucosePrivacyPreferenceDurabilityContractTest {
       )
     )
   }
+
+  @Test
+  fun `hiding lock screen readings immediately refreshes native alarm privacy without acknowledging audio`() {
+    val bridge = glucoseDisplayModuleSource().substringAfter("AsyncFunction(\"setLockScreenVisibleAsync\")")
+      .substringBefore("AsyncFunction(\"setAodDesiredAsync\")")
+    assertTrue(bridge.indexOf("T1ArcGlucoseAlarmEngine.updatePrivacy(context)") <
+      bridge.indexOf("T1ArcGlucoseAlertOwnershipGate.updateLockScreenVisibility(context, visible)"))
+    val relative = "src/main/java/io/github/gregorgregor25/t1arc/glucosedisplay/GlucoseAlarmEngine.kt"
+    val engine = listOf(File(relative), File("modules/t1arc-glucose-display/android/$relative"),
+      File("../modules/t1arc-glucose-display/android/$relative")).first(File::isFile).readText()
+    val privacy = engine.substringAfter("fun updatePrivacy(").substringBefore("private fun startPlaybackLocked")
+    assertTrue(privacy.contains("synchronized(lock)"))
+    assertTrue(privacy.indexOf("mutation()") < privacy.indexOf("notify(context"))
+    assertTrue(privacy.contains("if (episode == null) cancelNotification(context)"))
+    assertFalse(privacy.contains("stopPlaybackLocked"))
+    assertFalse(privacy.contains("acknowledged = true"))
+  }
 }

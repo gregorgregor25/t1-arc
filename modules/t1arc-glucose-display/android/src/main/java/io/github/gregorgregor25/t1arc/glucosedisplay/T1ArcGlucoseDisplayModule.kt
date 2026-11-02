@@ -1033,7 +1033,10 @@ internal object T1ArcGlucosePublicationGate {
           // snapshot from the preceding privacy epoch.
           .remove(SNAPSHOT_PAYLOAD_KEY)
           .remove(SNAPSHOT_IV_KEY)
-        if (next > storedEpoch(context)) AapsLocalStore.clearForErase(context, editor)
+        if (next > storedEpoch(context)) {
+          AapsLocalStore.clearForErase(context, editor)
+          T1ArcGlucoseAlarmEngine.erase(context)
+        }
         editor.commit()
       },
       mutation = mutation,
@@ -1423,6 +1426,8 @@ private fun applyPrivateGlucosePublication(
     T1ArcAodAccessibilityService.snapshotChanged()
   }
 
+  T1ArcGlucoseAlarmEngine.reconcile(context)
+
   val currentTask = runCatching {
     if (snapshot == null) {
       T1ArcWearSync.publishMissing(context, missingSourceLabel, writeEpoch)
@@ -1482,6 +1487,7 @@ private fun clearPrivateGlucosePublication(
   writeEpoch: Long,
   missingSourceLabel: String,
 ) {
+  T1ArcGlucoseAlarmEngine.sourceCleared(context)
   T1ArcGlucosePhoneSurfaceGate.mutate {
     T1ArcGlucoseDisplayState.clearSnapshot(context)
     T1ArcWearSync.clearHistory()
@@ -2545,6 +2551,7 @@ class T1ArcGlucoseDisplayService : Service() {
   private lateinit var connectivityManager: ConnectivityManager
   private var networkCallbackRegistered = false
   private var serviceAlive = false
+  private var alarmPlaybackActive = false
   private var validatedNetworkSyncPending = false
   private val networkCallback =
     object : ConnectivityManager.NetworkCallback() {
@@ -2588,6 +2595,7 @@ class T1ArcGlucoseDisplayService : Service() {
         } else {
           T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
         }
+        T1ArcGlucoseAlarmEngine.reconcile(this@T1ArcGlucoseDisplayService)
         handler.postDelayed(this, DISPLAY_REFRESH_INTERVAL_MS)
       }
     }
@@ -2645,7 +2653,8 @@ class T1ArcGlucoseDisplayService : Service() {
           startForeground(
             NOTIFICATION_ID,
             notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+              (if (alarmPlaybackActive) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
           )
         } else {
           startForeground(NOTIFICATION_ID, notification)
@@ -2711,6 +2720,7 @@ class T1ArcGlucoseDisplayService : Service() {
     networkCallbackRegistered = false
     handler.removeCallbacksAndMessages(null)
     running = false
+    T1ArcGlucoseAlarmEngine.monitorStopped(this)
     if (instance === this) instance = null
     super.onDestroy()
   }
@@ -2720,6 +2730,23 @@ class T1ArcGlucoseDisplayService : Service() {
   companion object {
     @Volatile var running = false
     @Volatile private var instance: T1ArcGlucoseDisplayService? = null
+
+    /** Called on the main looper only while a real alarm owns a player. */
+    fun setAlarmPlaybackForeground(context: Context, active: Boolean): Boolean {
+      val service = instance ?: return false
+      if (!service.serviceAlive || !running) return false
+      val previousPlaybackActive = service.alarmPlaybackActive
+      service.alarmPlaybackActive = active
+      return runCatching {
+        val notification = if (T1ArcGlucoseDisplayState.enabled(context)) T1ArcGlucoseNotification.build(service)
+          else T1ArcGlucoseNotification.buildPrivateMonitoring(service)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) service.startForeground(
+          NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+            (if (active) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0))
+        else service.startForeground(NOTIFICATION_ID, notification)
+        true
+      }.onFailure { service.alarmPlaybackActive = previousPlaybackActive }.getOrDefault(false)
+    }
 
     fun requestAapsSync(context: Context) {
       val service = instance
@@ -3313,6 +3340,53 @@ class T1ArcGlucoseDisplayModule : Module() {
       }
     }
 
+    OnActivityEntersBackground {
+      appContext.reactContext?.let(T1ArcGlucoseAlarmEngine::activityLeft)
+    }
+
+    AsyncFunction("getGlucoseAlarmConfigurationAsync") Coroutine { ->
+      T1ArcGlucoseAlarmEngine.getConfiguration(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("saveGlucoseAlarmConfigurationAsync") Coroutine { configuration: Map<String, Any?> ->
+      val context = requireNotNull(appContext.reactContext)
+      val result = T1ArcGlucoseAlarmEngine.save(context, configuration, appContext.currentActivity?.hasWindowFocus() == true)
+      T1ArcGlucoseAlertNotification.cancelAll(context)
+      result
+    }
+    AsyncFunction("getGlucoseAlarmStatusAsync") Coroutine { ->
+      T1ArcGlucoseAlarmEngine.status(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("reconcileGlucoseAlarmAsync") Coroutine { ->
+      T1ArcGlucoseAlarmEngine.reconcile(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("snoozeGlucoseAlarmAsync") Coroutine { episodeId: String, untilMs: Double ->
+      T1ArcGlucoseAlarmEngine.snooze(requireNotNull(appContext.reactContext), episodeId, untilMs)
+    }
+    AsyncFunction("cancelGlucoseAlarmSnoozeAsync") Coroutine { episodeId: String ->
+      T1ArcGlucoseAlarmEngine.cancelSnooze(requireNotNull(appContext.reactContext), episodeId)
+    }
+    AsyncFunction("acknowledgeGlucoseAlarmAsync") Coroutine { episodeId: String ->
+      T1ArcGlucoseAlarmEngine.acknowledge(requireNotNull(appContext.reactContext), episodeId)
+    }
+    AsyncFunction("importGlucoseAlarmSoundAsync") Coroutine { uri: String, displayName: String ->
+      T1ArcGlucoseAlarmEngine.importSound(requireNotNull(appContext.reactContext), uri, displayName)
+    }
+    AsyncFunction("previewGlucoseAlarmSoundAsync") Coroutine { soundId: String, volume: Double ->
+      T1ArcGlucoseAlarmEngine.preview(requireNotNull(appContext.reactContext), soundId, volume, appContext.currentActivity?.hasWindowFocus() == true)
+    }
+    AsyncFunction("stopGlucoseAlarmPreviewAsync") Coroutine { ->
+      T1ArcGlucoseAlarmEngine.stopPreview(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("openGlucoseAlarmExactAlarmSettingsAsync") Coroutine { ->
+      val context = requireNotNull(appContext.reactContext)
+      check(appContext.currentActivity?.hasWindowFocus() == true) { "Open T1 Arc to review exact alarm permission." }
+      if (Build.VERSION.SDK_INT >= 31) {
+        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+          Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      }
+      true
+    }
+
     AsyncFunction("getStatusAsync") Coroutine { ->
       status(requireNotNull(appContext.reactContext))
     }
@@ -3483,7 +3557,9 @@ class T1ArcGlucoseDisplayModule : Module() {
 
     AsyncFunction("setLockScreenVisibleAsync") Coroutine { visible: Boolean ->
       val context = requireNotNull(appContext.reactContext)
-      T1ArcGlucoseAlertOwnershipGate.updateLockScreenVisibility(context, visible)
+      T1ArcGlucoseAlarmEngine.updatePrivacy(context) {
+        T1ArcGlucoseAlertOwnershipGate.updateLockScreenVisibility(context, visible)
+      }
       T1ArcGlucoseNotification.notify(context)
       status(context)
     }
@@ -3615,6 +3691,7 @@ class T1ArcGlucoseDisplayModule : Module() {
         )
       T1ArcGlucosePublicationGate.mutateLegacy(context) { writeEpoch ->
         T1ArcGlucoseDisplayState.setSnapshot(context, snapshot)
+        T1ArcGlucoseAlarmEngine.reconcile(context)
         runCatching {
           Tasks.await(
             T1ArcWearSync.publish(context, snapshot, writeEpoch),
@@ -3704,6 +3781,7 @@ class T1ArcGlucoseDisplayModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       T1ArcGlucosePublicationGate.mutateLegacy(context) { writeEpoch ->
         T1ArcGlucoseDisplayState.clearSnapshot(context)
+        T1ArcGlucoseAlarmEngine.reconcile(context)
         runCatching {
           Tasks.await(
             T1ArcWearSync.publishMissing(context, sourceLabel, writeEpoch),
@@ -3759,6 +3837,7 @@ class T1ArcGlucoseDisplayModule : Module() {
         trend: String,
         timestampMs: Double,
       ->
+      if (T1ArcGlucoseAlarmEngine.configured(requireNotNull(appContext.reactContext))) return@Coroutine false
       T1ArcGlucoseAlertNotification.show(
         requireNotNull(appContext.reactContext),
         kind,
@@ -3772,6 +3851,7 @@ class T1ArcGlucoseDisplayModule : Module() {
         enabled: Boolean,
       ->
       val context = requireNotNull(appContext.reactContext)
+      if (T1ArcGlucoseAlarmEngine.configured(context)) return@Coroutine true
       if (T1ArcGlucoseAlertOwnershipGate.updateOwner(context, enabled)) {
         T1ArcGlucoseDisplayService.reconcile(context)
       } else {

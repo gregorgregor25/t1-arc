@@ -151,6 +151,31 @@ export default {
   async showGlucoseAlertAsync() {
     return false;
   },
+  async getGlucoseAlarmConfigurationAsync() {
+    return null;
+  },
+  async getGlucoseAlarmStatusAsync() {
+    return {
+      configured: false,
+      enabled: false,
+      audioEnabled: false,
+      activeKind: null,
+      episodeId: null,
+      readingTimestampMs: null,
+      snoozedUntilMs: null,
+      acknowledged: false,
+      missing: true,
+      playbackState: 'blocked' as const,
+      readinessIssues: ['Glucose alarms are available in the installed Android app.'],
+      customSounds: [],
+    };
+  },
+  async reconcileGlucoseAlarmAsync() {
+    return false;
+  },
+  async openGlucoseAlarmExactAlarmSettingsAsync() {
+    return false;
+  },
   async setGlucoseAlertMonitoringEnabledAsync() {
     return false;
   },

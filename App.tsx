@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AppAlertHost } from '@/components/AppAlertHost';
+import { GlucoseAlarmHost } from '@/components/GlucoseAlarmHost';
 import { ColdLaunchPresentation } from '@/components/ColdLaunchPresentation';
 import { LocalDataEraseRecoveryGate } from '@/components/LocalDataEraseRecoveryGate';
 import { AppNavigator } from '@/navigation/AppNavigator';
@@ -31,6 +32,7 @@ function AppContent() {
         <GlucoseAppearanceProvider>
           <DataProvider>
             <AppNavigator />
+            <GlucoseAlarmHost />
           </DataProvider>
         </GlucoseAppearanceProvider>
       </RegionalProfileProvider>

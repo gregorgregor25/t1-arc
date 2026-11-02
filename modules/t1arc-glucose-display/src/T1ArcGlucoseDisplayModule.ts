@@ -6,6 +6,9 @@ import {
   GlucoseAppearanceSettings,
   GlucoseAlertKind,
   GlucoseAlertChannelStatus,
+  GlucoseAlarmConfiguration,
+  GlucoseAlarmCustomSound,
+  GlucoseAlarmStatus,
   GlucoseDisplayHistoryPoint,
   GlucoseDisplayPublicationSnapshot,
   AapsLocalReading,
@@ -85,6 +88,17 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<{
     timestampMs: number,
   ): Promise<boolean>;
   setGlucoseAlertMonitoringEnabledAsync?(enabled: boolean): Promise<boolean>;
+  getGlucoseAlarmConfigurationAsync?(): Promise<GlucoseAlarmConfiguration | null>;
+  saveGlucoseAlarmConfigurationAsync?(configuration: GlucoseAlarmConfiguration): Promise<GlucoseAlarmStatus>;
+  getGlucoseAlarmStatusAsync?(): Promise<GlucoseAlarmStatus>;
+  reconcileGlucoseAlarmAsync?(): Promise<boolean>;
+  snoozeGlucoseAlarmAsync?(episodeId: string, untilMs: number): Promise<GlucoseAlarmStatus>;
+  cancelGlucoseAlarmSnoozeAsync?(episodeId: string): Promise<GlucoseAlarmStatus>;
+  acknowledgeGlucoseAlarmAsync?(episodeId: string): Promise<GlucoseAlarmStatus>;
+  importGlucoseAlarmSoundAsync?(uri: string, displayName: string): Promise<GlucoseAlarmCustomSound>;
+  previewGlucoseAlarmSoundAsync?(soundId: string, volume: number): Promise<boolean>;
+  stopGlucoseAlarmPreviewAsync?(): Promise<boolean>;
+  openGlucoseAlarmExactAlarmSettingsAsync?(): Promise<boolean>;
   cancelGlucoseAlertsAsync(): Promise<boolean>;
   glucoseAlertsAllowedAsync(): Promise<boolean>;
   openGlucoseAlertSettingsAsync(): Promise<boolean>;

@@ -10,6 +10,16 @@ build must review the exact build, hosting, support and store configuration.
 
 ## Local storage
 
+The development glucose alarm engine stores its configuration, episode state,
+snooze deadlines and imported audio names in Android Keystore-backed encrypted
+storage. User-selected audio is copied into private app storage and is not sent
+to a server or Tarv1s. Android system backup remains disabled. The new alarm
+configuration and custom sounds are excluded from portable backups; users must
+configure and test them on a replacement phone. Full local-data erasure disables
+the alarm owner and removes its private audio copies. Hiding lock-screen values
+redacts alarm notification content without acknowledging the alert or stopping
+its audio. See [glucose alarms](docs/GLUCOSE_ALARMS.md) for development limitations.
+
 Manual cycle periods, flow, symptoms and notes are stored in the encrypted local
 health database. They are included in user-created encrypted portable backups
 and removed by local health-data erasure. Cycle tracking can display existing

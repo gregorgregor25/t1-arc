@@ -1,4 +1,10 @@
 import { GlucoseAppearanceSettings } from '../../../src/domain/glucoseAppearance';
+export type {
+  GlucoseAlarmConfiguration,
+  GlucoseAlarmCustomSound,
+  GlucoseAlarmKind,
+  GlucoseAlarmStatus,
+} from '../../../src/domain/glucoseAlarms';
 
 export type GlucoseDisplayFreshness =
   'current' | 'delayed' | 'stale' | 'missing';

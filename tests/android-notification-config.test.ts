@@ -126,35 +126,36 @@ describe('Android notification configuration', () => {
     expect(bridge).toContain('openGlucoseAlertAppSettingsAsync');
     expect(bridge).toContain('setGlucoseAlertMonitoringEnabledAsync?');
     expect(webBridge).toContain('setGlucoseAlertMonitoringEnabledAsync');
-    expect(settingsCard).toContain('getGlucoseAlertChannelStatusesAsync');
-    expect(settingsCard).toContain('showGlucoseTestAlertAsync');
-    expect(settingsCard).toContain('openGlucoseAlertChannelSettingsAsync');
+    // The old channel APIs remain available for installed legacy runtimes, but
+    // the new UI saves through the native alarm owner rather than restarting JS.
+    expect(settingsCard).toContain('getGlucoseAlarmStatus');
+    expect(settingsCard).toContain('saveGlucoseAlarmConfiguration');
     expect(settingsCard).toContain('openGlucoseAlertAppSettingsAsync');
-    expect(settingsCard).toContain('setCategoryEnabled');
     expect(settingsCard).toContain('await requestNotificationPermission()');
-    expect(settingsCard).toContain('channelStatusError');
     const alertPreferencePersist = settingsCard.match(
       /async function persist[\s\S]*?\n  }/,
     )?.[0];
     expect(alertPreferencePersist).toBeDefined();
     expect(alertPreferencePersist).toContain(
-      'updateGlucoseDisplayFromHistory({ allowUnchangedSkip: true })',
+      'await saveGlucoseAlarmConfiguration(next)',
     );
     expect(alertPreferencePersist).not.toContain(
-      'await updateGlucoseDisplayFromHistory();',
+      'resetGlucoseAlertState',
     );
     expect(settingsCard).not.toContain('.catch(\n        () => [],\n      )');
     expect(preferences).not.toContain('type GlucoseAlertMonitoringBridge');
 
-    const masterToggle = settingsCard.match(
-      /async function setMasterEnabled[\s\S]*?\n  }/,
-    )?.[0];
-    expect(masterToggle).toBeDefined();
-    expect(masterToggle).toContain(
-      'persist({ ...preferences, enabled }, true)',
-    );
-    expect(masterToggle).not.toContain('enableAsync');
-    expect(masterToggle).not.toContain('getStatusAsync');
+    expect(settingsCard).toContain('Save and arm alarm sounds');
+    expect(settingsCard).not.toContain('showGlucoseTestAlertAsync');
+    expect(settingsCard).not.toContain('enableAsync');
+    expect(settingsCard).not.toContain('getStatusAsync');
+    const soundPicker = settingsCard.match(/async function chooseCustomSound[\s\S]*?\n  }/)?.[0];
+    expect(soundPicker).toContain('importGlucoseAlarmSound');
+    expect(soundPicker).not.toContain('previewGlucoseAlarmSound');
+    const refresh = settingsCard.match(/const refresh = useCallback[\s\S]*?\n  }, \[regional\]\);/)?.[0];
+    expect(refresh).toBeDefined();
+    expect(refresh).not.toContain('saveGlucoseAlarmConfiguration');
+    expect(refresh).not.toContain('previewGlucoseAlarmSound');
   });
 
   it('does not change lock-screen privacy when the glance is enabled', () => {

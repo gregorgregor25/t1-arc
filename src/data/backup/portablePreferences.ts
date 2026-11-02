@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { validateGlucoseAlarmConfiguration } from '@/domain/glucoseAlarms';
 
 import {
   getIncludedPortablePreferenceGroups,
@@ -76,6 +77,7 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
       resetGlucoseAlertState,
       saveGlucoseAlertPreferences,
     },
+    { saveGlucoseAlarmConfiguration },
     { loadThemePreference, saveThemePreference },
     { loadStepGoal, saveStepGoal },
     {
@@ -88,11 +90,19 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
     import('../../../modules/t1arc-glucose-display'),
     import('@/data/insights/insightReviewPreferences'),
     import('@/data/glucoseAlerts/glucoseAlertPreferences'),
+    import('@/data/glucoseAlerts/glucoseAlarms'),
     import('@/data/themePreference'),
     import('@/data/healthGoals'),
     import('@/data/tarvis/treatmentProfile'),
     import('@/data/regionalProfile'),
   ]);
+  async function nativeAlarmConfiguration() {
+    const configuration = await T1ArcGlucoseDisplay.getGlucoseAlarmConfigurationAsync?.();
+    if (configuration === undefined || configuration === null) return undefined;
+    const error = validateGlucoseAlarmConfiguration(configuration);
+    if (error) throw new Error(error);
+    return configuration;
+  }
   return {
     getDisplayStatus: () => T1ArcGlucoseDisplay.getStatusAsync(),
     getGlucoseAppearance: () =>
@@ -112,7 +122,23 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
         reviewMinute: preferences.reviewMinute ?? 0,
       };
     },
-    getGlucoseAlerts: loadGlucoseAlertPreferences,
+    getGlucoseAlerts: async () => {
+      const configuration = await nativeAlarmConfiguration();
+      if (!configuration) return loadGlucoseAlertPreferences();
+      return {
+        lowEnabled: configuration.lowEnabled,
+        lowThresholdMmolL: configuration.lowThresholdMmolL,
+        highEnabled: configuration.highEnabled,
+        highThresholdMmolL: configuration.highThresholdMmolL,
+        staleEnabled: configuration.staleEnabled,
+        // The portable legacy schema cannot represent the new short reminder
+        // intervals. Export no automatic reminder rather than substitute an
+        // invented cadence. Native sounds/night/very-high/arming stay local.
+        repeatMinutes: [0, 30, 60, 120].includes(configuration.repeatMinutes)
+          ? configuration.repeatMinutes
+          : 0,
+      };
+    },
     getThemePreference: loadThemePreference,
     getStepGoal: loadStepGoal,
     getTreatmentProfile: async () =>
@@ -128,6 +154,24 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
     setWeeklyReviewEnabled: setWeeklyReviewNotificationEnabled,
     setWeeklyReviewTiming,
     setGlucoseAlerts: async (settings) => {
+      const configuration = await nativeAlarmConfiguration();
+      if (configuration) {
+        const veryHighConflicts = configuration.veryHighThresholdMmolL !== null &&
+          configuration.veryHighThresholdMmolL <= settings.highThresholdMmolL;
+        // An additive restore does not pass through the full-erasure epoch.
+        // Explicitly disarm the native owner before writing legacy preferences;
+        // its ownership fence deliberately ignores legacy enable/disable calls.
+        await saveGlucoseAlarmConfiguration({
+          ...configuration,
+          ...settings,
+          enabled: false,
+          audioEnabled: false,
+          ...(veryHighConflicts ? {
+            veryHighEnabled: false,
+            veryHighThresholdMmolL: null,
+          } : {}),
+        });
+      }
       await saveGlucoseAlertPreferences({ ...settings, enabled: false });
       await resetGlucoseAlertState();
     },
@@ -231,6 +275,11 @@ async function restoreValidatedPortablePreferences(
   restoreInsightReviews?: () => Promise<unknown>,
 ) {
   const includedGroups = getIncludedPortablePreferenceGroups(safe);
+  // Disarm alarms first. A later preference failure must never mean the
+  // restore has silently left the prior native audible owner running.
+  if (includedGroups.includes('glucoseAlerts')) {
+    await destination.setGlucoseAlerts(safe.glucoseAlerts);
+  }
   await destination.setGlucoseAppearance(safe.glucoseAppearance);
   await destination.setAodPosition(safe.glanceableDisplay.aodPosition);
   await destination.setAodSize(safe.glanceableDisplay.aodSize);
@@ -254,9 +303,6 @@ async function restoreValidatedPortablePreferences(
         reviewMinute: safe.insightReviews.reviewMinute,
       });
     }
-  }
-  if (includedGroups.includes('glucoseAlerts')) {
-    await destination.setGlucoseAlerts(safe.glucoseAlerts);
   }
   if (includedGroups.includes('themeMode') && safe.themeMode !== null) {
     await destination.setThemePreference(safe.themeMode);

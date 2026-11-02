@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   loadGlookoSync: vi.fn(),
   notificationStatus: vi.fn(),
   displayStatus: vi.fn(),
+  nativeAlarmStatus: vi.fn(),
+  nativeAlarmSupported: true,
   loadAlerts: vi.fn(),
   loadInsightReview: vi.fn(),
   loadTarvisStatus: vi.fn(),
@@ -28,7 +30,12 @@ vi.mock('../modules/t1arc-notification-source', () => ({
   default: { getStatusAsync: mocks.notificationStatus },
 }));
 vi.mock('../modules/t1arc-glucose-display', () => ({
-  default: { getStatusAsync: mocks.displayStatus },
+  default: {
+    getStatusAsync: mocks.displayStatus,
+    get getGlucoseAlarmStatusAsync() {
+      return mocks.nativeAlarmSupported ? mocks.nativeAlarmStatus : undefined;
+    },
+  },
 }));
 vi.mock('@/data/privacy/localDataVault', () => ({
   getLocalDataSummary: mocks.getSummary,
@@ -106,6 +113,8 @@ describe('local data reset state', () => {
       pendingCount: 0,
     });
     mocks.displayStatus.mockResolvedValue({ enabled: false });
+    mocks.nativeAlarmSupported = true;
+    mocks.nativeAlarmStatus.mockResolvedValue({ configured: false, customSounds: [] });
     mocks.loadAlerts.mockResolvedValue({ enabled: false });
     mocks.loadInsightReview.mockResolvedValue({
       weeklyNotificationEnabled: false,
@@ -131,6 +140,27 @@ describe('local data reset state', () => {
     await expect(getLocalDataResetState()).resolves.toMatchObject({
       hasResettableConfiguration: true,
     });
+  });
+
+  it('keeps erase available for disabled native alarm choices on an otherwise empty app', async () => {
+    mocks.nativeAlarmStatus.mockResolvedValue({ configured: true, enabled: false, audioEnabled: false, customSounds: [] });
+    await expect(getLocalDataResetState()).resolves.toMatchObject({ hasResettableConfiguration: true });
+  });
+
+  it('detects an imported audio file before the native alarm configuration is saved', async () => {
+    mocks.nativeAlarmStatus.mockResolvedValue({ configured: false, customSounds: [{ id: 'custom:12345678-1234-1234-1234-123456789abc', name: 'My sound' }] });
+    await expect(getLocalDataResetState()).resolves.toMatchObject({ hasResettableConfiguration: true });
+  });
+
+  it('supports older installed modules without assuming new alarm support', async () => {
+    mocks.nativeAlarmSupported = false;
+    await expect(getLocalDataResetState()).resolves.toMatchObject({ hasResettableConfiguration: false });
+    expect(mocks.nativeAlarmStatus).not.toHaveBeenCalled();
+  });
+
+  it('propagates an unreadable native alarm store rather than hiding the erase option as empty', async () => {
+    mocks.nativeAlarmStatus.mockRejectedValue(new Error('native alarm store unavailable'));
+    await expect(getLocalDataResetState()).rejects.toThrow('native alarm store unavailable');
   });
 
   it('detects Tarv1s private state even when there is no health history', async () => {
