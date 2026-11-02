@@ -43,6 +43,10 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
   const [message, setMessage] = useState<{ text: string; error?: boolean }>();
   const dirty = useRef(false);
   const mounted = useRef(true);
+  const configurationRefreshGeneration = useRef(0);
+  const statusRefreshGeneration = useRef(0);
+  const statusRefreshPending = useRef(false);
+  const statusMutationPending = useRef(false);
   const previewGeneration = useRef(0);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -55,11 +59,14 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
   }, []);
 
   const refresh = useCallback(async () => {
+    if (statusMutationPending.current) return;
+    const configurationGeneration = ++configurationRefreshGeneration.current;
+    const statusGeneration = ++statusRefreshGeneration.current;
     try {
       const [next, nextStatus] = await Promise.all([loadGlucoseAlarmConfiguration(), getGlucoseAlarmStatus()]);
       if (!mounted.current) return;
-      setStatus(nextStatus);
-      if (!dirty.current) {
+      if (statusGeneration === statusRefreshGeneration.current && !statusMutationPending.current) setStatus(nextStatus);
+      if (configurationGeneration === configurationRefreshGeneration.current && !dirty.current) {
         setConfiguration(next);
         setThresholds({
           low: formatGlucose(next.lowThresholdMmolL, regional, { withUnit: false }),
@@ -68,19 +75,46 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
         });
       }
     } catch (error) {
-      if (mounted.current) setMessage({ error: true, text: error instanceof Error ? error.message : 'Alert settings could not be loaded.' });
+      if (mounted.current && configurationGeneration === configurationRefreshGeneration.current) setMessage({ error: true, text: error instanceof Error ? error.message : 'Alert settings could not be loaded.' });
     }
   }, [regional]);
+
+  // Readiness can change after Save while Android starts the monitor. Poll only
+  // status, so a service transition never reloads or overwrites the editing form.
+  const refreshStatus = useCallback(async () => {
+    if (!mounted.current || AppState.currentState !== 'active' || statusRefreshPending.current || statusMutationPending.current) return;
+    statusRefreshPending.current = true;
+    const generation = ++statusRefreshGeneration.current;
+    try {
+      const nextStatus = await getGlucoseAlarmStatus();
+      if (mounted.current && AppState.currentState === 'active' && generation === statusRefreshGeneration.current && !statusMutationPending.current) setStatus(nextStatus);
+    } catch { /* Keep the last observed readiness until the next bounded retry. */ }
+    finally { statusRefreshPending.current = false; }
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
     void Promise.resolve().then(() => { if (mounted.current) void refresh(); });
+    let interval: ReturnType<typeof setInterval> | undefined;
+    function scheduleStatusRefresh() {
+      if (interval) clearInterval(interval);
+      interval = undefined;
+      if (AppState.currentState === 'active') interval = setInterval(() => void refreshStatus(), 5000);
+    }
+    scheduleStatusRefresh();
     const subscription = AppState.addEventListener('change', state => {
+      scheduleStatusRefresh();
       if (state === 'active') void refresh();
-      else void stopPreview();
+      else { statusRefreshGeneration.current += 1; void stopPreview(); }
     });
-    return () => { mounted.current = false; subscription.remove(); void stopPreview(); };
-  }, [refresh, stopPreview]);
+    return () => {
+      mounted.current = false;
+      configurationRefreshGeneration.current += 1;
+      statusRefreshGeneration.current += 1;
+      if (interval) clearInterval(interval);
+      subscription.remove(); void stopPreview();
+    };
+  }, [refresh, refreshStatus, stopPreview]);
 
   function edit(change: Partial<GlucoseAlarmConfiguration>) {
     dirty.current = true;
@@ -99,7 +133,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
   }
 
   async function persist() {
-    if (!configuration || busy) return;
+    if (!configuration || busy || statusMutationPending.current) return;
     const parse = (value: string) => {
       const number = normalizeRegionalNumberInput(value, regional.locale)?.value;
       return number === undefined ? NaN : glucoseToMmolL(number, regional.glucoseUnit);
@@ -111,6 +145,9 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
     const error = validateGlucoseAlarmConfiguration(next);
     if (error) { setMessage({ error: true, text: error }); return; }
     if (next.enabled && !connected) { setMessage({ error: true, text: 'Connect and verify personal glucose before enabling alerts.' }); return; }
+    statusMutationPending.current = true;
+    configurationRefreshGeneration.current += 1;
+    statusRefreshGeneration.current += 1;
     setBusy(true); setMessage(undefined);
     try {
       await stopPreview();
@@ -123,7 +160,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       setMessage({ text: next.enabled ? 'Alert choices saved on this phone.' : 'T1 Arc glucose alerts are off.' });
     } catch (error) {
       if (mounted.current) setMessage({ error: true, text: error instanceof Error ? error.message : 'Alert choices could not be saved.' });
-    } finally { if (mounted.current) setBusy(false); }
+    } finally { statusMutationPending.current = false; if (mounted.current) setBusy(false); }
   }
 
   async function play(soundId: string) {
@@ -148,7 +185,10 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
   }
 
   async function chooseCustomSound(field: typeof KINDS[number]['sound']) {
-    if (busy) return;
+    if (busy || statusMutationPending.current) return;
+    statusMutationPending.current = true;
+    configurationRefreshGeneration.current += 1;
+    statusRefreshGeneration.current += 1;
     setBusy(true); setMessage(undefined);
     let temporaryUri: string | undefined;
     try {
@@ -168,6 +208,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       if (mounted.current) setMessage({ error: true, text: error instanceof Error ? error.message : 'The sound file could not be imported.' });
     } finally {
       if (temporaryUri?.startsWith('file:')) { try { const cached = new File(temporaryUri); if (cached.exists) cached.delete(); } catch { /* Android also clears this cache. */ } }
+      statusMutationPending.current = false;
       if (mounted.current) setBusy(false);
     }
   }
