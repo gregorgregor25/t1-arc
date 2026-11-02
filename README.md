@@ -29,6 +29,12 @@
 
 > Free to use on Android 8.0 and newer. [Downloads and release support](docs/RELEASE_STATUS.md).
 
+<p align="center">
+  Enjoying T1 Arc? <a href="https://github.com/gregorgregor25/t1-arc">Give the project a star on GitHub</a><br>
+  or <strong><a href="https://ko-fi.com/t1arc">support development on Ko-fi</a></strong>.
+  Both are optional; T1 Arc is free to use.
+</p>
+
 ## Why I built it
 
 I have lived with Type 1 diabetes for nearly 20 years. The problem I kept

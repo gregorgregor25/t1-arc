@@ -46,10 +46,11 @@ history, daily flow and symptoms, and encrypted backup support. Imported Health
 Connect records remain read-only. Estimated period dates appear only when there
 is enough consistent history and are not contraception or medical guidance.
 
-The new feedback screen offers email and Reddit, with an optional weekly local
-reminder. The reminder defaults on when notification permission is available
-and can be disabled in the feedback screen. No Reddit account is needed to send
-feedback by email.
+The new feedback screen offers email and Reddit, plus an optional invitation to
+star T1 Arc on GitHub. Its weekly local reminder mentions both feedback and
+GitHub stars, and opens the feedback screen. The reminder defaults on when
+notification permission is available and can be disabled in the feedback screen.
+No Reddit account is needed to send feedback by email.
 
 The candidate also updates compatible dependencies and fixes the high-severity
 Zod advisory. A narrowly reviewed, temporary low-severity build-tool finding
