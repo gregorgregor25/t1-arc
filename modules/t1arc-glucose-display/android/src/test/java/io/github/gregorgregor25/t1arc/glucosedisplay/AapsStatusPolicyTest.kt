@@ -33,6 +33,8 @@ class AapsStatusPolicyTest {
     assertFalse(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.0, "flat"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.2, "flat"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.0, "up"))
+    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "doubleUp", 1000, 6.0, "tripleUp"))
+    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "tripleDown", 1000, 6.0, "unknown"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1001, 6.0, "flat"))
   }
 }

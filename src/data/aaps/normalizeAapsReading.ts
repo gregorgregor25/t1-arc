@@ -4,8 +4,9 @@ import { AAPS_LOCAL_SOURCE_ID, type AapsLocalReading, type ParsedAapsObservation
 const MIN_TIMESTAMP_MS = Date.UTC(2020, 0, 1);
 const MAX_FUTURE_SKEW_MS = 2 * 60_000;
 const DIRECTIONS = new Set<TrendDirection>([
+  'tripleDown',
   'doubleDown', 'down', 'slightDown', 'flat', 'slightUp',
-  'up', 'doubleUp', 'unknown',
+  'up', 'doubleUp', 'tripleUp', 'unknown',
 ]);
 
 function finiteNumber(value: unknown): value is number {

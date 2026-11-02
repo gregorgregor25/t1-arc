@@ -124,6 +124,41 @@ function genuineVersionOneBackupWithHealthConnectPreference() {
 }
 
 describe('health backup validation', () => {
+  it.each([
+    ['tripleUp', 'TripleUp'], ['tripleDown', 'TripleDown'],
+  ])('retains %s and its exact AAPS wire meaning through backup restoration', (trend, rawTrend) => {
+    const backup = emptyBackup();
+    const row = {
+      id: 'aaps-local:1730000000000', source_id: 'aaps-local',
+      timestamp_ms: 1_730_000_000_000, received_at_ms: 1_730_000_001_000,
+      mmol_l: 7.1, trend, quality: 'measured',
+      source_factory_timestamp: null, source_local_timestamp: null,
+      timestamp_discrepancy_minutes: null, imported_at_ms: null,
+      source_file: null, source_row: null, source_device_id: null,
+    };
+    const observation = {
+      id: 'aaps-triple', received_at_ms: 1_730_000_001_000,
+      write_epoch: 4, selection_generation: 2,
+      glucose_timestamp_ms: 1_730_000_000_000, glucose_mgdl: 127.9136,
+      trend, raw_trend: rawTrend, delta_mgdl: null, avg_delta_mgdl: null,
+      iob_units: null, bolus_iob_units: null, basal_iob_units: null,
+      cob_grams: null, future_carbs_grams: null, display_units: 'mmol',
+    };
+    backup.tables.glucose_readings = [row];
+    backup.tables.aaps_status_observations = [observation];
+    backup.manifest.counts.glucose_readings = 1;
+    backup.manifest.counts.aaps_status_observations = 1;
+    backup.manifest.totalRecords = 2;
+    const parsed = validateHealthBackupDocument(backup);
+    const glucose = backupRestoreBinding('glucose_readings', parsed.tables.glucose_readings[0]!);
+    const context = backupRestoreBinding('aaps_status_observations', parsed.tables.aaps_status_observations[0]!);
+    expect(glucose.values[glucose.columns.indexOf('trend')]).toBe(trend);
+    expect(glucose.values[glucose.columns.indexOf('source_id')]).toBe('aaps-restored');
+    expect(context.values[context.columns.indexOf('trend')]).toBe(trend);
+    expect(context.values[context.columns.indexOf('raw_trend')]).toBe(rawTrend);
+    expect(context.values.at(-1)).toBe('restored');
+  });
+
   it('retains AAPS estimate snapshots without activating restored status', () => {
     const backup = emptyBackup();
     const observation = {

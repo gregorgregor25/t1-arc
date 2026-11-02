@@ -1141,6 +1141,7 @@ export function assertGlucoseAnswerBundleV2(
     invariant(record.sourceId.trim(), `Record ${record.id} has no source.`);
     invariant(
       [
+        "tripleDown",
         "doubleDown",
         "down",
         "slightDown",
@@ -1148,6 +1149,7 @@ export function assertGlucoseAnswerBundleV2(
         "slightUp",
         "up",
         "doubleUp",
+        "tripleUp",
         "unknown",
       ].includes(record.trend) &&
         (record.quality === "measured" || record.quality === "estimated"),

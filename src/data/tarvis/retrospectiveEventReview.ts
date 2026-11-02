@@ -830,6 +830,7 @@ function describeGlucose(
       `Glucose was ${regionalGlucose(nearStart.mmolL)} near the start at ${formatTime(nearStart.timestamp)}.`,
     );
     if (
+      nearStart.trend === "tripleDown" ||
       nearStart.trend === "doubleDown" ||
       nearStart.trend === "down" ||
       nearStart.trend === "slightDown"

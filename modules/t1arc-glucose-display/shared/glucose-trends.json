@@ -1,4 +1,8 @@
 {
+  "tripleDown": {
+    "arrow": "↓↓↓",
+    "label": "falling very quickly"
+  },
   "doubleDown": {
     "arrow": "⇊",
     "label": "falling quickly"
@@ -26,6 +30,10 @@
   "doubleUp": {
     "arrow": "⇈",
     "label": "rising quickly"
+  },
+  "tripleUp": {
+    "arrow": "↑↑↑",
+    "label": "rising very quickly"
   },
   "unknown": {
     "arrow": "—",

@@ -107,10 +107,12 @@ internal data class AapsLocalReading(
 /** Do not infer an absent AAPS field from a default Bundle getter. */
 internal object AapsBroadcastParser {
   private val trendLabels = mapOf(
+    "TripleDown" to "tripleDown",
     "DoubleDown" to "doubleDown", "SingleDown" to "down",
     "FortyFiveDown" to "slightDown", "Flat" to "flat",
     "FortyFiveUp" to "slightUp", "SingleUp" to "up",
     "DoubleUp" to "doubleUp",
+    "TripleUp" to "tripleUp",
   )
 
   private val fields = listOf(

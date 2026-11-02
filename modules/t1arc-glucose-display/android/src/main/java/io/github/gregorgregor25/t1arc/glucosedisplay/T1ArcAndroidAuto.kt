@@ -1049,28 +1049,10 @@ private object T1ArcCarPresentation {
   }
 
   private fun trendArrow(trend: String) =
-    when (trend) {
-      "doubleDown" -> "⇊"
-      "down" -> "↓"
-      "slightDown" -> "↘"
-      "flat" -> "→"
-      "slightUp" -> "↗"
-      "up" -> "↑"
-      "doubleUp" -> "⇈"
-      else -> "?"
-    }
+    GlucoseTrendPresentation.phone(trend)?.first ?: "?"
 
   private fun trendLabel(trend: String) =
-    when (trend) {
-      "doubleDown" -> "Falling quickly"
-      "down" -> "Falling"
-      "slightDown" -> "Falling slowly"
-      "flat" -> "Steady"
-      "slightUp" -> "Rising slowly"
-      "up" -> "Rising"
-      "doubleUp" -> "Rising quickly"
-      else -> "Direction unavailable"
-    }
+    GlucoseTrendPresentation.phone(trend)?.second ?: "Direction unavailable"
 }
 
 private object T1ArcCarNotification {

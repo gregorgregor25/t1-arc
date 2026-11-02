@@ -42,6 +42,8 @@ import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { StatusPill } from './StatusPill';
+import { AapsEstimateSummary } from './AapsEstimateSummary';
+import type { AapsEstimateInput } from './aapsEstimatePresentation';
 import { SurfaceSheen } from './SurfaceSheen';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
 import {
@@ -63,11 +65,13 @@ function GlucoseTrace({
   readings,
   stale,
   traceTop,
+  inFlow = false,
 }: {
   endTimestamp: number;
   readings: GlucoseReading[];
   stale: boolean;
   traceTop: number;
+  inFlow?: boolean;
 }) {
   const { colors, dark } = useAppTheme();
   const { settings } = useGlucoseAppearance();
@@ -79,10 +83,10 @@ function GlucoseTrace({
     <View
       accessibilityElementsHidden
       pointerEvents="none"
-      style={[styles.trace, { top: traceTop }]}
+      style={inFlow ? styles.flowTrace : [styles.trace, { top: traceTop }]}
     >
       <Svg
-        height="100%"
+        height={inFlow ? cardSpec.traceHeight : '100%'}
         preserveAspectRatio="none"
         viewBox={`0 0 ${TRACE_WIDTH} ${TRACE_HEIGHT}`}
         width="100%"
@@ -143,6 +147,7 @@ export function CurrentGlucoseCard({
   trendAssessment,
   trendDetailsRequest = 0,
   onChooseSource,
+  aapsEstimates,
 }: {
   reading?: GlucoseReading;
   history?: GlucoseReading[];
@@ -151,6 +156,7 @@ export function CurrentGlucoseCard({
   trendAssessment?: GlucoseTrendAssessment;
   trendDetailsRequest?: number;
   onChooseSource?(): void;
+  aapsEstimates?: AapsEstimateInput;
 }) {
   const { colors, dark, radius } = useAppTheme();
   const { fontScale } = useWindowDimensions();
@@ -186,6 +192,7 @@ export function CurrentGlucoseCard({
     appearance,
   );
   const trendIcon: keyof typeof Ionicons.glyphMap =
+    assessment.direction === 'tripleDown' ||
     assessment.direction === 'doubleDown' ||
     assessment.direction === 'down' ||
     assessment.direction === 'slightDown'
@@ -200,50 +207,16 @@ export function CurrentGlucoseCard({
       ? `${trend.label} (calculated)`
       : trend.label;
   const chooseSourceContent = colors.onPrimary;
-  return (
-    <LinearGradient
-      accessibilityLabel={
-        reading
-          ? isStale
-            ? `Last known glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, shown struck through because it is stale. Updated ${age}.`
-            : `Current glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, ${trendLabel}. ${freshnessCopy[freshness].label}, updated ${age}.`
-          : 'Current glucose is unavailable.'
-      }
-      colors={[
-        colors.surfaceGradientStart,
-        colors.surfaceGradientMiddle,
-        colors.surfaceGradientEnd,
-      ]}
-      end={{ x: 0.9, y: 1 }}
-      locations={[0, 0.46, 1]}
-      start={{ x: 0.02, y: 0 }}
-      style={[
-        styles.card,
-        { minHeight: layout.minHeight },
-        {
-          borderColor: colors.surfaceBorder,
-          borderRadius: radius.xl,
-          shadowColor: colors.surfaceShadow,
-        },
-      ]}
-    >
-      <SurfaceSheen radius={radius.xl} />
-      {reading ? (
-        <GlucoseTrace
-          endTimestamp={reading.timestamp}
-          readings={history}
-          stale={isStale}
-          traceTop={layout.traceTop}
-        />
-      ) : null}
-      <View style={styles.topRow}>
+  const glucoseContent = (
+    <>
+      <View style={[styles.topRow, aapsEstimates && styles.aapsTopRow]}>
         <Text style={[styles.label, { color: colors.textSecondary }]}>
           {isStale ? 'Last known' : 'Now'}
         </Text>
-        <View style={styles.statusBlock}>
+        <View style={[styles.statusBlock, aapsEstimates && styles.aapsStatusBlock]}>
           {reading ? (
             <Text style={[styles.age, { color: colors.textSecondary }]}>
-              {age}
+              {aapsEstimates ? `Glucose · ${age}` : age}
             </Text>
           ) : null}
           {freshness !== 'current' ? <StatusPill freshness={freshness} /> : null}
@@ -286,6 +259,15 @@ export function CurrentGlucoseCard({
               </Text>
             </View>
           </View>
+          {aapsEstimates ? (
+            <GlucoseTrace
+              endTimestamp={reading.timestamp}
+              readings={history}
+              stale={isStale}
+              traceTop={layout.traceTop}
+              inFlow
+            />
+          ) : null}
           <View style={styles.footer}>
             {isStale ? (
               <View style={styles.detailRow}>
@@ -331,10 +313,10 @@ export function CurrentGlucoseCard({
                 </View>
               </>
             )}
-            {!isStale && assessment.origin === 'calculated' ? (
+            {!isStale && (assessment.origin === 'calculated' || assessment.sourceDetail) ? (
               <Pressable
-                accessibilityLabel="How this trend was calculated"
-                accessibilityHint="Opens the exact readings used for this fallback"
+                accessibilityLabel={assessment.origin === 'calculated' ? 'How this trend was calculated' : 'About this source trend'}
+                accessibilityHint={assessment.origin === 'calculated' ? 'Opens the exact readings used for this fallback' : 'Opens the source direction and watch display details'}
                 accessibilityRole="button"
                 onPress={() => setTrendDetailsVisible(true)}
                 style={({ pressed }) => [
@@ -412,6 +394,50 @@ export function CurrentGlucoseCard({
               : 'Waiting for a newer reading. Open Settings to check the source connection.'}
         </Text>
       ) : null}
+    </>
+  );
+  return (
+    <LinearGradient
+      accessibilityLabel={
+        reading
+          ? isStale
+            ? `Last known glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, shown struck through because it is stale. Updated ${age}.`
+            : `Current glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, ${trendLabel}. ${freshnessCopy[freshness].label}, updated ${age}.`
+          : 'Current glucose is unavailable.'
+      }
+      colors={[
+        colors.surfaceGradientStart,
+        colors.surfaceGradientMiddle,
+        colors.surfaceGradientEnd,
+      ]}
+      end={{ x: 0.9, y: 1 }}
+      locations={[0, 0.46, 1]}
+      start={{ x: 0.02, y: 0 }}
+      style={[
+        styles.card,
+        { minHeight: layout.minHeight },
+        {
+          borderColor: colors.surfaceBorder,
+          borderRadius: radius.xl,
+          shadowColor: colors.surfaceShadow,
+        },
+      ]}
+    >
+      <SurfaceSheen radius={radius.xl} />
+      {reading && !aapsEstimates ? (
+        <GlucoseTrace
+          endTimestamp={reading.timestamp}
+          readings={history}
+          stale={isStale}
+          traceTop={layout.traceTop}
+        />
+      ) : null}
+      {aapsEstimates ? (
+        <View style={{ minHeight: layout.minHeight - cardSpec.padding * 2 }}>
+          {glucoseContent}
+        </View>
+      ) : glucoseContent}
+      {aapsEstimates ? <AapsEstimateSummary estimates={aapsEstimates} now={now} /> : null}
       <Modal
         animationType="fade"
         onRequestClose={() => setTrendDetailsVisible(false)}
@@ -433,15 +459,15 @@ export function CurrentGlucoseCard({
           >
             <View style={styles.modalHeading}>
               <View style={styles.modalHeadingCopy}>
-                <Text style={[styles.modalEyebrow, { color: colors.accent }]}>
-                  TRANSPARENT FALLBACK
-                </Text>
+                {assessment.origin === 'calculated' ? (
+                  <Text style={[styles.modalEyebrow, { color: colors.accent }]}>TRANSPARENT FALLBACK</Text>
+                ) : null}
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Source direction unavailable
+                  {assessment.origin === 'calculated' ? 'Source direction unavailable' : 'Source trend'}
                 </Text>
               </View>
               <Pressable
-                accessibilityLabel="Close calculated trend details"
+                accessibilityLabel="Close trend details"
                 accessibilityRole="button"
                 hitSlop={10}
                 onPress={() => setTrendDetailsVisible(false)}
@@ -454,7 +480,12 @@ export function CurrentGlucoseCard({
                 />
               </Pressable>
             </View>
-            <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+            {assessment.origin === 'source' ? (
+              <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+                {assessment.sourceDetail}{assessment.compatibilityNote ? ` ${assessment.compatibilityNote}` : ''}
+              </Text>
+            ) : (
+              <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
               T1 Arc fitted one direction across{' '}
               {formatRegionalNumber(
                 assessment.supportingReadings.length,
@@ -486,7 +517,8 @@ export function CurrentGlucoseCard({
               })}{' '}
               minutes. This is not a sensor-provided arrow and is not for
               dosing decisions.
-            </Text>
+              </Text>
+            )}
             <View style={[styles.evidenceList, { borderColor: colors.border }]}>
               {assessment.supportingReadings.map((item, index) => (
                 <View
@@ -550,6 +582,14 @@ const styles = StyleSheet.create({
     height: cardSpec.traceHeight,
     opacity: cardSpec.traceOpacity,
   },
+  // AAPS's age can wrap at large text sizes. Reserve the graph after the
+  // measured value row instead of positioning it over a guessed text height.
+  flowTrace: {
+    height: cardSpec.traceHeight + 18,
+    paddingTop: 18,
+    marginTop: 8,
+    opacity: cardSpec.traceOpacity,
+  },
   tracePeriod: {
     position: 'absolute',
     top: 0,
@@ -566,6 +606,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  aapsTopRow: { flexWrap: 'wrap' },
+  aapsStatusBlock: { flexShrink: 1, maxWidth: '100%' },
   label: {
     fontSize: 14,
     lineHeight: 20,

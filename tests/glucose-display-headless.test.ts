@@ -75,6 +75,10 @@ vi.mock('@/data/live/sourceConnectionOwnership', () => ({
   assertSourceConnectionWriteLeaseInTransaction: mocks.assertSourceLease,
 }));
 
+vi.mock('@/data/aaps/localAapsSource', () => ({
+  drainAapsLocalReadings: vi.fn().mockResolvedValue(0),
+}));
+
 vi.mock('@/data/glucoseAlerts/glucoseAlertPreferences', () => ({
   reconcileGlucoseAlerts: mocks.reconcileAlerts,
 }));
@@ -210,12 +214,12 @@ describe('glucose display Headless JS settlement', () => {
 
   it('only skips unchanged history for an opted-in periodic publication', async () => {
     const reading = {
-      id: 'reading-derived-trend',
+      id: 'reading-source-trend',
       sourceId: 't1arc-librelinkup',
       timestamp: 1_800_000_000_000,
       receivedAt: 1_800_000_000_100,
       mmolL: 6.4,
-      trend: 'unknown' as const,
+      trend: 'slightDown' as const,
       quality: 'measured' as const,
     };
     mocks.getDisplayStatus.mockResolvedValue({
@@ -223,7 +227,7 @@ describe('glucose display Headless JS settlement', () => {
       latestTimestamp: reading.timestamp,
       latestMmolL: reading.mmolL,
       latestTrend: 'slightDown',
-      latestTrendOrigin: 'calculated',
+      latestTrendOrigin: 'source',
       latestSourceLabel: 'T1 Arc direct LibreLinkUp',
     });
     mocks.getLatestReading.mockResolvedValue(reading);
@@ -243,6 +247,82 @@ describe('glucose display Headless JS settlement', () => {
     expect(mocks.reconcileAlerts).toHaveBeenLastCalledWith(
       reading,
       'slightDown',
+    );
+  });
+
+  it.each([
+    ['unknown', 'unavailable'],
+    ['down', 'calculated'],
+  ])('reassesses AAPS history after a %s/%s publication with the same latest reading', async (latestTrend, latestTrendOrigin) => {
+    const end = 1_800_000_000_000;
+    const history = [0, 5, 10].map((minutes, index) => ({
+      id: `aaps:${minutes}`,
+      sourceId: 'aaps-local',
+      timestamp: end - (10 - minutes) * 60_000,
+      receivedAt: end,
+      mmolL: 5 + index * 0.5,
+      trend: 'unknown' as const,
+      quality: 'measured' as const,
+    }));
+    const reading = history.at(-1)!;
+    mocks.getAapsStatus.mockResolvedValue({
+      supported: true, selectedSourceId: 'aaps-local', selectionGeneration: 1,
+      writeEpoch: 7, bufferedCount: 0,
+    });
+    mocks.getDisplayStatus.mockResolvedValue({
+      supported: true,
+      latestTimestamp: reading.timestamp,
+      latestMmolL: reading.mmolL,
+      latestTrend,
+      latestTrendOrigin,
+      latestSourceLabel: 'AndroidAPS local',
+    });
+    mocks.getLatestReading.mockResolvedValue(reading);
+    mocks.getReadings.mockResolvedValue(history);
+    mocks.transactionLatest = reading;
+    mocks.transactionHistory = history;
+
+    await expect(updateGlucoseDisplayFromHistory({ allowUnchangedSkip: true }))
+      .resolves.toBe(true);
+
+    expect(mocks.getReadings).toHaveBeenCalled();
+    expect(mocks.updatePrivate).toHaveBeenCalledWith(
+      7,
+      1,
+      expect.objectContaining({
+        timestampMs: reading.timestamp,
+        trend: 'up', trendOrigin: 'calculated', sourceLabel: 'AndroidAPS local',
+      }),
+      expect.any(Array),
+      expect.any(String),
+    );
+  });
+
+  it.each(['tripleUp', 'tripleDown'] as const)('publishes a same-timestamp source correction to %s without calculating it', async (trend) => {
+    const reading = {
+      id: 'aaps-correction', sourceId: 'aaps-local',
+      // The source timestamp remains old: receiving a correction must not
+      // revive a stale measurement as current on the phone or watch.
+      timestamp: Date.now() - 20 * 60_000, receivedAt: Date.now(),
+      mmolL: 6.4, trend, quality: 'measured' as const,
+    };
+    mocks.getAapsStatus.mockResolvedValue({
+      supported: true, selectedSourceId: 'aaps-local', selectionGeneration: 1,
+      writeEpoch: 7, bufferedCount: 0,
+    });
+    mocks.getDisplayStatus.mockResolvedValue({
+      supported: true, latestTimestamp: reading.timestamp, latestMmolL: reading.mmolL,
+      latestTrend: 'doubleUp', latestTrendOrigin: 'source', latestSourceLabel: 'AndroidAPS local',
+    });
+    mocks.getLatestReading.mockResolvedValue(reading);
+    mocks.getReadings.mockResolvedValue([reading]);
+    mocks.transactionLatest = reading;
+    mocks.transactionHistory = [reading];
+
+    await expect(updateGlucoseDisplayFromHistory({ allowUnchangedSkip: true })).resolves.toBe(true);
+    expect(mocks.updatePrivate).toHaveBeenCalledWith(
+      7, 1, expect.objectContaining({ trend, trendOrigin: 'source', timestampMs: reading.timestamp }),
+      expect.any(Array), expect.any(String),
     );
   });
 

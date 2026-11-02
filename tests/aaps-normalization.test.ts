@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { normalizeAapsReading } from '@/data/aaps/normalizeAapsReading';
 import type { AapsLocalReading } from '@/data/aaps/types';
-import { MG_DL_PER_MMOL_L } from '@/domain/models';
+import { MG_DL_PER_MMOL_L, type TrendDirection } from '@/domain/models';
+import { assessGlucoseTrend, presentTrend } from '@/domain/trend';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 const base: AapsLocalReading = {
@@ -13,6 +14,30 @@ const base: AapsLocalReading = {
 };
 
 describe('AAPS local observation normalization', () => {
+  it.each<readonly [string, TrendDirection]>([
+    ['TripleDown', 'tripleDown'], ['DoubleDown', 'doubleDown'], ['SingleDown', 'down'],
+    ['FortyFiveDown', 'slightDown'], ['Flat', 'flat'], ['FortyFiveUp', 'slightUp'],
+    ['SingleUp', 'up'], ['DoubleUp', 'doubleUp'], ['TripleUp', 'tripleUp'],
+  ])('preserves %s through normalized source assessment', (rawTrend, trend) => {
+    const observation = normalizeAapsReading({
+      ...base, glucoseTimestamp: NOW - 60_000, glucoseMgdl: 126, rawTrend, trend,
+    }, NOW)!;
+    expect(observation.context.rawTrend).toBe(rawTrend);
+    expect(observation.glucose?.trend).toBe(trend);
+    const assessment = assessGlucoseTrend(observation.glucose, []);
+    expect(assessment).toMatchObject({ direction: trend, origin: 'source' });
+    expect(presentTrend(assessment.direction).label).not.toMatch(/unavailable/);
+  });
+
+  it.each(['NONE', 'unknown-source-direction'])('retains unknown wire name %s and permits bounded fallback', (rawTrend) => {
+    const observation = normalizeAapsReading({
+      ...base, glucoseTimestamp: NOW, glucoseMgdl: 126, rawTrend,
+    }, NOW)!;
+    expect(observation.context.rawTrend).toBe(rawTrend);
+    expect(observation.glucose?.trend).toBe('unknown');
+    expect(assessGlucoseTrend(observation.glucose, []).origin).toBe('unavailable');
+  });
+
   it('preserves source mg/dL and measured time while converting at full precision', () => {
     const observation = normalizeAapsReading({
       ...base,

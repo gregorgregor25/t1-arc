@@ -45,6 +45,7 @@ export const GLUCOSE_DISPLAY_HEADLESS_TASK =
 
 const WEAR_HISTORY_WINDOW_MS = 6 * 60 * 60_000;
 const GLUCOSE_TRENDS = [
+  'tripleDown',
   'doubleDown',
   'down',
   'slightDown',
@@ -52,6 +53,7 @@ const GLUCOSE_TRENDS = [
   'slightUp',
   'up',
   'doubleUp',
+  'tripleUp',
   'unknown',
 ] as const satisfies readonly GlucoseReading['trend'][];
 
@@ -156,11 +158,11 @@ export function glucoseDisplayAlreadyPublished(
   reading: GlucoseReading,
   sourceLabel: string,
 ) {
-  const trendAlreadyPublished =
-    reading.trend === 'unknown'
-      ? Boolean(display.latestTrend && display.latestTrendOrigin)
-      : display.latestTrend === reading.trend &&
-        display.latestTrendOrigin === 'source';
+  // An unknown source direction depends on supporting history. A native AAPS
+  // snapshot may precede JS ingestion, and same-latest backfill can change an
+  // earlier calculation. Only source-provided directions can skip that read.
+  const trendAlreadyPublished = reading.trend !== 'unknown' &&
+    display.latestTrend === reading.trend && display.latestTrendOrigin === 'source';
   return (
     display.latestTimestamp === reading.timestamp &&
     display.latestMmolL === reading.mmolL &&

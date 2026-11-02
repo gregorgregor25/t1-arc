@@ -1265,7 +1265,7 @@ internal object T1ArcWearSync {
       putInt("schemaVersion", 1)
       putBoolean("available", true)
       putDouble("mmolL", snapshot.mmolL)
-      putString("trend", snapshot.trend)
+      putString("trend", GlucoseTrendPresentation.installedWearDirection(snapshot.trend))
       putString("trendOrigin", snapshot.trendOrigin)
       putLong("timestampMs", snapshot.timestampMs)
       putString("sourceLabel", snapshot.sourceLabel)
@@ -1679,16 +1679,7 @@ private object T1ArcGlucoseNotification {
   }
 
   private fun trendPresentation(trend: String): Pair<String, String> =
-    when (trend) {
-      "doubleDown" -> "⇊" to "Falling quickly"
-      "down" -> "↓" to "Falling"
-      "slightDown" -> "↘" to "Falling slowly"
-      "flat" -> "→" to "Steady"
-      "slightUp" -> "↗" to "Rising slowly"
-      "up" -> "↑" to "Rising"
-      "doubleUp" -> "⇈" to "Rising quickly"
-      else -> "?" to "Direction unavailable"
-    }
+    GlucoseTrendPresentation.phone(trend) ?: ("?" to "Direction unavailable")
 
   private fun pendingIntent(context: Context): PendingIntent? {
     val launch =
@@ -2386,16 +2377,7 @@ private object T1ArcGlucoseAlertNotification {
     }
 
   private fun arrow(trend: String): String =
-    when (trend) {
-      "doubleDown" -> "⇊"
-      "down" -> "↓"
-      "slightDown" -> "↘"
-      "flat" -> "→"
-      "slightUp" -> "↗"
-      "up" -> "↑"
-      "doubleUp" -> "⇈"
-      else -> ""
-    }
+    GlucoseTrendPresentation.phone(trend)?.first ?: ""
 
   fun show(
     context: Context,
@@ -3100,17 +3082,7 @@ class T1ArcAodAccessibilityService : AccessibilityService() {
     val freshness = T1ArcGlucoseDisplayState.freshness(this)
     val tone =
       T1ArcGlucoseDisplayState.displayColor(this, snapshot, freshness)
-    val arrow =
-      when (snapshot.trend) {
-        "doubleDown" -> "⇊"
-        "down" -> "↓"
-        "slightDown" -> "↘"
-        "flat" -> "→"
-        "slightUp" -> "↗"
-        "up" -> "↑"
-        "doubleUp" -> "⇈"
-        else -> "?"
-      }
+    val arrow = GlucoseTrendPresentation.phone(snapshot.trend)?.first ?: "?"
     val value = T1ArcGlucoseDisplayState.displayGlucoseValue(this, snapshot.mmolL)
     val ageMinutes =
       floor(max(0L, System.currentTimeMillis() - snapshot.timestampMs) / 60_000.0)

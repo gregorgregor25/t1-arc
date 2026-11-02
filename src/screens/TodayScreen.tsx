@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
-import { AapsContextCard } from "@/components/AapsContextCard";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
@@ -36,6 +35,7 @@ import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/time
 import { dayRange } from "@/domain/time";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
+import { useAapsCardSnapshot } from "@/hooks/useAapsCardSnapshot";
 import { paddedContextRange } from "@/domain/timelineContextLoading";
 import { useFoodLogs } from "@/hooks/useFoodLogs";
 import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
@@ -55,7 +55,7 @@ const CONTEXT_PADDING_MS = 45 * 60_000;
 export function TodayScreen() {
   const route = useRoute<RouteProp<RootTabParamList, "Today">>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
-  const { dataMode, deleteManualContext, now, ownerIdentity, refreshData, revision, sourceError, syncing, today } =
+  const { dataMode, deleteManualContext, now, ownerIdentity, refreshData, repository, revision, sourceError, syncing, today } =
     useDataContext();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("4h");
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
@@ -95,18 +95,32 @@ export function TodayScreen() {
   );
   const dailyHealth = useDailyHealthMetrics(dayRange(today, now));
   const latest = useLatestData();
+  const aaps = useAapsCardSnapshot(dataMode === 'live', repository, revision);
+  const aapsSelected = aaps.kind === 'aaps';
+  // Never attach a prior session's independently loaded glucose to new estimates.
+  const cardReading = aapsSelected ? aaps.reading
+    : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
+      ? undefined : latest.reading;
   const heroRange = useMemo(() => {
     const end = latest.reading?.timestamp ?? now;
     return { start: end - 4 * 3_600_000, end: end + 1 };
   }, [latest.reading?.timestamp, now]);
   const heroTimeline = useTimeline(heroRange, `today:${today}:hero`);
+  const cardHistory = aapsSelected ? aaps.history : heroTimeline.data?.glucose;
   const glucoseSource = latest.sources.find(
     (source) => source.label === "Glucose",
   );
+  const cardSource = aapsSelected ? {
+    id: 'aaps-local', label: 'Glucose', detail: 'AndroidAPS local',
+    freshness: 'missing' as const, origin: 'live' as const, isLive: true,
+  } : glucoseSource;
+  const aapsEstimates = aapsSelected ? { context: aaps.context }
+    : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
+      ? { unavailable: aaps.kind === 'unavailable' } : undefined;
   const trendAssessment = useMemo(
     () =>
-      assessGlucoseTrend(latest.reading, selectedTimeline.data?.glucose ?? []),
-    [latest.reading, selectedTimeline.data?.glucose],
+      assessGlucoseTrend(cardReading, aapsSelected ? aaps.history : selectedTimeline.data?.glucose ?? []),
+    [cardReading, aapsSelected, aaps, selectedTimeline.data?.glucose],
   );
 
   useEffect(() => {
@@ -206,9 +220,10 @@ export function TodayScreen() {
         ) : (
           <CurrentGlucoseCard
             trendDetailsRequest={trendDetailsRequest}
-            history={heroTimeline.data?.glucose}
-            reading={latest.reading}
-            source={glucoseSource}
+            history={cardHistory}
+            reading={cardReading}
+            aapsEstimates={aapsEstimates}
+            source={cardSource}
             now={now}
             trendAssessment={trendAssessment}
             onChooseSource={() =>
@@ -219,7 +234,6 @@ export function TodayScreen() {
             }
           />
         )}
-        {dataMode === "live" ? <AapsContextCard now={now} revision={revision} /> : null}
         <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
         <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (

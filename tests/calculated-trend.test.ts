@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { GlucoseReading, TrendDirection } from '@/domain/models';
-import { assessGlucoseTrend } from '@/domain/trend';
+import { assessGlucoseTrend, presentTrend, trendFromDelta } from '@/domain/trend';
 
 const BASE = Date.UTC(2026, 6, 26, 12);
 
@@ -23,6 +23,26 @@ function reading(
 }
 
 describe('calculated glucose trend', () => {
+  it.each<TrendDirection>(['tripleUp', 'tripleDown'])('keeps %s source meaning even when history points elsewhere', (direction) => {
+    const current = reading(10, 6, direction, 'aaps-local');
+    const assessment = assessGlucoseTrend(current, [
+      reading(0, 6, 'unknown', 'aaps-local'),
+      reading(5, 6, 'unknown', 'aaps-local'), current,
+    ]);
+    expect(assessment).toMatchObject({ direction, origin: 'source' });
+    expect(assessment.rateMmolLPerFiveMinutes).toBeUndefined();
+    expect(assessment.sourceDetail).toContain(direction === 'tripleUp' ? 'TripleUp' : 'TripleDown');
+    expect(assessment.compatibilityNote).toContain(direction === 'tripleUp' ? 'double-up' : 'double-down');
+    expect(presentTrend(direction)).toEqual(direction === 'tripleUp'
+      ? { arrow: '↑↑↑', label: 'rising very quickly' }
+      : { arrow: '↓↓↓', label: 'falling very quickly' });
+  });
+
+  it('never invents a source triple category from a calculated rate', () => {
+    expect(trendFromDelta(4)).toBe('doubleUp');
+    expect(trendFromDelta(-4)).toBe('doubleDown');
+  });
+
   it('never replaces a source-provided direction', () => {
     const current = reading(10, 7.2, 'slightUp');
     const result = assessGlucoseTrend(current, [

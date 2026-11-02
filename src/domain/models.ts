@@ -13,6 +13,7 @@ export const TARGET_LOW_MMOL_L = 3.9;
 export const TARGET_HIGH_MMOL_L = 10;
 
 export type TrendDirection =
+  | 'tripleDown'
   | 'doubleDown'
   | 'down'
   | 'slightDown'
@@ -20,6 +21,7 @@ export type TrendDirection =
   | 'slightUp'
   | 'up'
   | 'doubleUp'
+  | 'tripleUp'
   | 'unknown';
 
 export type DataQuality = 'measured' | 'estimated';

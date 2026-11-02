@@ -34,13 +34,24 @@ class AapsBroadcastParserTest {
     assertEquals(4.0, result.futureCarbsGrams!!, 0.0)
   }
 
-  @Test fun unknownAndTripleTrendRetainWireNameWithoutInventingArrow() {
-    val triple = parse(glucose + ("slopeArrow" to "TripleUp"))!!
-    assertNull(triple.trend)
-    assertEquals("TripleUp", triple.rawTrend)
+  @Test fun allSourceArrowCategoriesRetainTheirDistinctWireMeaning() {
+    val arrows = mapOf("TripleDown" to "tripleDown", "DoubleDown" to "doubleDown",
+      "SingleDown" to "down", "FortyFiveDown" to "slightDown", "Flat" to "flat",
+      "FortyFiveUp" to "slightUp", "SingleUp" to "up", "DoubleUp" to "doubleUp",
+      "TripleUp" to "tripleUp")
+    for ((wire, direction) in arrows) {
+      val result = parse(glucose + ("slopeArrow" to wire))!!
+      assertEquals(wire, result.rawTrend)
+      assertEquals(direction, result.trend)
+    }
+  }
+
+  @Test fun missingAndUnknownTrendsDoNotInventAnArrow() {
     val none = parse(glucose + ("slopeArrow" to "NONE"))!!
     assertNull(none.trend)
     assertEquals("NONE", none.rawTrend)
+    assertNull(parse(glucose - "slopeArrow")!!.trend)
+    assertNull(parse(glucose + ("slopeArrow" to "not-an-arrow"))!!.trend)
   }
 
   @Test fun unavailableCobIsDifferentFromZeroAndFieldsCanBeAbsent() {
