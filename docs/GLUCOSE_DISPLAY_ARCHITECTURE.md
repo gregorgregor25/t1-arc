@@ -98,8 +98,9 @@ Connectors may still sync less often after a stale source or rate-limit
 response. Nightscout, Dexcom Share, Medtrum and xDrip skip a request when
 their newest stored reading shows the next one cannot exist yet: a
 five-minute source becomes due 30 seconds before its next reading, and a
-source whose two newest readings are at most 2.5 minutes apart keeps the
-one-minute schedule. Explicit refreshes, first connections and a
+source with any two readings in the last ten minutes at most 2.5 minutes
+apart keeps the one-minute schedule. Only triggers less than 8 seconds apart
+are merged. Explicit refreshes, first connections and a
 validated-network retry after a network error always fetch. The speed-up
 probe tick carries its own `cadence-probe` reason, so these sources fetch the
 latest readings for it even though no reading is due yet. Routine Dexcom

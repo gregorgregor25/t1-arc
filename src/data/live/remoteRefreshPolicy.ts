@@ -13,17 +13,22 @@ import type { GlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore
  * - Five-minute sources become due 30 s before the next reading. The native
  *   collector's first five-minute tick lands 20 s after it, and its overdue
  *   polls are 20 s apart, so neither is skipped.
- * - Sources whose own two newest readings are at most 2.5 minutes apart keep
- *   the native one-minute schedule.
+ * - Sources with any two recent readings at most 2.5 minutes apart keep the
+ *   native one-minute schedule, so one missed reading does not slow them.
+ * - Attempts closer than 8 s are merged. That is well below the native 15 s
+ *   and 20 s catch-up ticks, whose recorded attempt times can be several
+ *   seconds late because they are taken after the write lease and sign-in.
  */
 export const REMOTE_EXPECTED_READING_MS = 5 * 60_000;
 export const REMOTE_DUE_LEAD_MS = 30_000;
-export const REMOTE_MIN_ATTEMPT_SPACING_MS = 15_000;
+export const REMOTE_MIN_ATTEMPT_SPACING_MS = 8_000;
 /** Two minutes plus tolerance for upload jitter, e.g. two-minute Medtrum sensors. */
 export const REMOTE_MINUTE_CADENCE_MAX_INTERVAL_MS = 150_000;
 /** Below the native one-minute tick so jitter never skips a tick. */
 export const REMOTE_MINUTE_CADENCE_ATTEMPT_SPACING_MS = 45_000;
 const OBSERVED_INTERVAL_LOOKBACK_MS = 2 * REMOTE_EXPECTED_READING_MS;
+/** Matches the native tracker: closer readings are duplicate uploads, not sensor readings. */
+const OBSERVED_INTERVAL_MIN_GAP_MS = 30_000;
 
 const DEXCOM_MAX_MINUTES = 1440;
 const DEXCOM_OVERLAP_MINUTES = 10;
@@ -34,20 +39,30 @@ export const DEXCOM_FULL_WINDOW_INTERVAL_MS = 60 * 60_000;
 export type RemoteRefreshInput = {
   now: number;
   latestReadingAt?: number;
-  /** Spacing between this source's two newest stored readings. */
+  /** Smallest gap between this source's recent stored readings. */
   observedIntervalMs?: number;
   lastAttemptAt?: number;
   /** Explicit user refresh, first connection or a validated-network recovery. */
   force?: boolean;
 };
 
-export function observedReadingIntervalMs(
-  latestReadingAt: number | undefined,
-  previousReadingAt: number | undefined,
-): number | undefined {
-  if (latestReadingAt === undefined || previousReadingAt === undefined) return undefined;
-  const interval = latestReadingAt - previousReadingAt;
-  return interval > 0 ? interval : undefined;
+/**
+ * The smallest gap between distinct readings. A dropout only lengthens one
+ * gap, so it cannot make a minute source look like a five-minute source.
+ */
+export function observedReadingIntervalMs(timestamps: readonly number[]): number | undefined {
+  const sorted = [...timestamps].sort((a, b) => a - b);
+  let smallest: number | undefined;
+  let previous: number | undefined;
+  for (const timestamp of sorted) {
+    if (previous !== undefined) {
+      const gap = timestamp - previous;
+      if (gap < OBSERVED_INTERVAL_MIN_GAP_MS) continue;
+      if (smallest === undefined || gap < smallest) smallest = gap;
+    }
+    previous = timestamp;
+  }
+  return smallest;
 }
 
 export function remoteRefreshDue({
@@ -116,7 +131,10 @@ export async function remoteSourceRefreshDue(
   return remoteRefreshDue({
     now,
     latestReadingAt: latest.timestamp,
-    observedIntervalMs: observedReadingIntervalMs(latest.timestamp, earlier.at(-1)?.timestamp),
+    observedIntervalMs: observedReadingIntervalMs([
+      ...earlier.map((reading) => reading.timestamp),
+      latest.timestamp,
+    ]),
     lastAttemptAt: state?.lastAttemptAt,
   });
 }

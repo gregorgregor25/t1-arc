@@ -4,6 +4,7 @@ import {
   REMOTE_EXPECTED_READING_MS,
   dexcomMinutesToRequest,
   dexcomShareReadWindow,
+  REMOTE_MIN_ATTEMPT_SPACING_MS,
   observedReadingIntervalMs,
   remoteRefreshDue,
   remoteSourceRefreshDue,
@@ -25,8 +26,21 @@ describe('remote refresh policy', () => {
   it('fetches once a reading is due', () => {
     expect(remoteRefreshDue({ now: 4.6 * m, latestReadingAt: 0, lastAttemptAt: 4 * m })).toBe(true);
   });
-  it('rate-limits attempts to one per 15 seconds', () => {
-    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, lastAttemptAt: 6 * m - 10_000 })).toBe(false);
+  it('merges only near-simultaneous triggers', () => {
+    expect(REMOTE_MIN_ATTEMPT_SPACING_MS).toBe(8_000);
+    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, lastAttemptAt: 6 * m - 5_000 })).toBe(false);
+    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, lastAttemptAt: 6 * m - 10_000 })).toBe(true);
+  });
+
+  it('never skips a jittered 15 s or 20 s native catch-up tick', () => {
+    // The attempt time is recorded after the lease and sign-in, so a tick
+    // whose JS started late leaves a shorter gap before the next tick.
+    for (const tickMs of [15 * s, 20 * s]) {
+      for (const lateStartMs of [0, 3 * s, 5 * s]) {
+        const tick = 5 * m;
+        expect(remoteRefreshDue({ now: tick + tickMs + 500, latestReadingAt: 0, lastAttemptAt: tick + lateStartMs })).toBe(true);
+      }
+    }
   });
 
   it('never blocks the native tick 20 s after a five-minute reading is due, nor its 20 s overdue polls', () => {
@@ -63,11 +77,17 @@ describe('remote refresh policy', () => {
     expect(remoteRefreshDue({ now: 0, latestReadingAt: 3 * m, lastAttemptAt: -1 * m })).toBe(true);
   });
 
-  it('derives the observed interval from the two newest readings', () => {
-    expect(observedReadingIntervalMs(5 * m, 4 * m)).toBe(m);
-    expect(observedReadingIntervalMs(5 * m, undefined)).toBeUndefined();
-    expect(observedReadingIntervalMs(undefined, 4 * m)).toBeUndefined();
-    expect(observedReadingIntervalMs(5 * m, 5 * m)).toBeUndefined();
+  it('derives the observed interval from the smallest recent gap', () => {
+    expect(observedReadingIntervalMs([4 * m, 5 * m])).toBe(m);
+    // One dropout does not hide a minute source.
+    expect(observedReadingIntervalMs([0, 1 * m, 2 * m, 5 * m])).toBe(m);
+    // Order does not matter.
+    expect(observedReadingIntervalMs([5 * m, 0, 10 * m])).toBe(5 * m);
+    expect(observedReadingIntervalMs([5 * m])).toBeUndefined();
+    expect(observedReadingIntervalMs([])).toBeUndefined();
+    // Duplicate uploads seconds apart are not separate sensor readings.
+    expect(observedReadingIntervalMs([5 * m, 5 * m])).toBeUndefined();
+    expect(observedReadingIntervalMs([0, 5 * m, 5 * m + 10 * s])).toBe(5 * m);
   });
 
   it('asks Dexcom only for the missing window', () => {
@@ -118,6 +138,20 @@ describe('remote source refresh due check', () => {
     await expect(remoteSourceRefreshDue(store, 'nightscout', 7 * m, { force: true })).resolves.toBe(true);
   });
 
+  it('keeps a minute source fresh after one missed reading', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([0, 1, 2, 5].map((minute) => reading('xdrip-local', minute * m)));
+    await store.saveSyncState({ sourceId: 'xdrip-local', lastAttemptAt: 5 * m + 10 * s, recordCount: 4 });
+    await expect(remoteSourceRefreshDue(store, 'xdrip-local', 5.5 * m)).resolves.toBe(true);
+  });
+
+  it('keeps a two-minute Medtrum source fresh after one missed reading', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([0, 2, 4, 8].map((minute) => reading('medtrum-easyfollow', minute * m)));
+    await store.saveSyncState({ sourceId: 'medtrum-easyfollow', lastAttemptAt: 8 * m + 10 * s, recordCount: 4 });
+    await expect(remoteSourceRefreshDue(store, 'medtrum-easyfollow', 9.5 * m)).resolves.toBe(true);
+  });
+
   it('keeps minute sources fetching every native one-minute tick', async () => {
     const store = new MemoryGlucoseHistoryStore();
     await store.upsertReadings([reading('xdrip-local', 4 * m), reading('xdrip-local', 5 * m)]);
@@ -135,13 +169,13 @@ describe('remote source refresh due check', () => {
     await expect(remoteSourceRefreshDue(store, 'dexcom-share', 6.5 * m, { reason: 'validated-network' })).resolves.toBe(false);
   });
 
-  it('treats a native cadence probe as due, but keeps the 15 s spacing', async () => {
+  it('treats a native cadence probe as due, but keeps the attempt spacing', async () => {
     const store = new MemoryGlucoseHistoryStore();
     await store.upsertReadings([reading('nightscout', 0), reading('nightscout', 5 * m)]);
     await store.saveSyncState({ sourceId: 'nightscout', lastAttemptAt: 5 * m + 20 * s, recordCount: 2 });
     // 90 s after a five-minute reading: not due by age, but the probe fetches.
     await expect(remoteSourceRefreshDue(store, 'nightscout', 6.5 * m)).resolves.toBe(false);
     await expect(remoteSourceRefreshDue(store, 'nightscout', 6.5 * m, { reason: 'cadence-probe' })).resolves.toBe(true);
-    await expect(remoteSourceRefreshDue(store, 'nightscout', 5 * m + 30 * s, { reason: 'cadence-probe' })).resolves.toBe(false);
+    await expect(remoteSourceRefreshDue(store, 'nightscout', 5 * m + 25 * s, { reason: 'cadence-probe' })).resolves.toBe(false);
   });
 });
