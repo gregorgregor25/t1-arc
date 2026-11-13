@@ -950,6 +950,7 @@ internal object T1ArcGlucoseDisplayState {
     preferences(context).getBoolean(ENABLED_KEY, false)
 
   /** Earliest time JS asked to re-evaluate a time-based alert, or null. */
+  private val nextAlertCheckLock = Any()
   @Volatile private var nextAlertCheckLoaded = false
   @Volatile private var nextAlertCheckAtMs: Long? = null
 
@@ -957,35 +958,48 @@ internal object T1ArcGlucoseDisplayState {
    * Earliest time JS asked to re-evaluate a time-based alert, or null. It
    * reveals when an alert episode is active, so it uses the same Keystore
    * encryption as the snapshot and is cached in memory after the first read.
+   *
+   * The first load and [setNextAlertCheckAt] share one lock, so a value set
+   * by JS while the service thread is still decrypting the stored value is
+   * never overwritten by that older value, and concurrent sets reach memory
+   * and storage in the same order. Not unit-tested: both paths need an
+   * Android Context and the Keystore cipher, and this module's JVM tests have
+   * no Robolectric.
    */
   fun nextAlertCheckAt(context: Context): Long? {
     if (nextAlertCheckLoaded) return nextAlertCheckAtMs
-    val stored = preferences(context)
-    val payload = stored.getString(NEXT_ALERT_CHECK_PAYLOAD_KEY, null)
-    val iv = stored.getString(NEXT_ALERT_CHECK_IV_KEY, null)
-    nextAlertCheckAtMs =
-      if (payload == null || iv == null) null
-      else T1ArcSnapshotCipher.decryptText(payload, iv)?.toLongOrNull()?.takeIf { it > 0L }
-    nextAlertCheckLoaded = true
-    return nextAlertCheckAtMs
+    synchronized(nextAlertCheckLock) {
+      if (nextAlertCheckLoaded) return nextAlertCheckAtMs
+      val stored = preferences(context)
+      val payload = stored.getString(NEXT_ALERT_CHECK_PAYLOAD_KEY, null)
+      val iv = stored.getString(NEXT_ALERT_CHECK_IV_KEY, null)
+      val loaded =
+        if (payload == null || iv == null) null
+        else T1ArcSnapshotCipher.decryptText(payload, iv)?.toLongOrNull()?.takeIf { it > 0L }
+      nextAlertCheckAtMs = loaded
+      nextAlertCheckLoaded = true
+      return loaded
+    }
   }
 
   fun setNextAlertCheckAt(context: Context, epochMs: Long?) {
     val value = epochMs?.takeIf { it > 0L }
-    nextAlertCheckAtMs = value
-    nextAlertCheckLoaded = true
-    val encrypted =
-      value?.let { runCatching { T1ArcSnapshotCipher.encryptText(it.toString()) }.getOrNull() }
-    val editor = preferences(context).edit()
-    if (encrypted == null) {
-      // Never stored as plain text; the in-memory value still applies.
-      editor.remove(NEXT_ALERT_CHECK_PAYLOAD_KEY).remove(NEXT_ALERT_CHECK_IV_KEY)
-    } else {
-      editor
-        .putString(NEXT_ALERT_CHECK_PAYLOAD_KEY, encrypted.first)
-        .putString(NEXT_ALERT_CHECK_IV_KEY, encrypted.second)
+    synchronized(nextAlertCheckLock) {
+      nextAlertCheckAtMs = value
+      nextAlertCheckLoaded = true
+      val encrypted =
+        value?.let { runCatching { T1ArcSnapshotCipher.encryptText(it.toString()) }.getOrNull() }
+      val editor = preferences(context).edit()
+      if (encrypted == null) {
+        // Never stored as plain text; the in-memory value still applies.
+        editor.remove(NEXT_ALERT_CHECK_PAYLOAD_KEY).remove(NEXT_ALERT_CHECK_IV_KEY)
+      } else {
+        editor
+          .putString(NEXT_ALERT_CHECK_PAYLOAD_KEY, encrypted.first)
+          .putString(NEXT_ALERT_CHECK_IV_KEY, encrypted.second)
+      }
+      editor.apply()
     }
-    editor.apply()
   }
 
   fun alertMonitoringEnabled(context: Context) =
