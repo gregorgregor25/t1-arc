@@ -114,7 +114,8 @@ export function evaluateGlucoseAlert(
 /**
  * The earliest future time at which re-evaluating this alert state could
  * change it without a new reading: a repeat becoming due, a current reading
- * crossing the stale age, or a retry after an alert could not be shown.
+ * crossing the stale age, or a one-minute retry when an alert could not be shown.
+ * Never in the past.
  * Undefined means only a new reading can change the outcome.
  */
 export function nextGlucoseAlertCheckAt(
@@ -140,7 +141,10 @@ export function nextGlucoseAlertCheckAt(
     }
   }
   if (!candidates.length) return undefined;
-  return Math.max(now, Math.min(...candidates));
+  const earliest = Math.min(...candidates);
+  // A check already due was not settled by this evaluation (for example a
+  // repeat that could not be shown): retry once a minute, as before.
+  return earliest <= now ? now + FAILED_ALERT_RETRY_MS : earliest;
 }
 
 function alertZone(

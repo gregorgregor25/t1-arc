@@ -76,13 +76,23 @@ follows the source's reading cadence:
   minute.
 - When a newer reading is published, the next sync is scheduled from that
   reading straight away. Only an advancing timestamp reschedules.
-- Every sixth reading in five-minute mode, one extra check 90 seconds after
+- Every second reading in five-minute mode, one extra check 90 seconds after
   the reading would reveal a minute source; any gap of two minutes or less
-  restores the original schedule. Changing source forgets the learned cadence.
+  restores the original schedule. A check that finds the previous sync still
+  running is retried 20 seconds later. Changing source forgets the learned
+  cadence.
 - Glucose alert evaluation tells the service the earliest time a repeat,
-  stale transition or retry of an unshown alert could become due. A sync then
-  runs no later than that time (at least 15 seconds apart), so repeats are not
-  delayed by the longer wait.
+  stale transition or retry of an unshown alert could become due, and saving
+  alert settings asks for a prompt check. The service brings its next sync
+  forward to that time (at least 15 seconds apart). An alert that cannot be
+  shown is retried once a minute.
+- Each sync's wall-clock due time is stored, and a one-minute service tick
+  starts the sync once it has passed. Android pauses these timers while the
+  phone sleeps, so syncs and alert checks run within about a minute of
+  device-awake time after they are due, as with the original schedule. The
+  service holds no wake lock and uses no exact alarms.
+- The alert-check time is stored with the same Android Keystore encryption as
+  the glucose display snapshot.
 
 Connectors may still sync less often after a stale source or rate-limit
 response. Stale and delayed thresholds are unchanged. With the display fully off and no

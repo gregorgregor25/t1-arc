@@ -90,11 +90,62 @@ describe('glucose alert operation serialization', () => {
     mocks.nextAlertCheck.mockReset().mockResolvedValue(true);
   });
 
-  it('tells the native collector when the next alert repeat is due', async () => {
+  it('tells the native collector when the reading would turn stale', async () => {
     const reading = lowReading();
     await reconcileGlucoseAlerts(reading, reading.trend, NOW);
     // Repeat 30 minutes after this alert; the reading turns stale earlier.
     expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 12 * 60_000 + 1);
+  });
+
+  it('tells the native collector when the next alert repeat is due', async () => {
+    mocks.values.set(
+      STATE_KEY,
+      JSON.stringify({ activeZone: 'low', lastNotifiedAt: NOW - 25 * 60_000 }),
+    );
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    expect(mocks.showAlert).not.toHaveBeenCalled();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 5 * 60_000);
+  });
+
+  it('retries a repeat that could not be shown after one minute', async () => {
+    mocks.values.set(
+      STATE_KEY,
+      JSON.stringify({ activeZone: 'low', lastNotifiedAt: NOW - 31 * 60_000 }),
+    );
+    mocks.showAlert.mockResolvedValue(false);
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    expect(mocks.showAlert).toHaveBeenCalledOnce();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 60_000);
+  });
+
+  it('asks for a prompt alert check after alert preferences change', async () => {
+    const before = Date.now();
+    await saveGlucoseAlertPreferences({
+      enabled: true,
+      lowEnabled: true,
+      lowThresholdMmolL: 4.2,
+      highEnabled: true,
+      highThresholdMmolL: 13.9,
+      staleEnabled: true,
+      repeatMinutes: 60,
+    });
+    const requested = mocks.nextAlertCheck.mock.lastCall?.[0];
+    expect(typeof requested).toBe('number');
+    expect(requested as number).toBeGreaterThanOrEqual(before);
+    expect(requested as number).toBeLessThanOrEqual(Date.now());
+
+    await saveGlucoseAlertPreferences({
+      enabled: false,
+      lowEnabled: true,
+      lowThresholdMmolL: 4.2,
+      highEnabled: true,
+      highThresholdMmolL: 13.9,
+      staleEnabled: true,
+      repeatMinutes: 60,
+    });
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
   });
 
   it('clears the native alert check when no episode is active', async () => {

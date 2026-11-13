@@ -44,8 +44,8 @@ class AdaptiveSyncCadenceTest {
     assertEquals(90_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0 + 150_000L))
     // A later alert check never delays the reading-based schedule.
     assertEquals(260_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0 + 30 * min))
-    // Due or overdue checks are clamped, so a stale hint cannot cause a storm.
-    assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0))
+    // A check that has just become due is clamped to the 15 s floor.
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0 + 50_000L))
     // Legacy timing already checks at least once a minute and is unchanged.
     assertEquals(60_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, null, alertCheckAtMs = t0 + 70_000L))
   }
@@ -125,18 +125,47 @@ class AdaptiveSyncCadenceTest {
     assertEquals(5 * min, tracker.expectedIntervalMs())
   }
 
-  @Test fun adaptiveTrackerProbesEverySixthReading() {
+  @Test fun adaptiveTrackerProbesEverySecondReading() {
     val tracker = fiveMinuteTracker() // latest reading t0 + 10m
-    for (step in 1..5) {
-      tracker.observe(t0 + (10 + 5 * step) * min)
-      assertNull(tracker.probeAtMs())
-    }
-    tracker.observe(t0 + 40 * min)
-    assertEquals(t0 + 40 * min + 90_000L, tracker.probeAtMs())
-    tracker.observe(t0 + 40 * min) // the same reading keeps the same probe
-    assertEquals(t0 + 40 * min + 90_000L, tracker.probeAtMs())
-    tracker.observe(t0 + 45 * min)
+    tracker.observe(t0 + 15 * min)
     assertNull(tracker.probeAtMs())
+    tracker.observe(t0 + 20 * min)
+    assertEquals(t0 + 20 * min + 90_000L, tracker.probeAtMs())
+    tracker.observe(t0 + 20 * min) // the same reading keeps the same probe
+    assertEquals(t0 + 20 * min + 90_000L, tracker.probeAtMs())
+    tracker.observe(t0 + 25 * min)
+    assertNull(tracker.probeAtMs())
+    tracker.observe(t0 + 30 * min)
+    assertEquals(t0 + 30 * min + 90_000L, tracker.probeAtMs())
+  }
+
+  @Test fun subThirtySecondAdvancesAreNotCountedAsReadings() {
+    val tracker = fiveMinuteTracker() // latest reading t0 + 10m
+    tracker.observe(t0 + 10 * min + 10_000L)
+    tracker.observe(t0 + 15 * min)
+    assertNull(tracker.probeAtMs())
+  }
+
+  @Test fun busyHeadlessTaskRetriesAdaptiveSyncSoon() {
+    assertEquals(20_000L, GlucoseSyncCadencePolicy.delayAfterAttempt(started = false, adaptive = true, computedDelayMs = 230_000L))
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.delayAfterAttempt(started = false, adaptive = true, computedDelayMs = 15_000L))
+    assertEquals(230_000L, GlucoseSyncCadencePolicy.delayAfterAttempt(started = true, adaptive = true, computedDelayMs = 230_000L))
+    // Legacy cadence is unchanged.
+    assertEquals(60_000L, GlucoseSyncCadencePolicy.delayAfterAttempt(started = false, adaptive = false, computedDelayMs = 60_000L))
+  }
+
+  @Test fun longPastAlertCheckRetriesAfterOneMinuteNotFifteenSeconds() {
+    val now = t0 + 1 * min
+    assertEquals(60_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, now, 5 * min, alertCheckAtMs = now - 2 * min))
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, now, 5 * min, alertCheckAtMs = now - 10_000L))
+    assertEquals(30_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, now, 5 * min, alertCheckAtMs = now + 30_000L))
+  }
+
+  @Test fun wallClockDueCheckCatchesUpAfterSuspension() {
+    assertEquals(false, SyncDuePolicy.isDue(nowWallMs = t0, dueAtWallMs = null))
+    assertEquals(false, SyncDuePolicy.isDue(nowWallMs = t0, dueAtWallMs = t0 + 1L))
+    assertEquals(true, SyncDuePolicy.isDue(nowWallMs = t0, dueAtWallMs = t0))
+    assertEquals(true, SyncDuePolicy.isDue(nowWallMs = t0 + 10 * min, dueAtWallMs = t0))
   }
 
   @Test fun probeRevealingMinuteReadingsRestoresLegacyCadence() {

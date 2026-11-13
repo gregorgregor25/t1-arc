@@ -231,9 +231,16 @@ describe('next time-based glucose alert check', () => {
     ).toBe(NOW + 60_000);
   });
 
-  it('never asks for a check in the past', () => {
+  it('retries a due check after one minute instead of asking for one in the past', () => {
     expect(
       nextGlucoseAlertCheckAt(reading(3.2), preferences(), state({ activeZone: 'low', lastNotifiedAt: NOW - 90 * 60_000 }), NOW),
-    ).toBe(NOW);
+    ).toBe(NOW + 60_000);
+  });
+
+  it('retries a repeat that could not be shown after one minute', () => {
+    // A failed repeat keeps the earlier notification time.
+    expect(
+      nextGlucoseAlertCheckAt(reading(3.2), preferences({ repeatMinutes: 30 }), state({ activeZone: 'low', lastNotifiedAt: NOW - 31 * 60_000 }), NOW),
+    ).toBe(NOW + 60_000);
   });
 });

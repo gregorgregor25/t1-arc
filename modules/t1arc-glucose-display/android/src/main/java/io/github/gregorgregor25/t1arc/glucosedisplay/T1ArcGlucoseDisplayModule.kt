@@ -91,7 +91,8 @@ import kotlin.math.roundToInt
 private const val PREFERENCES_NAME = "t1arc_glucose_display"
 private const val ENABLED_KEY = "enabled"
 private const val ALERT_MONITORING_ENABLED_KEY = "glucose_alert_monitoring_enabled"
-private const val NEXT_ALERT_CHECK_AT_KEY = "glucose_next_alert_check_at_ms"
+private const val NEXT_ALERT_CHECK_PAYLOAD_KEY = "next_alert_check_encrypted_payload"
+private const val NEXT_ALERT_CHECK_IV_KEY = "next_alert_check_encrypted_iv"
 private const val LOCK_SCREEN_VISIBLE_KEY = "lock_screen_visible"
 private const val AOD_DESIRED_KEY = "aod_desired"
 private const val AOD_POSITION_KEY = "aod_position"
@@ -438,6 +439,26 @@ private object T1ArcSnapshotCipher {
     return generator.generateKey()
   }
 
+  fun encryptText(text: String): Pair<String, String> {
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+    return Base64.encodeToString(cipher.doFinal(text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP) to
+      Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+  }
+
+  fun decryptText(payload: String, iv: String): String? =
+    try {
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(
+        Cipher.DECRYPT_MODE,
+        secretKey(),
+        GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)),
+      )
+      cipher.doFinal(Base64.decode(payload, Base64.NO_WRAP)).toString(Charsets.UTF_8)
+    } catch (_: Exception) {
+      null
+    }
+
   fun encrypt(value: GlucoseDisplaySnapshot): Pair<String, String> {
     val json =
       JSONObject()
@@ -536,7 +557,10 @@ private const val CADENCE_MIN_GAP_MS = 30_000L
 private const val FIVE_MINUTE_GAP_MIN_MS = 4 * 60_000L
 private const val FIVE_MINUTE_GAP_MAX_MS = 6 * 60_000L + 30_000L
 private const val FIVE_MINUTE_CONFIRMING_GAPS = 2
-private const val CADENCE_PROBE_EVERY_READINGS = 6
+private const val CADENCE_PROBE_EVERY_READINGS = 2
+private const val GLUCOSE_SYNC_BUSY_RETRY_MS = 20_000L
+private const val ALERT_CHECK_RETRY_MS = 60_000L
+private const val SYNC_DUE_WATCHDOG_MS = 60_000L
 private const val CADENCE_PROBE_AFTER_READING_MS = 90_000L
 
 /**
@@ -546,7 +570,7 @@ private const val CADENCE_PROBE_AFTER_READING_MS = 90_000L
  * at the dense legacy cadence, and only after consecutive five-minute gaps, so
  * a minute source with an outage is not mistaken for a five-minute source.
  * While adaptive, gaps are sampled sparsely and can only prove a faster source;
- * every sixth reading schedules one short probe that would reveal a minute
+ * every second reading schedules one short probe that would reveal a minute
  * source and restore the legacy cadence.
  */
 internal class ReadingCadenceTracker {
@@ -574,7 +598,8 @@ internal class ReadingCadenceTracker {
     val gap = timestampMs - previous
     val adaptive = isAdaptive(intervalMs)
     when {
-      gap < CADENCE_MIN_GAP_MS -> Unit
+      // Too close to be a separate sensor reading; not counted toward probes.
+      gap < CADENCE_MIN_GAP_MS -> return true
       gap <= MINUTE_SOURCE_MAX_INTERVAL_MS -> {
         intervalMs = GLUCOSE_SYNC_BASE_TICK_MS
         fiveMinuteGapStreak = 0
@@ -635,8 +660,18 @@ internal object GlucoseSyncCadencePolicy {
     }
     val readingDelay = adaptiveDelayMs(timestampMs, now, expectedIntervalMs, probeAtMs)
     if (alertCheckAtMs == null || alertCheckAtMs <= 0L) return readingDelay
-    return min(readingDelay, max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now))
+    // A check long past means the last evaluation could not settle it (for
+    // example an alert that could not be shown); retry once a minute, as the
+    // legacy cadence did, instead of at the 15 s floor.
+    val alertDelay =
+      if (alertCheckAtMs < now - ALERT_CHECK_RETRY_MS) ALERT_CHECK_RETRY_MS
+      else max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now)
+    return min(readingDelay, alertDelay)
   }
+
+  /** A sync that could not start (Headless JS busy) is retried soon in adaptive mode. */
+  fun delayAfterAttempt(started: Boolean, adaptive: Boolean, computedDelayMs: Long): Long =
+    if (!started && adaptive) min(computedDelayMs, GLUCOSE_SYNC_BUSY_RETRY_MS) else computedDelayMs
 
   private fun adaptiveDelayMs(
     timestampMs: Long,
@@ -671,6 +706,17 @@ internal object GlucoseSyncCadencePolicy {
       GLUCOSE_SYNC_BASE_TICK_MS
     }
   }
+}
+
+/**
+ * Handler delays count uptime, which stops while the CPU suspends. The
+ * service therefore also stores each sync's wall-clock due time, and a cheap
+ * one-minute tick starts the sync once that time has passed. Lateness stays
+ * bounded to about a minute of awake time, as with the legacy loop.
+ */
+internal object SyncDuePolicy {
+  fun isDue(nowWallMs: Long, dueAtWallMs: Long?): Boolean =
+    dueAtWallMs != null && nowWallMs >= dueAtWallMs
 }
 
 /**
@@ -864,14 +910,42 @@ internal object T1ArcGlucoseDisplayState {
     preferences(context).getBoolean(ENABLED_KEY, false)
 
   /** Earliest time JS asked to re-evaluate a time-based alert, or null. */
-  fun nextAlertCheckAt(context: Context): Long? =
-    preferences(context).getLong(NEXT_ALERT_CHECK_AT_KEY, 0L).takeIf { it > 0L }
+  @Volatile private var nextAlertCheckLoaded = false
+  @Volatile private var nextAlertCheckAtMs: Long? = null
+
+  /**
+   * Earliest time JS asked to re-evaluate a time-based alert, or null. It
+   * reveals when an alert episode is active, so it uses the same Keystore
+   * encryption as the snapshot and is cached in memory after the first read.
+   */
+  fun nextAlertCheckAt(context: Context): Long? {
+    if (nextAlertCheckLoaded) return nextAlertCheckAtMs
+    val stored = preferences(context)
+    val payload = stored.getString(NEXT_ALERT_CHECK_PAYLOAD_KEY, null)
+    val iv = stored.getString(NEXT_ALERT_CHECK_IV_KEY, null)
+    nextAlertCheckAtMs =
+      if (payload == null || iv == null) null
+      else T1ArcSnapshotCipher.decryptText(payload, iv)?.toLongOrNull()?.takeIf { it > 0L }
+    nextAlertCheckLoaded = true
+    return nextAlertCheckAtMs
+  }
 
   fun setNextAlertCheckAt(context: Context, epochMs: Long?) {
-    preferences(context).edit().apply {
-      if (epochMs == null || epochMs <= 0L) remove(NEXT_ALERT_CHECK_AT_KEY)
-      else putLong(NEXT_ALERT_CHECK_AT_KEY, epochMs)
-    }.apply()
+    val value = epochMs?.takeIf { it > 0L }
+    nextAlertCheckAtMs = value
+    nextAlertCheckLoaded = true
+    val encrypted =
+      value?.let { runCatching { T1ArcSnapshotCipher.encryptText(it.toString()) }.getOrNull() }
+    val editor = preferences(context).edit()
+    if (encrypted == null) {
+      // Never stored as plain text; the in-memory value still applies.
+      editor.remove(NEXT_ALERT_CHECK_PAYLOAD_KEY).remove(NEXT_ALERT_CHECK_IV_KEY)
+    } else {
+      editor
+        .putString(NEXT_ALERT_CHECK_PAYLOAD_KEY, encrypted.first)
+        .putString(NEXT_ALERT_CHECK_IV_KEY, encrypted.second)
+    }
+    editor.apply()
   }
 
   fun alertMonitoringEnabled(context: Context) =
@@ -2766,6 +2840,19 @@ class T1ArcGlucoseDisplayService : Service() {
   private val cadenceTracker = ReadingCadenceTracker()
   private var syncLoopActive = false
   private var nextSyncUptimeMs = 0L
+  private var syncDueAtWallMs: Long? = null
+  private val syncDueWatchdog =
+    object : Runnable {
+      override fun run() {
+        if (!serviceAlive || !syncLoopActive) return
+        if (SyncDuePolicy.isDue(System.currentTimeMillis(), syncDueAtWallMs)) {
+          handler.removeCallbacks(syncRunnable)
+          syncRunnable.run()
+        }
+        handler.removeCallbacks(this)
+        handler.postDelayed(this, SYNC_DUE_WATCHDOG_MS)
+      }
+    }
   private val renderGate = RenderGate()
   private var powerManager: PowerManager? = null
   private var displayManager: DisplayManager? = null
@@ -2841,12 +2928,19 @@ class T1ArcGlucoseDisplayService : Service() {
       override fun run() {
         if (!T1ArcGlucoseDisplayState.collectorEnabled(this@T1ArcGlucoseDisplayService)) {
           syncLoopActive = false
+          syncDueAtWallMs = null
           return
         }
-        requestHeadlessSync(DISPLAY_SYNC_REASON)
+        val started = requestHeadlessSync(DISPLAY_SYNC_REASON)
         val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
         cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
-        scheduleSync(syncDelayMs(snapshot?.timestampMs))
+        scheduleSync(
+          GlucoseSyncCadencePolicy.delayAfterAttempt(
+            started,
+            cadenceTracker.adaptive(),
+            syncDelayMs(snapshot?.timestampMs),
+          )
+        )
       }
     }
 
@@ -2937,13 +3031,17 @@ class T1ArcGlucoseDisplayService : Service() {
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)
+    handler.removeCallbacks(syncDueWatchdog)
     syncLoopActive = false
+    syncDueAtWallMs = null
     handler.post(renderRunnable)
     if (T1ArcGlucoseNotification.notificationsAllowed(this)) {
       // Avoid racing a React context that exists but is not fully active while
       // the app UI is starting. Cold boot still initializes Headless JS itself.
       syncLoopActive = true
       scheduleSync(10_000L)
+      handler.removeCallbacks(syncDueWatchdog)
+      handler.postDelayed(syncDueWatchdog, SYNC_DUE_WATCHDOG_MS)
     }
     return START_STICKY
   }
@@ -2960,6 +3058,8 @@ class T1ArcGlucoseDisplayService : Service() {
   private fun scheduleSync(delayMs: Long) {
     handler.removeCallbacks(syncRunnable)
     nextSyncUptimeMs = SystemClock.uptimeMillis() + delayMs
+    syncDueAtWallMs = System.currentTimeMillis() + delayMs
+    // Fast path while awake; the watchdog catches up after CPU suspension.
     handler.postDelayed(syncRunnable, delayMs)
   }
 
