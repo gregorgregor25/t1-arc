@@ -562,7 +562,12 @@ private const val CADENCE_PROBE_EVERY_READINGS = 2
 private const val GLUCOSE_SYNC_BUSY_RETRY_MS = 20_000L
 private const val ALERT_CHECK_RETRY_MS = 60_000L
 private const val SYNC_DUE_WATCHDOG_MS = 60_000L
-private const val CADENCE_PROBE_AFTER_READING_MS = 90_000L
+/** After a two-minute source's next reading (2:00) plus typical upload delay. */
+private const val CADENCE_PROBE_AFTER_READING_MS = 150_000L
+/** While adaptive, any shorter gap between distinct readings proves a faster source. */
+private const val ADAPTIVE_FASTER_SOURCE_GAP_MS = 3 * 60_000L + 30_000L
+/** Completed syncs that found nothing new during a gap, proving dense polling. */
+private const val DENSE_POLLING_MIN_EMPTY_SYNCS = 3
 /** Covers the 15 s minimum delay and a busy retry after the probe time. */
 private const val CADENCE_PROBE_REASON_WINDOW_MS = 60_000L
 
@@ -571,10 +576,13 @@ private const val CADENCE_PROBE_REASON_WINDOW_MS = 60_000L
  *
  * A five-minute classification is learned only while the service still polls
  * at the dense legacy cadence, and only after consecutive five-minute gaps, so
- * a minute source with an outage is not mistaken for a five-minute source.
- * While adaptive, gaps are sampled sparsely and can only prove a faster source;
- * every second reading schedules one short probe that would reveal a minute
- * source and restore the legacy cadence.
+ * a minute source with an outage is not mistaken for a five-minute source. A
+ * gap counts only if at least three syncs completed during it without finding
+ * a newer reading; CPU suspension with sparse wakes proves nothing.
+ * While adaptive, gaps are sampled sparsely and can only prove a faster source:
+ * any gap under 3.5 minutes restores the legacy cadence. Every second reading
+ * schedules one probe 150 s later, after a two-minute source's next reading,
+ * so a minute or two-minute source cannot stay misclassified.
  */
 internal class ReadingCadenceTracker {
   private var sourceKey: String? = null
@@ -582,6 +590,8 @@ internal class ReadingCadenceTracker {
   private var intervalMs: Long? = null
   private var fiveMinuteGapStreak = 0
   private var adaptiveReadings = 0
+  private var emptySyncsSinceReading = 0
+  private var readingSinceLastSync = false
 
   /** Returns true only when this is a newer distinct reading. */
   @Synchronized
@@ -593,24 +603,31 @@ internal class ReadingCadenceTracker {
       intervalMs = null
       fiveMinuteGapStreak = 0
       adaptiveReadings = 0
+      emptySyncsSinceReading = 0
     }
     val previous = latestMs
     if (previous != null && timestampMs <= previous) return false
     latestMs = timestampMs
+    // Too close to be a separate sensor reading (a duplicate upload): not
+    // counted toward probes and does not reset the polling evidence.
+    if (previous != null && timestampMs - previous < CADENCE_MIN_GAP_MS) return true
+    val emptySyncs = emptySyncsSinceReading
+    emptySyncsSinceReading = 0
+    readingSinceLastSync = true
     if (previous == null) return true
     val gap = timestampMs - previous
     val adaptive = isAdaptive(intervalMs)
     when {
-      // Too close to be a separate sensor reading; not counted toward probes.
-      gap < CADENCE_MIN_GAP_MS -> return true
-      gap <= MINUTE_SOURCE_MAX_INTERVAL_MS -> {
+      gap <= MINUTE_SOURCE_MAX_INTERVAL_MS ||
+        (adaptive && gap < ADAPTIVE_FASTER_SOURCE_GAP_MS) -> {
         intervalMs = GLUCOSE_SYNC_BASE_TICK_MS
         fiveMinuteGapStreak = 0
         adaptiveReadings = 0
         return true
       }
       adaptive -> Unit
-      gap in FIVE_MINUTE_GAP_MIN_MS..FIVE_MINUTE_GAP_MAX_MS -> {
+      gap in FIVE_MINUTE_GAP_MIN_MS..FIVE_MINUTE_GAP_MAX_MS &&
+        emptySyncs >= DENSE_POLLING_MIN_EMPTY_SYNCS -> {
         fiveMinuteGapStreak += 1
         if (fiveMinuteGapStreak >= FIVE_MINUTE_CONFIRMING_GAPS) {
           intervalMs = FIVE_MINUTE_SOURCE_INTERVAL_MS
@@ -623,6 +640,15 @@ internal class ReadingCadenceTracker {
     }
     if (adaptive) adaptiveReadings += 1
     return true
+  }
+
+  /**
+   * A source sync finished. Unless it (or another path) delivered a newer
+   * reading, it is evidence that the gap since the latest reading was polled.
+   */
+  @Synchronized
+  fun syncCompleted() {
+    if (readingSinceLastSync) readingSinceLastSync = false else emptySyncsSinceReading += 1
   }
 
   @Synchronized fun expectedIntervalMs(): Long? = intervalMs
@@ -3191,6 +3217,9 @@ class T1ArcGlucoseDisplayService : Service() {
     fun headlessTaskFinished() {
       instance?.let { service ->
         service.handler.post {
+          // Posted after any readingPublished from this task, so a sync that
+          // delivered a reading is not counted as an empty one.
+          service.cadenceTracker.syncCompleted()
           if (service.serviceAlive) service.drainValidatedNetworkSync()
         }
       }

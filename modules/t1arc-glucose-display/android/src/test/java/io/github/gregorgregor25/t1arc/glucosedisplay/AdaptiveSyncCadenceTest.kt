@@ -70,7 +70,7 @@ class AdaptiveSyncCadenceTest {
   }
 
   @Test fun probeTickCarriesItsOwnHeadlessReason() {
-    val probeAt = t0 + 90_000L
+    val probeAt = t0 + 150_000L
     assertEquals("cadence-probe", GlucoseSyncCadencePolicy.syncReason(probeAt, probeAt))
     // The 15 s minimum delay and the busy retry land shortly after the probe time.
     assertEquals("cadence-probe", GlucoseSyncCadencePolicy.syncReason(probeAt + 10_000L, probeAt))
@@ -97,9 +97,9 @@ class AdaptiveSyncCadenceTest {
     assertNull(tracker.expectedIntervalMs())
     tracker.observe(t0) // repeat of same reading changes nothing
     assertNull(tracker.expectedIntervalMs())
-    tracker.observe(t0 + 5 * min)
+    tracker.denseObserve(t0 + 5 * min)
     assertNull(tracker.expectedIntervalMs())
-    tracker.observe(t0 + 10 * min)
+    tracker.denseObserve(t0 + 10 * min)
     assertEquals(5 * min, tracker.expectedIntervalMs())
     tracker.observe(t0 + 11 * min)
     assertEquals(60_000L, tracker.expectedIntervalMs())
@@ -110,22 +110,22 @@ class AdaptiveSyncCadenceTest {
     tracker.observe(t0)
     tracker.observe(t0 + 1 * min)
     assertEquals(60_000L, tracker.expectedIntervalMs())
-    tracker.observe(t0 + 6 * min) // one five-minute outage
+    tracker.denseObserve(t0 + 6 * min) // one five-minute outage
     tracker.observe(t0 + 7 * min)
     assertEquals(60_000L, tracker.expectedIntervalMs())
-    tracker.observe(t0 + 12 * min) // non-consecutive outage
+    tracker.denseObserve(t0 + 12 * min) // non-consecutive outage
     assertEquals(60_000L, tracker.expectedIntervalMs())
   }
 
   @Test fun trackerIgnoresGapsAndOlderReadings() {
     val tracker = ReadingCadenceTracker()
     tracker.observe(t0)
-    tracker.observe(t0 + 5 * min)
-    tracker.observe(t0 + 50 * min) // sensor gap: not a cadence, breaks the streak
+    tracker.denseObserve(t0 + 5 * min)
+    tracker.denseObserve(t0 + 50 * min) // sensor gap: not a cadence, breaks the streak
     assertNull(tracker.expectedIntervalMs())
-    tracker.observe(t0 + 55 * min)
+    tracker.denseObserve(t0 + 55 * min)
     assertNull(tracker.expectedIntervalMs())
-    tracker.observe(t0 + 60 * min)
+    tracker.denseObserve(t0 + 60 * min)
     assertEquals(5 * min, tracker.expectedIntervalMs())
     tracker.observe(t0 + 40 * min) // backfilled older reading ignored
     assertEquals(5 * min, tracker.expectedIntervalMs())
@@ -142,13 +142,117 @@ class AdaptiveSyncCadenceTest {
     tracker.observe(t0 + 15 * min)
     assertNull(tracker.probeAtMs())
     tracker.observe(t0 + 20 * min)
-    assertEquals(t0 + 20 * min + 90_000L, tracker.probeAtMs())
+    assertEquals(t0 + 20 * min + 150_000L, tracker.probeAtMs())
     tracker.observe(t0 + 20 * min) // the same reading keeps the same probe
-    assertEquals(t0 + 20 * min + 90_000L, tracker.probeAtMs())
+    assertEquals(t0 + 20 * min + 150_000L, tracker.probeAtMs())
     tracker.observe(t0 + 25 * min)
     assertNull(tracker.probeAtMs())
     tracker.observe(t0 + 30 * min)
-    assertEquals(t0 + 30 * min + 90_000L, tracker.probeAtMs())
+    assertEquals(t0 + 30 * min + 150_000L, tracker.probeAtMs())
+  }
+
+  @Test fun probeRunsAfterATwoMinuteSourceWouldHaveReported() {
+    val tracker = fiveMinuteTracker()
+    tracker.observe(t0 + 15 * min)
+    tracker.observe(t0 + 20 * min)
+    // Late enough for the +2:00 reading of a two-minute source, plus upload delay.
+    assertEquals(t0 + 20 * min + 150_000L, tracker.probeAtMs())
+  }
+
+  @Test fun twoMinuteSourceWithDoubleDropReturnsToLegacyAtNextProbe() {
+    // A two-minute source (for example Medtrum) that dropped alternate readings
+    // twice looks like a five-minute source while dense polling was active.
+    val tracker = ReadingCadenceTracker()
+    tracker.observe(t0)
+    tracker.denseObserve(t0 + 4 * min)
+    tracker.denseObserve(t0 + 8 * min)
+    assertEquals(5 * min, tracker.expectedIntervalMs())
+    // Sparse adaptive syncs only see every other reading.
+    tracker.observe(t0 + 12 * min)
+    tracker.observe(t0 + 16 * min)
+    val probeAt = requireNotNull(tracker.probeAtMs())
+    // The probe finds the next two-minute reading, a little late.
+    val next = t0 + 18 * min + 20_000L
+    assertEquals(true, next <= probeAt)
+    tracker.observe(next)
+    assertEquals(false, tracker.adaptive())
+    assertEquals(60_000L, tracker.expectedIntervalMs())
+  }
+
+  @Test fun anyShortGapWhileAdaptiveRestoresLegacyCadence() {
+    for (gap in listOf(30_000L, 2 * min + 1L, 3 * min, 3 * min + 29_999L)) {
+      val tracker = fiveMinuteTracker() // latest t0 + 10m
+      tracker.observe(t0 + 10 * min + gap)
+      assertEquals("gap $gap", false, tracker.adaptive())
+    }
+    // Duplicate uploads closer than 30 s are not readings.
+    val duplicate = fiveMinuteTracker()
+    duplicate.observe(t0 + 10 * min + 29_999L)
+    assertEquals(true, duplicate.adaptive())
+    // 3.5 minutes or more stays adaptive.
+    val slower = fiveMinuteTracker()
+    slower.observe(t0 + 13 * min + 30_000L)
+    assertEquals(true, slower.adaptive())
+  }
+
+  @Test fun minuteSwitchWhileAdaptiveIsStillDetectedByProbe() {
+    val tracker = fiveMinuteTracker()
+    tracker.observe(t0 + 15 * min)
+    tracker.observe(t0 + 20 * min)
+    assertEquals(t0 + 20 * min + 150_000L, tracker.probeAtMs())
+    tracker.observe(t0 + 21 * min)
+    assertEquals(false, tracker.adaptive())
+    assertNull(tracker.probeAtMs())
+  }
+
+  @Test fun genuineFiveMinuteSourceStaysAdaptiveWithOccasionalLateReadings() {
+    val tracker = fiveMinuteTracker() // latest t0 + 10m
+    var latest = t0 + 10 * min
+    for (gap in listOf(5 * min, 5 * min + 30_000L, 6 * min + 20_000L, 5 * min, 6 * min + 30_000L, 5 * min)) {
+      latest += gap
+      tracker.observe(latest)
+      assertEquals(5 * min, tracker.expectedIntervalMs())
+    }
+  }
+
+  @Test fun fiveMinuteGapsCountOnlyWhenDensePollingFoundNothing() {
+    val learned = ReadingCadenceTracker()
+    learned.denseObserve(t0, emptySyncs = 0)
+    learned.denseObserve(t0 + 5 * min, emptySyncs = 3)
+    learned.denseObserve(t0 + 10 * min, emptySyncs = 3)
+    assertEquals(5 * min, learned.expectedIntervalMs())
+
+    // CPU suspend with ~5-minute wakes: one sync per gap proves nothing.
+    val sparse = ReadingCadenceTracker()
+    sparse.denseObserve(t0, emptySyncs = 0)
+    sparse.denseObserve(t0 + 5 * min, emptySyncs = 1)
+    sparse.denseObserve(t0 + 10 * min, emptySyncs = 1)
+    sparse.denseObserve(t0 + 15 * min, emptySyncs = 2)
+    assertNull(sparse.expectedIntervalMs())
+  }
+
+  @Test fun duplicateUploadDoesNotResetPollingEvidence() {
+    val tracker = ReadingCadenceTracker()
+    tracker.denseObserve(t0, emptySyncs = 0)
+    repeat(2) { tracker.syncCompleted() }
+    tracker.observe(t0 + 10_000L) // duplicate upload of the same reading
+    tracker.syncCompleted()
+    tracker.observe(t0 + 5 * min)
+    tracker.syncCompleted()
+    tracker.denseObserve(t0 + 10 * min, emptySyncs = 3)
+    assertEquals(5 * min, tracker.expectedIntervalMs())
+  }
+
+  @Test fun theSyncThatFindsAReadingIsNotCountedAsEmpty() {
+    val tracker = ReadingCadenceTracker()
+    tracker.observe(t0)
+    tracker.syncCompleted() // the sync that delivered t0
+    repeat(2) { tracker.syncCompleted() }
+    tracker.observe(t0 + 5 * min)
+    tracker.syncCompleted()
+    repeat(2) { tracker.syncCompleted() }
+    tracker.observe(t0 + 10 * min)
+    assertNull(tracker.expectedIntervalMs())
   }
 
   @Test fun subThirtySecondAdvancesAreNotCountedAsReadings() {
@@ -190,8 +294,8 @@ class AdaptiveSyncCadenceTest {
   @Test fun sourceChangeForgetsLearnedCadence() {
     val tracker = ReadingCadenceTracker()
     tracker.observe(t0, "Dexcom")
-    tracker.observe(t0 + 5 * min, "Dexcom")
-    tracker.observe(t0 + 10 * min, "Dexcom")
+    tracker.denseObserve(t0 + 5 * min, "Dexcom")
+    tracker.denseObserve(t0 + 10 * min, "Dexcom")
     assertEquals(5 * min, tracker.expectedIntervalMs())
     tracker.observe(t0 + 11 * min, "LibreLinkUp")
     assertNull(tracker.expectedIntervalMs())
@@ -266,8 +370,21 @@ class AdaptiveSyncCadenceTest {
   private fun fiveMinuteTracker() =
     ReadingCadenceTracker().apply {
       observe(t0)
-      observe(t0 + 5 * min)
-      observe(t0 + 10 * min)
+      denseObserve(t0 + 5 * min)
+      denseObserve(t0 + 10 * min)
       assertEquals(5 * min, expectedIntervalMs())
     }
+
+  /** A reading found after the legacy cadence polled several times without one. */
+  private fun ReadingCadenceTracker.denseObserve(
+    timestampMs: Long,
+    source: String? = null,
+    emptySyncs: Int = 4,
+  ): Boolean {
+    repeat(emptySyncs) { syncCompleted() }
+    val newer = observe(timestampMs, source)
+    // The sync that found this reading is not an empty one.
+    syncCompleted()
+    return newer
+  }
 }

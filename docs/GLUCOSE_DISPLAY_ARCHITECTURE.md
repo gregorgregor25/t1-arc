@@ -70,15 +70,22 @@ follows the source's reading cadence:
   15 seconds while the latest reading is 4.5–12 minutes old.
 - **Five-minute sources** are recognised only after two consecutive
   4–6.5-minute gaps seen while still on the original schedule, so an outage on
-  a minute source is not mistaken for a slower source. The service then syncs
+  a minute source is not mistaken for a slower source. A gap counts only if at
+  least three syncs finished during it without finding a newer reading; when
+  the phone slept through most of the gap, it proves nothing and the count
+  starts again. The service then syncs
   20 seconds after the next reading is due. If it has not arrived, the service
   checks every 20 seconds until the reading is 12 minutes old, then every
   minute.
 - When a newer reading is published, the next sync is scheduled from that
   reading straight away. Only an advancing timestamp reschedules.
-- Every second reading in five-minute mode, one extra check 90 seconds after
-  the reading would reveal a minute source; any gap of two minutes or less
-  restores the original schedule. A check that finds the previous sync still
+- Every second reading in five-minute mode, one extra check 150 seconds after
+  the reading would reveal a minute or two-minute source (such as Medtrum)
+  whose next reading arrived a little late. In five-minute mode, any gap
+  between distinct readings under 3.5 minutes restores the original schedule;
+  readings less than 30 seconds apart are treated as duplicate uploads. Gaps
+  of 3.5 minutes or more, including occasional late 5–6.5-minute readings,
+  keep five-minute mode. A check that finds the previous sync still
   running is retried 20 seconds later. Changing source forgets the learned
   cadence.
 - Glucose alert evaluation tells the service the earliest time a repeat,
