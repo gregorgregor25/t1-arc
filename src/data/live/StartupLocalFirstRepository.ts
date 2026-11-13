@@ -1,4 +1,4 @@
-import type { DiabetesRepository } from '@/data/contracts';
+import type { DiabetesRepository, GlucoseRefreshOptions } from '@/data/contracts';
 import type {
   DataSourceStatus,
   GlucoseReading,
@@ -19,12 +19,12 @@ export class StartupLocalFirstRepository implements DiabetesRepository {
     this.delegate = delegate;
   }
 
-  refresh(): Promise<void> {
-    return this.delegate.refresh();
+  refresh(options?: GlucoseRefreshOptions): Promise<void> {
+    return this.delegate.refresh(options);
   }
 
-  refreshGlucose(): Promise<void> {
-    return this.delegate.refreshGlucose?.() ?? this.delegate.refresh();
+  refreshGlucose(options?: GlucoseRefreshOptions): Promise<void> {
+    return this.delegate.refreshGlucose?.(options) ?? this.delegate.refresh(options);
   }
 
   getTimeline(range: TimeRange): Promise<TimelineData> {

@@ -525,6 +525,30 @@ describe('glucose display Headless JS settlement', () => {
     );
   });
 
+  it('plumbs a native cadence probe to the sources that start for it', async () => {
+    await runGlucoseDisplayForegroundSync({ reason: 'cadence-probe' });
+    await runGlucoseDisplayForegroundSync();
+
+    expect(mocks.refreshConfiguredSources).toHaveBeenNthCalledWith(
+      1,
+      undefined,
+      {
+        reason: 'cadence-probe',
+        signal: expect.any(AbortSignal),
+        writeLease: { epoch: 7 },
+      },
+    );
+    expect(mocks.refreshConfiguredSources).toHaveBeenNthCalledWith(
+      2,
+      undefined,
+      {
+        reason: undefined,
+        signal: expect.any(AbortSignal),
+        writeLease: { epoch: 7 },
+      },
+    );
+  });
+
   it('preserves one validated-network edge that arrives during an active owner', async () => {
     let finishRefresh!: () => void;
     mocks.refreshConfiguredSources

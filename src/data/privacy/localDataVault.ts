@@ -41,6 +41,7 @@ import { LocalDataSummary } from "@/domain/localDataSummary";
 import { NOTEBOOK_STORAGE_KEY } from "@/domain/personalNotebook";
 import { clearTarvisStoredData } from "@/data/tarvis/secureStore";
 import { clearTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
+import { clearUsageReportingAsync } from "@/data/usageReporting/usageReporter";
 import { clearXdripConnection } from "@/data/xdrip/secureStore";
 
 interface LocalDataSummaryRow {
@@ -208,6 +209,8 @@ export async function invalidateLocalDataWritesForErase() {
  */
 export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
   await disableCommunityReminderForErasureAsync();
+  // Anonymous usage history is removed; an opt-out switch position is kept.
+  await clearUsageReportingAsync();
   const preparedIntent = await prepareLocalDataEraseIntent();
   const before = await withT1ArcSanitizedEraseTransaction(
     async (transaction) => {
@@ -408,6 +411,7 @@ export async function resumePendingLocalDataErase() {
       clearInsightReviewPreferences(),
       clearBackupStatus(),
       disableCommunityReminderForErasureAsync(),
+      clearUsageReportingAsync(),
     ]);
     await eraseLocalHealthData();
     // The database erase deliberately replaces source metadata. Re-plan from

@@ -1,4 +1,4 @@
-import { GlucoseSource } from '@/data/contracts';
+import { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
 import { GLOOKO_CGM_SOURCE_ID } from '@/data/import/glookoCsv';
 import { DEXCOM_CGM_SOURCE_ID } from '@/data/import/dexcomClarityCsv';
 import { NOTIFICATION_SOURCE_ID } from '@/data/notification/types';
@@ -22,6 +22,7 @@ function latestTimestamp(values: (number | undefined)[]) {
 export class CompositeGlucoseSource implements GlucoseSource {
   readonly sourceId = COMPOSITE_GLUCOSE_SOURCE_ID;
   private refreshInFlight?: Promise<void>;
+  private refreshInFlightForced = false;
   private statusReadInFlight?: Promise<DataSourceStatus>;
   private statusSnapshot?: DataSourceStatus;
   private refreshGeneration = 0;
@@ -38,13 +39,20 @@ export class CompositeGlucoseSource implements GlucoseSource {
     this.priority.set(GLOOKO_CGM_SOURCE_ID, sources.length + 1);
   }
 
-  async refresh() {
-    if (this.refreshInFlight) return this.refreshInFlight;
+  async refresh(options?: GlucoseRefreshOptions): Promise<void> {
+    const inFlight = this.refreshInFlight;
+    if (inFlight) {
+      // A routine refresh may have skipped a source that was not yet due, so
+      // a forced refresh waits for it and then runs its own pass.
+      if (!options?.force || this.refreshInFlightForced) return inFlight;
+      return inFlight.catch(() => undefined).then(() => this.refresh(options));
+    }
     const generation = ++this.refreshGeneration;
     this.statusSnapshot = undefined;
+    this.refreshInFlightForced = options?.force === true;
     this.refreshInFlight = (async () => {
       const results = await Promise.allSettled(
-        this.sources.map((source) => source.refresh?.()),
+        this.sources.map((source) => source.refresh?.(options)),
       );
       const failure = results.find(
         (result): result is PromiseRejectedResult =>

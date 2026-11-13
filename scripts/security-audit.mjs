@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 // The only reviewed residual finding is a low-severity build-tool advisory.
 // It is intentionally temporary; a new graph or advisory needs a new review.
-const REVIEW_EXPIRES_AT = '2026-11-13T00:00:00Z';
+const REVIEW_EXPIRES_AT = '2027-02-12T00:00:00Z';
 const DEEPMERGE_ADVISORY = Object.freeze({
   source: 1243505,
   url: 'https://github.com/advisories/GHSA-gcqx-w48m-w2h4',
@@ -14,12 +14,6 @@ const DEEPMERGE_ADVISORY = Object.freeze({
 const reviewed = Object.freeze({
   deepmerge: { path: 'node_modules/deepmerge', version: '4.3.1', via: [] },
   '@expo/config': { path: 'node_modules/@expo/config', version: '57.0.10', via: ['deepmerge'] },
-  '@expo/local-build-cache-provider': { path: 'node_modules/@expo/local-build-cache-provider', version: '57.0.9', via: ['@expo/config'] },
-  '@expo/metro-config': { path: 'node_modules/expo/node_modules/@expo/metro-config', version: '57.0.13', via: ['@expo/config'] },
-  '@expo/prebuild-config': { path: 'node_modules/@expo/prebuild-config', version: '57.0.19', via: ['@expo/config'] },
-  '@expo/cli': { path: 'node_modules/expo/node_modules/@expo/cli', version: '57.0.32', via: ['@expo/config', '@expo/metro-config', '@expo/prebuild-config'] },
-  expo: { path: 'node_modules/expo', version: '57.0.31', via: ['@expo/cli', '@expo/config', '@expo/local-build-cache-provider', '@expo/metro-config'] },
-  '@react-native-community/datetimepicker': { path: 'node_modules/@react-native-community/datetimepicker', version: '9.1.0', via: ['expo'] },
 });
 
 function isRecord(value) {

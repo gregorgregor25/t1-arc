@@ -29,6 +29,12 @@
 
 > Free to use on Android 8.0 and newer. [Downloads and release support](docs/RELEASE_STATUS.md).
 
+<p align="center">
+  Enjoying T1 Arc? <a href="https://github.com/gregorgregor25/t1-arc">Give the project a star on GitHub</a><br>
+  or <strong><a href="https://ko-fi.com/t1arc">support development on Ko-fi</a></strong>.
+  Both are optional; T1 Arc is free to use.
+</p>
+
 ## Why I built it
 
 I have lived with Type 1 diabetes for nearly 20 years. The problem I kept
@@ -289,6 +295,9 @@ path.
 - Health history stays in an encrypted local database.
 - Provider credentials and API keys use Android secure storage.
 - Connections go directly to the service selected by the user.
+- Anonymous usage counts (app version and how many days in a week the app
+  was opened or monitoring, with no identifiers or health data) are on by
+  default and can be turned off in Settings → Privacy.
 - Encrypted portable backups exclude credentials, browser cookies and API keys.
 - Demo records are synthetic, temporary and kept separate from personal data.
 - Public bug reports must use synthetic fixtures and redacted screenshots.

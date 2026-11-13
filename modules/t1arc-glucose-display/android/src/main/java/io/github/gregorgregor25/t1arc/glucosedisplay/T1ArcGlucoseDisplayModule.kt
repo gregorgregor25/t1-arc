@@ -37,6 +37,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -90,6 +91,8 @@ import kotlin.math.roundToInt
 private const val PREFERENCES_NAME = "t1arc_glucose_display"
 private const val ENABLED_KEY = "enabled"
 private const val ALERT_MONITORING_ENABLED_KEY = "glucose_alert_monitoring_enabled"
+private const val NEXT_ALERT_CHECK_PAYLOAD_KEY = "next_alert_check_encrypted_payload"
+private const val NEXT_ALERT_CHECK_IV_KEY = "next_alert_check_encrypted_iv"
 private const val LOCK_SCREEN_VISIBLE_KEY = "lock_screen_visible"
 private const val AOD_DESIRED_KEY = "aod_desired"
 private const val AOD_POSITION_KEY = "aod_position"
@@ -127,6 +130,7 @@ private const val HEADLESS_TASK_KEY = "T1ArcLibreForegroundSync"
 private const val HEADLESS_REASON_EXTRA = "io.github.gregorgregor25.t1arc.glucosedisplay.HEADLESS_REASON"
 private const val DISPLAY_SYNC_REASON = "glucose-display"
 private const val VALIDATED_NETWORK_SYNC_REASON = "validated-network"
+private const val CADENCE_PROBE_SYNC_REASON = "cadence-probe"
 private const val DISPLAY_REFRESH_INTERVAL_MS = 60_000L
 private const val GLUCOSE_SYNC_BASE_TICK_MS = 60_000L
 private const val GLUCOSE_SYNC_CATCH_UP_TICK_MS = 15_000L
@@ -436,6 +440,26 @@ private object T1ArcSnapshotCipher {
     return generator.generateKey()
   }
 
+  fun encryptText(text: String): Pair<String, String> {
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+    return Base64.encodeToString(cipher.doFinal(text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP) to
+      Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+  }
+
+  fun decryptText(payload: String, iv: String): String? =
+    try {
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(
+        Cipher.DECRYPT_MODE,
+        secretKey(),
+        GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)),
+      )
+      cipher.doFinal(Base64.decode(payload, Base64.NO_WRAP)).toString(Charsets.UTF_8)
+    } catch (_: Exception) {
+      null
+    }
+
   fun encrypt(value: GlucoseDisplaySnapshot): Pair<String, String> {
     val json =
       JSONObject()
@@ -525,9 +549,196 @@ internal object DisplayFreshnessPolicy {
   }
 }
 
+private const val GLUCOSE_SYNC_ARRIVAL_GRACE_MS = 20_000L
+private const val GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS = 20_000L
+private const val GLUCOSE_SYNC_MIN_DELAY_MS = 15_000L
+private const val MINUTE_SOURCE_MAX_INTERVAL_MS = 2 * 60_000L
+private const val FIVE_MINUTE_SOURCE_INTERVAL_MS = 5 * 60_000L
+private const val CADENCE_MIN_GAP_MS = 30_000L
+private const val FIVE_MINUTE_GAP_MIN_MS = 4 * 60_000L
+private const val FIVE_MINUTE_GAP_MAX_MS = 6 * 60_000L + 30_000L
+private const val FIVE_MINUTE_CONFIRMING_GAPS = 2
+private const val CADENCE_PROBE_EVERY_READINGS = 2
+private const val GLUCOSE_SYNC_BUSY_RETRY_MS = 20_000L
+private const val ALERT_CHECK_RETRY_MS = 60_000L
+private const val SYNC_DUE_WATCHDOG_MS = 60_000L
+/** After a two-minute source's next reading (2:00) plus typical upload delay. */
+private const val CADENCE_PROBE_AFTER_READING_MS = 150_000L
+/** While adaptive, any shorter gap between distinct readings proves a faster source. */
+private const val ADAPTIVE_FASTER_SOURCE_GAP_MS = 3 * 60_000L + 30_000L
+/** Completed syncs that found nothing new during a gap, proving dense polling. */
+private const val DENSE_POLLING_MIN_EMPTY_SYNCS = 3
+/** Covers the 15 s minimum delay and a busy retry after the probe time. */
+private const val CADENCE_PROBE_REASON_WINDOW_MS = 60_000L
+
+/**
+ * Learns a source's reading cadence from consecutive distinct readings.
+ *
+ * A five-minute classification is learned only while the service still polls
+ * at the dense legacy cadence, and only after consecutive five-minute gaps, so
+ * a minute source with an outage is not mistaken for a five-minute source. A
+ * gap counts only if at least three syncs completed during it without finding
+ * a newer reading; CPU suspension with sparse wakes proves nothing.
+ * While adaptive, gaps are sampled sparsely and can only prove a faster source:
+ * any gap under 3.5 minutes restores the legacy cadence. Every second reading
+ * schedules one probe 150 s later, after a two-minute source's next reading,
+ * so a minute or two-minute source cannot stay misclassified.
+ */
+internal class ReadingCadenceTracker {
+  private var sourceKey: String? = null
+  private var latestMs: Long? = null
+  private var intervalMs: Long? = null
+  private var fiveMinuteGapStreak = 0
+  private var adaptiveReadings = 0
+  private var emptySyncsSinceReading = 0
+  private var readingSinceLastSync = false
+
+  /** Returns true only when this is a newer distinct reading. */
+  @Synchronized
+  fun observe(timestampMs: Long?, source: String? = null): Boolean {
+    if (timestampMs == null || timestampMs <= 0L) return false
+    if (source != sourceKey) {
+      sourceKey = source
+      latestMs = null
+      intervalMs = null
+      fiveMinuteGapStreak = 0
+      adaptiveReadings = 0
+      emptySyncsSinceReading = 0
+    }
+    val previous = latestMs
+    if (previous != null && timestampMs <= previous) return false
+    latestMs = timestampMs
+    // Too close to be a separate sensor reading (a duplicate upload): not
+    // counted toward probes and does not reset the polling evidence.
+    if (previous != null && timestampMs - previous < CADENCE_MIN_GAP_MS) return true
+    val emptySyncs = emptySyncsSinceReading
+    emptySyncsSinceReading = 0
+    readingSinceLastSync = true
+    if (previous == null) return true
+    val gap = timestampMs - previous
+    val adaptive = isAdaptive(intervalMs)
+    when {
+      gap <= MINUTE_SOURCE_MAX_INTERVAL_MS ||
+        (adaptive && gap < ADAPTIVE_FASTER_SOURCE_GAP_MS) -> {
+        intervalMs = GLUCOSE_SYNC_BASE_TICK_MS
+        fiveMinuteGapStreak = 0
+        adaptiveReadings = 0
+        return true
+      }
+      adaptive -> Unit
+      gap in FIVE_MINUTE_GAP_MIN_MS..FIVE_MINUTE_GAP_MAX_MS &&
+        emptySyncs >= DENSE_POLLING_MIN_EMPTY_SYNCS -> {
+        fiveMinuteGapStreak += 1
+        if (fiveMinuteGapStreak >= FIVE_MINUTE_CONFIRMING_GAPS) {
+          intervalMs = FIVE_MINUTE_SOURCE_INTERVAL_MS
+          fiveMinuteGapStreak = 0
+          adaptiveReadings = 0
+          return true
+        }
+      }
+      else -> fiveMinuteGapStreak = 0
+    }
+    if (adaptive) adaptiveReadings += 1
+    return true
+  }
+
+  /**
+   * A source sync finished. Unless it (or another path) delivered a newer
+   * reading, it is evidence that the gap since the latest reading was polled.
+   */
+  @Synchronized
+  fun syncCompleted() {
+    if (readingSinceLastSync) readingSinceLastSync = false else emptySyncsSinceReading += 1
+  }
+
+  @Synchronized fun expectedIntervalMs(): Long? = intervalMs
+
+  @Synchronized fun adaptive(): Boolean = isAdaptive(intervalMs)
+
+  /** A one-off early check after the latest reading, or null when none is due. */
+  @Synchronized
+  fun probeAtMs(): Long? {
+    val latest = latestMs ?: return null
+    if (!isAdaptive(intervalMs)) return null
+    if (adaptiveReadings == 0 || adaptiveReadings % CADENCE_PROBE_EVERY_READINGS != 0) return null
+    return latest + CADENCE_PROBE_AFTER_READING_MS
+  }
+
+  private fun isAdaptive(interval: Long?) =
+    interval != null && interval > MINUTE_SOURCE_MAX_INTERVAL_MS
+}
+
 internal object GlucoseSyncCadencePolicy {
-  fun nextDelayMs(timestampMs: Long?, now: Long): Long {
+  /**
+   * Unknown cadence and minute sources keep the legacy schedule exactly; it
+   * already checks at least once a minute. A learned five-minute source sleeps
+   * until shortly after its next reading is due, then polls every 20 s until
+   * the reading is stale and every minute after that. A pending time-based
+   * alert check (repeat or stale transition) can only bring a sync forward.
+   */
+  fun nextDelayMs(
+    timestampMs: Long?,
+    now: Long,
+    expectedIntervalMs: Long? = null,
+    probeAtMs: Long? = null,
+    alertCheckAtMs: Long? = null,
+  ): Long {
     if (timestampMs == null || timestampMs <= 0L) return GLUCOSE_SYNC_BASE_TICK_MS
+    if (expectedIntervalMs == null || expectedIntervalMs <= MINUTE_SOURCE_MAX_INTERVAL_MS) {
+      return legacyDelayMs(timestampMs, now)
+    }
+    val readingDelay = adaptiveDelayMs(timestampMs, now, expectedIntervalMs, probeAtMs)
+    if (alertCheckAtMs == null || alertCheckAtMs <= 0L) return readingDelay
+    // A check long past means the last evaluation could not settle it (for
+    // example an alert that could not be shown); retry once a minute, as the
+    // legacy cadence did, instead of at the 15 s floor.
+    val alertDelay =
+      if (alertCheckAtMs < now - ALERT_CHECK_RETRY_MS) ALERT_CHECK_RETRY_MS
+      else max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now)
+    return min(readingDelay, alertDelay)
+  }
+
+  /**
+   * The speed-up probe tells JS so remote sources fetch even though their
+   * stored five-minute spacing says no reading is due yet.
+   */
+  fun syncReason(now: Long, probeAtMs: Long?): String =
+    if (probeAtMs != null && now >= probeAtMs && now < probeAtMs + CADENCE_PROBE_REASON_WINDOW_MS) {
+      CADENCE_PROBE_SYNC_REASON
+    } else {
+      DISPLAY_SYNC_REASON
+    }
+
+  /** A sync that could not start (Headless JS busy) is retried soon in adaptive mode. */
+  fun delayAfterAttempt(started: Boolean, adaptive: Boolean, computedDelayMs: Long): Long =
+    if (!started && adaptive) min(computedDelayMs, GLUCOSE_SYNC_BUSY_RETRY_MS) else computedDelayMs
+
+  private fun adaptiveDelayMs(
+    timestampMs: Long,
+    now: Long,
+    expectedIntervalMs: Long,
+    probeAtMs: Long?,
+  ): Long {
+    if (probeAtMs != null && now < probeAtMs) {
+      return max(GLUCOSE_SYNC_MIN_DELAY_MS, probeAtMs - now)
+    }
+    val due = timestampMs + expectedIntervalMs + GLUCOSE_SYNC_ARRIVAL_GRACE_MS
+    // Upper bound: one interval plus grace, so a future timestamp cannot
+    // postpone syncs indefinitely and a just-published reading waits until due.
+    if (now < due) {
+      return (due - now).coerceIn(
+        GLUCOSE_SYNC_MIN_DELAY_MS,
+        expectedIntervalMs + GLUCOSE_SYNC_ARRIVAL_GRACE_MS,
+      )
+    }
+    return if (now - timestampMs <= STALE_AFTER_MS) {
+      GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS
+    } else {
+      GLUCOSE_SYNC_BASE_TICK_MS
+    }
+  }
+
+  private fun legacyDelayMs(timestampMs: Long, now: Long): Long {
     val age = max(0L, now - timestampMs)
     return if (age in GLUCOSE_SYNC_CATCH_UP_AFTER_MS..STALE_AFTER_MS) {
       GLUCOSE_SYNC_CATCH_UP_TICK_MS
@@ -535,6 +746,43 @@ internal object GlucoseSyncCadencePolicy {
       GLUCOSE_SYNC_BASE_TICK_MS
     }
   }
+}
+
+/**
+ * Handler delays count uptime, which stops while the CPU suspends. The
+ * service therefore also stores each sync's wall-clock due time, and a cheap
+ * one-minute tick starts the sync once that time has passed. Lateness stays
+ * bounded to about a minute of awake time, as with the legacy loop.
+ */
+internal object SyncDuePolicy {
+  fun isDue(nowWallMs: Long, dueAtWallMs: Long?): Boolean =
+    dueAtWallMs != null && nowWallMs >= dueAtWallMs
+}
+
+/**
+ * The periodic notification re-render only re-ages text and icons. It is
+ * skipped only while the display is fully off; an interactive screen or the
+ * system always-on display (doze) can still show the notification icon.
+ */
+internal object RenderGatePolicy {
+  fun shouldRender(interactive: Boolean, displayOff: Boolean): Boolean =
+    interactive || !displayOff
+}
+
+/** Remembers a skipped re-render so it is replayed as soon as it is visible. */
+internal class RenderGate {
+  private var skipped = false
+
+  @Synchronized
+  fun beginRender(interactive: Boolean, displayOff: Boolean): Boolean {
+    val render = RenderGatePolicy.shouldRender(interactive, displayOff)
+    skipped = !render
+    return render
+  }
+
+  @Synchronized
+  fun shouldReplayOnDisplayChange(interactive: Boolean, displayOff: Boolean): Boolean =
+    skipped && RenderGatePolicy.shouldRender(interactive, displayOff)
 }
 
 internal enum class GlucoseCollectorForegroundMode {
@@ -701,6 +949,59 @@ internal object T1ArcGlucoseDisplayState {
   fun enabled(context: Context) =
     preferences(context).getBoolean(ENABLED_KEY, false)
 
+  /** Earliest time JS asked to re-evaluate a time-based alert, or null. */
+  private val nextAlertCheckLock = Any()
+  @Volatile private var nextAlertCheckLoaded = false
+  @Volatile private var nextAlertCheckAtMs: Long? = null
+
+  /**
+   * Earliest time JS asked to re-evaluate a time-based alert, or null. It
+   * reveals when an alert episode is active, so it uses the same Keystore
+   * encryption as the snapshot and is cached in memory after the first read.
+   *
+   * The first load and [setNextAlertCheckAt] share one lock, so a value set
+   * by JS while the service thread is still decrypting the stored value is
+   * never overwritten by that older value, and concurrent sets reach memory
+   * and storage in the same order. Not unit-tested: both paths need an
+   * Android Context and the Keystore cipher, and this module's JVM tests have
+   * no Robolectric.
+   */
+  fun nextAlertCheckAt(context: Context): Long? {
+    if (nextAlertCheckLoaded) return nextAlertCheckAtMs
+    synchronized(nextAlertCheckLock) {
+      if (nextAlertCheckLoaded) return nextAlertCheckAtMs
+      val stored = preferences(context)
+      val payload = stored.getString(NEXT_ALERT_CHECK_PAYLOAD_KEY, null)
+      val iv = stored.getString(NEXT_ALERT_CHECK_IV_KEY, null)
+      val loaded =
+        if (payload == null || iv == null) null
+        else T1ArcSnapshotCipher.decryptText(payload, iv)?.toLongOrNull()?.takeIf { it > 0L }
+      nextAlertCheckAtMs = loaded
+      nextAlertCheckLoaded = true
+      return loaded
+    }
+  }
+
+  fun setNextAlertCheckAt(context: Context, epochMs: Long?) {
+    val value = epochMs?.takeIf { it > 0L }
+    synchronized(nextAlertCheckLock) {
+      nextAlertCheckAtMs = value
+      nextAlertCheckLoaded = true
+      val encrypted =
+        value?.let { runCatching { T1ArcSnapshotCipher.encryptText(it.toString()) }.getOrNull() }
+      val editor = preferences(context).edit()
+      if (encrypted == null) {
+        // Never stored as plain text; the in-memory value still applies.
+        editor.remove(NEXT_ALERT_CHECK_PAYLOAD_KEY).remove(NEXT_ALERT_CHECK_IV_KEY)
+      } else {
+        editor
+          .putString(NEXT_ALERT_CHECK_PAYLOAD_KEY, encrypted.first)
+          .putString(NEXT_ALERT_CHECK_IV_KEY, encrypted.second)
+      }
+      editor.apply()
+    }
+  }
+
   fun alertMonitoringEnabled(context: Context) =
     preferences(context).getBoolean(
       ALERT_MONITORING_ENABLED_KEY,
@@ -824,6 +1125,7 @@ internal object T1ArcGlucoseDisplayState {
 
   fun setSnapshot(context: Context, value: GlucoseDisplaySnapshot) {
     snapshot = value
+    T1ArcGlucoseDisplayService.readingPublished(value.timestampMs, value.sourceLabel)
     runCatching {
       val (payload, iv) = T1ArcSnapshotCipher.encrypt(value)
       preferences(context)
@@ -1238,6 +1540,40 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
 }
 
 /**
+ * Remembers the last Wear history payload confirmed in the retained Data Item.
+ *
+ * A routine publication is skipped only when its exact content was confirmed
+ * by the most recent write. Explicit watch requests, failed writes, a newer
+ * write in flight, a cleared history and a process restart all publish again.
+ * The installed companion still recovers from the retained item and requests
+ * current data and history whenever it opens.
+ */
+internal class WearHistoryDedupe {
+  private var publishedKey: String? = null
+  private var sequence = 0L
+
+  /** Returns a write sequence, or null when the identical payload is already retained. */
+  @Synchronized
+  fun begin(key: String, force: Boolean): Long? {
+    if (!force && key == publishedKey) return null
+    publishedKey = null
+    sequence += 1
+    return sequence
+  }
+
+  @Synchronized
+  fun published(writeSequence: Long, key: String) {
+    if (writeSequence == sequence) publishedKey = key
+  }
+
+  @Synchronized
+  fun reset() {
+    publishedKey = null
+    sequence += 1
+  }
+}
+
+/**
  * Publishes only the normalised display snapshot to T1 Arc's Wear OS
  * companion. LibreLinkUp credentials and session material never leave the
  * phone. Google Play services accepts the payload only for a watch app with
@@ -1245,11 +1581,13 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
  */
 internal object T1ArcWearSync {
   @Volatile private var latestHistory: List<GlucoseHistoryPoint> = emptyList()
+  private val historyDedupe = WearHistoryDedupe()
 
   fun history(): List<GlucoseHistoryPoint> = latestHistory
 
   fun clearHistory() {
     latestHistory = emptyList()
+    historyDedupe.reset()
   }
 
   private fun snapshotData(
@@ -1385,15 +1723,38 @@ internal object T1ArcWearSync {
         .toList()
         .takeLast(MAX_WEAR_HISTORY_POINTS)
     latestHistory = normalised
-    Log.i(WEAR_LOG_TAG, "Publishing ${normalised.size} glucose history points to Wear")
     val data = historyData(context, normalised, writeEpoch, deliveryToken)
+    // An explicit watch request (delivery token) and an authoritative empty
+    // history are always sent. Otherwise skip re-sending exactly the payload
+    // the retained Data Item already holds; paths and payloads are unchanged.
+    val key = historyDedupeKey(data)
+    val sequence =
+      historyDedupe.begin(key, force = deliveryToken != null || normalised.isEmpty())
+    if (sequence == null) {
+      Log.i(WEAR_LOG_TAG, "Wear glucose history unchanged; not re-sent")
+      return Tasks.forResult<DataItem>(null)
+    }
+    Log.i(WEAR_LOG_TAG, "Publishing ${normalised.size} glucose history points to Wear")
     sendImmediate(context, data, writeEpoch, WEAR_GLUCOSE_HISTORY_PATH)
     val request =
       PutDataMapRequest.create(WEAR_GLUCOSE_HISTORY_PATH).apply {
         dataMap.putAll(data)
       }.asPutDataRequest().setUrgent()
     return Wearable.getDataClient(context).putDataItem(request)
+      .addOnSuccessListener { historyDedupe.published(sequence, key) }
   }
+
+  // Covers every field the watch reads, except the per-request delivery token.
+  private fun historyDedupeKey(data: DataMap): String =
+    buildString {
+      append(data.getInt("schemaVersion")).append('|')
+      append(data.getLong(WEAR_WRITE_EPOCH_FIELD)).append('|')
+      data.getLongArray("timestampMs")?.joinTo(this, ",")
+      append('|')
+      data.getFloatArray("mmolL")?.joinTo(this, ",") { it.toRawBits().toString() }
+      append('|')
+      data.getStringArray("colorToken")?.joinTo(this, ",")
+    }
 }
 
 private fun applyPrivateGlucosePublication(
@@ -2530,6 +2891,47 @@ class T1ArcGlucoseDisplayService : Service() {
   private var networkCallbackRegistered = false
   private var serviceAlive = false
   private var validatedNetworkSyncPending = false
+  private val cadenceTracker = ReadingCadenceTracker()
+  private var syncLoopActive = false
+    set(value) {
+      field = value
+      syncLoopRunning = value
+    }
+  private var nextSyncUptimeMs = 0L
+  private var syncDueAtWallMs: Long? = null
+  private val syncDueWatchdog =
+    object : Runnable {
+      override fun run() {
+        if (!serviceAlive || !syncLoopActive) return
+        if (SyncDuePolicy.isDue(System.currentTimeMillis(), syncDueAtWallMs)) {
+          handler.removeCallbacks(syncRunnable)
+          syncRunnable.run()
+        }
+        handler.removeCallbacks(this)
+        handler.postDelayed(this, SYNC_DUE_WATCHDOG_MS)
+      }
+    }
+  private val renderGate = RenderGate()
+  private var powerManager: PowerManager? = null
+  private var displayManager: DisplayManager? = null
+  private var displayListenerRegistered = false
+  private var screenOnReceiverRegistered = false
+  private val displayListener =
+    object : DisplayManager.DisplayListener {
+      override fun onDisplayAdded(displayId: Int) = Unit
+
+      override fun onDisplayRemoved(displayId: Int) = Unit
+
+      override fun onDisplayChanged(displayId: Int) {
+        if (displayId == Display.DEFAULT_DISPLAY) replaySkippedRender()
+      }
+    }
+  private val screenOnReceiver =
+    object : BroadcastReceiver() {
+      override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_SCREEN_ON) replaySkippedRender()
+      }
+    }
   private val networkCallback =
     object : ConnectivityManager.NetworkCallback() {
       override fun onAvailable(network: Network) {
@@ -2567,10 +2969,14 @@ class T1ArcGlucoseDisplayService : Service() {
         ) {
           return
         }
-        if (T1ArcGlucoseDisplayState.enabled(this@T1ArcGlucoseDisplayService)) {
-          T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
-        } else {
-          T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
+        // Only relative-age text and icons change here; new readings notify
+        // directly from the publication path. Skip while nobody can see it.
+        if (renderGate.beginRender(isInteractive(), isDisplayOff())) {
+          if (T1ArcGlucoseDisplayState.enabled(this@T1ArcGlucoseDisplayService)) {
+            T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
+          } else {
+            T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
+          }
         }
         handler.postDelayed(this, DISPLAY_REFRESH_INTERVAL_MS)
       }
@@ -2579,15 +2985,26 @@ class T1ArcGlucoseDisplayService : Service() {
     object : Runnable {
       override fun run() {
         if (!T1ArcGlucoseDisplayState.collectorEnabled(this@T1ArcGlucoseDisplayService)) {
+          syncLoopActive = false
+          syncDueAtWallMs = null
           return
         }
-        requestHeadlessSync(DISPLAY_SYNC_REASON)
-        val nextDelay =
-          GlucoseSyncCadencePolicy.nextDelayMs(
-            T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)?.timestampMs,
-            System.currentTimeMillis(),
+        val started =
+          requestHeadlessSync(
+            GlucoseSyncCadencePolicy.syncReason(
+              System.currentTimeMillis(),
+              cadenceTracker.probeAtMs(),
+            )
           )
-        handler.postDelayed(this, nextDelay)
+        val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
+        cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
+        scheduleSync(
+          GlucoseSyncCadencePolicy.delayAfterAttempt(
+            started,
+            cadenceTracker.adaptive(),
+            syncDelayMs(snapshot?.timestampMs),
+          )
+        )
       }
     }
 
@@ -2605,6 +3022,41 @@ class T1ArcGlucoseDisplayService : Service() {
       // The 15-second refresh tick remains available if Android cannot expose
       // default-network transitions on this device.
     }
+    powerManager = getSystemService(PowerManager::class.java)
+    displayManager = getSystemService(DisplayManager::class.java)
+    try {
+      displayManager?.registerDisplayListener(displayListener, handler)
+      displayListenerRegistered = displayManager != null
+    } catch (_: Exception) {
+      // The screen-on broadcast below still replays a skipped render.
+    }
+    try {
+      ContextCompat.registerReceiver(
+        this,
+        screenOnReceiver,
+        IntentFilter(Intent.ACTION_SCREEN_ON),
+        ContextCompat.RECEIVER_NOT_EXPORTED,
+      )
+      screenOnReceiverRegistered = true
+    } catch (_: Exception) {
+      // The display listener above still replays a skipped render.
+    }
+  }
+
+  private fun isInteractive(): Boolean =
+    runCatching { powerManager?.isInteractive }.getOrNull() ?: true
+
+  // An unknown display state is treated as visible so the legacy render runs.
+  private fun isDisplayOff(): Boolean =
+    runCatching {
+      displayManager?.getDisplay(Display.DEFAULT_DISPLAY)?.state == Display.STATE_OFF
+    }.getOrDefault(false)
+
+  private fun replaySkippedRender() {
+    if (!serviceAlive) return
+    if (!renderGate.shouldReplayOnDisplayChange(isInteractive(), isDisplayOff())) return
+    handler.removeCallbacks(renderRunnable)
+    handler.post(renderRunnable)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -2643,13 +3095,58 @@ class T1ArcGlucoseDisplayService : Service() {
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)
+    handler.removeCallbacks(syncDueWatchdog)
+    syncLoopActive = false
+    syncDueAtWallMs = null
     handler.post(renderRunnable)
     if (T1ArcGlucoseNotification.notificationsAllowed(this)) {
       // Avoid racing a React context that exists but is not fully active while
       // the app UI is starting. Cold boot still initializes Headless JS itself.
-      handler.postDelayed(syncRunnable, 10_000L)
+      syncLoopActive = true
+      scheduleSync(10_000L)
+      handler.removeCallbacks(syncDueWatchdog)
+      handler.postDelayed(syncDueWatchdog, SYNC_DUE_WATCHDOG_MS)
     }
     return START_STICKY
+  }
+
+  private fun syncDelayMs(timestampMs: Long?): Long =
+    GlucoseSyncCadencePolicy.nextDelayMs(
+      timestampMs,
+      System.currentTimeMillis(),
+      cadenceTracker.expectedIntervalMs(),
+      cadenceTracker.probeAtMs(),
+      T1ArcGlucoseDisplayState.nextAlertCheckAt(this),
+    )
+
+  private fun scheduleSync(delayMs: Long) {
+    handler.removeCallbacks(syncRunnable)
+    nextSyncUptimeMs = SystemClock.uptimeMillis() + delayMs
+    syncDueAtWallMs = System.currentTimeMillis() + delayMs
+    // Fast path while awake; the watchdog catches up after CPU suspension.
+    handler.postDelayed(syncRunnable, delayMs)
+  }
+
+  /**
+   * A newer reading reached the phone surfaces. In adaptive mode, schedule
+   * the next sync from it right away instead of waiting for a confirmation
+   * tick. Only an advancing timestamp reschedules, so repeats cannot storm.
+   * Legacy-cadence sources keep their fixed ticks unchanged.
+   */
+  private fun onReadingPublished(timestampMs: Long, sourceLabel: String) {
+    if (!serviceAlive || !syncLoopActive) return
+    val wasAdaptive = cadenceTracker.adaptive()
+    if (!cadenceTracker.observe(timestampMs, sourceLabel)) return
+    if (!wasAdaptive && !cadenceTracker.adaptive()) return
+    scheduleSync(syncDelayMs(timestampMs))
+  }
+
+  /** Bring the next adaptive sync forward if an alert check is now due sooner. */
+  private fun onAlertCheckChanged() {
+    if (!serviceAlive || !syncLoopActive || !cadenceTracker.adaptive()) return
+    val delay =
+      syncDelayMs(T1ArcGlucoseDisplayState.snapshot(this)?.timestampMs)
+    if (SystemClock.uptimeMillis() + delay < nextSyncUptimeMs) scheduleSync(delay)
   }
 
   private fun requestHeadlessSync(reason: String): Boolean {
@@ -2661,6 +3158,9 @@ class T1ArcGlucoseDisplayService : Service() {
         Intent(this, T1ArcLibreHeadlessService::class.java)
           .putExtra(HEADLESS_REASON_EXTRA, reason)
       )
+      // Lets the open app tell a working collector from one that is alive
+      // without syncing, so it only skips its own fetch for the former.
+      lastHeadlessSyncStartedAtMs = System.currentTimeMillis()
       return true
     } catch (_: Exception) {
       T1ArcGlucoseDisplayState.headlessTaskActive.set(false)
@@ -2685,6 +3185,7 @@ class T1ArcGlucoseDisplayService : Service() {
     serviceAlive = false
     validatedNetworkSyncPending = false
     networkSyncPolicy.stop()
+    syncLoopActive = false
     if (networkCallbackRegistered && this::connectivityManager.isInitialized) {
       try {
         connectivityManager.unregisterNetworkCallback(networkCallback)
@@ -2693,6 +3194,14 @@ class T1ArcGlucoseDisplayService : Service() {
       }
     }
     networkCallbackRegistered = false
+    if (displayListenerRegistered) {
+      runCatching { displayManager?.unregisterDisplayListener(displayListener) }
+    }
+    displayListenerRegistered = false
+    if (screenOnReceiverRegistered) {
+      runCatching { unregisterReceiver(screenOnReceiver) }
+    }
+    screenOnReceiverRegistered = false
     handler.removeCallbacksAndMessages(null)
     running = false
     if (instance === this) instance = null
@@ -2703,11 +3212,28 @@ class T1ArcGlucoseDisplayService : Service() {
 
   companion object {
     @Volatile var running = false
+    @Volatile var syncLoopRunning = false
+      private set
+    @Volatile var lastHeadlessSyncStartedAtMs: Long? = null
+      private set
     @Volatile private var instance: T1ArcGlucoseDisplayService? = null
+
+    fun readingPublished(timestampMs: Long, sourceLabel: String) {
+      instance?.let { service ->
+        service.handler.post { service.onReadingPublished(timestampMs, sourceLabel) }
+      }
+    }
+
+    fun alertCheckChanged() {
+      instance?.let { service -> service.handler.post { service.onAlertCheckChanged() } }
+    }
 
     fun headlessTaskFinished() {
       instance?.let { service ->
         service.handler.post {
+          // Posted after any readingPublished from this task, so a sync that
+          // delivered a reading is not counted as an empty one.
+          service.cadenceTracker.syncCompleted()
           if (service.serviceAlive) service.drainValidatedNetworkSync()
         }
       }
@@ -2746,7 +3272,7 @@ class T1ArcLibreHeadlessService : HeadlessJsTaskService() {
     val reason =
       intent
         ?.getStringExtra(HEADLESS_REASON_EXTRA)
-        ?.takeIf { it == VALIDATED_NETWORK_SYNC_REASON }
+        ?.takeIf { it == VALIDATED_NETWORK_SYNC_REASON || it == CADENCE_PROBE_SYNC_REASON }
         ?: DISPLAY_SYNC_REASON
     return HeadlessJsTaskConfig(
       HEADLESS_TASK_KEY,
@@ -3678,6 +4204,14 @@ class T1ArcGlucoseDisplayModule : Module() {
       true
     }
 
+    AsyncFunction("setNextAlertCheckAtAsync") Coroutine { epochMs: Double? ->
+      val context = requireNotNull(appContext.reactContext)
+      val value = epochMs?.takeIf { it.isFinite() && it > 0.0 }?.toLong()
+      T1ArcGlucoseDisplayState.setNextAlertCheckAt(context, value)
+      T1ArcGlucoseDisplayService.alertCheckChanged()
+      true
+    }
+
     AsyncFunction("cancelGlucoseAlertsAsync") Coroutine { ->
       T1ArcGlucoseAlertNotification.cancelAll(
         requireNotNull(appContext.reactContext)
@@ -3869,6 +4403,8 @@ class T1ArcGlucoseDisplayModule : Module() {
         T1ArcGlucoseNotification.currentGlucoseNotificationsAllowed(context),
       "lockScreenVisible" to T1ArcGlucoseDisplayState.lockScreenVisible(context),
       "serviceRunning" to T1ArcGlucoseDisplayService.running,
+      "syncLoopActive" to T1ArcGlucoseDisplayService.syncLoopRunning,
+      "lastHeadlessSyncStartedAt" to T1ArcGlucoseDisplayService.lastHeadlessSyncStartedAtMs?.toDouble(),
       "aodDesired" to T1ArcGlucoseDisplayState.aodDesired(context),
       "aodPosition" to T1ArcGlucoseDisplayState.aodPosition(context),
       "aodSize" to T1ArcGlucoseDisplayState.aodSize(context),

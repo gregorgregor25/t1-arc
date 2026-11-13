@@ -4,6 +4,7 @@ import {
   DEFAULT_GLUCOSE_ALERT_PREFERENCES,
   evaluateGlucoseAlert,
   GlucoseAlertPreferences,
+  nextGlucoseAlertCheckAt,
   GlucoseAlertState,
   validateGlucoseAlertPreferences,
 } from '@/domain/glucoseAlerts';
@@ -178,5 +179,68 @@ describe('glucose alert policy', () => {
         repeatMinutes: 15 as 30,
       }),
     ).toMatch(/repeat interval/i);
+  });
+});
+
+describe('next time-based glucose alert check', () => {
+  const STALE_MS = 12 * 60_000;
+
+  it('needs no check when alerts are off or nothing can change with time', () => {
+    expect(
+      nextGlucoseAlertCheckAt(reading(3.2), preferences({ enabled: false }), state({ activeZone: 'low', lastNotifiedAt: NOW }), NOW),
+    ).toBeUndefined();
+    expect(nextGlucoseAlertCheckAt(reading(6), preferences(), state(), NOW)).toBeUndefined();
+    expect(nextGlucoseAlertCheckAt(undefined, preferences({ staleEnabled: true }), state(), NOW)).toBeUndefined();
+  });
+
+  it('checks when a current reading would become stale', () => {
+    const current = reading(6, 1);
+    expect(
+      nextGlucoseAlertCheckAt(current, preferences({ staleEnabled: true }), state(), NOW),
+    ).toBe(current.timestamp + STALE_MS + 1);
+  });
+
+  it('checks the earliest of the repeat and the stale transition during an episode', () => {
+    const low = reading(3.2, 1);
+    expect(
+      nextGlucoseAlertCheckAt(low, preferences(), state({ activeZone: 'low', lastNotifiedAt: NOW - 25 * 60_000 }), NOW),
+    ).toBe(NOW + 5 * 60_000);
+    // Without repeats, only the low-to-stale clearing transition remains.
+    expect(
+      nextGlucoseAlertCheckAt(low, preferences({ repeatMinutes: 0 }), state({ activeZone: 'low', lastNotifiedAt: NOW - 25 * 60_000 }), NOW),
+    ).toBe(low.timestamp + STALE_MS + 1);
+    expect(
+      nextGlucoseAlertCheckAt(low, preferences({ repeatMinutes: 60 }), state({ activeZone: 'low', lastNotifiedAt: NOW - 5 * 60_000 }), NOW),
+    ).toBe(low.timestamp + STALE_MS + 1);
+  });
+
+  it('repeats a stale alert from its last notification', () => {
+    expect(
+      nextGlucoseAlertCheckAt(
+        reading(6, 20),
+        preferences({ staleEnabled: true }),
+        state({ activeZone: 'stale', lastNotifiedAt: NOW - 5 * 60_000 }),
+        NOW,
+      ),
+    ).toBe(NOW + 25 * 60_000);
+  });
+
+  it('retries an alert that could not be shown within one minute', () => {
+    expect(
+      nextGlucoseAlertCheckAt(reading(3.2), preferences(), state({ activeZone: 'low' }), NOW),
+    ).toBe(NOW + 60_000);
+  });
+
+  it('retries a due check after one minute instead of asking for one in the past', () => {
+    expect(
+      nextGlucoseAlertCheckAt(reading(3.2), preferences(), state({ activeZone: 'low', lastNotifiedAt: NOW - 90 * 60_000 }), NOW),
+    ).toBe(NOW + 60_000);
+  });
+
+  it('retries a repeat that could not be shown after one minute', () => {
+    // A failed repeat keeps the earlier notification time.
+    expect(
+      nextGlucoseAlertCheckAt(reading(3.2), preferences({ repeatMinutes: 30 }), state({ activeZone: 'low', lastNotifiedAt: NOW - 31 * 60_000 }), NOW),
+    ).toBe(NOW + 60_000);
   });
 });

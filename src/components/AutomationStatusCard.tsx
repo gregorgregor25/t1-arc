@@ -30,6 +30,7 @@ import {
   getAutomationStatus,
 } from "@/data/background/automationStatus";
 import type { AutomationTiming } from "@/data/background/automationTiming";
+import { shouldPollAutomationStatus } from "@/domain/foregroundRefreshPolicy";
 import { formatTime, relativeAge } from "@/domain/time";
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
@@ -354,6 +355,9 @@ export function AutomationStatusCard() {
         if (nextState === "active") void refresh();
       });
       const interval = setInterval(() => {
+        // A focused screen stays focused while the app is backgrounded. The
+        // AppState "active" listener above refreshes on return instead.
+        if (!shouldPollAutomationStatus(AppState.currentState, active.current)) return;
         void refresh();
       }, 60_000);
       return () => {

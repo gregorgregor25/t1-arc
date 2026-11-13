@@ -164,6 +164,7 @@ describe('Nightscout glucose source', () => {
       );
     }) as typeof fetch;
     const store = new MemoryGlucoseHistoryStore();
+    let clock = now;
     const source = new NightscoutGlucoseSource(
       {
         baseUrl: 'https://example.test',
@@ -171,7 +172,7 @@ describe('Nightscout glucose source', () => {
       },
       store,
       fetcher,
-      () => now,
+      () => clock,
     );
 
     await source.importInitialHistory(14);
@@ -179,6 +180,8 @@ describe('Nightscout glucose source', () => {
       now - 28 * 86_400_000,
       now - 14 * 86_400_000,
     );
+    // The routine refresh runs at the next native tick, once a reading is due.
+    clock = now + 20_000;
     await source.refresh();
 
     expect(requested[0]).toContain('token=reader%20%2B%20private');

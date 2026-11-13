@@ -73,6 +73,8 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<
   ): Promise<boolean>;
   setGlucoseAlertMonitoringEnabledAsync?(enabled: boolean): Promise<boolean>;
   cancelGlucoseAlertsAsync(): Promise<boolean>;
+  /** Earliest time a time-based alert change could be due, or null for none. */
+  setNextAlertCheckAtAsync?(epochMs: number | null): Promise<boolean>;
   glucoseAlertsAllowedAsync(): Promise<boolean>;
   openGlucoseAlertSettingsAsync(): Promise<boolean>;
   getGlucoseAlertChannelStatusesAsync(): Promise<GlucoseAlertChannelStatus[]>;

@@ -1,6 +1,6 @@
 {
   "name": "t1-arc",
-  "version": "1.7.19",
+  "version": "1.7.20",
   "license": "MIT",
   "engines": {
     "node": ">=22.13.0"
@@ -16,13 +16,13 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.1.0",
-    "@react-navigation/bottom-tabs": "^7.18.14",
+    "@react-navigation/bottom-tabs": "^7.21.0",
     "@react-navigation/native": "^7.5.0",
-    "expo": "~57.0.31",
+    "expo": "~57.0.33",
     "expo-application": "~57.0.3",
-    "expo-background-task": "~57.0.21",
+    "expo-background-task": "~57.0.23",
     "expo-camera": "~57.0.6",
-    "expo-constants": "~57.0.22",
+    "expo-constants": "~57.0.24",
     "expo-crypto": "~57.0.4",
     "expo-document-picker": "~57.0.3",
     "expo-file-system": "~57.0.7",
@@ -30,11 +30,11 @@
     "expo-linear-gradient": "~57.0.2",
     "expo-screen-orientation": "~57.0.3",
     "expo-secure-store": "~57.0.4",
-    "expo-splash-screen": "~57.0.10",
-    "expo-sqlite": "~57.0.4",
+    "expo-splash-screen": "~57.0.11",
+    "expo-sqlite": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
-    "expo-task-manager": "~57.0.21",
+    "expo-task-manager": "~57.0.23",
     "fflate": "^0.8.3",
     "react": "19.2.3",
     "react-native": "0.86.3",
@@ -52,13 +52,20 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "xcode": {
-      "uuid": "11.1.1"
+    "@expo/fingerprint": {
+      "minimatch": "11.0.8"
+    },
+    "glob": {
+      ".": "14.0.6",
+      "minimatch": "11.0.8"
     },
     "metro": "0.84.5",
     "metro-config": "0.84.5",
     "metro-transform-worker": "0.84.5",
-    "node-forge": "1.4.2",
+    "node-forge": "1.4.3",
+    "xcode": {
+      "uuid": "11.1.1"
+    },
     "zod": "4.6.7"
   },
   "scripts": {

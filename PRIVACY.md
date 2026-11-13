@@ -20,8 +20,11 @@ The optional weekly feedback reminder is scheduled locally on Android, with a
 separate notification channel and an off switch on the Share feedback screen.
 Its enabled state and scheduling timestamps are stored on the device; no server
 registration or activity tracking is needed. Phone notification permissions still
-apply. Full local-data erasure disables the reminder. Opening email or Reddit is
-an explicit user action; the email shortcut includes a subject, not health data.
+apply. Full local-data erasure disables the reminder. Opening email, Reddit or
+GitHub is an explicit user action; the email shortcut includes a subject, not
+health data. The GitHub link opens the public repository without health records
+or tracking parameters. Users choose whether to star it on GitHub; T1 Arc does
+not sign in to GitHub or check star status.
 
 Health records, imported provider records, food logs, context, Insights and
 Tarv1s conversation state are stored on the Android device. Health databases
@@ -122,6 +125,51 @@ purely local processing. In particular, Google's Gemini API terms require a
 billing-enabled project for health information in this route; users should
 review the [provider-specific requirements](docs/TARV1S_BYOK.md#choose-a-provider).
 
+## Anonymous usage counts (on by default)
+
+This is the one network flow that is on without the user choosing it. It sends
+no health data, and it is the only message T1 Arc sends to the maintainer by
+default. It lets the maintainer see roughly how many people use each version.
+There is no prompt; it can be turned off at any time in **Settings → Privacy →
+Share anonymous usage counts**.
+
+- **Daily message.** At most once per local calendar day, on the first app open
+  that day: `{"schema":1,"kind":"day","appVersion":"1.7.20"}`.
+- **Weekly message.** At most once every seven days, on an app open:
+  `{"schema":1,"kind":"week","appVersion":"1.7.20","daysOpened":3,"daysMonitoring":7}`.
+  `daysOpened` and `daysMonitoring` are whole numbers from 0 to 7 for the
+  previous seven local days: the days the app was opened, and the days the
+  phone's glucose collector completed a sync with at least one configured
+  glucose source (so people who rely on the notification or watch and rarely
+  open the app are also counted). The first weekly message is sent a week after
+  the first open, so it never reports an empty week.
+- **Nothing else.** There is no install ID or other identifier, and no device
+  model, Android version, locale, time zone, health record, reading, account
+  detail or credential. The request sends no cookies or credentials. A failed
+  message is not queued; it is tried again on a later app open.
+
+The messages go over HTTPS, through Cloudflare, to a write-only route on the
+developer's own server (`t1-events.gregorserver.com`). As with any internet
+request, the phone's network address is visible to Cloudflare and to the server
+while the message is delivered. The server does not store IP addresses, user
+agents or individual messages; it keeps aggregate counts only, per UTC day,
+message kind, app version and, for weekly messages, the two day counts. Abuse
+limits use an in-memory key that changes daily and is never written to disk.
+T1 Arc does not run a central account or health-data server.
+
+The counts are approximate. The phone decides "one per day" using its local
+calendar day, while the server groups messages by UTC day, so a message sent
+near midnight can fall into a neighbouring server day. Offline phones, failed
+sends, clock changes and people who have turned counts off are not counted.
+
+On the phone, the list of recent days (at most 14) and the time of the last
+message are kept in Android secure storage. They are not included in encrypted
+portable backups. **Turning the switch off stops sending immediately, cancels a
+message already being sent, and deletes this local activity history**; only
+the switch position is kept. Erasing all data from this device removes the
+activity history but keeps the switch position, so someone who turned counts
+off stays opted out.
+
 ## Android and Wear surfaces
 
 Before enabling the optional always-on glucose display, T1 Arc explains its
@@ -155,7 +203,9 @@ are kept in the encrypted local database. This is not a complete native crash lo
 At most 60 events within the preceding 24 hours are retained, with older events
 pruned on the next read or update. You can clear the technical log in Help and
 support; erasing this device's data also clears it. These events are excluded from
-encrypted health backups. There are no automatic diagnostic uploads.
+encrypted health backups. There are no automatic diagnostic uploads; the
+separate [anonymous usage counts](#anonymous-usage-counts-on-by-default)
+contain no events, logs or health data.
 
 Saving a report uses Android's file picker to create an **unencrypted text file**
 at your chosen location. Sharing passes the preview to an app you choose; its

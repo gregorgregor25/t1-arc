@@ -39,6 +39,25 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.7.20 candidate: battery, anonymous usage counts
+
+This candidate replaces the unpublished 1.7.19 draft and includes all of its
+changes. The glucose service learns a source's reading interval: a
+five-minute source is checked shortly after each reading is due instead of
+every minute, while one- and two-minute sources and sources with unknown timing
+keep the previous schedule. The foreground service, persistent notification
+and alert timing are unchanged. On the emulator with a five-minute source and
+the screen off, background requests and app CPU time fell by about 80%, and
+every reading was fetched within 22 seconds of being available.
+
+Anonymous usage counts are on by default and can be turned off in
+**Settings → Privacy**. The exact contents are listed in
+[the privacy notice](../PRIVACY.md#anonymous-usage-counts-on-by-default); no
+health data or identifiers are sent. The production dependency audit reports
+no findings. The Wear protocol is unchanged; a working installed companion
+does not need reinstallation. Signed-artifact and owner-phone acceptance are
+still pending.
+
 ### 1.7.19 candidate: cycle tracking and feedback
 
 This candidate adds optional menstrual cycle tracking with a calendar, period
@@ -46,10 +65,11 @@ history, daily flow and symptoms, and encrypted backup support. Imported Health
 Connect records remain read-only. Estimated period dates appear only when there
 is enough consistent history and are not contraception or medical guidance.
 
-The new feedback screen offers email and Reddit, with an optional weekly local
-reminder. The reminder defaults on when notification permission is available
-and can be disabled in the feedback screen. No Reddit account is needed to send
-feedback by email.
+The new feedback screen offers email and Reddit, plus an optional invitation to
+star T1 Arc on GitHub. Its weekly local reminder mentions both feedback and
+GitHub stars, and opens the feedback screen. The reminder defaults on when
+notification permission is available and can be disabled in the feedback screen.
+No Reddit account is needed to send feedback by email.
 
 The candidate also updates compatible dependencies and fixes the high-severity
 Zod advisory. A narrowly reviewed, temporary low-severity build-tool finding
