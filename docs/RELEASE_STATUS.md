@@ -39,6 +39,25 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.7.20 candidate: battery, anonymous usage counts
+
+This candidate replaces the unpublished 1.7.19 draft and includes all of its
+changes. The glucose service learns a source's reading interval: a
+five-minute source is checked shortly after each reading is due instead of
+every minute, while one- and two-minute sources and sources with unknown timing
+keep the previous schedule. The foreground service, persistent notification
+and alert timing are unchanged. On the emulator with a five-minute source and
+the screen off, background requests and app CPU time fell by about 80%, and
+every reading was fetched within 22 seconds of being available.
+
+Anonymous usage counts are on by default and can be turned off in
+**Settings → Privacy**. The exact contents are listed in
+[the privacy notice](../PRIVACY.md#anonymous-usage-counts-on-by-default); no
+health data or identifiers are sent. The production dependency audit reports
+no findings. The Wear protocol is unchanged; a working installed companion
+does not need reinstallation. Signed-artifact and owner-phone acceptance are
+still pending.
+
 ### 1.7.19 candidate: cycle tracking and feedback
 
 This candidate adds optional menstrual cycle tracking with a calendar, period
