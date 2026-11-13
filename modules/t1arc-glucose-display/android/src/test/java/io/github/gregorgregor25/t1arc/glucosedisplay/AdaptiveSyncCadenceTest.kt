@@ -29,12 +29,44 @@ class AdaptiveSyncCadenceTest {
   @Test fun dueDelayIsClampedToAtLeastFifteenSeconds() =
     assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 5 * min + 15_000L, 5 * min))
 
-  @Test fun futureTimestampIsClampedToOneInterval() =
-    assertEquals(5 * min, GlucoseSyncCadencePolicy.nextDelayMs(t0 + 10 * min, t0, 5 * min))
+  @Test fun futureTimestampIsClampedToOneIntervalPlusGrace() =
+    assertEquals(5 * min + 20_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0 + 10 * min, t0, 5 * min))
 
-  @Test fun overdueReadingPollsFastThenSettles() {
+  @Test fun overdueReadingPollsFastUntilStaleThenSettles() {
     assertEquals(20_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 6 * min, 5 * min))
-    assertEquals(60_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 8 * min, 5 * min))
+    assertEquals(20_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 8 * min, 5 * min))
+    assertEquals(20_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 12 * min, 5 * min))
+    assertEquals(60_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 12 * min + 1L, 5 * min))
+  }
+
+  @Test fun alertCheckWakesAdaptiveScheduleEarly() {
+    // Reading-based wait is 4m20s; a repeat due in 90 s wins.
+    assertEquals(90_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0 + 150_000L))
+    // A later alert check never delays the reading-based schedule.
+    assertEquals(260_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0 + 30 * min))
+    // Due or overdue checks are clamped, so a stale hint cannot cause a storm.
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, 5 * min, alertCheckAtMs = t0))
+    // Legacy timing already checks at least once a minute and is unchanged.
+    assertEquals(60_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 1 * min, null, alertCheckAtMs = t0 + 70_000L))
+  }
+
+  @Test fun alertCheckAlsoBoundsProbeAndOverdueDelays() {
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 40_000L, 5 * min, t0 + 90_000L, t0 + 50_000L))
+    assertEquals(20_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 6 * min, 5 * min, alertCheckAtMs = t0 + 7 * min))
+  }
+
+  @Test fun publishedReadingReschedulesOnlyWhenItAdvances() {
+    val tracker = fiveMinuteTracker() // latest t0 + 10m
+    assertEquals(false, tracker.observe(t0 + 10 * min))
+    assertEquals(false, tracker.observe(t0 + 9 * min))
+    assertEquals(true, tracker.observe(t0 + 15 * min))
+    assertEquals(true, tracker.adaptive())
+    // Rescheduled from the new reading: next due 5m20s after it.
+    assertEquals(
+      310_000L,
+      GlucoseSyncCadencePolicy.nextDelayMs(t0 + 15 * min, t0 + 15 * min + 10_000L, tracker.expectedIntervalMs(), tracker.probeAtMs()),
+    )
+    assertEquals(false, ReadingCadenceTracker().apply { observe(t0) }.adaptive())
   }
 
   @Test fun probeChecksShortlyAfterReadingThenResumesDueSchedule() {

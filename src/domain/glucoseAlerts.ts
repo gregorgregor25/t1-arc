@@ -111,6 +111,38 @@ export function evaluateGlucoseAlert(
   };
 }
 
+/**
+ * The earliest future time at which re-evaluating this alert state could
+ * change it without a new reading: a repeat becoming due, a current reading
+ * crossing the stale age, or a retry after an alert could not be shown.
+ * Undefined means only a new reading can change the outcome.
+ */
+export function nextGlucoseAlertCheckAt(
+  reading: GlucoseReading | undefined,
+  preferences: GlucoseAlertPreferences,
+  state: GlucoseAlertState,
+  now = Date.now(),
+): number | undefined {
+  if (!preferences.enabled) return undefined;
+  const candidates: number[] = [];
+  if (state.activeZone !== 'normal') {
+    if (state.lastNotifiedAt === undefined) {
+      candidates.push(now + FAILED_ALERT_RETRY_MS);
+    } else if (preferences.repeatMinutes > 0) {
+      candidates.push(state.lastNotifiedAt + preferences.repeatMinutes * 60_000);
+    }
+  }
+  if (reading && now - reading.timestamp <= STALE_AFTER_MS) {
+    const zoneClearsWhenStale =
+      state.activeZone === 'low' || state.activeZone === 'high';
+    if (preferences.staleEnabled || zoneClearsWhenStale) {
+      candidates.push(reading.timestamp + STALE_AFTER_MS + 1);
+    }
+  }
+  if (!candidates.length) return undefined;
+  return Math.max(now, Math.min(...candidates));
+}
+
 function alertZone(
   reading: GlucoseReading | undefined,
   preferences: GlucoseAlertPreferences,
@@ -149,5 +181,8 @@ function alertZone(
 }
 
 const STALE_AFTER_MS = 12 * 60_000;
+// A failed alert is retried on the next evaluation; keep that within the
+// legacy one-minute background cadence.
+const FAILED_ALERT_RETRY_MS = 60_000;
 const LOW_RESOLUTION_HYSTERESIS = 0.3;
 const HIGH_RESOLUTION_HYSTERESIS = 0.5;

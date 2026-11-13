@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     showAlert: vi.fn(async () => true),
     cancelAlerts: vi.fn(async () => true),
     mirrorOwner: vi.fn(async () => true),
+    nextAlertCheck: vi.fn(async (_epochMs: number | null) => true),
   };
 });
 
@@ -37,6 +38,7 @@ vi.mock('../modules/t1arc-glucose-display', () => ({
     showGlucoseAlertAsync: mocks.showAlert,
     cancelGlucoseAlertsAsync: mocks.cancelAlerts,
     setGlucoseAlertMonitoringEnabledAsync: mocks.mirrorOwner,
+    setNextAlertCheckAtAsync: mocks.nextAlertCheck,
   },
 }));
 
@@ -85,6 +87,21 @@ describe('glucose alert operation serialization', () => {
     mocks.showAlert.mockReset().mockResolvedValue(true);
     mocks.cancelAlerts.mockReset().mockResolvedValue(true);
     mocks.mirrorOwner.mockReset().mockResolvedValue(true);
+    mocks.nextAlertCheck.mockReset().mockResolvedValue(true);
+  });
+
+  it('tells the native collector when the next alert repeat is due', async () => {
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    // Repeat 30 minutes after this alert; the reading turns stale earlier.
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 12 * 60_000 + 1);
+  });
+
+  it('clears the native alert check when no episode is active', async () => {
+    await reconcileGlucoseAlerts({ ...lowReading(), mmolL: 6.5 }, 'flat', NOW);
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
+    await resetGlucoseAlertState();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
   });
 
   it('does not repair native ownership while loading a possibly stale JS snapshot', async () => {

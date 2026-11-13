@@ -37,6 +37,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -90,6 +91,7 @@ import kotlin.math.roundToInt
 private const val PREFERENCES_NAME = "t1arc_glucose_display"
 private const val ENABLED_KEY = "enabled"
 private const val ALERT_MONITORING_ENABLED_KEY = "glucose_alert_monitoring_enabled"
+private const val NEXT_ALERT_CHECK_AT_KEY = "glucose_next_alert_check_at_ms"
 private const val LOCK_SCREEN_VISIBLE_KEY = "lock_screen_visible"
 private const val AOD_DESIRED_KEY = "aod_desired"
 private const val AOD_POSITION_KEY = "aod_position"
@@ -527,7 +529,6 @@ internal object DisplayFreshnessPolicy {
 
 private const val GLUCOSE_SYNC_ARRIVAL_GRACE_MS = 20_000L
 private const val GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS = 20_000L
-private const val GLUCOSE_SYNC_OVERDUE_FAST_WINDOW_MS = 2 * 60_000L
 private const val GLUCOSE_SYNC_MIN_DELAY_MS = 15_000L
 private const val MINUTE_SOURCE_MAX_INTERVAL_MS = 2 * 60_000L
 private const val FIVE_MINUTE_SOURCE_INTERVAL_MS = 5 * 60_000L
@@ -555,9 +556,10 @@ internal class ReadingCadenceTracker {
   private var fiveMinuteGapStreak = 0
   private var adaptiveReadings = 0
 
+  /** Returns true only when this is a newer distinct reading. */
   @Synchronized
-  fun observe(timestampMs: Long?, source: String? = null) {
-    if (timestampMs == null || timestampMs <= 0L) return
+  fun observe(timestampMs: Long?, source: String? = null): Boolean {
+    if (timestampMs == null || timestampMs <= 0L) return false
     if (source != sourceKey) {
       sourceKey = source
       latestMs = null
@@ -566,9 +568,9 @@ internal class ReadingCadenceTracker {
       adaptiveReadings = 0
     }
     val previous = latestMs
-    if (previous != null && timestampMs <= previous) return
+    if (previous != null && timestampMs <= previous) return false
     latestMs = timestampMs
-    if (previous == null) return
+    if (previous == null) return true
     val gap = timestampMs - previous
     val adaptive = isAdaptive(intervalMs)
     when {
@@ -577,7 +579,7 @@ internal class ReadingCadenceTracker {
         intervalMs = GLUCOSE_SYNC_BASE_TICK_MS
         fiveMinuteGapStreak = 0
         adaptiveReadings = 0
-        return
+        return true
       }
       adaptive -> Unit
       gap in FIVE_MINUTE_GAP_MIN_MS..FIVE_MINUTE_GAP_MAX_MS -> {
@@ -586,15 +588,18 @@ internal class ReadingCadenceTracker {
           intervalMs = FIVE_MINUTE_SOURCE_INTERVAL_MS
           fiveMinuteGapStreak = 0
           adaptiveReadings = 0
-          return
+          return true
         }
       }
       else -> fiveMinuteGapStreak = 0
     }
     if (adaptive) adaptiveReadings += 1
+    return true
   }
 
   @Synchronized fun expectedIntervalMs(): Long? = intervalMs
+
+  @Synchronized fun adaptive(): Boolean = isAdaptive(intervalMs)
 
   /** A one-off early check after the latest reading, or null when none is due. */
   @Synchronized
@@ -611,26 +616,47 @@ internal class ReadingCadenceTracker {
 
 internal object GlucoseSyncCadencePolicy {
   /**
-   * Unknown cadence and minute sources keep the legacy schedule exactly. A
-   * learned five-minute source sleeps until shortly after its next reading is
-   * due, then polls quickly for two minutes before settling at one minute.
+   * Unknown cadence and minute sources keep the legacy schedule exactly; it
+   * already checks at least once a minute. A learned five-minute source sleeps
+   * until shortly after its next reading is due, then polls every 20 s until
+   * the reading is stale and every minute after that. A pending time-based
+   * alert check (repeat or stale transition) can only bring a sync forward.
    */
   fun nextDelayMs(
     timestampMs: Long?,
     now: Long,
     expectedIntervalMs: Long? = null,
     probeAtMs: Long? = null,
+    alertCheckAtMs: Long? = null,
   ): Long {
     if (timestampMs == null || timestampMs <= 0L) return GLUCOSE_SYNC_BASE_TICK_MS
     if (expectedIntervalMs == null || expectedIntervalMs <= MINUTE_SOURCE_MAX_INTERVAL_MS) {
       return legacyDelayMs(timestampMs, now)
     }
+    val readingDelay = adaptiveDelayMs(timestampMs, now, expectedIntervalMs, probeAtMs)
+    if (alertCheckAtMs == null || alertCheckAtMs <= 0L) return readingDelay
+    return min(readingDelay, max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now))
+  }
+
+  private fun adaptiveDelayMs(
+    timestampMs: Long,
+    now: Long,
+    expectedIntervalMs: Long,
+    probeAtMs: Long?,
+  ): Long {
     if (probeAtMs != null && now < probeAtMs) {
       return max(GLUCOSE_SYNC_MIN_DELAY_MS, probeAtMs - now)
     }
     val due = timestampMs + expectedIntervalMs + GLUCOSE_SYNC_ARRIVAL_GRACE_MS
-    if (now < due) return (due - now).coerceIn(GLUCOSE_SYNC_MIN_DELAY_MS, expectedIntervalMs)
-    return if (now - due <= GLUCOSE_SYNC_OVERDUE_FAST_WINDOW_MS) {
+    // Upper bound: one interval plus grace, so a future timestamp cannot
+    // postpone syncs indefinitely and a just-published reading waits until due.
+    if (now < due) {
+      return (due - now).coerceIn(
+        GLUCOSE_SYNC_MIN_DELAY_MS,
+        expectedIntervalMs + GLUCOSE_SYNC_ARRIVAL_GRACE_MS,
+      )
+    }
+    return if (now - timestampMs <= STALE_AFTER_MS) {
       GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS
     } else {
       GLUCOSE_SYNC_BASE_TICK_MS
@@ -837,6 +863,17 @@ internal object T1ArcGlucoseDisplayState {
   fun enabled(context: Context) =
     preferences(context).getBoolean(ENABLED_KEY, false)
 
+  /** Earliest time JS asked to re-evaluate a time-based alert, or null. */
+  fun nextAlertCheckAt(context: Context): Long? =
+    preferences(context).getLong(NEXT_ALERT_CHECK_AT_KEY, 0L).takeIf { it > 0L }
+
+  fun setNextAlertCheckAt(context: Context, epochMs: Long?) {
+    preferences(context).edit().apply {
+      if (epochMs == null || epochMs <= 0L) remove(NEXT_ALERT_CHECK_AT_KEY)
+      else putLong(NEXT_ALERT_CHECK_AT_KEY, epochMs)
+    }.apply()
+  }
+
   fun alertMonitoringEnabled(context: Context) =
     preferences(context).getBoolean(
       ALERT_MONITORING_ENABLED_KEY,
@@ -960,6 +997,7 @@ internal object T1ArcGlucoseDisplayState {
 
   fun setSnapshot(context: Context, value: GlucoseDisplaySnapshot) {
     snapshot = value
+    T1ArcGlucoseDisplayService.readingPublished(value.timestampMs, value.sourceLabel)
     runCatching {
       val (payload, iv) = T1ArcSnapshotCipher.encrypt(value)
       preferences(context)
@@ -2726,6 +2764,8 @@ class T1ArcGlucoseDisplayService : Service() {
   private var serviceAlive = false
   private var validatedNetworkSyncPending = false
   private val cadenceTracker = ReadingCadenceTracker()
+  private var syncLoopActive = false
+  private var nextSyncUptimeMs = 0L
   private val renderGate = RenderGate()
   private var powerManager: PowerManager? = null
   private var displayManager: DisplayManager? = null
@@ -2800,19 +2840,13 @@ class T1ArcGlucoseDisplayService : Service() {
     object : Runnable {
       override fun run() {
         if (!T1ArcGlucoseDisplayState.collectorEnabled(this@T1ArcGlucoseDisplayService)) {
+          syncLoopActive = false
           return
         }
         requestHeadlessSync(DISPLAY_SYNC_REASON)
         val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
         cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
-        val nextDelay =
-          GlucoseSyncCadencePolicy.nextDelayMs(
-            snapshot?.timestampMs,
-            System.currentTimeMillis(),
-            cadenceTracker.expectedIntervalMs(),
-            cadenceTracker.probeAtMs(),
-          )
-        handler.postDelayed(this, nextDelay)
+        scheduleSync(syncDelayMs(snapshot?.timestampMs))
       }
     }
 
@@ -2903,13 +2937,52 @@ class T1ArcGlucoseDisplayService : Service() {
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)
+    syncLoopActive = false
     handler.post(renderRunnable)
     if (T1ArcGlucoseNotification.notificationsAllowed(this)) {
       // Avoid racing a React context that exists but is not fully active while
       // the app UI is starting. Cold boot still initializes Headless JS itself.
-      handler.postDelayed(syncRunnable, 10_000L)
+      syncLoopActive = true
+      scheduleSync(10_000L)
     }
     return START_STICKY
+  }
+
+  private fun syncDelayMs(timestampMs: Long?): Long =
+    GlucoseSyncCadencePolicy.nextDelayMs(
+      timestampMs,
+      System.currentTimeMillis(),
+      cadenceTracker.expectedIntervalMs(),
+      cadenceTracker.probeAtMs(),
+      T1ArcGlucoseDisplayState.nextAlertCheckAt(this),
+    )
+
+  private fun scheduleSync(delayMs: Long) {
+    handler.removeCallbacks(syncRunnable)
+    nextSyncUptimeMs = SystemClock.uptimeMillis() + delayMs
+    handler.postDelayed(syncRunnable, delayMs)
+  }
+
+  /**
+   * A newer reading reached the phone surfaces. In adaptive mode, schedule
+   * the next sync from it right away instead of waiting for a confirmation
+   * tick. Only an advancing timestamp reschedules, so repeats cannot storm.
+   * Legacy-cadence sources keep their fixed ticks unchanged.
+   */
+  private fun onReadingPublished(timestampMs: Long, sourceLabel: String) {
+    if (!serviceAlive || !syncLoopActive) return
+    val wasAdaptive = cadenceTracker.adaptive()
+    if (!cadenceTracker.observe(timestampMs, sourceLabel)) return
+    if (!wasAdaptive && !cadenceTracker.adaptive()) return
+    scheduleSync(syncDelayMs(timestampMs))
+  }
+
+  /** Bring the next adaptive sync forward if an alert check is now due sooner. */
+  private fun onAlertCheckChanged() {
+    if (!serviceAlive || !syncLoopActive || !cadenceTracker.adaptive()) return
+    val delay =
+      syncDelayMs(T1ArcGlucoseDisplayState.snapshot(this)?.timestampMs)
+    if (SystemClock.uptimeMillis() + delay < nextSyncUptimeMs) scheduleSync(delay)
   }
 
   private fun requestHeadlessSync(reason: String): Boolean {
@@ -2945,6 +3018,7 @@ class T1ArcGlucoseDisplayService : Service() {
     serviceAlive = false
     validatedNetworkSyncPending = false
     networkSyncPolicy.stop()
+    syncLoopActive = false
     if (networkCallbackRegistered && this::connectivityManager.isInitialized) {
       try {
         connectivityManager.unregisterNetworkCallback(networkCallback)
@@ -2972,6 +3046,16 @@ class T1ArcGlucoseDisplayService : Service() {
   companion object {
     @Volatile var running = false
     @Volatile private var instance: T1ArcGlucoseDisplayService? = null
+
+    fun readingPublished(timestampMs: Long, sourceLabel: String) {
+      instance?.let { service ->
+        service.handler.post { service.onReadingPublished(timestampMs, sourceLabel) }
+      }
+    }
+
+    fun alertCheckChanged() {
+      instance?.let { service -> service.handler.post { service.onAlertCheckChanged() } }
+    }
 
     fun headlessTaskFinished() {
       instance?.let { service ->
@@ -3943,6 +4027,14 @@ class T1ArcGlucoseDisplayModule : Module() {
       } else {
         T1ArcGlucoseDisplayService.ensureRunning(context)
       }
+      true
+    }
+
+    AsyncFunction("setNextAlertCheckAtAsync") Coroutine { epochMs: Double? ->
+      val context = requireNotNull(appContext.reactContext)
+      val value = epochMs?.takeIf { it.isFinite() && it > 0.0 }?.toLong()
+      T1ArcGlucoseDisplayState.setNextAlertCheckAt(context, value)
+      T1ArcGlucoseDisplayService.alertCheckChanged()
       true
     }
 

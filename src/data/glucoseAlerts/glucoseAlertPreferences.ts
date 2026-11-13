@@ -7,6 +7,7 @@ import {
   evaluateGlucoseAlert,
   GlucoseAlertPreferences,
   GlucoseAlertState,
+  nextGlucoseAlertCheckAt,
   validateGlucoseAlertPreferences,
 } from '@/domain/glucoseAlerts';
 import { GlucoseReading, TrendDirection } from '@/domain/models';
@@ -19,6 +20,18 @@ function mirrorAlertMonitoringOwnership(enabled: boolean) {
     T1ArcGlucoseDisplay.setGlucoseAlertMonitoringEnabledAsync?.(enabled) ??
     Promise.resolve(true)
   );
+}
+
+/**
+ * Lets the native collector, which may sleep until the next reading is due,
+ * wake in time for a repeat or stale transition. Best effort: a failure only
+ * leaves the collector on its reading-based schedule.
+ */
+function publishNextAlertCheck(epochMs: number | undefined) {
+  return (
+    T1ArcGlucoseDisplay.setNextAlertCheckAtAsync?.(epochMs ?? null) ??
+    Promise.resolve(true)
+  ).catch(() => false);
 }
 
 let glucoseAlertOperationTail: Promise<void> = Promise.resolve();
@@ -190,6 +203,9 @@ async function reconcileGlucoseAlertsOperation(
         }
       : evaluation.nextState;
   await saveAlertState(nextState);
+  await publishNextAlertCheck(
+    nextGlucoseAlertCheckAt(reading, preferences, nextState, now),
+  );
   return { preferences, evaluation, notified };
 }
 
@@ -209,6 +225,7 @@ export async function invalidateGlucoseAlertsForSourceReplacement() {
       throw new Error('Existing glucose alerts could not be cancelled.');
     }
     await SecureStore.deleteItemAsync(STATE_KEY);
+    await publishNextAlertCheck(undefined);
   });
 }
 
@@ -216,5 +233,6 @@ async function resetGlucoseAlertStateOperation() {
   await Promise.all([
     SecureStore.deleteItemAsync(STATE_KEY),
     T1ArcGlucoseDisplay.cancelGlucoseAlertsAsync().catch(() => false),
+    publishNextAlertCheck(undefined),
   ]);
 }
