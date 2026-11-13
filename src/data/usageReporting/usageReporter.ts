@@ -9,7 +9,6 @@ import {
 import { resetMonitoringDayCache } from './monitoringDay';
 import {
   clearUsageState,
-  clearUsageStore,
   loadUsageConsent,
   loadUsageState,
   saveUsageConsent,
@@ -48,6 +47,7 @@ export interface ReportUsageOptions {
  */
 let generation = 0;
 let inFlight: Promise<void> | undefined;
+let activeRequest: AbortController | undefined;
 let stateQueue: Promise<unknown> = Promise.resolve();
 
 /** Serialises read-modify-write updates from app opens and the collector. */
@@ -68,7 +68,18 @@ function mutateState(
 }
 
 async function reportingAllowed(expectedGeneration: number) {
-  return generation === expectedGeneration && (await loadUsageConsent()) === 'enabled';
+  if (generation !== expectedGeneration) return false;
+  const consent = await loadUsageConsent();
+  // The switch may have moved while secure storage was being read.
+  return generation === expectedGeneration && consent === 'enabled';
+}
+
+/** Stops future work from this run and cancels a message already on the wire. */
+function invalidateRuns() {
+  generation += 1;
+  activeRequest?.abort();
+  activeRequest = undefined;
+  resetMonitoringDayCache();
 }
 
 export async function getUsageConsentAsync(): Promise<UsageConsent> {
@@ -76,22 +87,24 @@ export async function getUsageConsentAsync(): Promise<UsageConsent> {
 }
 
 export async function setUsageConsentAsync(enabled: boolean): Promise<void> {
-  resetMonitoringDayCache();
   if (enabled) {
+    resetMonitoringDayCache();
     await saveUsageConsent('enabled');
     return;
   }
   // Switching off keeps only the switch position, never the activity history.
-  generation += 1;
+  invalidateRuns();
   await saveUsageConsent('disabled');
   await clearUsageState();
 }
 
-/** Full local-data erasure: remove counters and return the switch to its default. */
+/**
+ * Full local-data erasure: remove the activity history. The switch position is
+ * kept, so erasing data never turns counts back on for someone who opted out.
+ */
 export async function clearUsageReportingAsync(): Promise<void> {
-  generation += 1;
-  resetMonitoringDayCache();
-  await clearUsageStore();
+  invalidateRuns();
+  await clearUsageState();
 }
 
 /**
@@ -132,7 +145,9 @@ async function run({
   for (const ping of duePings(state, { consent: true, appVersion, now })) {
     // The off switch stops sending immediately, including between messages.
     if (!(await reportingAllowed(startGeneration))) return;
+    if (generation !== startGeneration) return;
     const controller = new AbortController();
+    activeRequest = controller;
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
       const response = await fetchImpl(USAGE_ENDPOINT, {
@@ -149,6 +164,7 @@ async function run({
       // Offline or blocked: try again on a later open. Never log the payload.
     } finally {
       clearTimeout(timer);
+      if (activeRequest === controller) activeRequest = undefined;
     }
   }
 }

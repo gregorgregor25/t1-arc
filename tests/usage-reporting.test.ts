@@ -70,6 +70,7 @@ describe('usage reporting bookkeeping', () => {
     for (const d of ['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28']) {
       s = recordOpen(s, at(`${d}T12:00:00Z`));
     }
+    s = { ...s, lastWeekSentAt: at('2026-10-21T12:00:00Z') };
     const now = at('2026-10-29T00:30:00Z');
     const week = duePings(s, { consent: true, appVersion: '1.7.20', now }).find(
       (p) => p.kind === 'week',
@@ -95,16 +96,31 @@ describe('usage reporting bookkeeping', () => {
     expect(Object.keys(day ?? {}).sort()).toEqual(['appVersion', 'kind', 'schema']);
   });
 
-  it('sends the first weekly ping straight away and with integer counts', () => {
+  it('starts the weekly window on the first open instead of sending an empty week', () => {
     const now = at('2026-11-13T09:00:00Z');
-    const pings = duePings(recordOpen(emptyUsageState(), now), {
-      consent: true,
-      appVersion: '1.7.20',
-      now,
-    });
-    const week = pings.find((p) => p.kind === 'week');
-    expect(week).toEqual({ schema: 1, kind: 'week', appVersion: '1.7.20', daysOpened: 0, daysMonitoring: 0 });
+    const s = recordOpen(emptyUsageState(), now);
+    expect(s.lastWeekSentAt).toBe(now);
+    expect(duePings(s, { consent: true, appVersion: '1.7.20', now }).map((p) => p.kind)).toEqual(['day']);
+    expect(duePings(emptyUsageState(), { consent: true, appVersion: '1.7.20', now }).map((p) => p.kind)).toEqual(['day']);
+    const nextWeek = at('2026-11-20T09:00:00Z');
+    const week = duePings(recordOpen(s, nextWeek), { consent: true, appVersion: '1.7.20', now: nextWeek }).find(
+      (p) => p.kind === 'week',
+    );
+    expect(week).toEqual({ schema: 1, kind: 'week', appVersion: '1.7.20', daysOpened: 1, daysMonitoring: 0 });
     expect(Object.keys(week ?? {}).sort()).toEqual(['appVersion', 'daysMonitoring', 'daysOpened', 'kind', 'schema']);
+  });
+
+  it('treats a weekly send time in the future as due after the clock moves back', () => {
+    const now = at('2026-11-13T09:00:00Z');
+    const s = { ...recordOpen(emptyUsageState(), now), lastWeekSentAt: at('2030-01-01T00:00:00Z') };
+    expect(duePings(s, { consent: true, appVersion: '1.7.20', now }).map((p) => p.kind)).toContain('week');
+  });
+
+  it('keeps sending the daily ping after the clock moves back a day', () => {
+    const now = at('2026-11-13T09:00:00Z');
+    const s = markSent(recordOpen(emptyUsageState(), now), 'day', now);
+    const earlier = at('2026-11-12T09:00:00Z');
+    expect(duePings(s, { consent: true, appVersion: '1.7.20', now: earlier }).map((p) => p.kind)).toContain('day');
   });
 
   it('records each day once and keeps at most 14 days of local history', () => {

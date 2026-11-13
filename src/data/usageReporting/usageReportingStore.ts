@@ -4,8 +4,8 @@ import { emptyUsageState, type UsageState } from '@/domain/usageReporting';
 
 /**
  * Anonymous usage-count bookkeeping lives in Android secure storage. These
- * keys are not part of encrypted portable backups and are removed by full
- * local-data erasure.
+ * keys are not part of encrypted portable backups. Full local-data erasure
+ * removes the activity state and keeps the switch position.
  */
 export const USAGE_STATE_KEY = 't1arc.usage-reporting.state.v1';
 export const USAGE_CONSENT_KEY = 't1arc.usage-reporting.consent.v1';
@@ -54,11 +54,4 @@ export async function saveUsageConsent(consent: UsageConsent): Promise<void> {
 
 export async function clearUsageState(): Promise<void> {
   await SecureStore.deleteItemAsync(USAGE_STATE_KEY);
-}
-
-export async function clearUsageStore(): Promise<void> {
-  await Promise.all([
-    SecureStore.deleteItemAsync(USAGE_STATE_KEY),
-    SecureStore.deleteItemAsync(USAGE_CONSENT_KEY),
-  ]);
 }

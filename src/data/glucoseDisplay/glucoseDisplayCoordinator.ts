@@ -104,13 +104,14 @@ function beginForegroundSync(taskData?: GlucoseDisplayHeadlessTaskData) {
   const work = Promise.resolve().then(async () => {
     const writeLease = await acquireLocalDataWriteLease();
     try {
-      await refreshConfiguredGlucoseSources(undefined, {
+      const sourceResults = await refreshConfiguredGlucoseSources(undefined, {
         reason: refreshReason,
         signal: active.controller.signal,
         writeLease,
       });
       // Local anonymous usage count only; cached, synchronous and never throws.
-      noteMonitoringDay();
+      // Counted only when at least one configured glucose source was checked.
+      if (sourceResults.length > 0) noteMonitoringDay();
     } finally {
       // Cached history is still useful when a configured source is temporarily
       // unavailable; the native display marks it delayed or stale.

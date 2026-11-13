@@ -14,6 +14,7 @@ export interface UsageState {
   /** Local calendar days on which the native collector completed a sync. */
   monitoringDays: string[];
   lastDaySent?: string;
+  /** Last weekly send, or the start of the first weekly window. */
   lastWeekSentAt?: number;
 }
 
@@ -55,9 +56,16 @@ function addDay(days: string[], key: string): string[] {
   return [...days, key].sort().slice(-HISTORY_DAYS);
 }
 
+/**
+ * The first open (after install or erasure) starts the weekly window rather
+ * than sending a week with no history, so the first weekly count covers a
+ * full seven days.
+ */
 export function recordOpen(state: UsageState, now: number): UsageState {
   const openedDays = addDay(state.openedDays, localDayKey(now));
-  return openedDays === state.openedDays ? state : { ...state, openedDays };
+  const seedWeek = state.lastWeekSentAt === undefined;
+  if (openedDays === state.openedDays && !seedWeek) return state;
+  return { ...state, openedDays, ...(seedWeek ? { lastWeekSentAt: now } : {}) };
 }
 
 export function recordMonitoringDay(state: UsageState, now: number): UsageState {
@@ -88,7 +96,9 @@ export function duePings(
   if (state.lastDaySent !== localDayKey(now)) {
     pings.push({ schema: USAGE_SCHEMA, kind: 'day', appVersion });
   }
-  if (state.lastWeekSentAt === undefined || now - state.lastWeekSentAt >= WEEK_MS) {
+  // A send time in the future means the clock moved back; do not wait for it.
+  const sinceWeek = state.lastWeekSentAt === undefined ? undefined : now - state.lastWeekSentAt;
+  if (sinceWeek !== undefined && (sinceWeek >= WEEK_MS || sinceWeek < 0)) {
     const window = previousSevenDayKeys(now);
     const count = (days: string[]) => days.filter((d) => window.has(d)).length;
     pings.push({

@@ -1,4 +1,4 @@
-import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState, View } from 'react-native';
@@ -19,7 +19,7 @@ import { AppThemeProvider, useAppTheme } from '@/theme/theme';
 // Anonymous usage counts: at most one daily and one weekly message, sent in
 // the background. Switched off in Settings > Privacy; see PRIVACY.md.
 function reportUsageOnOpen() {
-  void reportUsageOnOpenAsync({ appVersion: Constants.expoConfig?.version ?? 'unknown' });
+  void reportUsageOnOpenAsync({ appVersion: Application.nativeApplicationVersion ?? 'unknown' });
 }
 
 function AppContent() {

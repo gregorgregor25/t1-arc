@@ -209,7 +209,7 @@ export async function invalidateLocalDataWritesForErase() {
  */
 export async function eraseLocalHealthData(): Promise<LocalDataSummary> {
   await disableCommunityReminderForErasureAsync();
-  // Anonymous usage counters are removed and the switch returns to its default.
+  // Anonymous usage history is removed; an opt-out switch position is kept.
   await clearUsageReportingAsync();
   const preparedIntent = await prepareLocalDataEraseIntent();
   const before = await withT1ArcSanitizedEraseTransaction(

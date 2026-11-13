@@ -67,7 +67,8 @@ describe('usage reporter', () => {
     expect(await getUsageConsentAsync()).toBe('enabled');
     const fetchMock = okFetch();
     await reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });
-    expect(sentBodies(fetchMock).map((b) => b.kind)).toEqual(['day', 'week']);
+    // The first weekly count waits for a full week of history.
+    expect(sentBodies(fetchMock).map((b) => b.kind)).toEqual(['day']);
   });
 
   it('never calls the network once switched off, and deletes history', async () => {
@@ -84,6 +85,7 @@ describe('usage reporter', () => {
   });
 
   it('stops before the next message when switched off during a send', async () => {
+    await reportUsageOnOpenAsync({ fetchImpl: okFetch(), now: NOW, appVersion: '1.7.20' });
     let release: () => void = () => undefined;
     const fetchMock = vi.fn<UsageFetch>().mockImplementationOnce(
       () =>
@@ -91,7 +93,7 @@ describe('usage reporter', () => {
           release = () => resolve({ ok: true, status: 204 });
         }),
     );
-    const report = reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });
+    const report = reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW + 7 * DAY, appVersion: '1.7.20' });
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await setUsageConsentAsync(false);
@@ -101,30 +103,58 @@ describe('usage reporter', () => {
     expect([...mocks.store.keys()]).toEqual([USAGE_CONSENT_KEY]);
   });
 
+  it('aborts the request in flight when switched off or erased', async () => {
+    for (const stop of [() => setUsageConsentAsync(false), () => clearUsageReportingAsync()]) {
+      await clearUsageReportingAsync();
+      mocks.store.clear();
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.fn<UsageFetch>().mockImplementation((_url, init) => {
+        signal = init.signal;
+        return new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      });
+      const report = reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });
+      await settle();
+      expect(signal?.aborted).toBe(false);
+      await stop();
+      expect(signal?.aborted).toBe(true);
+      await report;
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('sends nothing when switched off while the open is still reading the switch', async () => {
+    const fetchMock = okFetch();
+    const report = reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });
+    const off = setUsageConsentAsync(false);
+    await Promise.all([report, off]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect([...mocks.store.keys()]).toEqual([USAGE_CONSENT_KEY]);
+  });
+
   it('posts minimal JSON with no credentials, cookies or identifying headers', async () => {
     const fetchMock = okFetch();
     await reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe(USAGE_ENDPOINT);
       expect(init.method).toBe('POST');
       expect(init.credentials).toBe('omit');
       expect(Object.keys(init.headers)).toEqual(['Content-Type']);
     }
-    const [day, week] = sentBodies(fetchMock);
-    expect(day).toEqual({ schema: 1, kind: 'day', appVersion: '1.7.20' });
-    expect(week).toEqual({ schema: 1, kind: 'week', appVersion: '1.7.20', daysOpened: 0, daysMonitoring: 0 });
+    expect(sentBodies(fetchMock)).toEqual([{ schema: 1, kind: 'day', appVersion: '1.7.20' }]);
   });
 
   it('does not resend after success, and retries after failure', async () => {
     const failing = vi.fn<UsageFetch>().mockRejectedValue(new Error('offline'));
     await reportUsageOnOpenAsync({ fetchImpl: failing, now: NOW, appVersion: '1.7.20' });
-    expect(failing).toHaveBeenCalledTimes(2);
+    expect(failing).toHaveBeenCalledTimes(1);
     const rejected = vi.fn<UsageFetch>().mockResolvedValue({ ok: false, status: 503 });
     await reportUsageOnOpenAsync({ fetchImpl: rejected, now: NOW + 500, appVersion: '1.7.20' });
     const ok = okFetch();
     await reportUsageOnOpenAsync({ fetchImpl: ok, now: NOW + 1000, appVersion: '1.7.20' });
-    expect(sentBodies(ok).map((b) => b.kind)).toEqual(['day', 'week']);
+    expect(sentBodies(ok).map((b) => b.kind)).toEqual(['day']);
     const again = okFetch();
     await reportUsageOnOpenAsync({ fetchImpl: again, now: NOW + 2000, appVersion: '1.7.20' });
     expect(again).not.toHaveBeenCalled();
@@ -190,20 +220,29 @@ describe('usage reporter', () => {
       reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' }),
       reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('erasure clears everything and returns to the default', async () => {
+  it('erasure clears the activity history and keeps an opt-out', async () => {
     await reportUsageOnOpenAsync({ fetchImpl: okFetch(), now: NOW, appVersion: '1.7.20' });
-    await setUsageConsentAsync(false);
     await clearUsageReportingAsync();
     expect(mocks.store.size).toBe(0);
     expect(await getUsageConsentAsync()).toBe('enabled');
+
+    await reportUsageOnOpenAsync({ fetchImpl: okFetch(), now: NOW + DAY, appVersion: '1.7.20' });
+    await setUsageConsentAsync(false);
+    await clearUsageReportingAsync();
+    expect([...mocks.store.keys()]).toEqual([USAGE_CONSENT_KEY]);
+    expect(await getUsageConsentAsync()).toBe('disabled');
+    const fetchMock = okFetch();
+    await reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW + 2 * DAY, appVersion: '1.7.20' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('reports on app open and when the app returns to the foreground', () => {
     const app = readFileSync('App.tsx', 'utf8');
-    expect(app).toContain("reportUsageOnOpenAsync({ appVersion: Constants.expoConfig?.version ?? 'unknown' })");
+    // Same native version source as About and support reports.
+    expect(app).toContain("reportUsageOnOpenAsync({ appVersion: Application.nativeApplicationVersion ?? 'unknown' })");
     expect(app.match(/reportUsageOnOpen\(\);/g)).toHaveLength(2);
   });
 

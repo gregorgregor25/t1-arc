@@ -49,9 +49,15 @@ describe('collector monitoring day', () => {
   });
 
   it('notes a monitoring day after the collector completes a sync', async () => {
-    mocks.refreshConfiguredSources.mockResolvedValue([]);
+    mocks.refreshConfiguredSources.mockResolvedValue([{ status: 'fulfilled', value: undefined }]);
     await runGlucoseDisplayForegroundSync({ reason: 'glucose-display' });
     expect(mocks.noteMonitoringDay).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not note a day when no glucose source is configured', async () => {
+    mocks.refreshConfiguredSources.mockResolvedValue([]);
+    await runGlucoseDisplayForegroundSync({ reason: 'glucose-display' });
+    expect(mocks.noteMonitoringDay).not.toHaveBeenCalled();
   });
 
   it('does not note a day when every source failed', async () => {
@@ -61,7 +67,7 @@ describe('collector monitoring day', () => {
   });
 
   it('keeps the sync path working if the usage hook throws', async () => {
-    mocks.refreshConfiguredSources.mockResolvedValue([]);
+    mocks.refreshConfiguredSources.mockResolvedValue([{ status: 'fulfilled', value: undefined }]);
     mocks.noteMonitoringDay.mockImplementation(() => {
       throw new Error('unexpected');
     });
