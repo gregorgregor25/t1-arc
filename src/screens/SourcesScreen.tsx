@@ -49,6 +49,7 @@ import { SectionCard } from "@/components/SectionCard";
 import { SourceSetupGuide } from "@/components/SourceSetupGuide";
 import { ThemePreferenceCard } from "@/components/ThemePreferenceCard";
 import { TarvisTreatmentProfileCard } from "@/components/TarvisTreatmentProfileCard";
+import { UsageReportingCard } from "@/components/UsageReportingCard";
 import { WearCompanionCard } from "@/components/WearCompanionCard";
 import { XdripSourceCard } from "@/components/XdripSourceCard";
 import {
@@ -1189,6 +1190,7 @@ export function SourcesScreen({
       {activeSource === "privacy" ? (
         <View style={styles.settingsSections}>
           <SectionCard><PrivacyPolicyLink /></SectionCard>
+          <SectionCard><UsageReportingCard /></SectionCard>
           {__DEV__ ? (
             <SettingsDisclosure
               detail="Only for a protected migration bundle from an earlier T1 Arc test installation."
