@@ -5,14 +5,35 @@ export type NativeCollectorStatus = {
   supported: boolean;
   enabled: boolean;
   serviceRunning: boolean;
+  /** Absent from older native modules. */
+  syncLoopActive?: boolean;
+  /** Wall-clock ms of the last headless sync the service started; absent from older native modules. */
+  lastHeadlessSyncStartedAt?: number;
 };
 
 /**
- * The native foreground service runs the headless glucose sync on its own
- * adaptive cadence only while it is supported, switched on and alive.
+ * Longer than the longest native wait (5 min 20 s after a five-minute
+ * reading), so a healthy collector always counts as running.
  */
-export function nativeCollectorOwnsGlucoseSync(status: NativeCollectorStatus | undefined): boolean {
-  return status !== undefined && status.supported && status.enabled && status.serviceRunning;
+export const NATIVE_COLLECTOR_RECENT_SYNC_MS = 6 * 60_000;
+const NATIVE_COLLECTOR_CLOCK_SKEW_MS = 60_000;
+
+/**
+ * The native service owns glucose sync only while its sync loop runs and it
+ * has actually started a headless sync recently. The service can be alive
+ * without a loop (notifications were off when it started) or with a stuck
+ * headless task; the visible app then keeps fetching.
+ */
+export function nativeCollectorOwnsGlucoseSync(
+  status: NativeCollectorStatus | undefined,
+  now: number,
+): boolean {
+  if (!status?.supported || !status.enabled || !status.serviceRunning) return false;
+  if (status.syncLoopActive !== true) return false;
+  const startedAt = status.lastHeadlessSyncStartedAt;
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return false;
+  const age = now - startedAt;
+  return age >= -NATIVE_COLLECTOR_CLOCK_SKEW_MS && age <= NATIVE_COLLECTOR_RECENT_SYNC_MS;
 }
 
 /**

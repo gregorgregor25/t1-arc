@@ -2853,6 +2853,10 @@ class T1ArcGlucoseDisplayService : Service() {
   private var validatedNetworkSyncPending = false
   private val cadenceTracker = ReadingCadenceTracker()
   private var syncLoopActive = false
+    set(value) {
+      field = value
+      syncLoopRunning = value
+    }
   private var nextSyncUptimeMs = 0L
   private var syncDueAtWallMs: Long? = null
   private val syncDueWatchdog =
@@ -3114,6 +3118,9 @@ class T1ArcGlucoseDisplayService : Service() {
         Intent(this, T1ArcLibreHeadlessService::class.java)
           .putExtra(HEADLESS_REASON_EXTRA, reason)
       )
+      // Lets the open app tell a working collector from one that is alive
+      // without syncing, so it only skips its own fetch for the former.
+      lastHeadlessSyncStartedAtMs = System.currentTimeMillis()
       return true
     } catch (_: Exception) {
       T1ArcGlucoseDisplayState.headlessTaskActive.set(false)
@@ -3165,6 +3172,10 @@ class T1ArcGlucoseDisplayService : Service() {
 
   companion object {
     @Volatile var running = false
+    @Volatile var syncLoopRunning = false
+      private set
+    @Volatile var lastHeadlessSyncStartedAtMs: Long? = null
+      private set
     @Volatile private var instance: T1ArcGlucoseDisplayService? = null
 
     fun readingPublished(timestampMs: Long, sourceLabel: String) {
@@ -4349,6 +4360,8 @@ class T1ArcGlucoseDisplayModule : Module() {
         T1ArcGlucoseNotification.currentGlucoseNotificationsAllowed(context),
       "lockScreenVisible" to T1ArcGlucoseDisplayState.lockScreenVisible(context),
       "serviceRunning" to T1ArcGlucoseDisplayService.running,
+      "syncLoopActive" to T1ArcGlucoseDisplayService.syncLoopRunning,
+      "lastHeadlessSyncStartedAt" to T1ArcGlucoseDisplayService.lastHeadlessSyncStartedAtMs?.toDouble(),
       "aodDesired" to T1ArcGlucoseDisplayState.aodDesired(context),
       "aodPosition" to T1ArcGlucoseDisplayState.aodPosition(context),
       "aodSize" to T1ArcGlucoseDisplayState.aodSize(context),

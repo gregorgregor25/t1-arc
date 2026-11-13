@@ -23,12 +23,22 @@ describe('foreground refresh policy', () => {
     expect(shouldPollAutomationStatus('background', true)).toBe(false);
     expect(shouldPollAutomationStatus('active', false)).toBe(false);
   });
-  it('treats the collector as owning sync only when supported, enabled and running', () => {
-    expect(nativeCollectorOwnsGlucoseSync({ supported: true, enabled: true, serviceRunning: true })).toBe(true);
-    expect(nativeCollectorOwnsGlucoseSync({ supported: true, enabled: true, serviceRunning: false })).toBe(false);
-    expect(nativeCollectorOwnsGlucoseSync({ supported: true, enabled: false, serviceRunning: true })).toBe(false);
-    expect(nativeCollectorOwnsGlucoseSync({ supported: false, enabled: true, serviceRunning: true })).toBe(false);
-    expect(nativeCollectorOwnsGlucoseSync(undefined)).toBe(false);
+  it('treats the collector as owning sync only when its sync loop recently started a headless sync', () => {
+    const now = 1_800_000_000_000;
+    const live = { supported: true, enabled: true, serviceRunning: true, syncLoopActive: true, lastHeadlessSyncStartedAt: now - 60_000 };
+    expect(nativeCollectorOwnsGlucoseSync(live, now)).toBe(true);
+    // The longest native wait is 5 min 20 s after a five-minute reading.
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, lastHeadlessSyncStartedAt: now - 5 * 60_000 - 50_000 }, now)).toBe(true);
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, lastHeadlessSyncStartedAt: now - 6 * 60_000 - 1 }, now)).toBe(false);
+    // The service can be alive without a sync loop, e.g. notifications were off when it started.
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, syncLoopActive: false }, now)).toBe(false);
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, serviceRunning: false }, now)).toBe(false);
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, enabled: false }, now)).toBe(false);
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, supported: false }, now)).toBe(false);
+    // An older native module without these fields keeps the network refresh.
+    expect(nativeCollectorOwnsGlucoseSync({ supported: true, enabled: true, serviceRunning: true }, now)).toBe(false);
+    expect(nativeCollectorOwnsGlucoseSync({ ...live, lastHeadlessSyncStartedAt: undefined }, now)).toBe(false);
+    expect(nativeCollectorOwnsGlucoseSync(undefined, now)).toBe(false);
   });
 });
 
@@ -40,7 +50,7 @@ describe('foreground refresh wiring', () => {
     const start = source.indexOf('const refreshInterval = setInterval');
     const cadence = source.slice(start, source.indexOf('const subscription', start));
     expect(cadence).toContain('T1ArcGlucoseDisplay.getStatusAsync()');
-    expect(cadence).toContain('nativeCollectorOwnsGlucoseSync');
+    expect(cadence).toContain('nativeCollectorOwnsGlucoseSync(status, Date.now())');
     expect(cadence).toContain('foregroundGlucoseRefreshAction(');
     expect(cadence).toMatch(/action === "network"\) await refreshGlucoseSilently\(\)/);
     expect(cadence).toMatch(/action === "read-stored"\) await publishLatestStoredGlucose\(\)/);
@@ -53,5 +63,18 @@ describe('foreground refresh wiring', () => {
     const start = source.indexOf('const interval = setInterval');
     const timer = source.slice(start, source.indexOf('}, 60_000)', start));
     expect(timer).toContain('shouldPollAutomationStatus(AppState.currentState, active.current)');
+  });
+});
+
+describe('native collector status', () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+  it('reports whether the sync loop runs and when it last started a headless sync', () => {
+    const kotlin = read('../modules/t1arc-glucose-display/android/src/main/java/io/github/gregorgregor25/t1arc/glucosedisplay/T1ArcGlucoseDisplayModule.kt');
+    expect(kotlin).toContain('"syncLoopActive" to T1ArcGlucoseDisplayService.syncLoopRunning');
+    expect(kotlin).toContain('"lastHeadlessSyncStartedAt" to T1ArcGlucoseDisplayService.lastHeadlessSyncStartedAtMs?.toDouble()');
+    const start = kotlin.indexOf('private fun requestHeadlessSync');
+    const request = kotlin.slice(start, kotlin.indexOf('private fun enqueueValidatedNetworkSync', start));
+    expect(request.indexOf('lastHeadlessSyncStartedAtMs = System.currentTimeMillis()')).toBeGreaterThan(request.indexOf('startService('));
   });
 });

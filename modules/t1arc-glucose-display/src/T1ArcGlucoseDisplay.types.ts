@@ -48,6 +48,10 @@ export interface GlucoseDisplayStatus {
   notificationsAllowed: boolean;
   lockScreenVisible: boolean;
   serviceRunning: boolean;
+  /** True while the service's sync loop is scheduled. Absent from older builds. */
+  syncLoopActive?: boolean;
+  /** Wall-clock ms of the last headless sync the service started. Absent from older builds. */
+  lastHeadlessSyncStartedAt?: number;
   aodDesired: boolean;
   aodPosition: AodPosition;
   aodSize: AodSize;
