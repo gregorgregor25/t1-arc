@@ -1,7 +1,9 @@
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState, View } from 'react-native';
 import { recordDiagnostic } from '@/data/support/diagnosticStore';
+import { reportUsageOnOpenAsync } from '@/data/usageReporting/usageReporter';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
@@ -14,12 +16,22 @@ import { GlucoseAppearanceProvider } from '@/providers/GlucoseAppearanceProvider
 import { RegionalProfileProvider } from '@/providers/RegionalProfileProvider';
 import { AppThemeProvider, useAppTheme } from '@/theme/theme';
 
+// Anonymous usage counts: at most one daily and one weekly message, sent in
+// the background. Switched off in Settings > Privacy; see PRIVACY.md.
+function reportUsageOnOpen() {
+  void reportUsageOnOpenAsync({ appVersion: Constants.expoConfig?.version ?? 'unknown' });
+}
+
 function AppContent() {
   const { dark } = useAppTheme();
   useEffect(() => {
     recordDiagnostic('app_opened');
+    reportUsageOnOpen();
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') recordDiagnostic('app_foreground');
+      if (state === 'active') {
+        recordDiagnostic('app_foreground');
+        reportUsageOnOpen();
+      }
       if (state === 'background') recordDiagnostic('app_background');
     });
     return () => subscription.remove();

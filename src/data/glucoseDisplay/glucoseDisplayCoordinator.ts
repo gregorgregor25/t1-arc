@@ -18,6 +18,7 @@ import { configuredGlucoseSources, refreshConfiguredGlucoseSources } from '@/dat
 import { NOTIFICATION_SOURCE_ID } from '@/data/notification/types';
 import { NIGHTSCOUT_SOURCE_ID } from '@/data/nightscout/types';
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
+import { noteMonitoringDay } from '@/data/usageReporting/monitoringDay';
 import { XDRIP_SOURCE_ID } from '@/data/xdrip/types';
 import { assessGlucoseTrend } from '@/domain/trend';
 import type { GlucoseReading } from '@/domain/models';
@@ -108,6 +109,8 @@ function beginForegroundSync(taskData?: GlucoseDisplayHeadlessTaskData) {
         signal: active.controller.signal,
         writeLease,
       });
+      // Local anonymous usage count only; cached, synchronous and never throws.
+      noteMonitoringDay();
     } finally {
       // Cached history is still useful when a configured source is temporarily
       // unavailable; the native display marks it delayed or stale.
