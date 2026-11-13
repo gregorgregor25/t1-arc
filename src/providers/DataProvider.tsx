@@ -178,6 +178,10 @@ import {
   observeGlucoseReadingForPublication,
 } from "@/data/live/glucoseSourceRefresh";
 import { syncConfiguredNightscoutHistoryIfDue } from "@/data/live/configuredGlucoseSources";
+import {
+  foregroundGlucoseRefreshAction,
+  nativeCollectorOwnsGlucoseSync,
+} from "@/domain/foregroundRefreshPolicy";
 import { NightscoutGlucoseSource } from "@/data/nightscout/NightscoutGlucoseSource";
 import { NightscoutTreatmentImporter } from "@/data/nightscout/NightscoutTreatmentImporter";
 import {
@@ -964,7 +968,20 @@ export function DataProvider({ children }: PropsWithChildren) {
       // insights, and Nightscout history. Those slower jobs run after the
       // initial paint, on app resume, and on explicit refresh.
       if (AppState.currentState === "active") {
-        void refreshGlucoseSilently();
+        void (async () => {
+          // While the native collector is running it already fetches the
+          // source on its adaptive cadence, so the visible UI only re-reads
+          // SQLite. A failed status read falls back to the network refresh.
+          const collectorRunning = await T1ArcGlucoseDisplay.getStatusAsync()
+            .then(nativeCollectorOwnsGlucoseSync)
+            .catch(() => false);
+          const action = foregroundGlucoseRefreshAction(
+            AppState.currentState,
+            collectorRunning,
+          );
+          if (action === "network") await refreshGlucoseSilently();
+          else if (action === "read-stored") await publishLatestStoredGlucose();
+        })();
       }
     }, 60_000);
     const subscription = AppState.addEventListener("change", (state) => {
@@ -976,6 +993,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       subscription.remove();
     };
   }, [
+    publishLatestStoredGlucose,
     refreshGlucoseSilently,
     refreshSilently,
     repositoryState.ready,
