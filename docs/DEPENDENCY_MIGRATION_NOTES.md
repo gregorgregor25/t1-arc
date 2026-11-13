@@ -22,10 +22,21 @@ Downgrading to 4.1.1 is not a fix: that version lacks the later prototype-proper
 guard, despite falling outside the advisory's published range.
 
 The audit gate permits only this reviewed low advisory and its exact expected
-dependency graph until 13 November 2026. It retains npm's complete report and
+dependency graph until 12 February 2027 (reassessed 13 November 2026: no upstream release after 4.3.1, no app import, build-time only). It retains npm's complete report and
 labels the result `reviewed-low`, never clean. New advisories, dependency drift,
 an expired review, and every high or critical finding block the build. Reassess
 this allowance and remove it when a compatible upstream fix is available.
+Moderate advisories reported in November 2026 for Expo build-time tooling are
+fixed by exact overrides: node-forge 1.4.3 ([GHSA-6889-vf6x-f3g5](https://github.com/advisories/GHSA-6889-vf6x-f3g5),
+[GHSA-w4xr-hqv8-ch44](https://github.com/advisories/GHSA-w4xr-hqv8-ch44),
+[GHSA-6cv4-p8m7-4r25](https://github.com/advisories/GHSA-6cv4-p8m7-4r25),
+[GHSA-j8rw-jp99-435v](https://github.com/advisories/GHSA-j8rw-jp99-435v)), glob 14.0.6
+([GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)) and minimatch 11.0.8
+([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)), scoped
+to glob and `@expo/fingerprint` so minimatch 3 consumers are untouched. Verified
+with `expo config`, `expo prebuild --platform android`, `expo export --platform android`
+and `@expo/fingerprint`.
+
 Do not use `npm audit fix --force`: its suggested Expo downgrade is incompatible
 with this app. SDK 58 still depends on the same affected packages and does not
 itself resolve these advisories.

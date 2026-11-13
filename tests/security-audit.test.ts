@@ -8,17 +8,11 @@ import { evaluateAuditReport } from '../scripts/security-audit.mjs';
 
 const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 const packageConfig = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const context = { lockfile, packageConfig, now: new Date('2026-10-30T12:00:00Z') };
+const context = { lockfile, packageConfig, now: new Date('2026-11-13T12:00:00Z') };
 type Finding = { name: string; severity: string; nodes: string[]; via: (string | Record<string, unknown>)[] };
 const reviewed = {
   deepmerge: ['node_modules/deepmerge', []],
   '@expo/config': ['node_modules/@expo/config', ['deepmerge']],
-  '@expo/local-build-cache-provider': ['node_modules/@expo/local-build-cache-provider', ['@expo/config']],
-  '@expo/metro-config': ['node_modules/expo/node_modules/@expo/metro-config', ['@expo/config']],
-  '@expo/prebuild-config': ['node_modules/@expo/prebuild-config', ['@expo/config']],
-  '@expo/cli': ['node_modules/expo/node_modules/@expo/cli', ['@expo/config', '@expo/metro-config', '@expo/prebuild-config']],
-  expo: ['node_modules/expo', ['@expo/cli', '@expo/config', '@expo/local-build-cache-provider', '@expo/metro-config']],
-  '@react-native-community/datetimepicker': ['node_modules/@react-native-community/datetimepicker', ['expo']],
 } as const;
 
 function lowReport() {
@@ -36,7 +30,7 @@ function lowReport() {
   return {
     auditReportVersion: 2, vulnerabilities,
     metadata: {
-      vulnerabilities: { info: 0, low: 8, moderate: 0, high: 0, critical: 0, total: 8 },
+      vulnerabilities: { info: 0, low: 2, moderate: 0, high: 0, critical: 0, total: 2 },
       dependencies: { prod: 520, dev: 314, optional: 58, peer: 3, peerOptional: 0, total: 844 },
     },
   };
@@ -63,11 +57,11 @@ describe('production dependency security gate', () => {
 
   it('retains the exact known low build-tool advisory as a visible temporary review', () => {
     expect(evaluateAuditReport(lowReport(), context))
-      .toMatchObject({ allowed: true, classification: 'reviewed-low', findings: 8 });
+      .toMatchObject({ allowed: true, classification: 'reviewed-low', findings: 2 });
   });
 
   it.each([
-    ['expiry', { now: new Date('2026-11-13T00:00:00Z') }],
+    ['expiry', { now: new Date('2027-02-12T00:00:00Z') }],
     ['invalid clock', { now: new Date('invalid') }],
     ['locked dependency drift', { lockfile: { ...lockfile, packages: {
       ...lockfile.packages, 'node_modules/deepmerge': { ...lockfile.packages['node_modules/deepmerge'], version: '4.3.2' },
@@ -94,8 +88,8 @@ describe('production dependency security gate', () => {
         name: 'new-package', severity: 'low', nodes: ['node_modules/new-package'],
         via: ['deepmerge'],
       };
-      value.metadata.vulnerabilities.low = 9;
-      value.metadata.vulnerabilities.total = 9;
+      value.metadata.vulnerabilities.low = 3;
+      value.metadata.vulnerabilities.total = 3;
     });
     expect(evaluateAuditReport(report, context).allowed).toBe(false);
   });
@@ -108,8 +102,8 @@ describe('production dependency security gate', () => {
     const missing = altered((value) => { value.vulnerabilities['@expo/config']!.via = ['absent']; });
     expect(evaluateAuditReport(missing, context).allowed).toBe(false);
     const cycle = altered((value) => {
-      value.vulnerabilities['@expo/config']!.via = ['@expo/cli'];
-      value.vulnerabilities['@expo/cli']!.via = ['@expo/config'];
+      value.vulnerabilities['@expo/config']!.via = ['deepmerge'];
+      value.vulnerabilities.deepmerge!.via = ['@expo/config'];
     });
     expect(evaluateAuditReport(cycle, context).allowed).toBe(false);
   });
