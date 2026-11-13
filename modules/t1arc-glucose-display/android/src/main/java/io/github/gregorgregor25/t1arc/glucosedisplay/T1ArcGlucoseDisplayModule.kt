@@ -647,6 +647,32 @@ internal object GlucoseSyncCadencePolicy {
   }
 }
 
+/**
+ * The periodic notification re-render only re-ages text and icons. It is
+ * skipped only while the display is fully off; an interactive screen or the
+ * system always-on display (doze) can still show the notification icon.
+ */
+internal object RenderGatePolicy {
+  fun shouldRender(interactive: Boolean, displayOff: Boolean): Boolean =
+    interactive || !displayOff
+}
+
+/** Remembers a skipped re-render so it is replayed as soon as it is visible. */
+internal class RenderGate {
+  private var skipped = false
+
+  @Synchronized
+  fun beginRender(interactive: Boolean, displayOff: Boolean): Boolean {
+    val render = RenderGatePolicy.shouldRender(interactive, displayOff)
+    skipped = !render
+    return render
+  }
+
+  @Synchronized
+  fun shouldReplayOnDisplayChange(interactive: Boolean, displayOff: Boolean): Boolean =
+    skipped && RenderGatePolicy.shouldRender(interactive, displayOff)
+}
+
 internal enum class GlucoseCollectorForegroundMode {
   STOPPED,
   PRIVATE_MONITORING,
@@ -2641,6 +2667,27 @@ class T1ArcGlucoseDisplayService : Service() {
   private var serviceAlive = false
   private var validatedNetworkSyncPending = false
   private val cadenceTracker = ReadingCadenceTracker()
+  private val renderGate = RenderGate()
+  private var powerManager: PowerManager? = null
+  private var displayManager: DisplayManager? = null
+  private var displayListenerRegistered = false
+  private var screenOnReceiverRegistered = false
+  private val displayListener =
+    object : DisplayManager.DisplayListener {
+      override fun onDisplayAdded(displayId: Int) = Unit
+
+      override fun onDisplayRemoved(displayId: Int) = Unit
+
+      override fun onDisplayChanged(displayId: Int) {
+        if (displayId == Display.DEFAULT_DISPLAY) replaySkippedRender()
+      }
+    }
+  private val screenOnReceiver =
+    object : BroadcastReceiver() {
+      override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_SCREEN_ON) replaySkippedRender()
+      }
+    }
   private val networkCallback =
     object : ConnectivityManager.NetworkCallback() {
       override fun onAvailable(network: Network) {
@@ -2678,10 +2725,14 @@ class T1ArcGlucoseDisplayService : Service() {
         ) {
           return
         }
-        if (T1ArcGlucoseDisplayState.enabled(this@T1ArcGlucoseDisplayService)) {
-          T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
-        } else {
-          T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
+        // Only relative-age text and icons change here; new readings notify
+        // directly from the publication path. Skip while nobody can see it.
+        if (renderGate.beginRender(isInteractive(), isDisplayOff())) {
+          if (T1ArcGlucoseDisplayState.enabled(this@T1ArcGlucoseDisplayService)) {
+            T1ArcGlucoseNotification.notify(this@T1ArcGlucoseDisplayService)
+          } else {
+            T1ArcGlucoseWidget.updateAll(this@T1ArcGlucoseDisplayService)
+          }
         }
         handler.postDelayed(this, DISPLAY_REFRESH_INTERVAL_MS)
       }
@@ -2720,6 +2771,41 @@ class T1ArcGlucoseDisplayService : Service() {
       // The 15-second refresh tick remains available if Android cannot expose
       // default-network transitions on this device.
     }
+    powerManager = getSystemService(PowerManager::class.java)
+    displayManager = getSystemService(DisplayManager::class.java)
+    try {
+      displayManager?.registerDisplayListener(displayListener, handler)
+      displayListenerRegistered = displayManager != null
+    } catch (_: Exception) {
+      // The screen-on broadcast below still replays a skipped render.
+    }
+    try {
+      ContextCompat.registerReceiver(
+        this,
+        screenOnReceiver,
+        IntentFilter(Intent.ACTION_SCREEN_ON),
+        ContextCompat.RECEIVER_NOT_EXPORTED,
+      )
+      screenOnReceiverRegistered = true
+    } catch (_: Exception) {
+      // The display listener above still replays a skipped render.
+    }
+  }
+
+  private fun isInteractive(): Boolean =
+    runCatching { powerManager?.isInteractive }.getOrNull() ?: true
+
+  // An unknown display state is treated as visible so the legacy render runs.
+  private fun isDisplayOff(): Boolean =
+    runCatching {
+      displayManager?.getDisplay(Display.DEFAULT_DISPLAY)?.state == Display.STATE_OFF
+    }.getOrDefault(false)
+
+  private fun replaySkippedRender() {
+    if (!serviceAlive) return
+    if (!renderGate.shouldReplayOnDisplayChange(isInteractive(), isDisplayOff())) return
+    handler.removeCallbacks(renderRunnable)
+    handler.post(renderRunnable)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -2808,6 +2894,14 @@ class T1ArcGlucoseDisplayService : Service() {
       }
     }
     networkCallbackRegistered = false
+    if (displayListenerRegistered) {
+      runCatching { displayManager?.unregisterDisplayListener(displayListener) }
+    }
+    displayListenerRegistered = false
+    if (screenOnReceiverRegistered) {
+      runCatching { unregisterReceiver(screenOnReceiver) }
+    }
+    screenOnReceiverRegistered = false
     handler.removeCallbacksAndMessages(null)
     running = false
     if (instance === this) instance = null

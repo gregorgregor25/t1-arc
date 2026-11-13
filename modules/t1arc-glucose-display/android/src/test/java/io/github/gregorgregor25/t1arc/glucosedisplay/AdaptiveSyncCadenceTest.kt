@@ -133,6 +133,25 @@ class AdaptiveSyncCadenceTest {
     )
   }
 
+  @Test fun renderOnlyWhenVisible() {
+    assertEquals(true, RenderGatePolicy.shouldRender(interactive = true, displayOff = false))
+    assertEquals(false, RenderGatePolicy.shouldRender(interactive = false, displayOff = true))
+    // System always-on display (doze) can still show the notification icon.
+    assertEquals(true, RenderGatePolicy.shouldRender(interactive = false, displayOff = false))
+  }
+
+  @Test fun skippedRenderIsReplayedWhenDisplayBecomesVisible() {
+    val gate = RenderGate()
+    assertEquals(true, gate.beginRender(interactive = true, displayOff = false))
+    assertEquals(false, gate.shouldReplayOnDisplayChange(interactive = false, displayOff = false))
+    assertEquals(false, gate.beginRender(interactive = false, displayOff = true))
+    // Still off: nothing to replay.
+    assertEquals(false, gate.shouldReplayOnDisplayChange(interactive = false, displayOff = true))
+    assertEquals(true, gate.shouldReplayOnDisplayChange(interactive = false, displayOff = false))
+    assertEquals(true, gate.beginRender(interactive = false, displayOff = false))
+    assertEquals(false, gate.shouldReplayOnDisplayChange(interactive = true, displayOff = false))
+  }
+
   private fun fiveMinuteTracker() =
     ReadingCadenceTracker().apply {
       observe(t0)
