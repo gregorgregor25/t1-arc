@@ -20,16 +20,24 @@ describe('remote refresh policy', () => {
     expect(remoteRefreshDue({ now: 0 })).toBe(true);
     expect(remoteRefreshDue({ now: 10 * m, latestReadingAt: 9 * m, lastAttemptAt: 9.9 * m, force: true })).toBe(true);
   });
-  it('skips while the next reading cannot exist yet', () => {
-    expect(remoteRefreshDue({ now: 3 * m, latestReadingAt: 0, lastAttemptAt: 2.5 * m })).toBe(false);
+  const five = 5 * m;
+  it('skips while the next reading of a five-minute source cannot exist yet', () => {
+    expect(remoteRefreshDue({ now: 3 * m, latestReadingAt: 0, observedIntervalMs: five, lastAttemptAt: 2.5 * m })).toBe(false);
   });
   it('fetches once a reading is due', () => {
-    expect(remoteRefreshDue({ now: 4.6 * m, latestReadingAt: 0, lastAttemptAt: 4 * m })).toBe(true);
+    expect(remoteRefreshDue({ now: 4.6 * m, latestReadingAt: 0, observedIntervalMs: five, lastAttemptAt: 4 * m })).toBe(true);
   });
   it('merges only near-simultaneous triggers', () => {
     expect(REMOTE_MIN_ATTEMPT_SPACING_MS).toBe(8_000);
-    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, lastAttemptAt: 6 * m - 5_000 })).toBe(false);
-    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, lastAttemptAt: 6 * m - 10_000 })).toBe(true);
+    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, observedIntervalMs: five, lastAttemptAt: 6 * m - 5_000 })).toBe(false);
+    expect(remoteRefreshDue({ now: 6 * m, latestReadingAt: 0, observedIntervalMs: five, lastAttemptAt: 6 * m - 10_000 })).toBe(true);
+  });
+  it('keeps the one-minute schedule until a five-minute cadence is observed', () => {
+    // A source returning only its latest reading has no stored spacing yet.
+    expect(remoteRefreshDue({ now: 60 * s, latestReadingAt: 0, lastAttemptAt: 10 * s })).toBe(true);
+    expect(remoteRefreshDue({ now: 2 * m, latestReadingAt: 0, lastAttemptAt: 60 * s })).toBe(true);
+    // Before the next minute reading can exist, a second trigger is merged.
+    expect(remoteRefreshDue({ now: 20 * s, latestReadingAt: 0, lastAttemptAt: 5 * s })).toBe(false);
   });
 
   it('never skips a jittered 15 s or 20 s native catch-up tick', () => {

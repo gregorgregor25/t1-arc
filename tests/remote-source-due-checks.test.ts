@@ -44,9 +44,12 @@ describe('Dexcom Share due checks and read window', () => {
       if (url.pathname.endsWith('AuthenticatePublisherAccount')) return Response.json('account-id');
       if (url.pathname.endsWith('LoginPublisherAccountById')) return Response.json('session-id');
       reads.push(url);
-      return Response.json([
-        { WT: `Date(${latestServed})`, ST: `Date(${latestServed})`, DT: `Date(${latestServed})`, Value: 115, Trend: 'Flat' },
-      ]);
+      // Share returns recent history, so the five-minute spacing is stored.
+      return Response.json(
+        [latestServed, latestServed - 5 * m].map((at) => ({
+          WT: `Date(${at})`, ST: `Date(${at})`, DT: `Date(${at})`, Value: 115, Trend: 'Flat',
+        })),
+      );
     }) as typeof fetch;
     const source = new DexcomShareGlucoseSource(
       { username: 'publisher@example.test', password: 'test-password', region: 'international' },

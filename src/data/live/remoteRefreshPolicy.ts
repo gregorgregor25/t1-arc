@@ -13,8 +13,9 @@ import type { GlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore
  * - Five-minute sources become due 30 s before the next reading. The native
  *   collector's first five-minute tick lands 20 s after it, and its overdue
  *   polls are 20 s apart, so neither is skipped.
- * - Sources with any two recent readings at most 2.5 minutes apart keep the
- *   native one-minute schedule, so one missed reading does not slow them.
+ * - Sources with any two recent readings at most 2.5 minutes apart, or with
+ *   no recent spacing yet, keep the native one-minute schedule, so one missed
+ *   reading does not slow them.
  * - Attempts closer than 8 s are merged. That is well below the native 15 s
  *   and 20 s catch-up ticks, whose recorded attempt times can be several
  *   seconds late because they are taken after the write lease and sign-in.
@@ -80,10 +81,13 @@ export function remoteRefreshDue({
   const age = now - latestReadingAt;
   // A reading ahead of the phone clock cannot be aged reliably.
   if (age < 0) return true;
+  // Missing spacing is not evidence of a five-minute source: a source that
+  // returns only its latest reading must keep the one-minute schedule, or its
+  // stored readings would only ever be five minutes apart.
   const minuteCadence =
-    observedIntervalMs !== undefined && observedIntervalMs <= REMOTE_MINUTE_CADENCE_MAX_INTERVAL_MS;
+    observedIntervalMs === undefined || observedIntervalMs <= REMOTE_MINUTE_CADENCE_MAX_INTERVAL_MS;
   const expectedMs = minuteCadence
-    ? Math.max(60_000, observedIntervalMs)
+    ? Math.max(60_000, observedIntervalMs ?? 60_000)
     : REMOTE_EXPECTED_READING_MS;
   if (age >= expectedMs - REMOTE_DUE_LEAD_MS) return true;
   return (
