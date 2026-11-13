@@ -130,6 +130,7 @@ private const val HEADLESS_TASK_KEY = "T1ArcLibreForegroundSync"
 private const val HEADLESS_REASON_EXTRA = "io.github.gregorgregor25.t1arc.glucosedisplay.HEADLESS_REASON"
 private const val DISPLAY_SYNC_REASON = "glucose-display"
 private const val VALIDATED_NETWORK_SYNC_REASON = "validated-network"
+private const val CADENCE_PROBE_SYNC_REASON = "cadence-probe"
 private const val DISPLAY_REFRESH_INTERVAL_MS = 60_000L
 private const val GLUCOSE_SYNC_BASE_TICK_MS = 60_000L
 private const val GLUCOSE_SYNC_CATCH_UP_TICK_MS = 15_000L
@@ -562,6 +563,8 @@ private const val GLUCOSE_SYNC_BUSY_RETRY_MS = 20_000L
 private const val ALERT_CHECK_RETRY_MS = 60_000L
 private const val SYNC_DUE_WATCHDOG_MS = 60_000L
 private const val CADENCE_PROBE_AFTER_READING_MS = 90_000L
+/** Covers the 15 s minimum delay and a busy retry after the probe time. */
+private const val CADENCE_PROBE_REASON_WINDOW_MS = 60_000L
 
 /**
  * Learns a source's reading cadence from consecutive distinct readings.
@@ -668,6 +671,17 @@ internal object GlucoseSyncCadencePolicy {
       else max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now)
     return min(readingDelay, alertDelay)
   }
+
+  /**
+   * The speed-up probe tells JS so remote sources fetch even though their
+   * stored five-minute spacing says no reading is due yet.
+   */
+  fun syncReason(now: Long, probeAtMs: Long?): String =
+    if (probeAtMs != null && now >= probeAtMs && now < probeAtMs + CADENCE_PROBE_REASON_WINDOW_MS) {
+      CADENCE_PROBE_SYNC_REASON
+    } else {
+      DISPLAY_SYNC_REASON
+    }
 
   /** A sync that could not start (Headless JS busy) is retried soon in adaptive mode. */
   fun delayAfterAttempt(started: Boolean, adaptive: Boolean, computedDelayMs: Long): Long =
@@ -2931,7 +2945,13 @@ class T1ArcGlucoseDisplayService : Service() {
           syncDueAtWallMs = null
           return
         }
-        val started = requestHeadlessSync(DISPLAY_SYNC_REASON)
+        val started =
+          requestHeadlessSync(
+            GlucoseSyncCadencePolicy.syncReason(
+              System.currentTimeMillis(),
+              cadenceTracker.probeAtMs(),
+            )
+          )
         val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
         cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
         scheduleSync(
@@ -3198,7 +3218,7 @@ class T1ArcLibreHeadlessService : HeadlessJsTaskService() {
     val reason =
       intent
         ?.getStringExtra(HEADLESS_REASON_EXTRA)
-        ?.takeIf { it == VALIDATED_NETWORK_SYNC_REASON }
+        ?.takeIf { it == VALIDATED_NETWORK_SYNC_REASON || it == CADENCE_PROBE_SYNC_REASON }
         ?: DISPLAY_SYNC_REASON
     return HeadlessJsTaskConfig(
       HEADLESS_TASK_KEY,

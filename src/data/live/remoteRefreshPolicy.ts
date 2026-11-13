@@ -1,4 +1,4 @@
-import type { GlucoseRefreshOptions } from '@/data/contracts';
+import { CADENCE_PROBE_REFRESH_REASON, type GlucoseRefreshOptions } from '@/data/contracts';
 import { DIRECT_LIBRE_VALIDATED_NETWORK_REASON } from '@/data/libreLinkUp/refreshPolicy';
 import type { GlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore';
 
@@ -103,6 +103,12 @@ export async function remoteSourceRefreshDue(
   ]);
   if (latest === undefined) return true;
   if (remoteRefreshForced(options, state?.lastErrorCode)) return true;
+  if (options?.reason === CADENCE_PROBE_REFRESH_REASON) {
+    // The native probe looks for a source that now reads every minute, which
+    // the stored five-minute spacing cannot reveal. Keep only the spacing.
+    const sinceAttempt = state?.lastAttemptAt === undefined ? undefined : now - state.lastAttemptAt;
+    return sinceAttempt === undefined || sinceAttempt < 0 || sinceAttempt >= REMOTE_MIN_ATTEMPT_SPACING_MS;
+  }
   const earlier = await store.getReadings(
     { start: latest.timestamp - OBSERVED_INTERVAL_LOOKBACK_MS, end: latest.timestamp },
     sourceId,

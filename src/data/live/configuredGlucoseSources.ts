@@ -2,7 +2,8 @@ import { GlucoseSource } from '@/data/contracts';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { loadOwnedDexcomShareConnection } from '@/data/dexcomShare/secureStore';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
-import type { DirectLibreRefreshReason } from '@/data/libreLinkUp/refreshPolicy';
+import type { GlucoseRefreshReason } from '@/data/contracts';
+import { DIRECT_LIBRE_VALIDATED_NETWORK_REASON } from '@/data/libreLinkUp/refreshPolicy';
 import { loadOwnedLibreLinkUpConnection } from '@/data/libreLinkUp/secureStore';
 import { NotificationGlucoseSource } from '@/data/notification/NotificationGlucoseSource';
 import { NightscoutGlucoseSource } from '@/data/nightscout/NightscoutGlucoseSource';
@@ -26,7 +27,7 @@ import {
 } from './glucoseSourceRefresh';
 
 export interface ConfiguredGlucoseRefreshOptions {
-  reason?: DirectLibreRefreshReason;
+  reason?: GlucoseRefreshReason;
   includeUnconfiguredNotification?: boolean;
   signal?: AbortSignal;
   /** Captured by a task owner before credentials or external work. */
@@ -64,7 +65,11 @@ export async function configuredGlucoseSources(
     );
     sources.push(
       new DirectLibreLinkUpSource(credentials, sourceHistory, {
-        refreshReason: options.reason,
+        // LibreLinkUp keeps its own schedule; only a network edge applies.
+        refreshReason:
+          options.reason === DIRECT_LIBRE_VALIDATED_NETWORK_REASON
+            ? options.reason
+            : undefined,
         signal: options.signal,
         writeLease,
         sourceWriteLease: libre.sourceWriteLease,
@@ -130,8 +135,8 @@ export async function refreshConfiguredGlucoseSources(
   options: ConfiguredGlucoseRefreshOptions = {},
 ) {
   const sources = await configuredGlucoseSources(history, options);
-  // The validated-network reason also lets remote sources retry straight
-  // after a network error instead of waiting for the next due reading.
+  // The validated-network reason lets remote sources retry straight after a
+  // network error; a cadence probe makes them fetch the latest readings.
   const settled = await refreshGlucoseSources(
     sources,
     options.reason ? { reason: options.reason } : undefined,

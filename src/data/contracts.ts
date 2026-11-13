@@ -11,14 +11,25 @@ import {
 } from '@/domain/models';
 import type { DirectLibreRefreshReason } from '@/data/libreLinkUp/refreshPolicy';
 
+/** Native collector tick that checks early whether a five-minute source now reads every minute. */
+export const CADENCE_PROBE_REFRESH_REASON = 'cadence-probe';
+
+export type GlucoseRefreshReason =
+  | DirectLibreRefreshReason
+  | typeof CADENCE_PROBE_REFRESH_REASON;
+
 export interface GlucoseRefreshOptions {
   /**
    * Bypass a remote source's due check: an explicit user refresh or a first
    * connection. Remote sources otherwise fetch only when a reading is due.
    */
   force?: boolean;
-  /** A native validated-network edge; bypasses the due check after a network error. */
-  reason?: DirectLibreRefreshReason;
+  /**
+   * A native validated-network edge bypasses the due check after a network
+   * error. A native cadence probe is always due but fetches only the latest
+   * readings.
+   */
+  reason?: GlucoseRefreshReason;
 }
 
 export interface GlucoseSource {

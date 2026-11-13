@@ -134,4 +134,14 @@ describe('remote source refresh due check', () => {
     await store.saveSyncState({ sourceId: 'dexcom-share', lastAttemptAt: 6 * m, recordCount: 2, lastErrorCode: 'authentication' });
     await expect(remoteSourceRefreshDue(store, 'dexcom-share', 6.5 * m, { reason: 'validated-network' })).resolves.toBe(false);
   });
+
+  it('treats a native cadence probe as due, but keeps the 15 s spacing', async () => {
+    const store = new MemoryGlucoseHistoryStore();
+    await store.upsertReadings([reading('nightscout', 0), reading('nightscout', 5 * m)]);
+    await store.saveSyncState({ sourceId: 'nightscout', lastAttemptAt: 5 * m + 20 * s, recordCount: 2 });
+    // 90 s after a five-minute reading: not due by age, but the probe fetches.
+    await expect(remoteSourceRefreshDue(store, 'nightscout', 6.5 * m)).resolves.toBe(false);
+    await expect(remoteSourceRefreshDue(store, 'nightscout', 6.5 * m, { reason: 'cadence-probe' })).resolves.toBe(true);
+    await expect(remoteSourceRefreshDue(store, 'nightscout', 5 * m + 30 * s, { reason: 'cadence-probe' })).resolves.toBe(false);
+  });
 });

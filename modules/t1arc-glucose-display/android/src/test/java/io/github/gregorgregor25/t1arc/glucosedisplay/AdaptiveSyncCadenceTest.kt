@@ -69,6 +69,18 @@ class AdaptiveSyncCadenceTest {
     assertEquals(false, ReadingCadenceTracker().apply { observe(t0) }.adaptive())
   }
 
+  @Test fun probeTickCarriesItsOwnHeadlessReason() {
+    val probeAt = t0 + 90_000L
+    assertEquals("cadence-probe", GlucoseSyncCadencePolicy.syncReason(probeAt, probeAt))
+    // The 15 s minimum delay and the busy retry land shortly after the probe time.
+    assertEquals("cadence-probe", GlucoseSyncCadencePolicy.syncReason(probeAt + 10_000L, probeAt))
+    assertEquals("cadence-probe", GlucoseSyncCadencePolicy.syncReason(probeAt + 30_000L, probeAt))
+    // Routine ticks, including the due tick, keep the existing reason.
+    assertEquals("glucose-display", GlucoseSyncCadencePolicy.syncReason(t0 + 40_000L, probeAt))
+    assertEquals("glucose-display", GlucoseSyncCadencePolicy.syncReason(t0 + 5 * min + 20_000L, probeAt))
+    assertEquals("glucose-display", GlucoseSyncCadencePolicy.syncReason(probeAt, null))
+  }
+
   @Test fun probeChecksShortlyAfterReadingThenResumesDueSchedule() {
     val probeAt = t0 + 90_000L
     assertEquals(50_000L, GlucoseSyncCadencePolicy.nextDelayMs(t0, t0 + 40_000L, 5 * min, probeAt))

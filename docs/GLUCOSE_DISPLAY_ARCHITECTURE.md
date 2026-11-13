@@ -100,7 +100,9 @@ their newest stored reading shows the next one cannot exist yet: a
 five-minute source becomes due 30 seconds before its next reading, and a
 source whose two newest readings are at most 2.5 minutes apart keeps the
 one-minute schedule. Explicit refreshes, first connections and a
-validated-network retry after a network error always fetch. Routine Dexcom
+validated-network retry after a network error always fetch. The speed-up
+probe tick carries its own `cadence-probe` reason, so these sources fetch the
+latest readings for it even though no reading is due yet. Routine Dexcom
 Share checks request only the missing minutes plus a ten-minute overlap,
 with a full-day read at least hourly. While the foreground service runs, the
 open app re-reads stored readings instead of fetching. Stale and delayed thresholds are unchanged. With the display fully off and no

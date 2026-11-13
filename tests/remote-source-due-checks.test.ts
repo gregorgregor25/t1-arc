@@ -72,10 +72,16 @@ describe('Dexcom Share due checks and read window', () => {
     expect(reads[1]!.searchParams.get('minutes')).toBe('16');
     expect(reads[1]!.searchParams.get('maxCount')).toBe('4');
 
-    clock = start + 3 * m + 50 * s;
-    await source.refresh({ force: true });
+    // A native cadence probe 90 s after that reading fetches the latest only.
+    clock = start + 4 * m + 30 * s;
+    await source.refresh({ reason: 'cadence-probe' });
     expect(reads).toHaveLength(3);
-    expect(reads[2]!.searchParams.get('minutes')).toBe('1440');
+    expect(reads[2]!.searchParams.get('minutes')).toBe('12');
+
+    clock = start + 4 * m + 50 * s;
+    await source.refresh({ force: true });
+    expect(reads).toHaveLength(4);
+    expect(reads[3]!.searchParams.get('minutes')).toBe('1440');
   });
 });
 

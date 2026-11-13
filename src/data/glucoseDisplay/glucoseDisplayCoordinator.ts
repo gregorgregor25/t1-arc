@@ -1,3 +1,4 @@
+import { CADENCE_PROBE_REFRESH_REASON, type GlucoseRefreshReason } from '@/data/contracts';
 import { CompositeGlucoseSource } from '@/data/live/CompositeGlucoseSource';
 import T1ArcGlucoseDisplay, {
   type GlucoseDisplayStatus,
@@ -79,10 +80,18 @@ function validatedNetworkReason(
     : undefined;
 }
 
-function beginForegroundSync() {
-  const refreshReason = pendingValidatedNetworkRecovery
-    ? DIRECT_LIBRE_VALIDATED_NETWORK_REASON
+function cadenceProbeReason(taskData?: GlucoseDisplayHeadlessTaskData) {
+  return taskData?.reason === CADENCE_PROBE_REFRESH_REASON
+    ? CADENCE_PROBE_REFRESH_REASON
     : undefined;
+}
+
+function beginForegroundSync(taskData?: GlucoseDisplayHeadlessTaskData) {
+  // A probe applies only to the owner it starts; an owner already running
+  // has made its own source checks.
+  const refreshReason: GlucoseRefreshReason | undefined = pendingValidatedNetworkRecovery
+    ? DIRECT_LIBRE_VALIDATED_NETWORK_REASON
+    : cadenceProbeReason(taskData);
   pendingValidatedNetworkRecovery = false;
   const active: ForegroundSyncState = {
     // Replaced below before the queued work can run.
@@ -436,7 +445,7 @@ export async function runGlucoseDisplayForegroundSync(
     // while an older headless owner drains; its next successor consumes it.
     pendingValidatedNetworkRecovery = true;
   }
-  const active = foregroundSync ?? beginForegroundSync();
+  const active = foregroundSync ?? beginForegroundSync(taskData);
   // The first Headless JS invocation already bounded and observed this work.
   // Subsequent native ticks should finish immediately while it drains, without
   // either overlapping configured sources or waiting through another deadline.
