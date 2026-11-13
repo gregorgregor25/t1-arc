@@ -160,6 +160,31 @@ describe('usage reporter', () => {
     expect(await getUsageConsentAsync()).toBe('disabled');
   });
 
+  for (const [label, erase] of [
+    ['erasure', () => clearUsageReportingAsync()],
+    ['switching off', () => setUsageConsentAsync(false)],
+  ] as const) {
+    it(`${label} waits for a pending history save before deleting`, async () => {
+      let releaseSave: () => void = () => undefined;
+      mocks.beforeSet = (key) =>
+        key === USAGE_STATE_KEY
+          ? new Promise<void>((resolve) => {
+              releaseSave = resolve;
+            })
+          : undefined;
+      // A monitoring-day write is past its checks and waiting on storage.
+      const noted = noteMonitoringDayAsync(NOW);
+      await settle();
+      const erased = erase();
+      await settle();
+      mocks.beforeSet = undefined;
+      releaseSave();
+      await Promise.all([noted, erased]);
+      await settle();
+      expect(mocks.store.has(USAGE_STATE_KEY)).toBe(false);
+    });
+  }
+
   it('posts minimal JSON with no credentials, cookies or identifying headers', async () => {
     const fetchMock = okFetch();
     await reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW, appVersion: '1.7.20' });

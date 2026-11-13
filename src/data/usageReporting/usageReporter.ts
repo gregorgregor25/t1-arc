@@ -69,6 +69,18 @@ function mutateState(
   return next;
 }
 
+/**
+ * Deletes the history after any write already in the queue. Invalidation does
+ * not cancel a write that is waiting on storage, so a delete that ran first
+ * would be undone by it; queued writes from older runs then see the new
+ * generation and skip.
+ */
+function clearStateAfterPendingWrites(): Promise<void> {
+  const next = stateQueue.then(() => clearUsageState());
+  stateQueue = next.catch(() => undefined);
+  return next;
+}
+
 async function reportingAllowed(expectedGeneration: number) {
   if (generation !== expectedGeneration) return false;
   await pendingConsentWrite;
@@ -105,7 +117,7 @@ export async function setUsageConsentAsync(enabled: boolean): Promise<void> {
   } finally {
     invalidateRuns();
   }
-  await clearUsageState();
+  await clearStateAfterPendingWrites();
 }
 
 /**
@@ -114,7 +126,7 @@ export async function setUsageConsentAsync(enabled: boolean): Promise<void> {
  */
 export async function clearUsageReportingAsync(): Promise<void> {
   invalidateRuns();
-  await clearUsageState();
+  await clearStateAfterPendingWrites();
 }
 
 /**
