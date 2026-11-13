@@ -209,7 +209,7 @@ not convert a carbohydrate ratio.
 one small message a day and a weekly count of the days the app was opened or
 monitoring, with the app version, and nothing that identifies you or your
 health records. Turning it off stops sending and deletes the local activity
-history. See [Anonymous usage counts](../PRIVACY.md#anonymous-usage-counts).
+history. See [Anonymous usage counts](../PRIVACY.md#anonymous-usage-counts-on-by-default).
 
 ### Check for an APK update
 
