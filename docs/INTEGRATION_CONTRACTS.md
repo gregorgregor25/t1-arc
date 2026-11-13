@@ -573,6 +573,8 @@ Backups explicitly exclude:
 - SQLCipher database keys
 - OpenAI, Hevy and other provider API keys or secure connection credentials
 - device-specific background execution diagnostics
+- anonymous usage-count history and the usage-count switch position, which
+  stay in Android secure storage on this device
 - Health Connect change tokens, which must be reissued for the destination
   Android data store
 

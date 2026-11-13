@@ -289,6 +289,9 @@ path.
 - Health history stays in an encrypted local database.
 - Provider credentials and API keys use Android secure storage.
 - Connections go directly to the service selected by the user.
+- Anonymous usage counts (app version and how many days in a week the app
+  was opened or monitoring, with no identifiers or health data) are on by
+  default and can be turned off in Settings → Privacy.
 - Encrypted portable backups exclude credentials, browser cookies and API keys.
 - Demo records are synthetic, temporary and kept separate from personal data.
 - Public bug reports must use synthetic fixtures and redacted screenshots.

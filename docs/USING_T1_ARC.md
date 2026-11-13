@@ -203,6 +203,14 @@ day. These are grams of carbohydrate per unit, not a suggested dose. Saving a
 profile does not change a pump or medication, and changing display units does
 not convert a carbohydrate ratio.
 
+### Anonymous usage counts
+
+**Settings > Privacy > Share anonymous usage counts** is on by default. It sends
+one small message a day and a weekly count of the days the app was opened or
+monitoring, with the app version, and nothing that identifies you or your
+health records. Turning it off stops sending and deletes the local activity
+history. See [Anonymous usage counts](../PRIVACY.md#anonymous-usage-counts).
+
 ### Check for an APK update
 
 Open **About T1 Arc**, then **Check for updates**. This is a manual check against
