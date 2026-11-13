@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "io.github.gregorgregor25.t1arc",
-      "versionCode": 79,
+      "versionCode": 80,
       "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "blockedPermissions": [
