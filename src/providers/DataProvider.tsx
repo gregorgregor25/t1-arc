@@ -906,9 +906,12 @@ export function DataProvider({ children }: PropsWithChildren) {
           }
         }
       };
+      // An explicit refresh waits for a silent pass in flight, then runs its
+      // own forced pass instead of joining one that may have skipped sources.
       const refresh = foregroundRefreshes.run(
         includeHealthConnect ? "full" : "glucose",
         runRefresh,
+        { explicit: visible },
       );
       // A coalesced caller must still publish a newly stored native reading.
       return Promise.all([publishBeforeRefresh, refresh]).then(() => undefined);
