@@ -81,6 +81,12 @@ describe('foreground glucose refresh isolation', () => {
     const source = readFileSync(new URL('../src/providers/DataProvider.tsx',import.meta.url),'utf8');
     const start = source.indexOf('const refresh = foregroundRefreshes.run(');
     expect(source.slice(start, start + 200)).toContain('{ explicit: visible }');
+    // The spinner shows while an explicit pass waits behind a silent one.
+    expect(source.slice(start - 300, start)).toContain('if (visible) setSyncing(true);');
+    // A queued pass yields to a LibreLinkUp activation that began meanwhile.
+    const run = source.slice(source.indexOf('const runRefresh = async () => {'));
+    expect(run.indexOf('if (libreActivationInFlight.current)')).toBeLessThan(run.indexOf("recordDiagnostic('refresh_started')"));
+    expect(run.slice(0, run.indexOf("recordDiagnostic('refresh_started')"))).toContain('if (visible) setSyncing(false);');
   });
 
   it('wires both account and erase barriers to the two-lane coordinator', () => {

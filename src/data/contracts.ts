@@ -27,7 +27,9 @@ export interface GlucoseRefreshOptions {
   /**
    * A native validated-network edge bypasses the due check after a network
    * error. A native cadence probe is always due but fetches only the latest
-   * readings.
+   * readings. One sync carries one reason: a pending validated-network edge
+   * supersedes a probe. That is harmless: at worst one probe is lost and the
+   * native service probes again two readings later.
    */
   reason?: GlucoseRefreshReason;
 }

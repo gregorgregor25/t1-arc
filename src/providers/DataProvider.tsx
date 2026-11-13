@@ -838,6 +838,12 @@ export function DataProvider({ children }: PropsWithChildren) {
         return publishBeforeRefresh.then(() => undefined);
       }
       const runRefresh = async () => {
+        // An explicit pass queued behind a silent one must not delay a
+        // LibreLinkUp account activation that started while it waited.
+        if (libreActivationInFlight.current) {
+          if (visible) setSyncing(false);
+          return;
+        }
         recordDiagnostic('refresh_started');
         const publishedBefore = await publishBeforeRefresh;
         if (visible) setSyncing(true);
@@ -908,6 +914,9 @@ export function DataProvider({ children }: PropsWithChildren) {
       };
       // An explicit refresh waits for a silent pass in flight, then runs its
       // own forced pass instead of joining one that may have skipped sources.
+      // Show progress at once, including while an explicit pass waits for a
+      // silent one to settle.
+      if (visible) setSyncing(true);
       const refresh = foregroundRefreshes.run(
         includeHealthConnect ? "full" : "glucose",
         runRefresh,
@@ -979,7 +988,7 @@ export function DataProvider({ children }: PropsWithChildren) {
           // source on its adaptive cadence, so the visible UI only re-reads
           // SQLite. A failed status read falls back to the network refresh.
           const collectorRunning = await T1ArcGlucoseDisplay.getStatusAsync()
-            .then(nativeCollectorOwnsGlucoseSync)
+            .then((status) => nativeCollectorOwnsGlucoseSync(status, Date.now()))
             .catch(() => false);
           const action = foregroundGlucoseRefreshAction(
             AppState.currentState,
