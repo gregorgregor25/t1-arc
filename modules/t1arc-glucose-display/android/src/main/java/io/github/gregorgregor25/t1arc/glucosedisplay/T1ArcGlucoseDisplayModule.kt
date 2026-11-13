@@ -1374,6 +1374,40 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
 }
 
 /**
+ * Remembers the last Wear history payload confirmed in the retained Data Item.
+ *
+ * A routine publication is skipped only when its exact content was confirmed
+ * by the most recent write. Explicit watch requests, failed writes, a newer
+ * write in flight, a cleared history and a process restart all publish again.
+ * The installed companion still recovers from the retained item and requests
+ * current data and history whenever it opens.
+ */
+internal class WearHistoryDedupe {
+  private var publishedKey: String? = null
+  private var sequence = 0L
+
+  /** Returns a write sequence, or null when the identical payload is already retained. */
+  @Synchronized
+  fun begin(key: String, force: Boolean): Long? {
+    if (!force && key == publishedKey) return null
+    publishedKey = null
+    sequence += 1
+    return sequence
+  }
+
+  @Synchronized
+  fun published(writeSequence: Long, key: String) {
+    if (writeSequence == sequence) publishedKey = key
+  }
+
+  @Synchronized
+  fun reset() {
+    publishedKey = null
+    sequence += 1
+  }
+}
+
+/**
  * Publishes only the normalised display snapshot to T1 Arc's Wear OS
  * companion. LibreLinkUp credentials and session material never leave the
  * phone. Google Play services accepts the payload only for a watch app with
@@ -1381,11 +1415,13 @@ class T1ArcGlucoseWidgetProvider : AppWidgetProvider() {
  */
 internal object T1ArcWearSync {
   @Volatile private var latestHistory: List<GlucoseHistoryPoint> = emptyList()
+  private val historyDedupe = WearHistoryDedupe()
 
   fun history(): List<GlucoseHistoryPoint> = latestHistory
 
   fun clearHistory() {
     latestHistory = emptyList()
+    historyDedupe.reset()
   }
 
   private fun snapshotData(
@@ -1521,15 +1557,38 @@ internal object T1ArcWearSync {
         .toList()
         .takeLast(MAX_WEAR_HISTORY_POINTS)
     latestHistory = normalised
-    Log.i(WEAR_LOG_TAG, "Publishing ${normalised.size} glucose history points to Wear")
     val data = historyData(context, normalised, writeEpoch, deliveryToken)
+    // An explicit watch request (delivery token) and an authoritative empty
+    // history are always sent. Otherwise skip re-sending exactly the payload
+    // the retained Data Item already holds; paths and payloads are unchanged.
+    val key = historyDedupeKey(data)
+    val sequence =
+      historyDedupe.begin(key, force = deliveryToken != null || normalised.isEmpty())
+    if (sequence == null) {
+      Log.i(WEAR_LOG_TAG, "Wear glucose history unchanged; not re-sent")
+      return Tasks.forResult<DataItem>(null)
+    }
+    Log.i(WEAR_LOG_TAG, "Publishing ${normalised.size} glucose history points to Wear")
     sendImmediate(context, data, writeEpoch, WEAR_GLUCOSE_HISTORY_PATH)
     val request =
       PutDataMapRequest.create(WEAR_GLUCOSE_HISTORY_PATH).apply {
         dataMap.putAll(data)
       }.asPutDataRequest().setUrgent()
     return Wearable.getDataClient(context).putDataItem(request)
+      .addOnSuccessListener { historyDedupe.published(sequence, key) }
   }
+
+  // Covers every field the watch reads, except the per-request delivery token.
+  private fun historyDedupeKey(data: DataMap): String =
+    buildString {
+      append(data.getInt("schemaVersion")).append('|')
+      append(data.getLong(WEAR_WRITE_EPOCH_FIELD)).append('|')
+      data.getLongArray("timestampMs")?.joinTo(this, ",")
+      append('|')
+      data.getFloatArray("mmolL")?.joinTo(this, ",") { it.toRawBits().toString() }
+      append('|')
+      data.getStringArray("colorToken")?.joinTo(this, ",")
+    }
 }
 
 private fun applyPrivateGlucosePublication(

@@ -152,6 +152,44 @@ class AdaptiveSyncCadenceTest {
     assertEquals(false, gate.shouldReplayOnDisplayChange(interactive = true, displayOff = false))
   }
 
+  @Test fun historyDedupeSkipsOnlyConfirmedIdenticalPayloads() {
+    val dedupe = WearHistoryDedupe()
+    val first = requireNotNull(dedupe.begin("a", force = false))
+    // Not yet confirmed: an identical payload is still sent.
+    assertEquals(true, dedupe.begin("a", force = false) != null)
+    dedupe.published(first, "a")
+    val second = requireNotNull(dedupe.begin("a", force = false))
+    dedupe.published(second, "a")
+    assertNull(dedupe.begin("a", force = false))
+    assertEquals(true, dedupe.begin("b", force = false) != null)
+  }
+
+  @Test fun historyDedupeNeverSkipsAfterFailureForceOrReset() {
+    val dedupe = WearHistoryDedupe()
+    dedupe.published(requireNotNull(dedupe.begin("a", force = false)), "a")
+    // A failed write records nothing, so the same payload is retried.
+    dedupe.begin("b", force = false)
+    assertEquals(true, dedupe.begin("b", force = false) != null)
+    // An explicit watch request always publishes.
+    dedupe.published(requireNotNull(dedupe.begin("c", force = false)), "c")
+    assertEquals(true, dedupe.begin("c", force = true) != null)
+    dedupe.published(requireNotNull(dedupe.begin("d", force = false)), "d")
+    dedupe.reset()
+    assertEquals(true, dedupe.begin("d", force = false) != null)
+  }
+
+  @Test fun historyDedupeIgnoresOutOfOrderConfirmation() {
+    val dedupe = WearHistoryDedupe()
+    dedupe.published(requireNotNull(dedupe.begin("a", force = false)), "a")
+    val b = requireNotNull(dedupe.begin("b", force = false))
+    // While "b" is in flight the retained item is no longer known to be "a".
+    val a = requireNotNull(dedupe.begin("a", force = false))
+    dedupe.published(a, "a")
+    dedupe.published(b, "b") // late confirmation of an older write
+    assertNull(dedupe.begin("a", force = false))
+    assertEquals(true, dedupe.begin("b", force = false) != null)
+  }
+
   private fun fiveMinuteTracker() =
     ReadingCadenceTracker().apply {
       observe(t0)
