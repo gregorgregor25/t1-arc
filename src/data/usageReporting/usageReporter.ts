@@ -49,6 +49,8 @@ let generation = 0;
 let inFlight: Promise<void> | undefined;
 let activeRequest: AbortController | undefined;
 let stateQueue: Promise<unknown> = Promise.resolve();
+/** A switch-off write still landing; runs wait for it before reading consent. */
+let pendingConsentWrite: Promise<unknown> = Promise.resolve();
 
 /** Serialises read-modify-write updates from app opens and the collector. */
 function mutateState(
@@ -69,6 +71,7 @@ function mutateState(
 
 async function reportingAllowed(expectedGeneration: number) {
   if (generation !== expectedGeneration) return false;
+  await pendingConsentWrite;
   const consent = await loadUsageConsent();
   // The switch may have moved while secure storage was being read.
   return generation === expectedGeneration && consent === 'enabled';
@@ -93,8 +96,15 @@ export async function setUsageConsentAsync(enabled: boolean): Promise<void> {
     return;
   }
   // Switching off keeps only the switch position, never the activity history.
-  invalidateRuns();
-  await saveUsageConsent('disabled');
+  // Save 'disabled' first so a run starting mid-switch reads it, then stop
+  // earlier runs and cancel a message on the wire, then delete the history.
+  const write = saveUsageConsent('disabled');
+  pendingConsentWrite = write.catch(() => undefined);
+  try {
+    await write;
+  } finally {
+    invalidateRuns();
+  }
   await clearUsageState();
 }
 

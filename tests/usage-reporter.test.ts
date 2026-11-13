@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   store: new Map<string, string>(),
   failReads: false,
   setItem: vi.fn(),
+  beforeSet: undefined as ((key: string) => Promise<void> | undefined) | undefined,
 }));
 
 vi.mock('expo-secure-store', () => ({
@@ -29,6 +30,7 @@ vi.mock('expo-secure-store', () => ({
     return mocks.store.get(k) ?? null;
   },
   setItemAsync: async (k: string, v: string) => {
+    await mocks.beforeSet?.(k);
     mocks.setItem(k, v);
     mocks.store.set(k, v);
   },
@@ -58,6 +60,7 @@ async function settle() {
 describe('usage reporter', () => {
   beforeEach(async () => {
     mocks.failReads = false;
+    mocks.beforeSet = undefined;
     await clearUsageReportingAsync();
     mocks.store.clear();
     mocks.setItem.mockClear();
@@ -131,6 +134,30 @@ describe('usage reporter', () => {
     await Promise.all([report, off]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect([...mocks.store.keys()]).toEqual([USAGE_CONSENT_KEY]);
+  });
+
+  it('sends nothing and keeps no history for an open that starts while the switch-off is saving', async () => {
+    await reportUsageOnOpenAsync({ fetchImpl: okFetch(), now: NOW, appVersion: '1.7.20' });
+    let releaseSave: () => void = () => undefined;
+    mocks.beforeSet = (key) =>
+      key === USAGE_CONSENT_KEY
+        ? new Promise<void>((resolve) => {
+            releaseSave = resolve;
+          })
+        : undefined;
+    const off = setUsageConsentAsync(false);
+    await settle();
+    // The consent write has not landed yet; a new open starts now.
+    const fetchMock = okFetch();
+    const report = reportUsageOnOpenAsync({ fetchImpl: fetchMock, now: NOW + DAY, appVersion: '1.7.20' });
+    await settle();
+    mocks.beforeSet = undefined;
+    releaseSave();
+    await Promise.all([off, report]);
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect([...mocks.store.keys()]).toEqual([USAGE_CONSENT_KEY]);
+    expect(await getUsageConsentAsync()).toBe('disabled');
   });
 
   it('posts minimal JSON with no credentials, cookies or identifying headers', async () => {
