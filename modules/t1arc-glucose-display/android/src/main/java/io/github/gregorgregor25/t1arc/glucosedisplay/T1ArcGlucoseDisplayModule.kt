@@ -525,9 +525,119 @@ internal object DisplayFreshnessPolicy {
   }
 }
 
+private const val GLUCOSE_SYNC_ARRIVAL_GRACE_MS = 20_000L
+private const val GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS = 20_000L
+private const val GLUCOSE_SYNC_OVERDUE_FAST_WINDOW_MS = 2 * 60_000L
+private const val GLUCOSE_SYNC_MIN_DELAY_MS = 15_000L
+private const val MINUTE_SOURCE_MAX_INTERVAL_MS = 2 * 60_000L
+private const val FIVE_MINUTE_SOURCE_INTERVAL_MS = 5 * 60_000L
+private const val CADENCE_MIN_GAP_MS = 30_000L
+private const val FIVE_MINUTE_GAP_MIN_MS = 4 * 60_000L
+private const val FIVE_MINUTE_GAP_MAX_MS = 6 * 60_000L + 30_000L
+private const val FIVE_MINUTE_CONFIRMING_GAPS = 2
+private const val CADENCE_PROBE_EVERY_READINGS = 6
+private const val CADENCE_PROBE_AFTER_READING_MS = 90_000L
+
+/**
+ * Learns a source's reading cadence from consecutive distinct readings.
+ *
+ * A five-minute classification is learned only while the service still polls
+ * at the dense legacy cadence, and only after consecutive five-minute gaps, so
+ * a minute source with an outage is not mistaken for a five-minute source.
+ * While adaptive, gaps are sampled sparsely and can only prove a faster source;
+ * every sixth reading schedules one short probe that would reveal a minute
+ * source and restore the legacy cadence.
+ */
+internal class ReadingCadenceTracker {
+  private var sourceKey: String? = null
+  private var latestMs: Long? = null
+  private var intervalMs: Long? = null
+  private var fiveMinuteGapStreak = 0
+  private var adaptiveReadings = 0
+
+  @Synchronized
+  fun observe(timestampMs: Long?, source: String? = null) {
+    if (timestampMs == null || timestampMs <= 0L) return
+    if (source != sourceKey) {
+      sourceKey = source
+      latestMs = null
+      intervalMs = null
+      fiveMinuteGapStreak = 0
+      adaptiveReadings = 0
+    }
+    val previous = latestMs
+    if (previous != null && timestampMs <= previous) return
+    latestMs = timestampMs
+    if (previous == null) return
+    val gap = timestampMs - previous
+    val adaptive = isAdaptive(intervalMs)
+    when {
+      gap < CADENCE_MIN_GAP_MS -> Unit
+      gap <= MINUTE_SOURCE_MAX_INTERVAL_MS -> {
+        intervalMs = GLUCOSE_SYNC_BASE_TICK_MS
+        fiveMinuteGapStreak = 0
+        adaptiveReadings = 0
+        return
+      }
+      adaptive -> Unit
+      gap in FIVE_MINUTE_GAP_MIN_MS..FIVE_MINUTE_GAP_MAX_MS -> {
+        fiveMinuteGapStreak += 1
+        if (fiveMinuteGapStreak >= FIVE_MINUTE_CONFIRMING_GAPS) {
+          intervalMs = FIVE_MINUTE_SOURCE_INTERVAL_MS
+          fiveMinuteGapStreak = 0
+          adaptiveReadings = 0
+          return
+        }
+      }
+      else -> fiveMinuteGapStreak = 0
+    }
+    if (adaptive) adaptiveReadings += 1
+  }
+
+  @Synchronized fun expectedIntervalMs(): Long? = intervalMs
+
+  /** A one-off early check after the latest reading, or null when none is due. */
+  @Synchronized
+  fun probeAtMs(): Long? {
+    val latest = latestMs ?: return null
+    if (!isAdaptive(intervalMs)) return null
+    if (adaptiveReadings == 0 || adaptiveReadings % CADENCE_PROBE_EVERY_READINGS != 0) return null
+    return latest + CADENCE_PROBE_AFTER_READING_MS
+  }
+
+  private fun isAdaptive(interval: Long?) =
+    interval != null && interval > MINUTE_SOURCE_MAX_INTERVAL_MS
+}
+
 internal object GlucoseSyncCadencePolicy {
-  fun nextDelayMs(timestampMs: Long?, now: Long): Long {
+  /**
+   * Unknown cadence and minute sources keep the legacy schedule exactly. A
+   * learned five-minute source sleeps until shortly after its next reading is
+   * due, then polls quickly for two minutes before settling at one minute.
+   */
+  fun nextDelayMs(
+    timestampMs: Long?,
+    now: Long,
+    expectedIntervalMs: Long? = null,
+    probeAtMs: Long? = null,
+  ): Long {
     if (timestampMs == null || timestampMs <= 0L) return GLUCOSE_SYNC_BASE_TICK_MS
+    if (expectedIntervalMs == null || expectedIntervalMs <= MINUTE_SOURCE_MAX_INTERVAL_MS) {
+      return legacyDelayMs(timestampMs, now)
+    }
+    if (probeAtMs != null && now < probeAtMs) {
+      return max(GLUCOSE_SYNC_MIN_DELAY_MS, probeAtMs - now)
+    }
+    val due = timestampMs + expectedIntervalMs + GLUCOSE_SYNC_ARRIVAL_GRACE_MS
+    if (now < due) return (due - now).coerceIn(GLUCOSE_SYNC_MIN_DELAY_MS, expectedIntervalMs)
+    return if (now - due <= GLUCOSE_SYNC_OVERDUE_FAST_WINDOW_MS) {
+      GLUCOSE_SYNC_OVERDUE_FAST_TICK_MS
+    } else {
+      GLUCOSE_SYNC_BASE_TICK_MS
+    }
+  }
+
+  private fun legacyDelayMs(timestampMs: Long, now: Long): Long {
     val age = max(0L, now - timestampMs)
     return if (age in GLUCOSE_SYNC_CATCH_UP_AFTER_MS..STALE_AFTER_MS) {
       GLUCOSE_SYNC_CATCH_UP_TICK_MS
@@ -2530,6 +2640,7 @@ class T1ArcGlucoseDisplayService : Service() {
   private var networkCallbackRegistered = false
   private var serviceAlive = false
   private var validatedNetworkSyncPending = false
+  private val cadenceTracker = ReadingCadenceTracker()
   private val networkCallback =
     object : ConnectivityManager.NetworkCallback() {
       override fun onAvailable(network: Network) {
@@ -2582,10 +2693,14 @@ class T1ArcGlucoseDisplayService : Service() {
           return
         }
         requestHeadlessSync(DISPLAY_SYNC_REASON)
+        val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
+        cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
         val nextDelay =
           GlucoseSyncCadencePolicy.nextDelayMs(
-            T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)?.timestampMs,
+            snapshot?.timestampMs,
             System.currentTimeMillis(),
+            cadenceTracker.expectedIntervalMs(),
+            cadenceTracker.probeAtMs(),
           )
         handler.postDelayed(this, nextDelay)
       }
