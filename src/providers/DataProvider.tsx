@@ -846,8 +846,11 @@ export function DataProvider({ children }: PropsWithChildren) {
         try {
           const [repositoryRefresh, healthConnectRefresh] =
             await Promise.allSettled([
+              // A visible refresh is the user's explicit request, so remote
+              // sources fetch even when their next reading is not yet due.
+              // The glucose-only lane is always a silent periodic check.
               includeHealthConnect
-                ? repository.refresh()
+                ? repository.refresh(visible ? { force: true } : undefined)
                 : (repository.refreshGlucose?.() ?? repository.refresh()),
               repositoryState.mode === "live" && includeHealthConnect
                 ? syncHealthConnectIfDue()
@@ -1193,7 +1196,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const candidate = await beginDexcomShareConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new DexcomShareGlucoseSource(connection, glucoseStore);
-      await source.refresh();
+      await source.refresh({ force: true });
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(
@@ -1284,7 +1287,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const candidate = await beginXdripConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new XdripGlucoseSource(connection, glucoseStore);
-      await source.refresh();
+      await source.refresh({ force: true });
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(

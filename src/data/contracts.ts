@@ -9,10 +9,21 @@ import {
   TimeRange,
   TimelineData,
 } from '@/domain/models';
+import type { DirectLibreRefreshReason } from '@/data/libreLinkUp/refreshPolicy';
+
+export interface GlucoseRefreshOptions {
+  /**
+   * Bypass a remote source's due check: an explicit user refresh or a first
+   * connection. Remote sources otherwise fetch only when a reading is due.
+   */
+  force?: boolean;
+  /** A native validated-network edge; bypasses the due check after a network error. */
+  reason?: DirectLibreRefreshReason;
+}
 
 export interface GlucoseSource {
   readonly sourceId: string;
-  refresh?(): Promise<void>;
+  refresh?(options?: GlucoseRefreshOptions): Promise<void>;
   getReadings(range: TimeRange): Promise<GlucoseReading[]>;
   getLatestReading(): Promise<GlucoseReading | undefined>;
   getStatus(now?: number): Promise<DataSourceStatus>;
@@ -35,8 +46,8 @@ export interface ContextSource {
 }
 
 export interface DiabetesRepository {
-  refresh(): Promise<void>;
-  refreshGlucose?(): Promise<void>;
+  refresh(options?: GlucoseRefreshOptions): Promise<void>;
+  refreshGlucose?(options?: GlucoseRefreshOptions): Promise<void>;
   getTimeline(range: TimeRange): Promise<TimelineData>;
   getLatestGlucose(): Promise<GlucoseReading | undefined>;
   getSourceStatuses(now?: number): Promise<DataSourceStatus[]>;
@@ -44,27 +55,35 @@ export interface DiabetesRepository {
 
 export class CombinedDiabetesRepository implements DiabetesRepository {
   private glucoseRefreshInFlight?: Promise<void>;
+  private glucoseRefreshInFlightForced = false;
   constructor(
     private readonly glucoseSource: GlucoseSource,
     private readonly insulinSource: InsulinSource,
     private readonly contextSource?: ContextSource,
   ) {}
 
-  refreshGlucose(): Promise<void> {
-    if (this.glucoseRefreshInFlight) return this.glucoseRefreshInFlight;
+  refreshGlucose(options?: GlucoseRefreshOptions): Promise<void> {
+    const inFlight = this.glucoseRefreshInFlight;
+    if (inFlight) {
+      // A forced refresh must not settle for a routine one that may have
+      // skipped a source that was not yet due. Run it once that one settles.
+      if (!options?.force || this.glucoseRefreshInFlightForced) return inFlight;
+      return inFlight.catch(() => undefined).then(() => this.refreshGlucose(options));
+    }
     // Full and glucose-only foreground lanes can overlap. Share the actual
     // source request, but release it as soon as glucose finishes, not insulin.
-    const refresh = Promise.resolve().then(() => this.glucoseSource.refresh?.());
+    const refresh = Promise.resolve().then(() => this.glucoseSource.refresh?.(options));
     const tracked = refresh.finally(() => {
       if (this.glucoseRefreshInFlight === tracked) this.glucoseRefreshInFlight = undefined;
     });
     this.glucoseRefreshInFlight = tracked;
+    this.glucoseRefreshInFlightForced = options?.force === true;
     return tracked;
   }
 
-  async refresh() {
+  async refresh(options?: GlucoseRefreshOptions) {
     const results = await Promise.allSettled([
-      this.refreshGlucose(),
+      this.refreshGlucose(options),
       this.insulinSource.refresh?.(),
     ]);
     const failure = results.find(

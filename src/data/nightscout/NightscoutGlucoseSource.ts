@@ -1,6 +1,7 @@
 import { recordSourceCheck } from '@/data/support/diagnosticStore';
 import { normalizeXdripReading } from "@/data/adapters/xdrip";
-import { GlucoseSource } from "@/data/contracts";
+import { GlucoseRefreshOptions, GlucoseSource } from "@/data/contracts";
+import { remoteSourceRefreshDue } from "@/data/live/remoteRefreshPolicy";
 import { glucoseFreshness } from "@/domain/freshness";
 import { DataSourceStatus, GlucoseReading, TimeRange } from "@/domain/models";
 import { NIGHTSCOUT_GLUCOSE_CAPABILITIES } from "@/domain/sourceCapabilities";
@@ -206,7 +207,11 @@ export class NightscoutGlucoseSource implements GlucoseSource {
       : (this.fallbackWriteLease ??= acquireLocalDataWriteLease());
   }
 
-  async refresh() {
+  async refresh(options?: GlucoseRefreshOptions) {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    // Several owners can ask for a refresh. Fetch only when a reading is due;
+    // stored history, IOB/COB and the source status stay as last saved.
+    if (!(await remoteSourceRefreshDue(this.store, this.sourceId, this.clock(), options))) return;
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = (async () => {
       await this.getWriteLease();

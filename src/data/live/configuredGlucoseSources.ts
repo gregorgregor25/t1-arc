@@ -130,7 +130,12 @@ export async function refreshConfiguredGlucoseSources(
   options: ConfiguredGlucoseRefreshOptions = {},
 ) {
   const sources = await configuredGlucoseSources(history, options);
-  const settled = await refreshGlucoseSources(sources);
+  // The validated-network reason also lets remote sources retry straight
+  // after a network error instead of waiting for the next due reading.
+  const settled = await refreshGlucoseSources(
+    sources,
+    options.reason ? { reason: options.reason } : undefined,
+  );
   // A source reconfigured or disconnected while this owner was on the
   // network is no longer part of this refresh. Its typed lease rejection is a
   // benign cancellation, not a source outage to show or audit as a failure.

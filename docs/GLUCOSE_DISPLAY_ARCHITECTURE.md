@@ -95,7 +95,15 @@ follows the source's reading cadence:
   the glucose display snapshot.
 
 Connectors may still sync less often after a stale source or rate-limit
-response. Stale and delayed thresholds are unchanged. With the display fully off and no
+response. Nightscout, Dexcom Share, Medtrum and xDrip skip a request when
+their newest stored reading shows the next one cannot exist yet: a
+five-minute source becomes due 30 seconds before its next reading, and a
+source whose two newest readings are at most 2.5 minutes apart keeps the
+one-minute schedule. Explicit refreshes, first connections and a
+validated-network retry after a network error always fetch. Routine Dexcom
+Share checks request only the missing minutes plus a ten-minute overlap,
+with a full-day read at least hourly. While the foreground service runs, the
+open app re-reads stored readings instead of fetching. Stale and delayed thresholds are unchanged. With the display fully off and no
 always-on display, the service skips its one-minute re-age of the
 notification and widgets; it renders again as soon as the display turns on.
 New readings still update every surface immediately. Unchanged Wear history
