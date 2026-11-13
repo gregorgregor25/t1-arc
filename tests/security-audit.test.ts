@@ -6,7 +6,17 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { evaluateAuditReport } from '../scripts/security-audit.mjs';
 
-const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const installedLockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+// The installed tree no longer contains deepmerge (Expo SDK 57.0.33 dropped it), so the reviewed
+// fallback allowance is exercised against a lockfile that pins the reviewed graph versions.
+const lockfile = {
+  ...installedLockfile,
+  packages: {
+    ...installedLockfile.packages,
+    'node_modules/deepmerge': { version: '4.3.1' },
+    'node_modules/@expo/config': { version: '57.0.10' },
+  },
+};
 const packageConfig = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const context = { lockfile, packageConfig, now: new Date('2026-11-13T12:00:00Z') };
 type Finding = { name: string; severity: string; nodes: string[]; via: (string | Record<string, unknown>)[] };
@@ -119,7 +129,8 @@ describe('production dependency security gate', () => {
 
   it.each([
     ['clean report', cleanReport(), 0, true],
-    ['reviewed low report', lowReport(), 1, true],
+    // A reviewed low report cannot be run end to end here: the installed lockfile has no deepmerge.
+    ['unreviewed low report', lowReport(), 1, false],
     ['audit command failure without findings', cleanReport(), 1, false],
     ['npm falsely exits clean with findings', lowReport(), 0, false],
     ['npm error JSON', { ...lowReport(), error: { code: 'EAUDIT' } }, 1, false],
@@ -144,10 +155,6 @@ describe('production dependency security gate', () => {
       expect(result.error).toBeUndefined();
       expect(result.status === 0).toBe(allowed);
       expect(readFileSync(output, 'utf8')).toBe(raw);
-      if (allowed && _label === 'reviewed low report') {
-        expect(result.stdout + result.stderr).toContain('REVIEWED LOW-SEVERITY FINDING');
-        expect(result.stdout + result.stderr).not.toContain('Production dependency audit is clean.');
-      }
     } finally {
       for (const path of [fakeNpm, fakePayload, output]) {
         try { unlinkSync(path); } catch { /* Output may not exist after an early failure. */ }

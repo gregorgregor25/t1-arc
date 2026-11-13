@@ -37,6 +37,12 @@ to glob and `@expo/fingerprint` so minimatch 3 consumers are untouched. Verified
 with `expo config`, `expo prebuild --platform android`, `expo export --platform android`
 and `@expo/fingerprint`.
 
+Expo SDK 57.0.33 (`@expo/config` 57.0.11, `@expo/cli` 57.0.34) no longer installs deepmerge,
+so the production audit is now clean; the reviewed-low allowance remains only as a
+fail-closed fallback. Expo CLI 57.0.34 also stopped using Zod for plugin schemas: its
+plugin configuration is JSON Schema and the MCP schema receives Zod from the caller,
+so the compatibility test now checks those shapes with the patched Zod.
+
 Do not use `npm audit fix --force`: its suggested Expo downgrade is incompatible
 with this app. SDK 58 still depends on the same affected packages and does not
 itself resolve these advisories.
