@@ -39,6 +39,14 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.7.21 candidate: installable over AAPS test builds
+
+This candidate contains the same app changes as the unpublished 1.7.20 draft.
+Only the version changes: the phone version code is now 86, so the release
+can update a phone that has a newer branch test build installed without
+removing it or its data. The Wear protocol is unchanged; a working installed
+companion does not need reinstallation.
+
 ### 1.7.20 candidate: battery, anonymous usage counts
 
 This candidate replaces the unpublished 1.7.19 draft and includes all of its
