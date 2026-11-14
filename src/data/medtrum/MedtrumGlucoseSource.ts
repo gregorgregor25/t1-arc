@@ -1,5 +1,6 @@
 import { recordSourceCheck } from '@/data/support/diagnosticStore';
-import { GlucoseSource } from '@/data/contracts';
+import { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
+import { remoteSourceRefreshDue } from '@/data/live/remoteRefreshPolicy';
 import {
   GlucoseHistoryStore,
   SourceSyncState,
@@ -147,7 +148,10 @@ export class MedtrumGlucoseSource implements GlucoseSource {
     return { patients, connection, latest };
   }
 
-  async refresh() {
+  async refresh(options?: GlucoseRefreshOptions) {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    // Several owners can ask for a refresh. Fetch only when a reading is due.
+    if (!(await remoteSourceRefreshDue(this.store, this.sourceId, this.clock(), options))) return;
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = (async () => {
       await this.authenticate();

@@ -1,4 +1,4 @@
-import type { GlucoseSource } from '@/data/contracts';
+import type { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
 import type { GlucoseReading } from '@/domain/models';
 import { isSourceConnectionSupersededError } from './sourceConnectionOwnership';
 
@@ -54,9 +54,10 @@ export function observeGlucoseReadingForPublication(
 
 export async function refreshGlucoseSources(
   sources: GlucoseSource[],
+  options?: GlucoseRefreshOptions,
 ): Promise<GlucoseSourceRefreshResult[]> {
   const settled = await Promise.allSettled(
-    sources.map((source) => source.refresh?.()),
+    sources.map((source) => (options ? source.refresh?.(options) : source.refresh?.())),
   );
   return settled.map((result, index) => ({
     sourceId: sources[index]!.sourceId,

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
     cancelAlerts: vi.fn(async () => true),
     mirrorOwner: vi.fn(async () => true),
     nativeReconcile: vi.fn(async () => false),
+    nextAlertCheck: vi.fn(async (_epochMs: number | null) => true),
   };
 });
 
@@ -39,6 +40,7 @@ vi.mock('../modules/t1arc-glucose-display', () => ({
     cancelGlucoseAlertsAsync: mocks.cancelAlerts,
     setGlucoseAlertMonitoringEnabledAsync: mocks.mirrorOwner,
     reconcileGlucoseAlarmAsync: mocks.nativeReconcile,
+    setNextAlertCheckAtAsync: mocks.nextAlertCheck,
   },
 }));
 
@@ -88,6 +90,7 @@ describe('glucose alert operation serialization', () => {
     mocks.cancelAlerts.mockReset().mockResolvedValue(true);
     mocks.mirrorOwner.mockReset().mockResolvedValue(true);
     mocks.nativeReconcile.mockReset().mockResolvedValue(false);
+    mocks.nextAlertCheck.mockReset().mockResolvedValue(true);
   });
 
   it('leaves all notification and episode state ownership with the configured native engine', async () => {
@@ -95,6 +98,9 @@ describe('glucose alert operation serialization', () => {
     const result = await reconcileGlucoseAlerts(lowReading(), 'down', NOW);
     expect(result.nativeOwned).toBe(true);
     expect(result.notified).toBe(false);
+    // The native engine keeps its own exact timers, so the collector must not
+    // keep waking for a check the retired JS engine left behind.
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
     expect(mocks.cancelAlerts).not.toHaveBeenCalled();
     expect(mocks.showAlert).not.toHaveBeenCalled();
     expect(mocks.setItem).not.toHaveBeenCalled();
@@ -106,6 +112,71 @@ describe('glucose alert operation serialization', () => {
     await expect(reconcileGlucoseAlerts(lowReading(), 'down', NOW)).rejects.toThrow(/unavailable/);
     expect(mocks.cancelAlerts).not.toHaveBeenCalled();
     expect(mocks.showAlert).not.toHaveBeenCalled();
+  });
+
+  it('tells the native collector when the reading would turn stale', async () => {
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    // Repeat 30 minutes after this alert; the reading turns stale earlier.
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 12 * 60_000 + 1);
+  });
+
+  it('tells the native collector when the next alert repeat is due', async () => {
+    mocks.values.set(
+      STATE_KEY,
+      JSON.stringify({ activeZone: 'low', lastNotifiedAt: NOW - 25 * 60_000 }),
+    );
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    expect(mocks.showAlert).not.toHaveBeenCalled();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 5 * 60_000);
+  });
+
+  it('retries a repeat that could not be shown after one minute', async () => {
+    mocks.values.set(
+      STATE_KEY,
+      JSON.stringify({ activeZone: 'low', lastNotifiedAt: NOW - 31 * 60_000 }),
+    );
+    mocks.showAlert.mockResolvedValue(false);
+    const reading = lowReading();
+    await reconcileGlucoseAlerts(reading, reading.trend, NOW);
+    expect(mocks.showAlert).toHaveBeenCalledOnce();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(NOW + 60_000);
+  });
+
+  it('asks for a prompt alert check after alert preferences change', async () => {
+    const before = Date.now();
+    await saveGlucoseAlertPreferences({
+      enabled: true,
+      lowEnabled: true,
+      lowThresholdMmolL: 4.2,
+      highEnabled: true,
+      highThresholdMmolL: 13.9,
+      staleEnabled: true,
+      repeatMinutes: 60,
+    });
+    const requested = mocks.nextAlertCheck.mock.lastCall?.[0];
+    expect(typeof requested).toBe('number');
+    expect(requested as number).toBeGreaterThanOrEqual(before);
+    expect(requested as number).toBeLessThanOrEqual(Date.now());
+
+    await saveGlucoseAlertPreferences({
+      enabled: false,
+      lowEnabled: true,
+      lowThresholdMmolL: 4.2,
+      highEnabled: true,
+      highThresholdMmolL: 13.9,
+      staleEnabled: true,
+      repeatMinutes: 60,
+    });
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
+  });
+
+  it('clears the native alert check when no episode is active', async () => {
+    await reconcileGlucoseAlerts({ ...lowReading(), mmolL: 6.5 }, 'flat', NOW);
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
+    await resetGlucoseAlertState();
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
   });
 
   it('does not repair native ownership while loading a possibly stale JS snapshot', async () => {

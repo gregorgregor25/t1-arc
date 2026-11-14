@@ -54,6 +54,41 @@ describe('foreground glucose refresh isolation', () => {
     expect(lanes.busy).toBe(false);
   });
 
+  it('runs an explicit refresh after a silent one in flight instead of joining it', async () => {
+    const lanes = createForegroundRefreshLanes();
+    const silentWork = deferred();
+    const order: string[] = [];
+    const silent = lanes.run('full', () => { order.push('silent'); return silentWork.promise; });
+    const explicit = lanes.run('full', async () => { order.push('explicit'); }, { explicit: true });
+    expect(explicit).not.toBe(silent);
+    // Later callers join the queued explicit pass; account barriers wait for it.
+    expect(lanes.run('full', async () => { order.push('late'); })).toBe(explicit);
+    expect(lanes.run('full', async () => { order.push('again'); }, { explicit: true })).toBe(explicit);
+    let drained = false;
+    const waiting = lanes.waitForIdle().then(() => { drained = true; });
+    await Promise.resolve();
+    expect(order).toEqual(['silent']);
+    silentWork.reject(new Error('offline'));
+    await expect(silent).rejects.toThrow('offline');
+    await explicit;
+    await waiting;
+    expect(order).toEqual(['silent', 'explicit']);
+    expect(drained).toBe(true);
+    expect(lanes.busy).toBe(false);
+  });
+
+  it('passes explicit refreshes to the lane coordinator', () => {
+    const source = readFileSync(new URL('../src/providers/DataProvider.tsx',import.meta.url),'utf8');
+    const start = source.indexOf('const refresh = foregroundRefreshes.run(');
+    expect(source.slice(start, start + 200)).toContain('{ explicit: visible }');
+    // The spinner shows while an explicit pass waits behind a silent one.
+    expect(source.slice(start - 300, start)).toContain('if (visible) setSyncing(true);');
+    // A queued pass yields to a LibreLinkUp activation that began meanwhile.
+    const run = source.slice(source.indexOf('const runRefresh = async () => {'));
+    expect(run.indexOf('if (libreActivationInFlight.current)')).toBeLessThan(run.indexOf("recordDiagnostic('refresh_started')"));
+    expect(run.slice(0, run.indexOf("recordDiagnostic('refresh_started')"))).toContain('if (visible) setSyncing(false);');
+  });
+
   it('wires both account and erase barriers to the two-lane coordinator', () => {
     const source = readFileSync(new URL('../src/providers/DataProvider.tsx',import.meta.url),'utf8');
     expect(source).toContain('includeHealthConnect ? "full" : "glucose"');

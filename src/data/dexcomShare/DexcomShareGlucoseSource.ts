@@ -1,6 +1,11 @@
 import { recordSourceCheck } from '@/data/support/diagnosticStore';
 import { normalizeXdripReading } from '@/data/adapters/xdrip';
-import { GlucoseSource } from '@/data/contracts';
+import { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
+import {
+  dexcomShareReadWindow,
+  remoteRefreshForced,
+  remoteSourceRefreshDue,
+} from '@/data/live/remoteRefreshPolicy';
 import {
   GlucoseHistoryStore,
   SourceSyncState,
@@ -46,6 +51,13 @@ const SERVERS: Record<DexcomShareRegion, string> = {
 };
 
 type FetchLike = typeof fetch;
+
+/**
+ * When this runtime last read a full Share day. Sources are rebuilt for each
+ * headless sync, so this lives at module scope; a new runtime starts with a
+ * full read.
+ */
+const lastFullWindowAtBySource = new Map<string, number>();
 
 function errorCode(error: unknown): DexcomShareErrorCode {
   return error instanceof DexcomShareError ? error.code : 'network';
@@ -101,9 +113,27 @@ export class DexcomShareGlucoseSource implements GlucoseSource {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  async refresh() {
+  async refresh(options?: GlucoseRefreshOptions) {
     if (this.refreshInFlight) return this.refreshInFlight;
-    this.refreshInFlight = this.importReadings(1_440, 288).finally(() => {
+    // Several owners can ask for a refresh. Fetch only when a reading is due.
+    const now = this.clock();
+    if (!(await remoteSourceRefreshDue(this.store, this.sourceId, now, options))) return;
+    if (this.refreshInFlight) return this.refreshInFlight;
+    this.refreshInFlight = (async () => {
+      await this.store.initialize();
+      const [latest, state] = await Promise.all([
+        this.store.getLatestReading(this.sourceId),
+        this.store.getSyncState(this.sourceId),
+      ]);
+      const window = dexcomShareReadWindow({
+        now,
+        latestReadingAt: latest?.timestamp,
+        lastFullWindowAt: lastFullWindowAtBySource.get(this.sourceId),
+        force: remoteRefreshForced(options, state?.lastErrorCode),
+      });
+      await this.importReadings(window.minutes, window.maxCount);
+      if (window.full) lastFullWindowAtBySource.set(this.sourceId, now);
+    })().finally(() => {
       this.refreshInFlight = undefined;
     });
     return this.refreshInFlight;

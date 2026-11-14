@@ -22,7 +22,7 @@ export function PrivacyClosing({ listingStill = false }: { listingStill?: boolea
       width: portrait ? 1840 : 1700, textAlign: portrait ? 'center' : 'left',
       color: '#f2f3f7', fontSize: portrait ? 88 : 100, fontWeight: 500,
       letterSpacing: '-.025em', lineHeight: 1.45,
-    }}>Open source.<br />{listingStill ? 'Your data stays on your phone.' : 'Health history stored on your phone.'}<br />{listingStill ? 'Your data. Your control.' : 'We don’t collect your health data.'}</Interactive.Div>
+    }}>Open source.<br />{listingStill ? 'Health records stay on your phone.' : 'Health history stored on your phone.'}<br />{listingStill ? 'Your data. Your control.' : 'We don’t collect your health data.'}</Interactive.Div>
     <Interactive.Div name="Direct OpenAI qualifier, visible throughout" style={{
       position: 'absolute', left: portrait ? 200 : 240, top: portrait ? 980 : listingStill ? 1170 : 1250,
       width: portrait ? 1760 : 1600, textAlign: portrait ? 'center' : 'left',

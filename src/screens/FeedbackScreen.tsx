@@ -13,7 +13,7 @@ import {
   setCommunityReminderEnabledAsync,
 } from '@/data/feedback/communityReminder';
 import type { RootTabParamList } from '@/navigation/AppNavigator';
-import { COMMUNITY_SUBREDDIT_URL } from '@/navigation/appLinks';
+import { COMMUNITY_SUBREDDIT_URL, GITHUB_REPOSITORY_URL } from '@/navigation/appLinks';
 import { useAppTheme } from '@/theme/theme';
 
 const SUPPORT_EMAIL = 'support@t1arc.com';
@@ -88,6 +88,11 @@ export function FeedbackScreen() {
     catch { Alert.alert('Could not open Reddit', 'Please try again later.'); }
   }
 
+  async function openGitHub() {
+    try { await Linking.openURL(GITHUB_REPOSITORY_URL); }
+    catch { Alert.alert('Could not open GitHub', `Please try again, or open ${GITHUB_REPOSITORY_URL} in your browser.`); }
+  }
+
   return <SafeAreaView style={[styles.fill, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={styles.content}>
       <Pressable accessibilityRole="button" onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Sources')}>
@@ -118,6 +123,13 @@ export function FeedbackScreen() {
         <Text style={[styles.body, { color: colors.textSecondary }]}>Share ideas and discuss T1 Arc with other users on Reddit. A Reddit account may be needed to post.</Text>
         <Pressable accessibilityRole="button" onPress={() => { void openSubreddit(); }} style={[styles.secondaryButton, { borderColor: colors.border, borderRadius: radius.md }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Visit the T1 Arc subreddit</Text>
+        </Pressable>
+      </SectionCard>
+      <SectionCard>
+        <Text style={[styles.heading, { color: colors.text }]}>Enjoying T1 Arc?</Text>
+        <Text style={[styles.body, { color: colors.textSecondary }]}>A GitHub star is a free way to show your support. You’ll need a GitHub account: open the repository, sign in and tap Star if you’d like to.</Text>
+        <Pressable accessibilityRole="button" accessibilityHint="Opens the repository on GitHub, where you can choose Star." onPress={() => { void openGitHub(); }} style={[styles.secondaryButton, { borderColor: colors.border, borderRadius: radius.md }]}>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Star T1 Arc on GitHub</Text>
         </Pressable>
       </SectionCard>
       <SectionCard>

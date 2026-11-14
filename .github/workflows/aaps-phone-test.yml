@@ -86,7 +86,8 @@ jobs:
           ./gradlew :app:assembleRelease :app:lintRelease \
             :t1arc-glucose-display:testReleaseUnitTest \
             :t1arc-glucose-display:lintRelease \
-            -PreactNativeArchitectures=arm64-v8a --no-build-cache --no-daemon
+            -PreactNativeArchitectures=arm64-v8a --no-build-cache --no-daemon --stacktrace \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1536m -Dfile.encoding=UTF-8"
       - name: Verify embedded code and source identity
         shell: pwsh
         run: |

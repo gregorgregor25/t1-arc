@@ -56,10 +56,68 @@ The notification:
 
 The foreground service is started only from the user's in-app control. It uses
 Android's `specialUse` type because an indefinite personal glucose display and
-collector does not fit another foreground-service category. For LibreLinkUp, it uses an adaptive schedule: once a minute normally, every 15 seconds
-around the expected next sensor reading, and less often after a stale source
-or rate-limit response. The existing connector deduplicates readings and
+collector does not fit another foreground-service category. Its sync cadence
+is described below. The existing connector deduplicates readings and
 preserves cached history on source failure.
+
+## Sync cadence
+
+The foreground service starts a Headless JS source sync on a schedule that
+follows the source's reading cadence:
+
+- **Unknown or minute sources** (one reading every two minutes or less, such
+  as LibreLinkUp) keep the original schedule: once a minute, and every
+  15 seconds while the latest reading is 4.5–12 minutes old.
+- **Five-minute sources** are recognised only after two consecutive
+  4–6.5-minute gaps seen while still on the original schedule, so an outage on
+  a minute source is not mistaken for a slower source. A gap counts only if at
+  least three syncs finished during it without finding a newer reading; when
+  the phone slept through most of the gap, it proves nothing and the count
+  starts again. The service then syncs
+  20 seconds after the next reading is due. If it has not arrived, the service
+  checks every 20 seconds until the reading is 12 minutes old, then every
+  minute.
+- When a newer reading is published, the next sync is scheduled from that
+  reading straight away. Only an advancing timestamp reschedules.
+- Every second reading in five-minute mode, one extra check 150 seconds after
+  the reading would reveal a minute or two-minute source (such as Medtrum)
+  whose next reading arrived a little late. In five-minute mode, any gap
+  between distinct readings under 3.5 minutes restores the original schedule;
+  readings less than 30 seconds apart are treated as duplicate uploads. Gaps
+  of 3.5 minutes or more, including occasional late 5–6.5-minute readings,
+  keep five-minute mode. A check that finds the previous sync still
+  running is retried 20 seconds later. Changing source forgets the learned
+  cadence.
+- Glucose alert evaluation tells the service the earliest time a repeat,
+  stale transition or retry of an unshown alert could become due, and saving
+  alert settings asks for a prompt check. The service brings its next sync
+  forward to that time (at least 15 seconds apart). An alert that cannot be
+  shown is retried once a minute.
+- Each sync's wall-clock due time is stored, and a one-minute service tick
+  starts the sync once it has passed. Android pauses these timers while the
+  phone sleeps, so syncs and alert checks run within about a minute of
+  device-awake time after they are due, as with the original schedule. The
+  service holds no wake lock and uses no exact alarms.
+- The alert-check time is stored with the same Android Keystore encryption as
+  the glucose display snapshot.
+
+Connectors may still sync less often after a stale source or rate-limit
+response. Nightscout, Dexcom Share, Medtrum and xDrip skip a request when
+their newest stored reading shows the next one cannot exist yet: a
+five-minute source becomes due 30 seconds before its next reading, and a
+source with any two readings in the last ten minutes at most 2.5 minutes
+apart keeps the one-minute schedule. Only triggers less than 8 seconds apart
+are merged. Explicit refreshes, first connections and a
+validated-network retry after a network error always fetch. The speed-up
+probe tick carries its own `cadence-probe` reason, so these sources fetch the
+latest readings for it even though no reading is due yet. Routine Dexcom
+Share checks request only the missing minutes plus a ten-minute overlap,
+with a full-day read at least hourly. While the foreground service runs, the
+open app re-reads stored readings instead of fetching. Stale and delayed thresholds are unchanged. With the display fully off and no
+always-on display, the service skips its one-minute re-age of the
+notification and widgets; it renders again as soon as the display turns on.
+New readings still update every surface immediately. Unchanged Wear history
+is not re-sent; watch requests always receive it.
 
 Android ranks notifications across apps. T1 Arc can request the correct
 ongoing foreground importance and sort its own notifications, but it cannot

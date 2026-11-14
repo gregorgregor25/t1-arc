@@ -179,6 +179,10 @@ import {
   observeGlucoseReadingForPublication,
 } from "@/data/live/glucoseSourceRefresh";
 import { syncConfiguredNightscoutHistoryIfDue } from "@/data/live/configuredGlucoseSources";
+import {
+  foregroundGlucoseRefreshAction,
+  nativeCollectorOwnsGlucoseSync,
+} from "@/domain/foregroundRefreshPolicy";
 import { NightscoutGlucoseSource } from "@/data/nightscout/NightscoutGlucoseSource";
 import { NightscoutTreatmentImporter } from "@/data/nightscout/NightscoutTreatmentImporter";
 import {
@@ -848,6 +852,12 @@ export function DataProvider({ children }: PropsWithChildren) {
         return publishBeforeRefresh.then(() => undefined);
       }
       const runRefresh = async () => {
+        // An explicit pass queued behind a silent one must not delay a
+        // LibreLinkUp account activation that started while it waited.
+        if (libreActivationInFlight.current) {
+          if (visible) setSyncing(false);
+          return;
+        }
         recordDiagnostic('refresh_started');
         const publishedBefore = await publishBeforeRefresh;
         if (visible) setSyncing(true);
@@ -856,8 +866,11 @@ export function DataProvider({ children }: PropsWithChildren) {
         try {
           const [repositoryRefresh, healthConnectRefresh] =
             await Promise.allSettled([
+              // A visible refresh is the user's explicit request, so remote
+              // sources fetch even when their next reading is not yet due.
+              // The glucose-only lane is always a silent periodic check.
               includeHealthConnect
-                ? repository.refresh()
+                ? repository.refresh(visible ? { force: true } : undefined)
                 : (repository.refreshGlucose?.() ?? repository.refresh()),
               repositoryState.mode === "live" && includeHealthConnect
                 ? syncHealthConnectIfDue()
@@ -913,9 +926,15 @@ export function DataProvider({ children }: PropsWithChildren) {
           }
         }
       };
+      // An explicit refresh waits for a silent pass in flight, then runs its
+      // own forced pass instead of joining one that may have skipped sources.
+      // Show progress at once, including while an explicit pass waits for a
+      // silent one to settle.
+      if (visible) setSyncing(true);
       const refresh = foregroundRefreshes.run(
         includeHealthConnect ? "full" : "glucose",
         runRefresh,
+        { explicit: visible },
       );
       // A coalesced caller must still publish a newly stored native reading.
       return Promise.all([publishBeforeRefresh, refresh]).then(() => undefined);
@@ -1001,7 +1020,20 @@ export function DataProvider({ children }: PropsWithChildren) {
       // insights, and Nightscout history. Those slower jobs run after the
       // initial paint, on app resume, and on explicit refresh.
       if (AppState.currentState === "active") {
-        void refreshGlucoseSilently();
+        void (async () => {
+          // While the native collector is running it already fetches the
+          // source on its adaptive cadence, so the visible UI only re-reads
+          // SQLite. A failed status read falls back to the network refresh.
+          const collectorRunning = await T1ArcGlucoseDisplay.getStatusAsync()
+            .then((status) => nativeCollectorOwnsGlucoseSync(status, Date.now()))
+            .catch(() => false);
+          const action = foregroundGlucoseRefreshAction(
+            AppState.currentState,
+            collectorRunning,
+          );
+          if (action === "network") await refreshGlucoseSilently();
+          else if (action === "read-stored") await publishLatestStoredGlucose();
+        })();
       }
     }, 60_000);
     const subscription = AppState.addEventListener("change", (state) => {
@@ -1013,6 +1045,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       subscription.remove();
     };
   }, [
+    publishLatestStoredGlucose,
     refreshGlucoseSilently,
     refreshSilently,
     repositoryState.ready,
@@ -1215,7 +1248,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const candidate = await beginDexcomShareConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new DexcomShareGlucoseSource(connection, glucoseStore);
-      await source.refresh();
+      await source.refresh({ force: true });
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(
@@ -1306,7 +1339,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const candidate = await beginXdripConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new XdripGlucoseSource(connection, glucoseStore);
-      await source.refresh();
+      await source.refresh({ force: true });
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(

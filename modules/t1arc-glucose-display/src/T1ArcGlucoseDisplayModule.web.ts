@@ -182,6 +182,9 @@ export default {
   async cancelGlucoseAlertsAsync() {
     return false;
   },
+  async setNextAlertCheckAtAsync() {
+    return false;
+  },
   async glucoseAlertsAllowedAsync() {
     return false;
   },

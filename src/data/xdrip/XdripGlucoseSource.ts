@@ -3,7 +3,8 @@ import {
   normalizeXdripReading,
   XdripSgvResponse,
 } from '@/data/adapters/xdrip';
-import { GlucoseSource } from '@/data/contracts';
+import { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
+import { remoteSourceRefreshDue } from '@/data/live/remoteRefreshPolicy';
 import {
   GlucoseHistoryStore,
   SourceSyncState,
@@ -68,7 +69,10 @@ export class XdripGlucoseSource implements GlucoseSource {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  async refresh() {
+  async refresh(options?: GlucoseRefreshOptions) {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    // Several owners can ask for a refresh. Fetch only when a reading is due.
+    if (!(await remoteSourceRefreshDue(this.store, this.sourceId, this.clock(), options))) return;
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = this.importReadings().finally(() => {
       this.refreshInFlight = undefined;

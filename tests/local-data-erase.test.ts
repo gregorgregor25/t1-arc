@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   clearGlookoArtifacts: vi.fn(),
   disableNotificationSource: vi.fn(),
   disableCommunityReminder: vi.fn(),
+  clearUsageReporting: vi.fn(),
   cleanup: vi.fn(),
   hevyClear: vi.fn(),
   hevyInvalidate: vi.fn(),
@@ -68,6 +69,9 @@ vi.mock("../modules/t1arc-notification-source", () => ({
 }));
 vi.mock("@/data/feedback/communityReminder", () => ({
   disableCommunityReminderForErasureAsync: mocks.disableCommunityReminder,
+}));
+vi.mock("@/data/usageReporting/usageReporter", () => ({
+  clearUsageReportingAsync: mocks.clearUsageReporting,
 }));
 
 vi.mock("@/data/dexcomShare/secureStore", () => ({
@@ -133,6 +137,7 @@ describe("local data erase", () => {
     mocks.clearGlookoArtifacts.mockReset().mockResolvedValue(true);
     mocks.disableNotificationSource.mockReset().mockResolvedValue(0);
     mocks.disableCommunityReminder.mockReset().mockResolvedValue(undefined);
+    mocks.clearUsageReporting.mockReset().mockResolvedValue(undefined);
     mocks.cleanup.mockReset().mockResolvedValue(undefined);
     mocks.hevyClear.mockReset().mockImplementation(async () => {
       mocks.events.push("hevy-clear");
@@ -260,6 +265,7 @@ describe("local data erase", () => {
     const preferences = seedNotebookAndDisplayPreferences();
     await eraseLocalHealthData();
     expect(mocks.disableCommunityReminder).toHaveBeenCalled();
+    expect(mocks.clearUsageReporting).toHaveBeenCalled();
     expect(mocks.metadata.has(NOTEBOOK_STORAGE_KEY)).toBe(false);
     expect(mocks.metadata.get(DISPLAY_PREFERENCES_STORAGE_KEY)).toBe(preferences);
     const deletion = mocks.events.indexOf(`metadata-clear:${NOTEBOOK_STORAGE_KEY}`);
@@ -274,6 +280,7 @@ describe("local data erase", () => {
     mocks.metadata.set(LOCAL_DATA_ERASE_INTENT_KEY, '3');
     await expect(resumePendingLocalDataErase()).resolves.toBe(true);
     expect(mocks.disableCommunityReminder).toHaveBeenCalled();
+    expect(mocks.clearUsageReporting).toHaveBeenCalled();
     expect(mocks.metadata.has(NOTEBOOK_STORAGE_KEY)).toBe(false);
     expect(mocks.metadata.get(DISPLAY_PREFERENCES_STORAGE_KEY)).toBe(preferences);
     expect(mocks.metadata.has(LOCAL_DATA_ERASE_INTENT_KEY)).toBe(false);

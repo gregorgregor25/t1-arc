@@ -250,7 +250,12 @@ internal object T1ArcGlucoseAlarmEngine {
       // A permission/storage/playback failure must never abort selected glucose
       // publication or the existing phone/watch pipeline. Ownership remains
       // native, so an obsolete JS engine cannot silently take over.
-      synchronized(lock) { stopPlaybackLocked(context); playbackState = "blocked" }
+      synchronized(lock) {
+        stopPlaybackLocked(context); playbackState = "blocked"
+        // Keep the wake-up chain alive: one failed evaluation must not leave
+        // the next check waiting for a new reading that may never arrive.
+        runCatching { schedule(context, SystemClock.elapsedRealtime() + 60_000L) }
+      }
     }
     return true
   }

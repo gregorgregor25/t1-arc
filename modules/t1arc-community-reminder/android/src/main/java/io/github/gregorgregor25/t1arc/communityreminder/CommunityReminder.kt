@@ -108,7 +108,7 @@ internal object CommunityReminder {
     if (Build.VERSION.SDK_INT >= 26) {
       context.getSystemService(NotificationManager::class.java).createNotificationChannel(
         NotificationChannel(CHANNEL, "T1 Arc community feedback", NotificationManager.IMPORTANCE_DEFAULT).apply {
-          description = "Weekly invitation to share feedback about T1 Arc"
+          description = "Weekly invitation to share feedback or star T1 Arc on GitHub"
         },
       )
     }
@@ -141,7 +141,10 @@ internal object CommunityReminder {
     val notification = NotificationCompat.Builder(context, CHANNEL)
       .setSmallIcon(android.R.drawable.ic_dialog_info)
       .setContentTitle("Help me make T1 Arc better")
-      .setContentText("Share what works, what frustrates you, or what is missing.")
+      .setContentText("Share feedback, or give T1 Arc a star on GitHub.")
+      .setStyle(NotificationCompat.BigTextStyle().bigText(
+        "What is useful, frustrating or missing? Share feedback by email or on Reddit. Enjoying T1 Arc? You can also give the project a star on GitHub.",
+      ))
       .setContentIntent(openIntent)
       .setAutoCancel(true)
       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
