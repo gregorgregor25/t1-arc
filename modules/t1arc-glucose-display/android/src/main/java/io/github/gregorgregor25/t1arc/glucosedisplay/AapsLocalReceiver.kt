@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -304,6 +305,13 @@ internal object AapsLocalStore {
 
 private val AAPS_RECEIVE_EXECUTOR = Executors.newSingleThreadExecutor()
 
+// Only touched on the receive executor. Unknown again after a process restart,
+// so the first status afterwards always asks for a sync.
+private var lastAapsSyncRequestElapsedMs: Long? = null
+private var lastAapsGlucose: AapsGlucoseIdentity? = null
+// A wanted sync that could not be handed over is asked for again next status.
+private var aapsSyncOwed = false
+
 internal object AapsLocalEvents {
   @Volatile var emit: (() -> Unit)? = null
 }
@@ -329,6 +337,7 @@ class T1ArcAapsStatusReceiver : BroadcastReceiver() {
     AAPS_RECEIVE_EXECUTOR.execute {
       try {
         var accepted = false
+        var glucoseChanged = false
         T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->
           if (!AapsStatusPolicy.acceptsCaptured(capturedEpoch, capturedGeneration,
               epoch, AapsLocalStore.generation(context),
@@ -337,13 +346,21 @@ class T1ArcAapsStatusReceiver : BroadcastReceiver() {
             AapsLocalStore.generation(context)) ?: return@observeCurrent
           if (!AapsLocalStore.append(context, reading)) return@observeCurrent
           accepted = true
+          glucoseChanged = AapsStatusPolicy.glucoseChanged(lastAapsGlucose, reading)
+          AapsGlucoseIdentity.of(reading)?.let { lastAapsGlucose = it }
           if (reading.glucoseMgdl != null && reading.glucoseTimestamp != null) {
             publishAapsLocalReading(context, epoch, reading)
           }
         }
         if (accepted) {
           AapsLocalEvents.emit?.invoke()
-          T1ArcGlucoseDisplayService.requestAapsSync(context)
+          val now = SystemClock.elapsedRealtime()
+          if (aapsSyncOwed || AapsStatusPolicy.requestsSync(glucoseChanged,
+              lastAapsSyncRequestElapsedMs, now,
+              T1ArcGlucoseDisplayState.nextAlertCheckAt(context), System.currentTimeMillis())) {
+            aapsSyncOwed = !T1ArcGlucoseDisplayService.requestAapsSync(context)
+            if (!aapsSyncOwed) lastAapsSyncRequestElapsedMs = now
+          }
         }
       } catch (_: Exception) {
         // No private payloads, pump state, or health values enter system logs.

@@ -3282,20 +3282,23 @@ class T1ArcGlucoseDisplayService : Service() {
       }.onFailure { service.alarmPlaybackActive = previousPlaybackActive }.getOrDefault(false)
     }
 
-    fun requestAapsSync(context: Context) {
+    /** False when the request could neither start a sync nor be held for one. */
+    fun requestAapsSync(context: Context): Boolean {
       val service = instance
       if (service != null && service.serviceAlive) {
-        service.handler.post { service.requestAapsSyncOrDefer() }
-        return
+        // The collector holds a request that meets a busy task and repeats it.
+        return service.handler.post { service.requestAapsSyncOrDefer() }
       }
-      if (!T1ArcGlucoseDisplayState.headlessTaskActive.compareAndSet(false, true)) return
-      try {
+      if (!T1ArcGlucoseDisplayState.headlessTaskActive.compareAndSet(false, true)) return false
+      return try {
         context.startService(Intent(context, T1ArcLibreHeadlessService::class.java)
           .putExtra(HEADLESS_REASON_EXTRA, DISPLAY_SYNC_REASON))
+        true
       } catch (_: Exception) {
         // Background service launch can be denied. The encrypted native queue
         // and Wear publication remain available; UI/collector startup drains it.
         T1ArcGlucoseDisplayState.headlessTaskActive.set(false)
+        false
       }
     }
 

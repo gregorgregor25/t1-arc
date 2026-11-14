@@ -42,6 +42,10 @@ AAPS's status broadcast does not always expose an authenticated sender identity.
 
 The native encrypted buffer holds up to 10,080 status updates while database ingestion is unavailable. Buffer overflow is reported in the source screen; missing history is not interpolated or recovered through a cloud source. Stored status observations retain up to 90 days, capped at 150,000 records. IOB and COB retain their receipt time because this broadcast does not provide a separate calculation timestamp. Their receipt age does not prove when AAPS last recalculated them. Glucose retains its source measurement timestamp.
 
+### Battery
+
+AAPS sends a status about once a minute, and IOB changes in almost every one. Each status is validated and stored in the native encrypted buffer, and glucose reaches the notification, widget, watch and alarms natively. The background database sync is requested straight away only when glucose is new or corrected, or when a timed alert check is due. A status that changes only IOB, COB or delta waits in the buffer for the next sync, and one is requested at least every 15 minutes while statuses keep arriving. With T1 Arc open, every status still refreshes the card at once.
+
 ## Verification and remaining device checks
 
 ### Combined card and trend update, 2 November 2026
