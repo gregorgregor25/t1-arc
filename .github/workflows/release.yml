@@ -189,7 +189,8 @@ jobs:
             :watchface-push:lintChronographRelease \
             :watchface-push:lintAtelierRelease \
             :watchface-push:lintPaceRelease \
-            :watchface-push:lintSummitRelease --no-build-cache --no-daemon
+            :watchface-push:lintSummitRelease --no-build-cache --no-daemon --stacktrace \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1536m -Dfile.encoding=UTF-8"
       - name: Verify signed APK dependency exposure
         run: |
           node scripts/verify-dependency-exposure.mjs \
