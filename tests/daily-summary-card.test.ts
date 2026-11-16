@@ -45,6 +45,11 @@ function summary(
       timeAbovePercent: 5,
       timeBelowPercent: 5,
       timeInRangePercent: 90,
+      timeVeryLowPercent: 1,
+      timeLowPercent: 4,
+      timeHighPercent: 5,
+      timeVeryHighPercent: 0,
+      timeInTightRangePercent: 60,
     },
     glucoseReadings: 250,
     insulin: { basalUnits: 3, bolusUnits: 1.2, totalUnits: 4.2 },
@@ -125,6 +130,11 @@ describe('daily summary glucose presentation', () => {
         timeAbovePercent: 0,
         timeBelowPercent: 0,
         timeInRangePercent: 0,
+        timeVeryLowPercent: 0,
+        timeLowPercent: 0,
+        timeHighPercent: 0,
+        timeVeryHighPercent: 0,
+        timeInTightRangePercent: 0,
       },
     });
 

@@ -6,6 +6,11 @@ import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 import { useAppTheme } from '@/theme/theme';
 import { gmiSummary } from '@/domain/gmiSummary';
 import { formatRegionalNumber } from '@/domain/regionalFormat';
+import {
+  glucoseTargetRangePhrase,
+  STANDARD_GLUCOSE_RANGE,
+  TIGHT_GLUCOSE_RANGE,
+} from '@/domain/glucoseRanges';
 import { formatDate, toDateKey } from '@/domain/time';
 import { SectionCard } from './SectionCard';
 
@@ -31,6 +36,9 @@ export function GmiCard() {
       ) : <Text style={{ color: colors.text }}>{timeline.loading ? 'Loading saved readings…' : 'An estimate will appear when glucose readings are available.'}</Text>}
       {summary && timeline.data ? <Text style={[styles.detail, { color: colors.textSecondary }]}>
         {formatDate(toDateKey(timeline.data.range.start))} – {formatDate(toDateKey(timeline.data.range.end))} · {number(summary.coveragePercent)}% sensor coverage
+      </Text> : null}
+      {summary && summary.timeInRangePercent !== null && summary.timeInTightRangePercent !== null ? <Text style={[styles.detail, { color: colors.textSecondary }]}>
+        Same period: {number(summary.timeInRangePercent, 1)}% in {glucoseTargetRangePhrase(STANDARD_GLUCOSE_RANGE, defaults)} · {number(summary.timeInTightRangePercent, 1)}% in {glucoseTargetRangePhrase(TIGHT_GLUCOSE_RANGE, defaults)}
       </Text> : null}
       {summary?.percent !== null && summary?.percent !== undefined && !summary.representative ? <Text style={[styles.detail, { color: colors.warning }]}>Limited data: aim for at least 14 days with 70% sensor coverage before comparing this estimate.</Text> : null}
       <Text style={[styles.detail, { color: colors.textSecondary }]}>GMI is a sensor-based estimate expressed like HbA1c. It can differ from a measured laboratory result. Updates as readings are saved.</Text>
