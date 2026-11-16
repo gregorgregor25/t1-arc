@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
+import {
+  DEFAULT_AAPS_NIGHTSCOUT_TREATMENT_FILL,
+  loadAapsNightscoutTreatmentFill,
+  saveAapsNightscoutTreatmentFill,
+} from '@/data/aaps/aapsTreatmentFill';
 import {
   disableAapsLocalSource,
   enableAapsLocalSource,
   getAapsLocalSourceStatus,
 } from '@/data/aaps/localAapsSource';
+import { loadNightscoutConnection } from '@/data/nightscout/secureStore';
 import { formatTime, relativeAge } from '@/domain/time';
 import { useDataContext } from '@/providers/DataProvider';
 import { useAppTheme } from '@/theme/theme';
@@ -14,7 +20,21 @@ import { SectionCard } from './SectionCard';
 
 type Status = Awaited<ReturnType<typeof getAapsLocalSourceStatus>>;
 
-export function AapsSourceCard({ onDataChanged }: { onDataChanged?: () => Promise<void> | void }) {
+function siteHost(baseUrl: string) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return 'your Nightscout site';
+  }
+}
+
+export function AapsSourceCard({
+  onDataChanged,
+  onOpenNightscout,
+}: {
+  onDataChanged?: () => Promise<void> | void;
+  onOpenNightscout?: () => void;
+}) {
   const { colors, radius } = useAppTheme();
   const { now, revision, demoMode, setDataMode } = useDataContext();
   const [status, setStatus] = useState<Status>();
@@ -22,6 +42,40 @@ export function AapsSourceCard({ onDataChanged }: { onDataChanged?: () => Promis
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string>();
   const refreshGeneration = useRef(0);
+  const [nightscoutHost, setNightscoutHost] = useState<string | null>();
+  const [fillEnabled, setFillEnabled] = useState(DEFAULT_AAPS_NIGHTSCOUT_TREATMENT_FILL);
+  const [fillWorking, setFillWorking] = useState(false);
+  const [fillError, setFillError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      loadNightscoutConnection().catch(() => undefined),
+      loadAapsNightscoutTreatmentFill().catch(() => undefined),
+    ]).then(([connection, preference]) => {
+      if (!active) return;
+      setNightscoutHost(connection ? siteHost(connection.baseUrl) : null);
+      setFillEnabled(preference?.enabled ?? DEFAULT_AAPS_NIGHTSCOUT_TREATMENT_FILL);
+    });
+    return () => {
+      active = false;
+    };
+  }, [revision]);
+
+  async function changeFill(enabled: boolean) {
+    if (fillWorking) return;
+    setFillWorking(true);
+    setFillError(undefined);
+    try {
+      const saved = await saveAapsNightscoutTreatmentFill(enabled);
+      setFillEnabled(saved.enabled);
+      await onDataChanged?.();
+    } catch {
+      setFillError('The Nightscout history choice could not be saved. Try again.');
+    } finally {
+      setFillWorking(false);
+    }
+  }
 
   const refreshStatus = useCallback(async () => {
     const generation = ++refreshGeneration.current;
@@ -107,6 +161,59 @@ export function AapsSourceCard({ onDataChanged }: { onDataChanged?: () => Promis
           </Text>
         </View>
       ) : null}
+      {selected ? (
+        <View style={[styles.fill, { borderColor: colors.border }]}>
+          <View style={styles.fillRow}>
+            <View style={styles.fillCopy}>
+              <Text style={[styles.fillTitle, { color: colors.text }]}>
+                Fill insulin and carb history from my Nightscout site
+              </Text>
+              <Text style={[styles.body, { color: colors.textSecondary }]}>
+                T1 Arc reads the boluses, carbs, temporary basals, profile switches, temporary targets and pump suspensions that AAPS uploaded to Nightscout. This uses the internet and your saved Nightscout read token. Nothing is sent to Nightscout, and glucose still comes only from AAPS on this phone.
+              </Text>
+            </View>
+            {nightscoutHost ? (
+              <Switch
+                accessibilityLabel="Fill insulin and carb history from my Nightscout site"
+                accessibilityState={{ disabled: fillWorking }}
+                disabled={fillWorking}
+                onValueChange={(value) => void changeFill(value)}
+                thumbColor={fillEnabled ? colors.primary : colors.textTertiary}
+                trackColor={{ false: colors.border, true: `${colors.primary}66` }}
+                value={fillEnabled}
+              />
+            ) : null}
+          </View>
+          {nightscoutHost ? (
+            <Text style={[styles.body, { color: colors.textSecondary }]}>
+              {fillEnabled
+                ? `On · reading treatment history from ${nightscoutHost}`
+                : `Off · ${nightscoutHost} is connected but not read while AAPS is selected`}
+            </Text>
+          ) : nightscoutHost === null ? (
+            <>
+              <Text style={[styles.body, { color: colors.textSecondary }]}>
+                Connect your Nightscout site first. Its glucose readings are not used while AAPS is selected.
+              </Text>
+              {onOpenNightscout ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={onOpenNightscout}
+                  style={({ pressed }) => [
+                    styles.linkButton,
+                    { borderColor: colors.border, borderRadius: radius.md, opacity: pressed ? 0.72 : 1 },
+                  ]}
+                >
+                  <Text style={[styles.linkText, { color: colors.primary }]}>Set up Nightscout</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : null}
+          {fillError ? (
+            <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{fillError}</Text>
+          ) : null}
+        </View>
+      ) : null}
       {error ? <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{error}</Text> : null}
       {(status?.droppedCount ?? 0) > 0 ? (
         <Text accessibilityRole="alert" style={[styles.body, { color: colors.warning }]}>
@@ -153,4 +260,10 @@ const styles = StyleSheet.create({
   button: { alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', marginTop: 18, minHeight: 48, paddingHorizontal: 14, paddingVertical: 10 },
   buttonText: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
   note: { fontSize: 13, lineHeight: 20, marginTop: 16 },
+  fill: { borderTopWidth: StyleSheet.hairlineWidth, gap: 8, marginTop: 16, paddingTop: 14 },
+  fillRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  fillCopy: { flex: 1, gap: 4 },
+  fillTitle: { fontSize: 15, fontWeight: '700', lineHeight: 21 },
+  linkButton: { alignItems: 'center', alignSelf: 'flex-start', borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
+  linkText: { fontSize: 15, fontWeight: '700' },
 });

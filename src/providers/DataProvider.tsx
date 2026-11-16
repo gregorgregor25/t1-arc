@@ -14,6 +14,10 @@ import { AppState, Linking } from "react-native";
 
 import T1ArcGlucoseDisplay from "../../modules/t1arc-glucose-display";
 import { stopAapsLocalSourceForDemoInTransaction } from "@/data/aaps/localAapsSource";
+import {
+  loadNightscoutImportPolicy,
+  nightscoutHistoryImporterForPolicy,
+} from "@/data/aaps/aapsTreatmentFill";
 import T1ArcGlookoExport from "../../modules/t1arc-glooko-export";
 import T1ArcNotificationSource from "../../modules/t1arc-notification-source";
 import {
@@ -228,6 +232,7 @@ import {
 import {
   ImportedSourceDeleteResult,
   ImportWriteResult,
+  MemoryHealthRecordStore,
   StoredImportSourceSummary,
 } from "@/data/persistence/HealthRecordStore";
 import { openT1ArcDatabase } from "@/data/persistence/t1arcDatabase";
@@ -291,7 +296,10 @@ interface DataContextValue {
     writeLease: LocalDataWriteLease,
     sourceWriteLease: SourceConnectionWriteLease,
   ): Promise<void>;
-  connectNightscout(connection: NightscoutConnection): Promise<GlucoseReading>;
+  /** Resolves without a reading when AAPS on this phone supplies glucose. */
+  connectNightscout(
+    connection: NightscoutConnection,
+  ): Promise<GlucoseReading | undefined>;
   disconnectNightscout(): Promise<void>;
   connectDexcomShare(
     connection: DexcomShareConnection,
@@ -1188,6 +1196,31 @@ export function DataProvider({ children }: PropsWithChildren) {
   const connectNightscout = useCallback(
     async (connection: NightscoutConnection) => {
       const writeLease = await acquireLocalDataWriteLease();
+      const policy = await loadNightscoutImportPolicy(writeLease);
+      if (!policy.importGlucose) {
+        // AAPS on this phone supplies glucose. Verify the site with a
+        // treatment read only, so no Nightscout glucose is fetched or stored.
+        const candidate = await beginNightscoutConnectionChange(writeLease);
+        await new NightscoutTreatmentImporter(
+          connection,
+          new MemoryHealthRecordStore(),
+        ).refresh();
+        const sourceWriteLease = await activateNightscoutConnection(
+          candidate,
+          connection,
+          verifiedSourceActivationOptions({
+            sourceId: NIGHTSCOUT_SOURCE_ID,
+            readings: [],
+            clearHealthRecordsOnIdentityChange: true,
+          }),
+        );
+        await changeDataMode("live", writeLease);
+        await assertSourceConnectionActivationCurrent(
+          sourceWriteLease,
+          candidate.changeGeneration,
+        );
+        return undefined;
+      }
       const candidate = await beginNightscoutConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new NightscoutGlucoseSource(
@@ -1427,25 +1460,31 @@ export function DataProvider({ children }: PropsWithChildren) {
         lastError: undefined,
       };
       await saveNightscoutHistoryState(started, sourceWriteLease);
-      const source = new NightscoutGlucoseSource(
+      const treatments = new NightscoutTreatmentImporter(
         connection,
-        glucoseHistoryStore.current.withSourceWriteLease(sourceWriteLease),
-        fetch,
-        Date.now,
-        new NightscoutTreatmentImporter(
-          connection,
-          healthRecordStore.current.withSourceWriteLease(sourceWriteLease),
-        ),
-        undefined,
-        undefined,
-        writeLease,
-        sourceWriteLease,
+        healthRecordStore.current.withSourceWriteLease(sourceWriteLease),
       );
-      const result = await syncNightscoutHistoryIfDue(
-        source,
-        now,
-        sourceWriteLease,
+      // While AAPS supplies glucose, older history reads treatments only.
+      const importer = nightscoutHistoryImporterForPolicy(
+        await loadNightscoutImportPolicy(writeLease),
+        {
+          glucoseAndTreatments: new NightscoutGlucoseSource(
+            connection,
+            glucoseHistoryStore.current.withSourceWriteLease(sourceWriteLease),
+            fetch,
+            Date.now,
+            treatments,
+            undefined,
+            undefined,
+            writeLease,
+            sourceWriteLease,
+          ),
+          treatments,
+        },
       );
+      const result = importer
+        ? await syncNightscoutHistoryIfDue(importer, now, sourceWriteLease)
+        : started;
       await refreshEarliestLiveDate(() => true, writeLease);
       await withLocalDataWriteLeaseTransaction(writeLease, async () => {
         setNow(Date.now());

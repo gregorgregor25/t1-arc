@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 
+import type { AapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
+import { formatTime } from "@/domain/time";
 import { DailyHealthMetrics } from "@/domain/dailyHealthMetrics";
 import {
   GlucoseStats,
@@ -190,6 +192,7 @@ export function TodayGlanceCard({
   health,
   insulin,
   insulinAvailable,
+  insulinProvenance,
   events,
   range,
   onOpenInsulin,
@@ -200,6 +203,8 @@ export function TodayGlanceCard({
   health?: DailyHealthMetrics;
   insulin?: InsulinStats;
   insulinAvailable: boolean;
+  /** Present only while AAPS on this phone supplies glucose. */
+  insulinProvenance?: AapsInsulinProvenance;
   events: HealthContextEvent[];
   range: TimeRange;
   onOpenInsulin?(): void;
@@ -282,7 +287,18 @@ export function TodayGlanceCard({
       id: "insulin",
       label: "Insulin",
       value: `${formatRegionalFixedNumber(insulin.totalUnits, regional.locale, 1)} U`,
-      detail: `${formatRegionalFixedNumber(insulin.basalUnits, regional.locale, 1)} basal · ${formatRegionalFixedNumber(insulin.bolusUnits, regional.locale, 1)} bolus`,
+      detail: [
+        `${formatRegionalFixedNumber(insulin.basalUnits, regional.locale, 1)} basal · ${formatRegionalFixedNumber(insulin.bolusUnits, regional.locale, 1)} bolus`,
+        insulinProvenance?.sourceLabel,
+        insulinProvenance?.dataThrough !== undefined
+          ? `data through ${formatTime(insulinProvenance.dataThrough)}`
+          : undefined,
+        insulinProvenance?.scheduledBasalMissing
+          ? "scheduled basal not included"
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       icon: "water-outline",
       tone: colors.insulin,
       segments: [
@@ -296,7 +312,7 @@ export function TodayGlanceCard({
       id: "insulin",
       label: "Insulin",
       value: "No data",
-      detail: "No delivery records for today",
+      detail: insulinProvenance?.emptyDetail ?? "No delivery records for today",
       icon: "water-outline",
       tone: colors.insulin,
       onPress: onOpenInsulin,

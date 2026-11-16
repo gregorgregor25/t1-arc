@@ -3,6 +3,10 @@ import {
   GlucoseSource,
 } from '@/data/contracts';
 import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import {
+  gateNightscoutTreatments,
+  loadNightscoutImportPolicy,
+} from '@/data/aaps/aapsTreatmentFill';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { DexcomShareConnection } from '@/data/dexcomShare/types';
@@ -49,7 +53,10 @@ export function createLiveRepository(
     ? healthRecords.withSourceWriteLease(sourceWriteLeases.nightscout)
     : undefined;
   const nightscoutTreatments = nightscout && nightscoutHealthRecords
-    ? new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords)
+    ? gateNightscoutTreatments(
+        new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords),
+        () => loadNightscoutImportPolicy(writeLease),
+      )
     : undefined;
   if (credentials && sourceWriteLeases.libre) {
     glucoseSources.push(

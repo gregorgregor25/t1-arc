@@ -1,5 +1,9 @@
 import { GlucoseSource } from '@/data/contracts';
 import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import {
+  loadNightscoutImportPolicy,
+  nightscoutHistoryImporterForPolicy,
+} from '@/data/aaps/aapsTreatmentFill';
 import { getSelectedGlucoseSourceId } from '@/data/aaps/localAapsSource';
 import { AAPS_LOCAL_SOURCE_ID, AAPS_NO_SOURCE_ID } from '@/data/aaps/types';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
@@ -178,23 +182,33 @@ export async function syncConfiguredNightscoutHistoryIfDue(
   const sourceHistory = scopedHistory.withSourceWriteLease(
     owned.sourceWriteLease,
   );
-  return syncNightscoutHistoryIfDue(
-    new NightscoutGlucoseSource(
-      connection,
-      sourceHistory,
-      fetch,
-      Date.now,
-      new NightscoutTreatmentImporter(
-        connection,
-        new SqliteHealthRecordStore(writeLease).withSourceWriteLease(
-          owned.sourceWriteLease,
-        ),
-      ),
-      undefined,
-      undefined,
-      writeLease,
+  const treatments = new NightscoutTreatmentImporter(
+    connection,
+    new SqliteHealthRecordStore(writeLease).withSourceWriteLease(
       owned.sourceWriteLease,
     ),
+  );
+  // While AAPS supplies glucose, older history reads treatments only.
+  const importer = nightscoutHistoryImporterForPolicy(
+    await loadNightscoutImportPolicy(writeLease),
+    {
+      glucoseAndTreatments: new NightscoutGlucoseSource(
+        connection,
+        sourceHistory,
+        fetch,
+        Date.now,
+        treatments,
+        undefined,
+        undefined,
+        writeLease,
+        owned.sourceWriteLease,
+      ),
+      treatments,
+    },
+  );
+  if (!importer) return undefined;
+  return syncNightscoutHistoryIfDue(
+    importer,
     Date.now(),
     owned.sourceWriteLease,
   );

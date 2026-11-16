@@ -1052,7 +1052,10 @@ export function SourcesScreen({
 
       {activeSource === "aaps" ? (
         <View style={styles.settingsSections}>
-          <AapsSourceCard onDataChanged={showChangedPersonalData} />
+          <AapsSourceCard
+            onDataChanged={showChangedPersonalData}
+            onOpenNightscout={() => showSource("nightscout")}
+          />
         </View>
       ) : null}
 

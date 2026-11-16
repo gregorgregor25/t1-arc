@@ -23,6 +23,8 @@ import {
 import { SafetyNote } from "@/components/SafetyNote";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
+import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
+import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
@@ -96,6 +98,7 @@ export function TodayScreen() {
   const dailyHealth = useDailyHealthMetrics(dayRange(today, now));
   const latest = useLatestData();
   const aaps = useAapsCardSnapshot(dataMode === 'live', repository, revision);
+  const aapsInsulin = useAapsInsulinContext(dataMode === 'live', revision);
   const aapsSelected = aaps.kind === 'aaps';
   // Never attach a prior session's independently loaded glucose to new estimates.
   const cardReading = aapsSelected ? aaps.reading
@@ -203,6 +206,15 @@ export function TodayScreen() {
         todayTimeline.data.dailyInsulinTotals,
       )
     : undefined;
+  const insulinProvenance = todayTimeline.data
+    ? describeAapsInsulinProvenance({
+        selectedSourceId: aapsInsulin.selectedSourceId,
+        nightscoutFill: aapsInsulin.nightscoutFill,
+        basal: todayTimeline.data.basal,
+        boluses: todayTimeline.data.boluses,
+        range: dayRange(today, now),
+      })
+    : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
 
@@ -249,6 +261,7 @@ export function TodayScreen() {
           health={dailyHealth.metrics}
           insulin={insulinSummary?.stats}
           insulinAvailable={Boolean(todayTimeline.data && hasInsulinDeliveryEvidence(todayTimeline.data))}
+          insulinProvenance={insulinProvenance}
           range={dayRange(today, now)}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {

@@ -259,10 +259,12 @@ export function NightscoutSourceCard() {
       setTokenVisible(false);
       setSecretVisible(false);
       setEditing(false);
-      setLatest({
-        mmolL: reading.mmolL,
-        timestamp: reading.timestamp,
-      });
+      // No reading means AAPS on this phone supplies glucose.
+      setLatest(
+        reading
+          ? { mmolL: reading.mmolL, timestamp: reading.timestamp }
+          : undefined,
+      );
       setIobCob(
         connection.includeIobCob
           ? await loadNightscoutIobCobSnapshot(connection).catch(
