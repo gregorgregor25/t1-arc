@@ -88,6 +88,13 @@ follows the source's reading cadence:
   keep five-minute mode. A check that finds the previous sync still
   running is retried 20 seconds later. Changing source forgets the learned
   cadence.
+- **AAPS local** pushes each status to T1 Arc, and the receiver starts a sync
+  when glucose is new or corrected. The collector therefore does not use the
+  schedules above for AAPS: it syncs only when an alert check is due, and
+  otherwise at most every 15 minutes after the last new reading, which also
+  drains any statuses left in the encrypted buffer. A sync that finds the
+  previous one still running is not retried early, because that sync drains
+  the same buffer. See [AAPS local source](AAPS_LOCAL_SOURCE.md#battery).
 - Glucose alert evaluation tells the service the earliest time a repeat,
   stale transition or retry of an unshown alert could become due, and saving
   alert settings asks for a prompt check. The service brings its next sync
