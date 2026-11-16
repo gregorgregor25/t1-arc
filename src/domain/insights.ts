@@ -7,8 +7,6 @@ import {
   MealEvent,
   MedicationEvent,
   SleepEvent,
-  TARGET_HIGH_MMOL_L,
-  TARGET_LOW_MMOL_L,
   TimelineData,
   WeightEvent,
 } from "./models";
@@ -61,6 +59,14 @@ import {
   formatTemperature,
 } from "./regionalFormat";
 import { getRuntimeRegionalDefaults } from "./regionalProfileRuntime";
+import {
+  consensusGlucoseBandBounds,
+  formatGlucoseThreshold,
+  glucoseRangePosition,
+  glucoseTargetRangePhrase,
+  STANDARD_GLUCOSE_RANGE,
+  TIGHT_GLUCOSE_RANGE,
+} from "./glucoseRanges";
 import { formatRegionalWallClock } from "./regionalWallClock";
 import {
   summarizeInsulinByDay,
@@ -203,9 +209,19 @@ export interface InsightWindowSummary {
   glucoseAverage: number | null;
   glucoseStandardDeviation: number | null;
   glucoseCvPercent: number | null;
+  /** Standard range 3.9–10.0 mmol/L (70–180 mg/dL). */
   timeInRangePercent: number;
   timeAbovePercent: number;
   timeBelowPercent: number;
+  /**
+   * Consensus bands and tight range 3.9–7.8 mmol/L. Optional because saved
+   * reviews created before these figures existed do not contain them.
+   */
+  timeVeryLowPercent?: number;
+  timeLowPercent?: number;
+  timeHighPercent?: number;
+  timeVeryHighPercent?: number;
+  timeInTightRangePercent?: number;
   coveragePercent: number;
   glucoseReadings: number;
   highGlucoseRuns: number;
@@ -506,6 +522,63 @@ function regionalGlucose(mmolL: number, signedValue = false) {
   return formatGlucose(mmolL, getRuntimeRegionalDefaults(), {
     signed: signedValue,
   });
+}
+
+function regionalGlucoseThreshold(mmolL: number) {
+  return formatGlucoseThreshold(mmolL, getRuntimeRegionalDefaults());
+}
+
+function standardRangePhrase() {
+  return glucoseTargetRangePhrase(
+    STANDARD_GLUCOSE_RANGE,
+    getRuntimeRegionalDefaults(),
+  );
+}
+
+/**
+ * Names the consensus band definitions with each figure. Returns an empty
+ * string for saved reviews created before band figures were recorded.
+ */
+function timeInRangeBandComparison(
+  current: InsightWindowSummary,
+  previous: InsightWindowSummary,
+) {
+  const regional = getRuntimeRegionalDefaults();
+  const pairs: [string, number | undefined, number | undefined][] = [
+    [
+      `time in ${glucoseTargetRangePhrase(TIGHT_GLUCOSE_RANGE, regional)}`,
+      current.timeInTightRangePercent,
+      previous.timeInTightRangePercent,
+    ],
+    [
+      `very low (${consensusGlucoseBandBounds("veryLow", regional)})`,
+      current.timeVeryLowPercent,
+      previous.timeVeryLowPercent,
+    ],
+    [
+      `low (${consensusGlucoseBandBounds("low", regional)})`,
+      current.timeLowPercent,
+      previous.timeLowPercent,
+    ],
+    [
+      `high (${consensusGlucoseBandBounds("high", regional)})`,
+      current.timeHighPercent,
+      previous.timeHighPercent,
+    ],
+    [
+      `very high (${consensusGlucoseBandBounds("veryHigh", regional)})`,
+      current.timeVeryHighPercent,
+      previous.timeVeryHighPercent,
+    ],
+  ];
+  const parts = pairs.flatMap(([label, recent, earlier]) =>
+    recent === undefined || earlier === undefined
+      ? []
+      : [`${label} ${regionalNumber(recent, 1)}% versus ${regionalNumber(earlier, 1)}%`],
+  );
+  if (!parts.length) return "";
+  const [first, ...rest] = parts;
+  return `Recent ${first}; ${rest.join("; ")}.`;
 }
 
 function regionalWeight(kilograms: number) {
@@ -1835,6 +1908,11 @@ function summarize(
     timeInRangePercent: glucose.timeInRangePercent,
     timeAbovePercent: glucose.timeAbovePercent,
     timeBelowPercent: glucose.timeBelowPercent,
+    timeVeryLowPercent: glucose.timeVeryLowPercent,
+    timeLowPercent: glucose.timeLowPercent,
+    timeHighPercent: glucose.timeHighPercent,
+    timeVeryHighPercent: glucose.timeVeryHighPercent,
+    timeInTightRangePercent: glucose.timeInTightRangePercent,
     coveragePercent: glucose.coveragePercent,
     glucoseReadings: data.glucose.length,
     highGlucoseRuns: highGlucoseRuns.length,
@@ -2004,9 +2082,10 @@ export function glucoseTimeByDayPart(
       if (overlap <= 0) return;
       represented.set(reading.id, reading);
       observedMilliseconds += overlap;
-      if (reading.mmolL > TARGET_HIGH_MMOL_L) {
+      const position = glucoseRangePosition(reading.mmolL, STANDARD_GLUCOSE_RANGE);
+      if (position === "above") {
         highMilliseconds += overlap;
-      } else if (reading.mmolL < TARGET_LOW_MMOL_L) {
+      } else if (position === "below") {
         lowMilliseconds += overlap;
       }
     });
@@ -2123,7 +2202,7 @@ function currentOnlyPairedFindings(data: TimelineData): InsightFinding[] {
       day.glucose.coveragePercent >= MIN_PAIRED_DAY_CGM_COVERAGE_PERCENT &&
       day.glucose.averageMmolL !== null;
     const cgmDetail = cgmReady
-      ? `same-date CGM ${regionalNumber(day.glucose.timeInRangePercent, 1)}% in range, mean ${regionalGlucose(day.glucose.averageMmolL!)} (${regionalNumber(day.glucose.coveragePercent, 1)}% observed)`
+      ? `same-date CGM ${regionalNumber(day.glucose.timeInRangePercent, 1)}% in the standard range, mean ${regionalGlucose(day.glucose.averageMmolL!)} (${regionalNumber(day.glucose.coveragePercent, 1)}% observed)`
       : undefined;
     const sleeps = sleepsByEndingDate.get(day.dateKey) ?? [];
     if (sleeps.length && cgmReady) {
@@ -2647,8 +2726,16 @@ export function buildInsightReport(
     id: "glucose-overview",
     kind: "observation",
     category: "glucose",
-    title: `Time in range ${tirDirection}`,
-    summary: `Recent time in range was ${regionalNumber(current.timeInRangePercent)}% versus ${regionalNumber(previous.timeInRangePercent)}%. Average glucose changed from ${regionalGlucose(previous.glucoseAverage ?? 0)} to ${regionalGlucose(current.glucoseAverage ?? 0)} (${regionalGlucose(averageDelta, true)}).`,
+    title: `Time in the standard range ${tirDirection}`,
+    summary: [
+      `Recent time in ${standardRangePhrase()} was ${regionalNumber(current.timeInRangePercent)}% versus ${regionalNumber(previous.timeInRangePercent)}%.`,
+      timeInRangeBandComparison(current, previous),
+      `Average glucose changed from ${regionalGlucose(previous.glucoseAverage ?? 0)} to ${regionalGlucose(current.glucoseAverage ?? 0)} (${regionalGlucose(averageDelta, true)}).`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    caveat:
+      "Percentages are shares of observed sensor time in each period, weighted by how long each reading applied. Time without readings is excluded rather than guessed.",
     evidence: [
       glucoseEvidence(
         "current-glucose",
@@ -2805,8 +2892,8 @@ export function buildInsightReport(
     const { part, previousPart } = changedPart;
     const threshold =
       changedPart.excursion === "high"
-        ? `above ${regionalGlucose(TARGET_HIGH_MMOL_L)}`
-        : `below ${regionalGlucose(TARGET_LOW_MMOL_L)}`;
+        ? `above ${regionalGlucoseThreshold(STANDARD_GLUCOSE_RANGE.upperMmolL)}`
+        : `below ${regionalGlucoseThreshold(STANDARD_GLUCOSE_RANGE.lowerMmolL)}`;
     findings.push({
       id: "glucose-timing",
       kind: "observation",
@@ -3592,15 +3679,15 @@ export function buildInsightReport(
     ready,
     headline:
       tirDelta < -1
-        ? `Time in range was lower in the recent ${regionalNumber(comparisonDays, 0)} days`
+        ? `Time in the standard range was lower in the recent ${regionalNumber(comparisonDays, 0)} days`
         : tirDelta > 1
-          ? `Time in range was higher in the recent ${regionalNumber(comparisonDays, 0)} days`
+          ? `Time in the standard range was higher in the recent ${regionalNumber(comparisonDays, 0)} days`
           : averageDelta > 0.2
             ? `Average glucose was higher in the recent ${regionalNumber(comparisonDays, 0)} days`
             : averageDelta < -0.2
               ? `Average glucose was lower in the recent ${regionalNumber(comparisonDays, 0)} days`
               : `The two ${regionalNumber(comparisonDays, 0)}-day periods were broadly similar`,
-    summary: `Time in range ${tirDirection}. T1 Arc found ${regionalNumber(findings.filter((finding) => finding.kind === "context-clue").length, 0)} context changes worth inspecting; none is presented as a proven cause.`,
+    summary: `Time in ${standardRangePhrase()} ${tirDirection}. T1 Arc found ${regionalNumber(findings.filter((finding) => finding.kind === "context-clue").length, 0)} context changes worth inspecting; none is presented as a proven cause.`,
     current,
     previous,
     findings,
