@@ -63,10 +63,35 @@ internal object AapsStatusPolicy {
     nowElapsedMs - lastRequestElapsedMs >= AAPS_MAX_SYNC_DEFERRAL_MS ||
     (alertCheckAtMs != null && alertCheckAtMs > 0L && nowWallMs >= alertCheckAtMs)
 
+  /**
+   * A status repeating the published reading without a trend must not
+   * replace the trend T1 Arc already shows (often one calculated from recent
+   * history). Otherwise every such status republished the notification,
+   * widget and watch, and the next sync calculated and republished the trend
+   * again.
+   */
   fun publishGlucose(
     previousTimestamp: Long?, previousMmolL: Double?, previousTrend: String?,
     incomingTimestamp: Long, incomingMmolL: Double, incomingTrend: String,
   ): Boolean = previousTimestamp == null || incomingTimestamp > previousTimestamp ||
     (incomingTimestamp == previousTimestamp &&
-      (incomingMmolL != previousMmolL || incomingTrend != previousTrend))
+      (incomingMmolL != previousMmolL ||
+        (incomingTrend != previousTrend && incomingTrend != UNKNOWN_TREND)))
+
+  /**
+   * Whether the native AAPS snapshot must stay in place of a JS publication.
+   * An older or differently valued reading never replaces it, and nor does a
+   * different trend when AAPS itself supplied the native one. A trend that a
+   * sync calculated from history can be recalculated by a later sync, for
+   * example after backfill; the native path keeps it while AAPS sends none.
+   */
+  fun nativeReadingWins(
+    nativeTimestamp: Long, nativeMmolL: Double, nativeTrend: String, nativeTrendOrigin: String,
+    jsTimestamp: Long, jsMmolL: Double, jsTrend: String,
+  ): Boolean = jsTimestamp < nativeTimestamp ||
+    (jsTimestamp == nativeTimestamp &&
+      (jsMmolL != nativeMmolL ||
+        (nativeTrendOrigin == "source" && nativeTrend != UNKNOWN_TREND && jsTrend != nativeTrend)))
+
+  private const val UNKNOWN_TREND = "unknown"
 }

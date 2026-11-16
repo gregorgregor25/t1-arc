@@ -46,6 +46,12 @@ The native encrypted buffer holds up to 10,080 status updates while database ing
 
 AAPS sends a status about once a minute, and IOB changes in almost every one. Each status is validated and stored in the native encrypted buffer, and glucose reaches the notification, widget, watch and alarms natively. The background database sync is requested straight away only when glucose is new or corrected, or when a timed alert check is due. A status that changes only IOB, COB or delta waits in the buffer for the next sync, and one is requested at least every 15 minutes while statuses keep arriving. With T1 Arc open, every status still refreshes the card at once.
 
+Because AAPS pushes its statuses, the collector service does not poll for AAPS readings on a timer. Its own sync runs only when a timed alert check (a repeat or stale transition) is due, retried once a minute while an alert cannot be shown, and otherwise at most every 15 minutes, measured from the last new reading. Other sources keep the schedule in [Glucose display architecture](GLUCOSE_DISPLAY_ARCHITECTURE.md#sync-cadence). The notification, widget and always-on display still re-age every minute, and native alarms still reconcile every minute, so a stopped feed still shows as delayed or stale on time.
+
+A status that repeats the shown reading without a trend keeps the trend already shown, including one calculated from recent history, instead of republishing the notification, widget and watch. A new or corrected value, or a trend from AAPS, still publishes at once. The watch history sent with a native AAPS reading covers the same six-hour window as the database sync, so the sync does not send the same history a second time.
+
+Database writes reuse one already-keyed encrypted connection. Each new SQLCipher connection derives its key with 256,000 PBKDF2 iterations, which was previously repeated for every write transaction, including each small Health Connect batch. A connection whose transaction state is uncertain is closed and replaced, and erasing local data closes the idle connection first.
+
 ## Verification and remaining device checks
 
 ### Combined card and trend update, 2 November 2026

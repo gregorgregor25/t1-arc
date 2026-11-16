@@ -76,7 +76,30 @@ class AapsStatusPolicyTest {
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.2, "flat"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.0, "up"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "doubleUp", 1000, 6.0, "tripleUp"))
-    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "tripleDown", 1000, 6.0, "unknown"))
     assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1001, 6.0, "flat"))
+    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1001, 6.0, "unknown"))
+  }
+
+  @Test fun repeatedReadingWithoutTrendKeepsTheShownTrend() {
+    // Each AAPS status repeats the reading. Without a trend it must not
+    // replace the trend already shown and republish every surface.
+    assertFalse(AapsStatusPolicy.publishGlucose(1000, 6.0, "tripleDown", 1000, 6.0, "unknown"))
+    assertFalse(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.0, "unknown"))
+    assertFalse(AapsStatusPolicy.publishGlucose(1000, 6.0, "unknown", 1000, 6.0, "unknown"))
+    // A corrected value still publishes, with or without a trend.
+    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.1, "unknown"))
+    // A trend from AAPS still replaces a calculated one.
+    assertTrue(AapsStatusPolicy.publishGlucose(1000, 6.0, "flat", 1000, 6.0, "up"))
+  }
+
+  @Test fun nativeSnapshotGuardsOnlyAapsSuppliedTrends() {
+    assertTrue(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "source", 999, 6.0, "flat"))
+    assertTrue(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "source", 1000, 6.1, "flat"))
+    assertTrue(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "source", 1000, 6.0, "up"))
+    assertFalse(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "source", 1000, 6.0, "flat"))
+    assertFalse(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "source", 1001, 6.4, "up"))
+    // A calculated trend can be recalculated by a later sync.
+    assertFalse(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "flat", "calculated", 1000, 6.0, "up"))
+    assertFalse(AapsStatusPolicy.nativeReadingWins(1000, 6.0, "unknown", "unavailable", 1000, 6.0, "up"))
   }
 }
