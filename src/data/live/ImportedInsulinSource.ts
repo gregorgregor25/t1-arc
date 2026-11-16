@@ -5,6 +5,10 @@ import {
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
 import {
+  reconcileBasalSources,
+  reconcileBolusSources,
+} from '@/domain/insulinSourceReconciliation';
+import {
   GLOOKO_IMPORT_CAPABILITIES,
   SourceCapability,
 } from '@/domain/sourceCapabilities';
@@ -32,11 +36,13 @@ export class ImportedInsulinSource implements InsulinSource {
   }
 
   async getBasalDeliveries(range: TimeRange) {
-    return this.store.getBasalDeliveries(range);
+    // The same delivery can be stored by Glooko, AAPS and Nightscout; count it once.
+    return reconcileBasalSources(await this.store.getBasalDeliveries(range));
   }
 
   async getBolusDeliveries(range: TimeRange) {
-    return this.store.getBolusDeliveries(range);
+    return reconcileBolusSources(await this.store.getBolusDeliveries(range))
+      .boluses;
   }
 
   async getDailyTotals(range: TimeRange) {
