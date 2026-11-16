@@ -241,6 +241,7 @@ internal class AodOverlayLifecyclePolicy {
       snapshotAvailable
 }
 private const val MAX_WEAR_HISTORY_POINTS = 144
+private const val WEAR_HISTORY_WINDOW_MS = 6 * 60 * 60_000L
 
 private val AOD_POSITIONS =
   setOf(
@@ -688,14 +689,31 @@ internal object GlucoseSyncCadencePolicy {
       return legacyDelayMs(timestampMs, now)
     }
     val readingDelay = adaptiveDelayMs(timestampMs, now, expectedIntervalMs, probeAtMs)
-    if (alertCheckAtMs == null || alertCheckAtMs <= 0L) return readingDelay
+    val alertDelay = alertCheckDelayMs(now, alertCheckAtMs) ?: return readingDelay
+    return min(readingDelay, alertDelay)
+  }
+
+  /**
+   * AndroidAPS pushes every status to the receiver, which starts a sync as
+   * soon as glucose changes, and the native path has already updated the
+   * notification, widget, watch and alarms by then. Polling the encrypted
+   * queue on a timer finds nothing new, so the collector only wakes for a
+   * pending time-based alert check (repeat or stale transition) and otherwise
+   * once per deferral bound, which also drains any status left in the queue.
+   * Stale display text and native alarms keep their own one-minute tick.
+   */
+  fun pushSourceDelayMs(now: Long, alertCheckAtMs: Long?): Long {
+    val alertDelay = alertCheckDelayMs(now, alertCheckAtMs) ?: return AAPS_MAX_SYNC_DEFERRAL_MS
+    return min(AAPS_MAX_SYNC_DEFERRAL_MS, alertDelay)
+  }
+
+  private fun alertCheckDelayMs(now: Long, alertCheckAtMs: Long?): Long? {
+    if (alertCheckAtMs == null || alertCheckAtMs <= 0L) return null
     // A check long past means the last evaluation could not settle it (for
     // example an alert that could not be shown); retry once a minute, as the
     // legacy cadence did, instead of at the 15 s floor.
-    val alertDelay =
-      if (alertCheckAtMs < now - ALERT_CHECK_RETRY_MS) ALERT_CHECK_RETRY_MS
+    return if (alertCheckAtMs < now - ALERT_CHECK_RETRY_MS) ALERT_CHECK_RETRY_MS
       else max(GLUCOSE_SYNC_MIN_DELAY_MS, alertCheckAtMs - now)
-    return min(readingDelay, alertDelay)
   }
 
   /**
@@ -1810,6 +1828,25 @@ private fun applyPrivateGlucosePublication(
   return currentPublished && historyPublished
 }
 
+/**
+ * Extends the watch history last published from the database by the new
+ * reading, over the same six-hour window the JS sync uses. When the sync then
+ * publishes that window, the payload is identical and the watch history is
+ * not sent a second time. The four-hour widget history is only a fallback
+ * while nothing has been published since the process started.
+ */
+internal fun aapsWearHistory(
+  published: List<GlucoseHistoryPoint>,
+  widgetHistory: List<GlucoseHistoryPoint>,
+  mmolL: Double,
+  timestampMs: Long,
+): List<GlucoseHistoryPoint> {
+  if (published.isEmpty()) return widgetHistory
+  val start = timestampMs - WEAR_HISTORY_WINDOW_MS
+  return published.filter { it.timestampMs in start until timestampMs } +
+    GlucoseHistoryPoint(mmolL, timestampMs)
+}
+
 /** Called inside the same native epoch gate as source changes and privacy erase. */
 internal fun publishAapsLocalReading(
   context: Context,
@@ -1839,7 +1876,10 @@ internal fun publishAapsLocalReading(
     sourceHasError = false, widgetHistory = history,
     sourceIsLive = true, sourceCheckedAt = reading.receivedAt,
   )
-  applyPrivateGlucosePublication(context, epoch, snapshot, history,
+  applyPrivateGlucosePublication(context, epoch, snapshot,
+    // Extend only a history published with an AndroidAPS local snapshot.
+    aapsWearHistory(if (previous == null) emptyList() else T1ArcWearSync.history(),
+      history, mmolL, timestamp),
     "AndroidAPS local reading unavailable", wearWaitSeconds = 3L)
 }
 
@@ -3023,10 +3063,11 @@ class T1ArcGlucoseDisplayService : Service() {
           )
         val snapshot = T1ArcGlucoseDisplayState.snapshot(this@T1ArcGlucoseDisplayService)
         cadenceTracker.observe(snapshot?.timestampMs, snapshot?.sourceLabel)
+        // A busy AAPS task drains the queue itself, so it needs no fast retry.
         scheduleSync(
           GlucoseSyncCadencePolicy.delayAfterAttempt(
             started,
-            cadenceTracker.adaptive(),
+            cadenceTracker.adaptive() && !aapsSelected(),
             syncDelayMs(snapshot?.timestampMs),
           )
         )
@@ -3136,14 +3177,23 @@ class T1ArcGlucoseDisplayService : Service() {
     return START_STICKY
   }
 
+  private fun aapsSelected(): Boolean = AapsLocalStore.selectedSource(this) == AAPS_SOURCE_ID
+
   private fun syncDelayMs(timestampMs: Long?): Long =
-    GlucoseSyncCadencePolicy.nextDelayMs(
-      timestampMs,
-      System.currentTimeMillis(),
-      cadenceTracker.expectedIntervalMs(),
-      cadenceTracker.probeAtMs(),
-      T1ArcGlucoseDisplayState.nextAlertCheckAt(this),
-    )
+    if (aapsSelected()) {
+      GlucoseSyncCadencePolicy.pushSourceDelayMs(
+        System.currentTimeMillis(),
+        T1ArcGlucoseDisplayState.nextAlertCheckAt(this),
+      )
+    } else {
+      GlucoseSyncCadencePolicy.nextDelayMs(
+        timestampMs,
+        System.currentTimeMillis(),
+        cadenceTracker.expectedIntervalMs(),
+        cadenceTracker.probeAtMs(),
+        T1ArcGlucoseDisplayState.nextAlertCheckAt(this),
+      )
+    }
 
   private fun scheduleSync(delayMs: Long) {
     handler.removeCallbacks(syncRunnable)
@@ -3157,19 +3207,22 @@ class T1ArcGlucoseDisplayService : Service() {
    * A newer reading reached the phone surfaces. In adaptive mode, schedule
    * the next sync from it right away instead of waiting for a confirmation
    * tick. Only an advancing timestamp reschedules, so repeats cannot storm.
-   * Legacy-cadence sources keep their fixed ticks unchanged.
+   * Legacy-cadence sources keep their fixed ticks unchanged. For AAPS each
+   * new reading restarts the fallback wait, since the receiver brings the
+   * next one in.
    */
   private fun onReadingPublished(timestampMs: Long, sourceLabel: String) {
     if (!serviceAlive || !syncLoopActive) return
     val wasAdaptive = cadenceTracker.adaptive()
     if (!cadenceTracker.observe(timestampMs, sourceLabel)) return
-    if (!wasAdaptive && !cadenceTracker.adaptive()) return
+    if (!aapsSelected() && !wasAdaptive && !cadenceTracker.adaptive()) return
     scheduleSync(syncDelayMs(timestampMs))
   }
 
-  /** Bring the next adaptive sync forward if an alert check is now due sooner. */
+  /** Bring the next adaptive or AAPS sync forward if an alert check is now due sooner. */
   private fun onAlertCheckChanged() {
-    if (!serviceAlive || !syncLoopActive || !cadenceTracker.adaptive()) return
+    if (!serviceAlive || !syncLoopActive) return
+    if (!cadenceTracker.adaptive() && !aapsSelected()) return
     val delay =
       syncDelayMs(T1ArcGlucoseDisplayState.snapshot(this)?.timestampMs)
     if (SystemClock.uptimeMillis() + delay < nextSyncUptimeMs) scheduleSync(delay)
@@ -4308,10 +4361,10 @@ class T1ArcGlucoseDisplayModule : Module() {
           val native = T1ArcGlucoseDisplayState.snapshot(context)
             ?.takeIf { it.sourceLabel == "AndroidAPS local" }
           if (native != null && (parsedSnapshot == null ||
-              parsedSnapshot.timestampMs < native.timestampMs ||
-              (parsedSnapshot.timestampMs == native.timestampMs &&
-                (parsedSnapshot.mmolL != native.mmolL ||
-                  (native.trend != "unknown" && parsedSnapshot.trend != native.trend))))) {
+              AapsStatusPolicy.nativeReadingWins(
+                native.timestampMs, native.mmolL, native.trend, native.trendOrigin,
+                parsedSnapshot.timestampMs, parsedSnapshot.mmolL, parsedSnapshot.trend,
+              ))) {
             return@mutateForEpoch false
           }
         }
