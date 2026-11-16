@@ -11,6 +11,7 @@
 - [Learn the main screens](USING_T1_ARC.md)
 - [Log food and scan barcodes](FOOD_LOGGING.md)
 - [Understand import delays and reading age](DATA_FRESHNESS.md)
+- [How time in range and other glucose statistics are calculated](GLUCOSE_STATISTICS.md)
 - [Choose a region and connect data sources](CONNECTIONS_AND_REGIONS.md)
 - [Set up Tarv1s with your own OpenAI key](TARV1S_BYOK.md)
 - [Set up displays, alerts and widgets](DISPLAY_AND_ALERTS.md)
