@@ -416,7 +416,7 @@ private fun historyFromBridgeMaps(
     }
   }
 
-private object T1ArcSnapshotCipher {
+internal object T1ArcSnapshotCipher {
   private fun secretKey(): SecretKey {
     val keyStore =
       KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -1174,6 +1174,8 @@ internal object T1ArcGlucoseDisplayState {
       .remove(SNAPSHOT_PAYLOAD_KEY)
       .remove(SNAPSHOT_IV_KEY)
       .apply()
+    // Estimates are shown only beside glucose; no reading means none shown.
+    T1ArcOnBoardEstimateState.clear(context)
   }
 
   fun freshness(
@@ -1353,6 +1355,7 @@ internal object T1ArcGlucosePublicationGate {
           // snapshot from the preceding privacy epoch.
           .remove(SNAPSHOT_PAYLOAD_KEY)
           .remove(SNAPSHOT_IV_KEY)
+        T1ArcOnBoardEstimateState.clearInto(editor)
         if (next > storedEpoch(context)) {
           AapsLocalStore.clearForErase(context, editor)
           AapsTreatmentStore.clearForErase(editor)
@@ -2369,6 +2372,10 @@ private object T1ArcGlucoseNotification {
           } else {
             "${freshness.label} · $age · ${formatTime(context, snapshot.timestampMs)}"
           }
+        // Shown with the private notification only. The redacted lock-screen
+        // version below never includes it, matching glucose privacy.
+        val onBoard =
+          T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.NOTIFICATION, now)
         val readingBuilder =
           builder(context)
           .setSmallIcon(valueIcon(context, snapshot, freshness))
@@ -2378,6 +2385,7 @@ private object T1ArcGlucoseNotification {
           .setContentText("$unit · $status")
           .setShowWhen(true)
           .setWhen(snapshot.timestampMs)
+        if (onBoard != null) readingBuilder.setSubText(onBoard.compact)
         val chart = historyBitmap(context, snapshot)
         if (chart != null) {
           readingBuilder.setStyle(
@@ -2390,7 +2398,10 @@ private object T1ArcGlucoseNotification {
                   freshness,
                 )
               )
-              .setSummaryText("$status · ${snapshot.sourceLabel}")
+              .setSummaryText(
+                if (onBoard == null) "$status · ${snapshot.sourceLabel}"
+                else "$status · ${onBoard.detail}"
+              )
           )
         } else {
           readingBuilder.setStyle(
@@ -2403,7 +2414,9 @@ private object T1ArcGlucoseNotification {
                     freshness,
                   )
                 )
-                .append("\n$status\n${snapshot.sourceLabel} · Tap to inspect the timeline.")
+                .append("\n$status")
+                .append(if (onBoard == null) "" else "\n${onBoard.compact}\n${onBoard.detail}")
+                .append("\n${snapshot.sourceLabel} · Tap to inspect the timeline.")
             )
           )
         }
@@ -4229,6 +4242,37 @@ class T1ArcGlucoseDisplayModule : Module() {
       status(context)
     }
 
+    AsyncFunction("setOnBoardEstimatesVisibleAsync") Coroutine { visible: Boolean ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcOnBoardEstimateState.setVisible(context, visible)
+      refreshOnBoardSurfaces(context)
+      status(context)
+    }
+
+    // Nightscout IOB/COB from the JS sync. AAPS estimates are written natively
+    // by its status receiver and are never replaced from here.
+    AsyncFunction("updateOnBoardEstimateForWriteEpochAsync") Coroutine {
+        writeEpoch: Double,
+        selectionGeneration: Double,
+        estimate: Map<String, Any?>?,
+      ->
+      val context = requireNotNull(appContext.reactContext)
+      val generation = requireNotNull(GlucosePublicationEpochPolicy.parseBridgeEpoch(selectionGeneration))
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        if (AapsLocalStore.selectedSource(context) == AAPS_SOURCE_ID ||
+            AapsLocalStore.generation(context) != generation) return@mutateForEpoch false
+        val parsed = estimate?.let { OnBoardEstimatePolicy.fromBridge(it, epoch, generation) }
+        if (estimate != null && parsed == null) return@mutateForEpoch false
+        if (parsed == null) {
+          T1ArcOnBoardEstimateState.clearNightscout(context)
+        } else {
+          T1ArcOnBoardEstimateState.set(context, parsed)
+        }
+        refreshOnBoardSurfaces(context)
+        true
+      }
+    }
+
     AsyncFunction("setRegionalDisplayPreferencesAsync") Coroutine {
         glucoseUnit: String,
         localeTag: String,
@@ -4681,6 +4725,15 @@ class T1ArcGlucoseDisplayModule : Module() {
     }
   }
 
+  /** The notification also refreshes widgets; without it, only widgets need a render. */
+  private fun refreshOnBoardSurfaces(context: Context) {
+    if (T1ArcGlucoseDisplayState.enabled(context)) {
+      T1ArcGlucoseNotification.notify(context)
+    } else {
+      T1ArcGlucosePhoneSurfaceGate.mutate { T1ArcGlucoseWidget.updateAll(context) }
+    }
+  }
+
   private fun status(context: Context): Map<String, Any?> {
     val snapshot = T1ArcGlucoseDisplayState.snapshot(context)
     return mapOf(
@@ -4699,6 +4752,7 @@ class T1ArcGlucoseDisplayModule : Module() {
       "aodOverlayVisible" to T1ArcAodDiagnostics.overlayVisible,
       "androidAutoEnabled" to T1ArcGlucoseDisplayState.androidAutoEnabled(context),
       "androidAutoProjected" to T1ArcAndroidAuto.isProjected(),
+      "onBoardEstimatesVisible" to T1ArcOnBoardEstimateState.visible(context),
       "aodLastEvent" to T1ArcAodDiagnostics.lastEvent(context),
       "aodLastError" to T1ArcAodDiagnostics.lastError(context),
       "latestMmolL" to snapshot?.mmolL,
