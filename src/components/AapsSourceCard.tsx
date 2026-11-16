@@ -144,7 +144,7 @@ export function AapsSourceCard({
         {loading ? <ActivityIndicator color={colors.primary} /> : null}
       </View>
       <Text style={[styles.body, { color: colors.textSecondary }]}>
-        Glucose from Juggluco through AAPS, with AAPS estimates for insulin on board and carbs on board.
+        Glucose from Juggluco through AAPS, with AAPS estimates for insulin on board and carbs on board, and the boluses and carbs AAPS recorded.
       </Text>
       <Text style={[styles.status, { color: selected ? colors.accent : colors.textSecondary }]}>
         {selected ? 'Selected glucose source' : 'Not selected'}
@@ -245,7 +245,7 @@ export function AapsSourceCard({
         </Text>
       ) : null}
       <Text style={[styles.note, { color: colors.textSecondary }]}>
-        In AAPS, enable Config Builder → Synchronization → External Companion Apps. T1 Arc only receives status data; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
+        In AAPS, enable Config Builder → Synchronization → External Companion Apps for glucose, IOB and COB. To also record boluses, carbs, temporary targets and profile switches on this phone, enable Synchronization → xDrip+. T1 Arc only reads what AAPS shares; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
       </Text>
     </SectionCard>
   );

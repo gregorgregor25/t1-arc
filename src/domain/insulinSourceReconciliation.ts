@@ -1,4 +1,4 @@
-import type { BasalDelivery, BolusDelivery } from './models';
+import type { BasalDelivery, BolusDelivery, HealthContextEvent } from './models';
 
 /**
  * Several connected sources can describe the same pump delivery: an old Glooko
@@ -170,4 +170,49 @@ export function reconcileBasalSources(basal: readonly BasalDelivery[]): BasalDel
   return result.sort(
     (left, right) => left.start - right.start || left.id.localeCompare(right.id),
   );
+}
+
+/** AAPS sends the same carbs and notes locally and to Nightscout. */
+export const DUPLICATE_CONTEXT_WINDOW_MS = 2 * 60_000;
+export const DUPLICATE_CARBS_TOLERANCE_GRAMS = 0.5;
+
+function sameAapsRecord(local: HealthContextEvent, remote: HealthContextEvent) {
+  if (local.kind !== remote.kind) return false;
+  if (Math.abs(local.start - remote.start) > DUPLICATE_CONTEXT_WINDOW_MS) return false;
+  if (local.kind === 'meal' && remote.kind === 'meal') {
+    return (
+      local.carbsGrams !== undefined &&
+      remote.carbsGrams !== undefined &&
+      Math.abs(local.carbsGrams - remote.carbsGrams) < DUPLICATE_CARBS_TOLERANCE_GRAMS
+    );
+  }
+  if (local.kind === 'note' && remote.kind === 'note') {
+    return local.title === remote.title;
+  }
+  return false;
+}
+
+/**
+ * Hides a Nightscout carb or note record when AAPS on this phone sent the
+ * same record, so meals are not counted twice. Other sources are untouched.
+ */
+export function reconcileContextSources(
+  events: readonly HealthContextEvent[],
+): HealthContextEvent[] {
+  const local = events.filter((event) => event.sourceId === 'aaps-local');
+  if (local.length === 0) return [...events];
+  const matched = new Set<string>();
+  return events.filter((event) => {
+    if (event.sourceId !== 'nightscout') return true;
+    const match = local
+      .filter((candidate) => !matched.has(candidate.id) && sameAapsRecord(candidate, event))
+      .sort(
+        (left, right) =>
+          Math.abs(left.start - event.start) - Math.abs(right.start - event.start) ||
+          left.id.localeCompare(right.id),
+      )[0];
+    if (!match) return true;
+    matched.add(match.id);
+    return false;
+  });
 }

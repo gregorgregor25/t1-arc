@@ -76,7 +76,7 @@ export function describeAapsInsulinProvenance(
       ? 'No AAPS insulin records for today yet'
       : input.nightscoutFill === 'off'
         ? 'Nightscout insulin history is switched off for AAPS'
-        : 'AAPS on this phone does not share dose history; connect Nightscout to fill it';
+        : 'No AAPS insulin records yet; turn on xDrip+ sync in AAPS or connect Nightscout';
   return {
     sourceLabel,
     dataThrough,

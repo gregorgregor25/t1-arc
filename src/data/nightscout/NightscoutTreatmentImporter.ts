@@ -191,12 +191,28 @@ function noteDetail(treatment: NightscoutTreatment, eventType: string) {
   return parts.length ? parts.join(' · ') : undefined;
 }
 
-function derivedIds(sourceId: string) {
+/**
+ * AAPS writes the same treatment shape to Nightscout and to its local
+ * xDrip+ broadcast, so one normalizer serves both with distinct provenance.
+ */
+export interface TreatmentRecordOrigin {
+  sourceId: string;
+  sourceFile: string;
+  rawRecordKind: string;
+}
+
+export const NIGHTSCOUT_TREATMENT_ORIGIN: TreatmentRecordOrigin = {
+  sourceId: 'nightscout',
+  sourceFile: 'treatments.json',
+  rawRecordKind: 'nightscout-treatment',
+};
+
+function derivedIds(prefix: string, sourceId: string) {
   return [
-    `nightscout:bolus:${sourceId}`,
-    `nightscout:meal:${sourceId}`,
-    `nightscout:basal:${sourceId}`,
-    `nightscout:note:${sourceId}`,
+    `${prefix}:bolus:${sourceId}`,
+    `${prefix}:meal:${sourceId}`,
+    `${prefix}:basal:${sourceId}`,
+    `${prefix}:note:${sourceId}`,
   ];
 }
 
@@ -208,6 +224,7 @@ export function normalizeNightscoutTreatments(
   treatments: NightscoutTreatment[],
   profiles: Record<string, unknown>[],
   importedAt = Date.now(),
+  origin: TreatmentRecordOrigin = NIGHTSCOUT_TREATMENT_ORIGIN,
 ): NormalizedNightscoutTreatments {
   const basal: BasalDelivery[] = [];
   const boluses: BolusDelivery[] = [];
@@ -238,13 +255,13 @@ export function normalizeNightscoutTreatments(
     .map((item) => item.timestamp as number);
 
   sorted.forEach(({ treatment, index, timestamp, externalId: sourceId }) => {
-    revisedRecordIds.push(...derivedIds(sourceId));
+    revisedRecordIds.push(...derivedIds(origin.sourceId, sourceId));
     rawRecords.push({
-      id: `nightscout:raw:treatment:${sourceId}`,
-      sourceId: 'nightscout',
-      recordKind: 'nightscout-treatment',
+      id: `${origin.sourceId}:raw:treatment:${sourceId}`,
+      sourceId: origin.sourceId,
+      recordKind: origin.rawRecordKind,
       timestamp,
-      sourceFile: 'treatments.json',
+      sourceFile: origin.sourceFile,
       sourceRow: index + 1,
       payloadJson: JSON.stringify(treatment),
       importedAt,
@@ -277,7 +294,7 @@ export function normalizeNightscoutTreatments(
               : undefined;
         const extendedMs = durationMs(treatment);
         boluses.push({
-          id: `nightscout:bolus:${sourceId}`,
+          id: `${origin.sourceId}:bolus:${sourceId}`,
           timestamp,
           units: enteredInsulin,
           initialUnits: initial,
@@ -287,9 +304,9 @@ export function normalizeNightscoutTreatments(
             extendedMs !== undefined && extendedMs > 0
               ? `${eventType} (extended over ${Math.round(extendedMs / 60_000)} min)`
               : eventType,
-          sourceId: 'nightscout',
+          sourceId: origin.sourceId,
           importedAt,
-          sourceFile: 'treatments.json',
+          sourceFile: origin.sourceFile,
           sourceRow: index + 1,
           sourceDeviceId: device,
         });
@@ -302,13 +319,13 @@ export function normalizeNightscoutTreatments(
         // to the body.
       } else if (insulin > 0 && insulin <= 100) {
         boluses.push({
-          id: `nightscout:bolus:${sourceId}`,
+          id: `${origin.sourceId}:bolus:${sourceId}`,
           timestamp,
           units: insulin,
           deliveryType: bolusLabel(treatment, eventType),
-          sourceId: 'nightscout',
+          sourceId: origin.sourceId,
           importedAt,
-          sourceFile: 'treatments.json',
+          sourceFile: origin.sourceFile,
           sourceRow: index + 1,
           sourceDeviceId: device,
         });
@@ -321,16 +338,16 @@ export function normalizeNightscoutTreatments(
     if (carbs !== undefined) {
       if (carbs > 0 && carbs <= 1_000) {
         context.push({
-          id: `nightscout:meal:${sourceId}`,
+          id: `${origin.sourceId}:meal:${sourceId}`,
           kind: 'meal',
           start: timestamp,
           title: safeText(treatment.notes) || eventType,
           mealType: mealType(timestamp),
           carbsGrams: carbs,
-          sourceId: 'nightscout',
+          sourceId: origin.sourceId,
           origin: 'imported',
           recordedAt: importedAt,
-          sourceFile: 'treatments.json',
+          sourceFile: origin.sourceFile,
           sourceRow: index + 1,
         });
       } else {
@@ -354,7 +371,7 @@ export function normalizeNightscoutTreatments(
           nextStart ?? Number.POSITIVE_INFINITY,
         );
         basal.push({
-          id: `nightscout:basal:${sourceId}`,
+          id: `${origin.sourceId}:basal:${sourceId}`,
           start: timestamp,
           end,
           rateUnitsPerHour: rate,
@@ -362,9 +379,9 @@ export function normalizeNightscoutTreatments(
           deliveryType: eventType,
           percentage: numeric(treatment.percent),
           unitsEstimated: true,
-          sourceId: 'nightscout',
+          sourceId: origin.sourceId,
           importedAt,
-          sourceFile: 'treatments.json',
+          sourceFile: origin.sourceFile,
           sourceRow: index + 1,
           sourceDeviceId: device,
         });
@@ -385,7 +402,7 @@ export function normalizeNightscoutTreatments(
     const therapyCategory = THERAPY_EVENTS[eventType.toLowerCase()];
     if (/profile switch|temporary target|override/i.test(eventType)) {
       context.push({
-        id: `nightscout:note:${sourceId}`,
+        id: `${origin.sourceId}:note:${sourceId}`,
         kind: 'note',
         start: timestamp,
         end:
@@ -395,24 +412,24 @@ export function normalizeNightscoutTreatments(
         title: eventType,
         category: 'pump',
         detail: noteDetail(treatment, eventType),
-        sourceId: 'nightscout',
+        sourceId: origin.sourceId,
         origin: 'imported',
         recordedAt: importedAt,
-        sourceFile: 'treatments.json',
+        sourceFile: origin.sourceFile,
         sourceRow: index + 1,
       });
     } else if (therapyCategory) {
       context.push({
-        id: `nightscout:note:${sourceId}`,
+        id: `${origin.sourceId}:note:${sourceId}`,
         kind: 'note',
         start: timestamp,
         title: eventType,
         category: therapyCategory,
         detail: safeText(treatment.notes) || undefined,
-        sourceId: 'nightscout',
+        sourceId: origin.sourceId,
         origin: 'imported',
         recordedAt: importedAt,
-        sourceFile: 'treatments.json',
+        sourceFile: origin.sourceFile,
         sourceRow: index + 1,
       });
     }
@@ -423,11 +440,11 @@ export function normalizeNightscoutTreatments(
       /(exercise|activity)/i.test(descriptor)
     ) {
       rawRecords.push({
-        id: `nightscout:pump-state:activity:${sourceId}`,
-        sourceId: 'nightscout',
+        id: `${origin.sourceId}:pump-state:activity:${sourceId}`,
+        sourceId: origin.sourceId,
         recordKind: 'pump-state-interval',
         timestamp,
-        sourceFile: 'treatments.json',
+        sourceFile: origin.sourceFile,
         sourceRow: index + 1,
         payloadJson: JSON.stringify({
           start: timestamp,
@@ -458,11 +475,11 @@ export function normalizeNightscoutTreatments(
         : resume?.timestamp;
     if (end === undefined || end <= item.timestamp) return;
     rawRecords.push({
-      id: `nightscout:pump-state:pause:${item.externalId}`,
-      sourceId: 'nightscout',
+      id: `${origin.sourceId}:pump-state:pause:${item.externalId}`,
+      sourceId: origin.sourceId,
       recordKind: 'pump-state-interval',
       timestamp: item.timestamp,
-      sourceFile: 'treatments.json',
+      sourceFile: origin.sourceFile,
       sourceRow: item.index + 1,
       payloadJson: JSON.stringify({
         start: item.timestamp,
@@ -477,8 +494,8 @@ export function normalizeNightscoutTreatments(
     const supplied = safeText(profile._id ?? profile.identifier, 120);
     const id = supplied || `${index}:${fingerprint(JSON.stringify(profile))}`;
     rawRecords.push({
-      id: `nightscout:raw:profile:${id}`,
-      sourceId: 'nightscout',
+      id: `${origin.sourceId}:raw:profile:${id}`,
+      sourceId: origin.sourceId,
       recordKind: 'nightscout-profile',
       timestamp: profileTimestamp(profile),
       sourceFile: 'profile.json',

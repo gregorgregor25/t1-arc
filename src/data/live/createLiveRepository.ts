@@ -3,6 +3,7 @@ import {
   GlucoseSource,
 } from '@/data/contracts';
 import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import { drainAapsLocalTreatments } from '@/data/aaps/localAapsTreatments';
 import {
   gateNightscoutTreatments,
   loadNightscoutImportPolicy,
@@ -114,7 +115,10 @@ export function createLiveRepository(
       const { getSelectedGlucoseSourceState } = await import('@/data/aaps/localAapsSource');
       return getSelectedGlucoseSourceState();
     }),
-    new ImportedInsulinSource(healthRecords, nightscoutTreatments),
+    new ImportedInsulinSource(healthRecords, nightscoutTreatments, [
+      // AAPS treatments received on this phone; a no-op unless AAPS is selected.
+      { refresh: () => drainAapsLocalTreatments(healthRecords) },
+    ]),
     new StoredContextSource(healthRecords),
   );
 }

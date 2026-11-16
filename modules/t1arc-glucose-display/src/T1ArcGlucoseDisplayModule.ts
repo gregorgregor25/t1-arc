@@ -13,6 +13,8 @@ import {
   GlucoseDisplayPublicationSnapshot,
   AapsLocalReading,
   AapsLocalStatus,
+  AapsLocalTreatment,
+  AapsTreatmentStatus,
   GlucoseDisplayStatus,
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
@@ -31,6 +33,10 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<{
   setLocalGlucoseSourceAsync(sourceId: string, writeEpoch: number): Promise<AapsLocalStatus>;
   peekAapsReadingsAsync(limit: number): Promise<AapsLocalReading[]>;
   acknowledgeAapsReadingsAsync(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
+  /** Absent from native builds made before AAPS treatment intake. */
+  getAapsTreatmentStatusAsync?(): Promise<AapsTreatmentStatus>;
+  peekAapsTreatmentsAsync?(limit: number): Promise<AapsLocalTreatment[]>;
+  acknowledgeAapsTreatmentsAsync?(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
   updateSelectedGlucoseForWriteEpochAsync(
     writeEpoch: number,
     selectionGeneration: number,

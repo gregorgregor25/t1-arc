@@ -26,6 +26,15 @@
         <action android:name="info.nightscout.androidaps.status" />
       </intent-filter>
     </receiver>
+    <!-- AAPS xDrip+ sync: read-only boluses, carbs, targets and profile switches. -->
+    <receiver
+      android:name=".T1ArcAapsTreatmentReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="info.nightscout.client.NEW_FOOD" />
+      </intent-filter>
+    </receiver>
     <meta-data
       android:name="com.google.android.gms.car.application"
       android:resource="@xml/t1arc_automotive_app_desc" />

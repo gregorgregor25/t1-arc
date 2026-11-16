@@ -29,9 +29,14 @@ export class ImportedInsulinSource implements InsulinSource {
   constructor(
     private readonly store: HealthRecordStore = new SqliteHealthRecordStore(),
     private readonly liveImporter?: LiveInsulinImporter,
+    /** On-phone intake, such as AAPS treatments, drained before remote reads. */
+    private readonly localImporters: readonly { refresh(): Promise<unknown> }[] = [],
   ) {}
 
   async refresh() {
+    for (const importer of this.localImporters) {
+      await importer.refresh().catch(() => undefined);
+    }
     await this.liveImporter?.refresh().catch(() => undefined);
   }
 
@@ -59,13 +64,15 @@ export class ImportedInsulinSource implements InsulinSource {
       manualBounds,
       latestGlookoImport,
       latestNightscoutImport,
+      latestAapsImport,
     ] = await Promise.all([
       this.store.getInsulinBounds(),
       this.store.getManualInsulinBounds(),
       this.store.getLatestImport(SOURCE_ID),
       this.store.getLatestImport('nightscout'),
+      this.store.getLatestImport('aaps-local'),
     ]);
-    const latestImport = [latestGlookoImport, latestNightscoutImport]
+    const latestImport = [latestGlookoImport, latestNightscoutImport, latestAapsImport]
       .filter((value): value is NonNullable<typeof value> => value !== undefined)
       .sort((left, right) => right.importedAt - left.importedAt)[0];
     const capabilities = this.liveImporter
@@ -103,7 +110,7 @@ export class ImportedInsulinSource implements InsulinSource {
     const manualRecent =
       manualBounds.latest !== undefined &&
       now - manualBounds.latest <= RECENT_DATA_MS;
-    const importedDetail =
+    const remoteDetail =
       latestGlookoImport && latestNightscoutImport
         ? 'Glooko and Nightscout insulin history'
         : latestNightscoutImport
@@ -111,6 +118,11 @@ export class ImportedInsulinSource implements InsulinSource {
           : latestGlookoImport
             ? 'Glooko pump delivery history'
             : undefined;
+    const importedDetail = latestAapsImport
+      ? remoteDetail
+        ? `${remoteDetail} plus AAPS records on this phone`
+        : 'AAPS insulin and carb records on this phone'
+      : remoteDetail;
     return {
       id: this.sourceId,
       label: 'Insulin',
@@ -125,7 +137,10 @@ export class ImportedInsulinSource implements InsulinSource {
             ? 'delayed'
             : 'current'
           : 'stale',
-      origin: latestNightscoutImport || !importedDetail ? 'live' : 'imported',
+      origin:
+        latestNightscoutImport || latestAapsImport || !importedDetail
+          ? 'live'
+          : 'imported',
       lastAttemptAt: latestImport?.importedAt,
       lastUpdatedAt: latestImport?.importedAt ?? bounds.lastRecordedAt,
       dataThrough: bounds.latest,

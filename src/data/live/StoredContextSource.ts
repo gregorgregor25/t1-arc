@@ -1,6 +1,7 @@
 import { ContextSource } from '@/data/contracts';
 import { HealthRecordStore } from '@/data/persistence/HealthRecordStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
+import { reconcileContextSources } from '@/domain/insulinSourceReconciliation';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
 
 const SOURCE_ID = 't1arc-context';
@@ -14,7 +15,8 @@ export class StoredContextSource implements ContextSource {
   ) {}
 
   async getEvents(range: TimeRange) {
-    return this.store.getContextEvents(range);
+    // AAPS can send the same carbs locally and to Nightscout; count them once.
+    return reconcileContextSources(await this.store.getContextEvents(range));
   }
 
   async getStatus(now = Date.now()): Promise<DataSourceStatus> {

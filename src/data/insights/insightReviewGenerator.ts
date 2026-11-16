@@ -18,6 +18,7 @@ import { TimelineData, TimeRange } from '@/domain/models';
 import {
   reconcileBasalSources,
   reconcileBolusSources,
+  reconcileContextSources,
 } from '@/domain/insulinSourceReconciliation';
 import {
   addDays,
@@ -82,7 +83,7 @@ async function loadStoredTimeline(
       .then((records) => reconcileBolusSources(records).boluses),
     healthStore.getDailyInsulinTotals(range),
     healthStore.getPumpStateIntervals(range),
-    healthStore.getContextEvents(range),
+    healthStore.getContextEvents(range).then(reconcileContextSources),
   ]);
   return {
     range,
