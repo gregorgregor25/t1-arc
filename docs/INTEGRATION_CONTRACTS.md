@@ -187,8 +187,71 @@ representative response is:
 `sgv`, `direction`, and the millisecond `date` are sufficient. T1 Arc converts
 the stored mg/dL SGV to mmol/L, retains the source and timestamp in its stable
 normalised record, ignores malformed entries, and rejects a non-array response
-or a response where every entry is unusable. No treatment, profile, food,
-insulin, or write endpoint is called.
+or a response where every entry is unusable. No write endpoint is called.
+
+### Nightscout treatments and profile (read-only)
+
+T1 Arc also reads treatments and the profile with the same readable token or
+API-secret header:
+
+```text
+GET /api/v1/treatments.json?count=5000&find[created_at][$gte]=<start>&find[created_at][$lt]=<end>&token=<readable-token>
+GET /api/v1/profile.json?token=<readable-token>
+```
+
+The regular refresh reads the last two days; the older-history backfill reads
+the same 14-day blocks as glucose. Nightscout returns newest treatments first
+and stops at `count`, so a full page continues with
+`find[created_at][$lte]=<oldest created_at returned>`, de-duplicates the
+boundary record, and stops with an error after 8 pages rather than leaving a
+silent gap. A profile failure is recorded as a warning and does not block
+treatments.
+
+Treatments become bolus, carb, temporary basal and dated note records with
+`nightscout` provenance. Records marked `isValid: false` are kept as raw
+evidence and not counted; a revised or withdrawn record replaces the earlier
+local copy. `PRIMING` boluses are not counted as delivered insulin. SMBs keep
+an `SMB` label. A `Combo Bolus` records its entered total with immediate and
+extended parts, unless it is emulated as a temporary basal. A temporary basal
+ends at the next one or at a zero-duration cancel, and AAPS's
+`durationInMilliseconds` is preferred over minutes. Programmed profile basal
+is kept as evidence, not as delivered insulin.
+
+When AAPS on the phone is the selected glucose source, Nightscout supplies
+treatments only, and only while the AAPS card's fill switch is on. The
+entries endpoint is not called in that state, including when connecting.
+
+## AAPS xDrip+ treatment broadcast (read-only, on the phone)
+
+With AAPS's xDrip+ sync enabled, AAPS broadcasts
+`info.nightscout.client.NEW_FOOD` with a `treatments` string extra holding a
+JSON array of Nightscout-shaped records. T1 Arc's exported receiver accepts it
+only while AAPS is selected; on Android 14+ the sender must be
+`info.nightscout.androidaps`. Payloads over 512 KiB are ignored and at most 200
+records per broadcast are read. Accepted event types are boluses and carbs
+(`Meal Bolus`, `Correction Bolus`, `Snack Bolus`, `Bolus Wizard`,
+`Carb Correction`), `Combo Bolus` with `enteredinsulin`, `Temporary Target`,
+`Profile Switch` and therapy events (`Site Change`, `Insulin Change`,
+`Pump Battery Change`, `Sensor Change`, `Sensor Start`). The time comes from
+`date`, `timestamp` or `mills` and must fall within the last 7 days and no more
+than 2 minutes ahead. Only listed primitive fields within ranges are kept, for
+example:
+
+```json
+{
+  "eventType": "Correction Bolus",
+  "date": 1700000000000,
+  "insulin": 0.3,
+  "type": "SMB",
+  "isSMB": true,
+  "isValid": true
+}
+```
+
+The record identity is its kind and time (for example `bolus-1700000000000`),
+because the broadcast has no AAPS database ID. Records are stored with
+`aaps-local` provenance and file label `AAPS xDrip+ broadcast`, and counted in
+preference to a Nightscout copy of the same record.
 
 ## Glooko history: on-device sync, fallback import, and exact input needed
 

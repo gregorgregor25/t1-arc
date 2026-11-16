@@ -3,6 +3,11 @@ import {
   GlucoseSource,
 } from '@/data/contracts';
 import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import { drainAapsLocalTreatments } from '@/data/aaps/localAapsTreatments';
+import {
+  gateNightscoutTreatments,
+  loadNightscoutImportPolicy,
+} from '@/data/aaps/aapsTreatmentFill';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { DexcomShareConnection } from '@/data/dexcomShare/types';
@@ -49,7 +54,10 @@ export function createLiveRepository(
     ? healthRecords.withSourceWriteLease(sourceWriteLeases.nightscout)
     : undefined;
   const nightscoutTreatments = nightscout && nightscoutHealthRecords
-    ? new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords)
+    ? gateNightscoutTreatments(
+        new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords),
+        () => loadNightscoutImportPolicy(writeLease),
+      )
     : undefined;
   if (credentials && sourceWriteLeases.libre) {
     glucoseSources.push(
@@ -107,7 +115,10 @@ export function createLiveRepository(
       const { getSelectedGlucoseSourceState } = await import('@/data/aaps/localAapsSource');
       return getSelectedGlucoseSourceState();
     }),
-    new ImportedInsulinSource(healthRecords, nightscoutTreatments),
+    new ImportedInsulinSource(healthRecords, nightscoutTreatments, [
+      // AAPS treatments received on this phone; a no-op unless AAPS is selected.
+      { refresh: () => drainAapsLocalTreatments(healthRecords) },
+    ]),
     new StoredContextSource(healthRecords),
   );
 }

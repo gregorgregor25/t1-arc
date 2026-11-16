@@ -56,6 +56,15 @@ export default {
   async acknowledgeAapsReadingsAsync() {
     return false;
   },
+  async getAapsTreatmentStatusAsync() {
+    return { supported: false, bufferedCount: 0, droppedCount: 0 };
+  },
+  async peekAapsTreatmentsAsync() {
+    return [];
+  },
+  async acknowledgeAapsTreatmentsAsync() {
+    return false;
+  },
   async updateSelectedGlucoseForWriteEpochAsync(writeEpoch: number, generation: number) {
     if (!validWriteEpoch(writeEpoch) || writeEpoch !== privateGlucoseWriteEpoch ||
       generation !== selectionGeneration) {

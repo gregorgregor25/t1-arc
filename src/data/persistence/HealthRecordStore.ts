@@ -140,6 +140,18 @@ export interface ImportWriteResult {
   batch: StoredImportBatch;
 }
 
+export interface ImportWriteOptions {
+  /**
+   * Record IDs for which the source is authoritative in this batch. Imported
+   * rows of the batch source with these IDs are removed in the same write
+   * before the batch is inserted, so an edited or withdrawn live-source record
+   * (for example a Nightscout treatment marked `isValid: false`) replaces the
+   * earlier local copy instead of being kept alongside it. Rows of other
+   * sources and manual entries are never touched.
+   */
+  revisedRecordIds?: readonly string[];
+}
+
 export interface ImportedSourceDeleteResult {
   glucose: number;
   basal: number;
@@ -196,6 +208,7 @@ export interface HealthRecordStore {
     sourcePayload?: ImportSourcePayload,
     dailyTotals?: InsulinDailyTotal[],
     rawRecords?: ImportRawRecord[],
+    options?: ImportWriteOptions,
   ): Promise<ImportWriteResult>;
   saveManualContext(
     event: HealthContextEvent,
@@ -509,8 +522,27 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
     sourcePayload?: ImportSourcePayload,
     dailyTotals: InsulinDailyTotal[] = [],
     rawRecords: ImportRawRecord[] = [],
+    options: ImportWriteOptions = {},
   ): Promise<ImportWriteResult> {
     const key = `${batch.sourceId}:${batch.fileSha256}`;
+    let revisedBasal = 0;
+    let revisedBoluses = 0;
+    let revisedContext = 0;
+    for (const id of new Set(options.revisedRecordIds ?? [])) {
+      if (this.basal.get(id)?.sourceId === batch.sourceId) {
+        this.basal.delete(id);
+        revisedBasal += 1;
+      }
+      if (this.boluses.get(id)?.sourceId === batch.sourceId) {
+        this.boluses.delete(id);
+        revisedBoluses += 1;
+      }
+      const event = this.context.get(id);
+      if (event?.sourceId === batch.sourceId && event.origin === 'imported') {
+        this.context.delete(id);
+        revisedContext += 1;
+      }
+    }
     if (sourcePayload && !this.sourcePayloads.has(key)) {
       this.sourcePayloads.set(key, {
         format: sourcePayload.format,
@@ -569,6 +601,10 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
         if (!migratedLegacyId) insertedDailyTotals += 1;
       }
     });
+    // A revised row removed above and inserted again is not a new record.
+    insertedBasal = Math.max(0, insertedBasal - revisedBasal);
+    insertedBoluses = Math.max(0, insertedBoluses - revisedBoluses);
+    insertedContext = Math.max(0, insertedContext - revisedContext);
     rawRecords.forEach((record) => {
       const existingRaw = this.rawRecords.get(record.id);
       if (!existingRaw) {

@@ -35,6 +35,7 @@ import {
   ImportRawRecord,
   ImportSourcePayload,
   ImportedSourceDeleteResult,
+  ImportWriteOptions,
   ImportWriteResult,
   ManualContextSaveOptions,
   pumpStateIntervalFromRawRecord,
@@ -573,6 +574,56 @@ export async function clearOwnedHealthSourceDataInTransaction(
   ]) {
     await transaction.runAsync(statement, sourceId);
   }
+}
+
+const REVISED_ID_CHUNK = 200;
+
+/**
+ * Removes only imported rows owned by `sourceId`. Manual entries and other
+ * sources' rows can never match because every statement is source-scoped.
+ */
+async function removeRevisedImportedRecords(
+  transaction: SQLiteDatabase,
+  sourceId: string,
+  ids: readonly string[],
+) {
+  const removed = { basal: 0, boluses: 0, context: 0 };
+  const unique = [...new Set(ids)].filter((id) => id.length > 0);
+  for (let offset = 0; offset < unique.length; offset += REVISED_ID_CHUNK) {
+    const chunk = unique.slice(offset, offset + REVISED_ID_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    removed.basal += (
+      await transaction.runAsync(
+        `DELETE FROM insulin_basal WHERE source_id = ? AND id IN (${placeholders})`,
+        sourceId,
+        ...chunk,
+      )
+    ).changes;
+    removed.boluses += (
+      await transaction.runAsync(
+        `DELETE FROM insulin_bolus WHERE source_id = ? AND id IN (${placeholders})`,
+        sourceId,
+        ...chunk,
+      )
+    ).changes;
+    removed.context += (
+      await transaction.runAsync(
+        `DELETE FROM context_events
+          WHERE source_id = ? AND origin = 'imported' AND id IN (${placeholders})`,
+        sourceId,
+        ...chunk,
+      )
+    ).changes;
+    removed.context += (
+      await transaction.runAsync(
+        `DELETE FROM context_notes
+          WHERE source_id = ? AND origin = 'imported' AND id IN (${placeholders})`,
+        sourceId,
+        ...chunk,
+      )
+    ).changes;
+  }
+  return removed;
 }
 
 export class SqliteHealthRecordStore implements HealthRecordStore {
@@ -1331,6 +1382,7 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
     sourcePayload?: ImportSourcePayload,
     dailyTotals: InsulinDailyTotal[] = [],
     rawRecords: ImportRawRecord[] = [],
+    options: ImportWriteOptions = {},
   ): Promise<ImportWriteResult> {
     await this.getDatabase();
     let result: ImportWriteResult | undefined;
@@ -1363,6 +1415,11 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       let insertedBoluses = 0;
       let insertedContext = 0;
       let insertedDailyTotals = 0;
+      const revised = await removeRevisedImportedRecords(
+        transaction,
+        batch.sourceId,
+        options.revisedRecordIds ?? [],
+      );
 
       const basalInsert = `INSERT OR IGNORE INTO insulin_basal (
         id, source_id, start_ms, end_ms, rate_units_per_hour, units,
@@ -1641,6 +1698,10 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         );
       }
 
+      // A revised row removed above and inserted again is not a new record.
+      insertedBasal = Math.max(0, insertedBasal - revised.basal);
+      insertedBoluses = Math.max(0, insertedBoluses - revised.boluses);
+      insertedContext = Math.max(0, insertedContext - revised.context);
       const duplicateCount =
         basal.length +
         boluses.length +

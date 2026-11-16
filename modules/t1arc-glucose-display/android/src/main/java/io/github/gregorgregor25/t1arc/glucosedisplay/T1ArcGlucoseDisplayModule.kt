@@ -1355,6 +1355,7 @@ internal object T1ArcGlucosePublicationGate {
           .remove(SNAPSHOT_IV_KEY)
         if (next > storedEpoch(context)) {
           AapsLocalStore.clearForErase(context, editor)
+          AapsTreatmentStore.clearForErase(editor)
           T1ArcGlucoseAlarmEngine.erase(context)
         }
         editor.commit()
@@ -4020,6 +4021,7 @@ class T1ArcGlucoseDisplayModule : Module() {
       T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
         if (AapsLocalStore.selectedSource(context) != sourceId) {
           AapsLocalStore.select(context, sourceId)
+          AapsTreatmentStore.clearForSelectionChange(context)
           clearPrivateGlucosePublication(context, epoch, "No reading from selected glucose source")
         }
         AapsLocalStore.status(context, epoch)
@@ -4039,6 +4041,29 @@ class T1ArcGlucoseDisplayModule : Module() {
       val generation = requireNotNull(GlucosePublicationEpochPolicy.parseBridgeEpoch(selectionGeneration))
       T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
         AapsLocalStore.acknowledge(context, ids.toSet(), generation, epoch)
+      }
+    }
+
+    AsyncFunction("getAapsTreatmentStatusAsync") Coroutine { ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->
+        AapsTreatmentStore.status(context, epoch)
+      }
+    }
+
+    AsyncFunction("peekAapsTreatmentsAsync") Coroutine { limit: Int ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->
+        AapsTreatmentStore.peek(context, limit, epoch).map(AapsLocalTreatment::asMap)
+      }
+    }
+
+    AsyncFunction("acknowledgeAapsTreatmentsAsync") Coroutine {
+        ids: List<String>, selectionGeneration: Double, writeEpoch: Double ->
+      val context = requireNotNull(appContext.reactContext)
+      val generation = requireNotNull(GlucosePublicationEpochPolicy.parseBridgeEpoch(selectionGeneration))
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        AapsTreatmentStore.acknowledge(context, ids.toSet(), generation, epoch)
       }
     }
 

@@ -153,6 +153,27 @@ export interface AapsLocalReading {
   displayUnits?: string;
 }
 
+/** A primitive field AAPS sent in its xDrip+ treatment broadcast, after native checks. */
+export type AapsLocalTreatmentValue = string | number | boolean;
+
+/**
+ * One treatment from the AAPS xDrip+ sync broadcast. Native code accepts only
+ * listed fields within plausible ranges; JS validates again before storing.
+ */
+export interface AapsLocalTreatment {
+  id: string;
+  receivedAt: number;
+  writeEpoch: number;
+  selectionGeneration: number;
+  treatment: Record<string, AapsLocalTreatmentValue>;
+}
+
+export interface AapsTreatmentStatus {
+  supported: boolean;
+  bufferedCount: number;
+  droppedCount: number;
+}
+
 export interface AapsLocalStatus {
   supported: boolean;
   selectedSourceId?: string;

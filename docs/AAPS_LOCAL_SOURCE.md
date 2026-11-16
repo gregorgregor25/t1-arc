@@ -4,7 +4,7 @@ T1 Arc can read the local status broadcast from AndroidAPS. This route is for th
 
 The implementation targets the `info.nightscout.androidaps.status` broadcast in AAPS **4.0.0-dev-e, build c20c229 (30 October 2026)**. The source code for that build exposes glucose in mg/dL with its own measurement timestamp, trend and delta, and AAPS-calculated IOB and COB. COB `-1` means unavailable; zero is a valid estimate. IOB may be negative. AAPS status updates have a separate receipt time and do not always contain every field. T1 Arc stores them with provenance rather than turning estimates into doses, meals, or pump events.
 
-Past Glooko insulin history stays in T1 Arc. If Glooko stops updating after the PDM change, it does not supply new delivery records. AAPS status supplies current IOB and COB estimates, not a replacement treatment history. Today shows **No data** for insulin delivery when no delivery records exist for that day, even if older Glooko history is still saved.
+Past Glooko insulin history stays in T1 Arc. If Glooko stops updating after the PDM change, it does not supply new delivery records. The AAPS status broadcast supplies current IOB and COB estimates, not a treatment history. Insulin, carb and target history comes from two further optional routes described below: AAPS's xDrip+ broadcast on this phone, and the user's own Nightscout site. Today shows **No data** for insulin delivery when no delivery records exist for that day, even if older Glooko history is still saved.
 
 ## Enable on the phone
 
@@ -19,6 +19,34 @@ Re-enabling AAPS starts a new intake session and waits for another broadcast. Ea
 
 Glucose uses T1 Arc’s existing phone-to-Wear OS data protocol, so an installed compatible watch companion should keep working without a reinstall. IOB and COB are shown on the phone, not on the existing watch face or complication. Local phone-to-watch delivery needs a paired, reachable watch connection; actual background, screen-off, reboot and offline behaviour requires physical-device verification.
 
+## Insulin, carb and target history
+
+AAPS glucose stays exclusive whichever route below is used. T1 Arc never fetches, stores or mixes Nightscout glucose while AAPS is the selected source. Both routes record what AAPS recorded; T1 Arc does not calculate doses or recommend treatment.
+
+### On this phone: AAPS xDrip+ sync
+
+In AAPS, open **Config Builder → Synchronization → xDrip+** ("Send data to xDrip+") and enable it. AAPS then broadcasts boluses (including SMBs), carbs, extended boluses, temporary targets, profile switches and therapy events such as site and sensor changes. No internet is needed.
+
+- T1 Arc receives them only while AAPS is the selected glucose source. On Android 14 and later it accepts only broadcasts sent by AAPS; older Android versions do not identify the sender, so the same field checks apply but origin cannot be proven.
+- Each broadcast is capped in size and record count. Only listed fields within plausible ranges are kept, then stored in a Keystore-encrypted queue bound to the current selection and privacy epoch. Erase and choosing another glucose source clear that queue.
+- Records are saved with `aaps-local` provenance and the label "AAPS xDrip+ broadcast". The broadcast carries no AAPS database ID, so each record is identified by its kind and time. AAPS re-sends a changed record and marks a deleted one withdrawn; T1 Arc replaces the earlier copy instead of keeping both.
+- This route does **not** include temporary basals, scheduled basal or device status, and AAPS sends only the last 24 hours. Records that arrive while T1 Arc is closed wait in the queue until the app next refreshes.
+- Any other installed app that declares the same receiver also receives what AAPS sends. If AAPS has no profile loaded, it drops the whole batch.
+
+### From Nightscout: fill switch on the AAPS card
+
+When AAPS is selected, the AAPS card shows **Fill insulin and carb history from my Nightscout site**. It needs a site connected in **Settings → Nightscout**; until then the card offers **Set up Nightscout**. With it on, T1 Arc reads the treatments AAPS uploaded: boluses and SMBs, carbs, temporary basals, extended boluses, profile switches, temporary targets and pump suspensions. It uses the internet and the saved read-only token. Nothing is sent to Nightscout. The choice is erased with other local data. If it was never set, it stays on, which matches how a connected site behaved before this switch existed.
+
+- While AAPS is selected, the regular refresh, the older-history backfill and the Nightscout connection check all read treatments only. Connecting Nightscout then succeeds without a Nightscout glucose reading.
+- Withdrawn records (`isValid: false`) and priming boluses are kept as raw evidence but not counted. A temporary basal ends when the next one starts or is cancelled. Large ranges are read page by page rather than cut off at 5,000 records.
+- Nightscout carries temporary basals only. Without a pump export for the same period, scheduled basal is missing from the daily total, and Today says so.
+
+### Counting each record once
+
+The same delivery can arrive from Glooko, AAPS on this phone and Nightscout. All copies stay stored with their own provenance. At read time T1 Arc counts one copy, preferring Glooko, then AAPS on this phone, then Nightscout. A bolus matches when the times are within 2 minutes and the amounts within 0.05 U; carbs match within 2 minutes and 0.5 g. Basal periods already covered by a higher-preference source are not counted twice. Manual entries are never hidden.
+
+While AAPS is selected, Today's insulin figure names where the AAPS records came from, shows the latest record time ("data through"), notes when scheduled basal is not included, and shows **No data** with the reason when nothing was recorded.
+
 ## Provenance and retention
 
 ### What basal information is available now?
@@ -26,7 +54,7 @@ Glucose uses T1 Arc’s existing phone-to-Wear OS data protocol, so an installed
 | Information | Current local AAPS integration | Existing Glooko importer |
 | --- | --- | --- |
 | Basal contribution to insulin on board | Stores AAPS's basal IOB estimate when supplied. Today shows total IOB, not a basal breakdown. Basal IOB can be negative; it is not insulin delivered. | No live IOB feed. |
-| Basal delivery over time | No delivery intervals from the current status receiver. | Imports dated intervals, rates and amounts where supplied. If an amount is derived from rate and duration, it is explicitly marked estimated. |
+| Basal delivery over time | No delivery intervals from the status receiver or the xDrip+ broadcast. With the Nightscout fill on, temporary basals AAPS uploaded, each ending at the next one and marked estimated. Scheduled basal is not included. | Imports dated intervals, rates and amounts where supplied. If an amount is derived from rate and duration, it is explicitly marked estimated. |
 | Daily basal insulin total | Not available from this feed. IOB snapshots must not be summed into a total. | Imports daily basal, bolus and total insulin when present in the export. |
 | Current programmed or temporary basal rate | AAPS exposes some current-state fields, but T1 Arc does not currently import them. They would be snapshots, not complete delivery history. | Can import basal settings and schedules where included. |
 
@@ -38,7 +66,7 @@ When AAPS is selected, Today combines glucose, trend, graph, IOB and COB in one 
 
 AAPS `TripleUp` and `TripleDown` remain distinct on the phone, with three arrows and source details. At the existing Wear protocol boundary only, they become the companion's fastest supported double arrows. The detail view explains that compatibility mapping. No companion reinstall is required. Unknown source trends are reassessed against recent same-source history; insufficient history still shows unavailable rather than a made-up source arrow.
 
-AAPS's status broadcast does not always expose an authenticated sender identity. T1 Arc rejects a different sender when Android supplies its identity and validates every payload, but another installed app could imitate an unidentified broadcast. Selecting AAPS enables this local input; it does not establish cryptographic proof of origin. T1 Arc does not send pump commands or treatment data through this integration.
+AAPS's status and xDrip+ broadcasts do not always expose an authenticated sender identity. T1 Arc rejects a different sender when Android supplies its identity and validates every payload, but another installed app could imitate an unidentified broadcast. Selecting AAPS enables this local input; it does not establish cryptographic proof of origin. T1 Arc does not send pump commands or treatment data through this integration.
 
 The native encrypted buffer holds up to 10,080 status updates while database ingestion is unavailable. Buffer overflow is reported in the source screen; missing history is not interpolated or recovered through a cloud source. Stored status observations retain up to 90 days, capped at 150,000 records. IOB and COB retain their receipt time because this broadcast does not provide a separate calculation timestamp. Their receipt age does not prove when AAPS last recalculated them. Glucose retains its source measurement timestamp.
 
@@ -52,7 +80,26 @@ A status that repeats the shown reading without a trend keeps the trend already 
 
 Database writes reuse one already-keyed encrypted connection. Each new SQLCipher connection derives its key with 256,000 PBKDF2 iterations, which was previously repeated for every write transaction, including each small Health Connect batch. A connection whose transaction state is uncertain is closed and replaced, and erasing local data closes the idle connection first.
 
+## Research: local treatment routes
+
+Checked against the AAPS source at commit [`c20c229`](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5) in November 2026.
+
+| Route | Treatments for another app on the phone? | Notes |
+| --- | --- | --- |
+| xDrip+ sync plugin | **Yes.** Used by T1 Arc. | Off by default. Sends `info.nightscout.client.NEW_FOOD` with a `treatments` JSON array to every receiver it finds, with no permission or allow-list ([XdripPlugin.kt](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/kotlin/app/aaps/plugins/sync/xdrip/XdripPlugin.kt#L371-L412)). Content and 24-hour window: [DataSyncSelectorXdripImpl.kt](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/kotlin/app/aaps/plugins/sync/xdrip/DataSyncSelectorXdripImpl.kt#L72-L118). Bolus fields: [BolusExtension.kt](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/kotlin/app/aaps/plugins/sync/xdrip/extensions/BolusExtension.kt#L8). A missing profile drops the batch ([XdripPlugin.kt](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/kotlin/app/aaps/plugins/sync/xdrip/XdripPlugin.kt#L380-L388)). Plugin description: [strings.xml](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/res/values/strings.xml#L150-L156). AAPS can see launcher apps ([manifest](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/shared/impl/src/androidMain/AndroidManifest.xml#L3-L23)). |
+| External Companion Apps status | No. | A current snapshot: glucose, IOB, COB, current basal and pump state, no history. |
+| Content provider | No. | AAPS exports no provider for its database ([app manifest](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/app/src/main/AndroidManifest.xml#L180-L200)). |
+| Wear broadcast | No. | Protected by a signature permission. |
+| Garmin local server | No. | Localhost only, current values, no treatment history. |
+| Nightscout upload | Via the internet. | Used by the Nightscout fill ([nsclientV3 extensions](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/commonMain/kotlin/app/aaps/plugins/sync/nsclientV3/extensions)). Deletions are uploaded as `isValid: false`. |
+
+Not yet checked on a device: that AAPS on the phone discovers the T1 Arc receiver and that its broadcasts arrive in the background.
+
 ## Verification and remaining device checks
+
+### Insulin and carb history, November 2026
+
+On `codex/ov-aaps`; nothing was installed on a phone. TypeScript, lint and the full application test suite pass. New tests cover the Nightscout policy for each source, treatments-only reads while AAPS is selected (no Nightscout glucose fetched or stored), the fill switch and its erase binding, withdrawn and priming records, SMB labels, extended boluses, temporary basal truncation, paging, record replacement, the local queue drain, cross-source counting, and Europe/London clock-change days. Kotlin unit tests for the broadcast field checks run in CI only; the native receiver was not built locally. Still to check on the phone: enable AAPS xDrip+ sync, add a small test entry such as a carb record, and confirm it appears once in T1 Arc, also with Nightscout connected.
 
 ### Combined card and trend update, 2 November 2026
 
