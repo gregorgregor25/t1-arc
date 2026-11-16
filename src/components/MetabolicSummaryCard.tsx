@@ -2,6 +2,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { InsulinReconciliation } from '@/domain/dataCompleteness';
+import {
+  formatGlucoseRangeBounds,
+  STANDARD_GLUCOSE_RANGE,
+} from '@/domain/glucoseRanges';
 import { presentInsulinRangeSummary } from '@/domain/insulinSummaryPresentation';
 import type { GlucoseStats, InsulinStats } from '@/domain/models';
 import {
@@ -42,6 +46,7 @@ export function MetabolicSummaryCard({
         glucose.timeAbovePercent
     : 0;
   const insulinPresentation = presentInsulinRangeSummary(summary, label, regional);
+  const standardRange = formatGlucoseRangeBounds(STANDARD_GLUCOSE_RANGE, regional);
   const discrepancy = reconciliation?.differenceUnits ?? 0;
   const timeBelow = glucose
     ? formatRegionalNumber(glucose.timeBelowPercent, regional.locale)
@@ -69,7 +74,7 @@ export function MetabolicSummaryCard({
     <SectionCard
       accessibilityLabel={`Glucose and insulin summary for ${label}. ${
         observedGlucose && glucose
-          ? `Time in range ${timeInRange} percent, average ${formatGlucoseAccessible(glucose.averageMmolL!, regional)}, coverage ${coverage} percent.`
+          ? `Time in standard range ${standardRange} ${timeInRange} percent, average ${formatGlucoseAccessible(glucose.averageMmolL!, regional)}, coverage ${coverage} percent.`
           : 'No observed glucose.'
       } ${
         insulinMissing || !insulin
@@ -111,7 +116,7 @@ export function MetabolicSummaryCard({
               : '—'}
           </Text>
           <Text style={[styles.valueLabel, { color: colors.textSecondary }]}>
-            {observedGlucose ? 'time in range' : 'no observed data'}
+            {observedGlucose ? `in ${standardRange}` : 'no observed data'}
           </Text>
           {observedGlucose && glucose && totalRange > 0 ? (
             <View
@@ -144,7 +149,7 @@ export function MetabolicSummaryCard({
           {observedGlucose && glucose ? (
             <Text style={[styles.detail, { color: colors.textTertiary }]}>
               Below {timeBelow}% · In range{' '}
-              {timeInRange}% · Above {timeAbove}%
+              {timeInRange}% · Above {timeAbove}% (standard range)
             </Text>
           ) : null}
         </View>

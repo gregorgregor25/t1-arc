@@ -5,11 +5,13 @@ import {
   GlucoseReading,
   GlucoseStats,
   InsulinStats,
-  TARGET_HIGH_MMOL_L,
-  TARGET_LOW_MMOL_L,
   TimeRange,
 } from './models';
 import { calculateGlucoseStatistics } from './glucoseStatistics';
+import {
+  calculateGlucoseRangeSummary,
+  type GlucoseTargetRange,
+} from './glucoseRanges';
 
 function round(value: number, decimals = 1) {
   const factor = 10 ** decimals;
@@ -19,25 +21,37 @@ function round(value: number, decimals = 1) {
 export function calculateGlucoseStats(
   readings: GlucoseReading[],
   range: TimeRange,
+  personalRange: GlucoseTargetRange | null = null,
 ): GlucoseStats {
-  const statistics = calculateGlucoseStatistics({
-    readings,
-    range,
-    thresholds: {
-      lowerMmolL: TARGET_LOW_MMOL_L,
-      upperMmolL: TARGET_HIGH_MMOL_L,
-    },
-  });
+  const statistics = calculateGlucoseStatistics({ readings, range });
+  const ranges = calculateGlucoseRangeSummary({ readings, range, personalRange });
   const displayed = (value: number | null) => value === null ? null : round(value);
+  const percent = (value: number | null) => value ?? 0;
   return {
     // Convert to the display unit before rounding. Rounding mmol/L here can
     // change both borderline mmol/L values and the eventual mg/dL result.
     averageMmolL: statistics.arithmeticMeanMmolL,
     standardDeviationMmolL: displayed(statistics.populationStandardDeviationMmolL),
     coefficientOfVariationPercent: displayed(statistics.coefficientOfVariationPercent),
-    timeBelowPercent: statistics.distribution?.belowPercent ?? 0,
-    timeInRangePercent: statistics.distribution?.inRangePercent ?? 0,
-    timeAbovePercent: statistics.distribution?.abovePercent ?? 0,
+    timeBelowPercent: percent(ranges.standard.below.percent),
+    timeInRangePercent: percent(ranges.standard.inRange.percent),
+    timeAbovePercent: percent(ranges.standard.above.percent),
+    timeVeryLowPercent: percent(ranges.bands.veryLow.percent),
+    timeLowPercent: percent(ranges.bands.low.percent),
+    timeHighPercent: percent(ranges.bands.high.percent),
+    timeVeryHighPercent: percent(ranges.bands.veryHigh.percent),
+    timeInTightRangePercent: percent(ranges.tight.inRange.percent),
+    ...(ranges.personal
+      ? {
+          personalRange: {
+            lowerMmolL: ranges.personal.range.lowerMmolL,
+            upperMmolL: ranges.personal.range.upperMmolL,
+            timeBelowPercent: percent(ranges.personal.below.percent),
+            timeInRangePercent: percent(ranges.personal.inRange.percent),
+            timeAbovePercent: percent(ranges.personal.above.percent),
+          },
+        }
+      : {}),
     coveragePercent: statistics.coveragePercent,
     observedMinutes: round(statistics.observedMilliseconds / 60_000, 0),
   };

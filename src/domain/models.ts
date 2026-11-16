@@ -159,9 +159,25 @@ export interface GlucoseStats {
   averageMmolL: number | null;
   standardDeviationMmolL: number | null;
   coefficientOfVariationPercent: number | null;
+  /** Standard range 3.9–10.0 mmol/L (70–180 mg/dL), duration-weighted. */
   timeBelowPercent: number;
   timeInRangePercent: number;
   timeAbovePercent: number;
+  /** Consensus bands: below 3.0, 3.0–3.8, 10.1–13.9 and above 13.9 mmol/L. */
+  timeVeryLowPercent: number;
+  timeLowPercent: number;
+  timeHighPercent: number;
+  timeVeryHighPercent: number;
+  /** Tight range 3.9–7.8 mmol/L (70–140 mg/dL). */
+  timeInTightRangePercent: number;
+  /** The person's own "In range" band, when one was supplied. */
+  personalRange?: {
+    lowerMmolL: number;
+    upperMmolL: number;
+    timeBelowPercent: number;
+    timeInRangePercent: number;
+    timeAbovePercent: number;
+  };
   coveragePercent: number;
   observedMinutes: number;
 }

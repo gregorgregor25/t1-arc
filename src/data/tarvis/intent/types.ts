@@ -324,5 +324,10 @@ export interface ResolveTarvisIntentOptions {
   timezone?: string;
   history?: readonly TarvisIntentHistoryEntry[];
   targetProfile?: TarvisGlucoseTargetProfile;
+  /**
+   * The user's own "In range" band. Used only when the question names it
+   * ("time in my range"); plain "time in range" keeps the standard range.
+   */
+  personalTargetProfile?: TarvisGlucoseTargetProfile;
   overnightProfile?: TarvisOvernightProfile;
 }

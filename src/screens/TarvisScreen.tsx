@@ -155,6 +155,8 @@ import {
 } from "@/domain/regionalProfileRuntime";
 import { addDays, formatDate, formatTime, toDateKey } from "@/domain/time";
 import { useAndroidBack } from "@/hooks/useAndroidBack";
+import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
+import { tarvisPersonalTargetProfile } from "@/data/tarvis/intent/rangeFocus";
 import { useAppTheme } from "@/theme/theme";
 import {
   acquireLocalDataWriteLease,
@@ -1358,6 +1360,11 @@ export function TarvisScreen({
 }: Props) {
   const { colors, radius } = useAppTheme();
   const evidence = useMemo(() => report ? buildTarvisEvidencePacket(report) : undefined, [report]);
+  const { settings: glucoseAppearance } = useGlucoseAppearance();
+  const personalTargetProfile = useMemo(
+    () => tarvisPersonalTargetProfile(glucoseAppearance),
+    [glucoseAppearance],
+  );
   const { width: screenWidth, fontScale } = useWindowDimensions();
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
@@ -2321,6 +2328,7 @@ export function TarvisScreen({
         conversationHistory: history,
         intentHistory,
         pendingClarification: startsNewThread ? undefined : pendingClarification,
+        personalTargetProfile,
       });
       if (plan.kind === "answer") {
         await appendExchange(

@@ -71,6 +71,13 @@ History supports day, 3-day, 7-day and 30-day views. Use the arrows or date
 picker to move through time. Glucose and insulin remain on separate scales and
 each imported record keeps its source and timestamp.
 
+The **Time in ranges** card shows the share of observed sensor time in each
+consensus band, plus time in the standard range (3.9–10.0 mmol/L), the tight
+range (3.9–7.8 mmol/L) and your own **In range** band. **More statistics**
+shows the Glycemia Risk Index. **Compare with previous period** opens Insights
+for the same period. See [Glucose statistics](GLUCOSE_STATISTICS.md) for how
+each figure is calculated.
+
 For an entry you recorded manually, open its edit form to correct it or choose
 **Delete entry**. Deletion asks for confirmation and cannot be undone. This
 control does not remove records imported from a connected provider.
@@ -152,8 +159,9 @@ item from the notebook does not remove its conversation or health records.
 
 ## Insights
 
-In the Tarv1s tab, choose **Insights** at the top to review recent periods.
-Coverage appears beside each observation. An association is a pattern worth
+In the Tarv1s tab, choose **Insights** at the top to review recent periods of
+3, 7, 14, 30 or 90 days. Coverage appears beside each observation, and each
+time-in-range figure names its range. An association is a pattern worth
 reviewing, not proof that one event caused another. The app should withhold a
 claim when coverage is too weak. Choose **Tarv1s** to return to questions.
 

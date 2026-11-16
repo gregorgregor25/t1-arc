@@ -43,6 +43,7 @@ import { resolveAppEntry } from "./appEntry";
 import type { SourceJump } from "./sourceNavigation";
 import type { TarvisEntry } from '@/domain/tarvisEntry';
 import type { HistoryRangeSelection } from '@/domain/historySelection';
+import type { InsightComparisonRequest } from '@/domain/insightRanges';
 
 export type RootTabParamList = {
   Today: { action?: "log-food" | "log-context" | "trend-details"; request?: string } | undefined;
@@ -50,7 +51,7 @@ export type RootTabParamList = {
   Health: undefined;
   Cycle: undefined;
   Feedback: undefined;
-  Insights: { entry?: TarvisEntry; settings?: boolean } | undefined;
+  Insights: { comparison?: InsightComparisonRequest; entry?: TarvisEntry; settings?: boolean } | undefined;
   Sources: { focused?: boolean; source?: SourceJump } | undefined;
 };
 
