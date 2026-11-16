@@ -4,6 +4,7 @@ import {
   PendingTarvisClarification,
   resolveTarvisClarificationReply,
   resolveTarvisCompoundIntents,
+  TarvisGlucoseTargetProfile,
   TarvisIntentHistoryEntry,
   TarvisIntentResolution,
   TarvisIntentV1,
@@ -183,6 +184,8 @@ export interface CoordinateTarvisRequestInput {
   conversationHistory?: TarvisConversationTurn[];
   intentHistory?: TarvisIntentHistoryEntry[];
   pendingClarification?: PendingTarvisClarification;
+  /** The user's own In range band, used only for "time in my range" questions. */
+  personalTargetProfile?: TarvisGlucoseTargetProfile;
 }
 
 function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
@@ -246,6 +249,7 @@ export function coordinateTarvisRequest({
   conversationHistory = [],
   intentHistory = [],
   pendingClarification,
+  personalTargetProfile,
 }: CoordinateTarvisRequestInput): TarvisRequestPlan {
   const safety = classifyTarvisSafety(
     safetyQuestionWithImmediateContext(question, conversationHistory),
@@ -336,6 +340,7 @@ export function coordinateTarvisRequest({
       history: intentHistory,
       now: asOf,
       timezone: getRuntimeRegionalDefaults().timeZone,
+      personalTargetProfile,
     },
     pendingClarification,
   );
@@ -383,6 +388,7 @@ export function coordinateTarvisRequest({
   const compound = resolveTarvisCompoundIntents(resolution, {
     now: asOf,
     timezone: getRuntimeRegionalDefaults().timeZone,
+    personalTargetProfile,
   });
   if (compound) {
     const routes = compound.map((intent) => routeTarvisIntent({

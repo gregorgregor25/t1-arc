@@ -8,10 +8,15 @@ import {
 } from "./glucoseAnswerBundleV2";
 import type {
   TarvisGlucoseThreshold,
+  TarvisIntentField,
   TarvisIntentV1,
   TarvisMetric,
   TarvisOperation,
 } from "./intent";
+import {
+  tarvisTimeInRangeRowLabels,
+  tarvisTimeInRangeWording,
+} from "./timeInRangeWording";
 import {
   executeScopedGlucoseQuery,
   formatClockTimeForDisplay,
@@ -237,6 +242,8 @@ interface ExecutableLocalGlucoseIntent {
   clockWindow: RecurringClockWindow;
   metrics: SupportedMetric[];
   thresholds: NormalizedThreshold[];
+  /** Original thresholds with provenance, used only to name the range. */
+  sourceThresholds: TarvisIntentField<TarvisGlucoseThreshold>[];
   windowCount: number;
 }
 
@@ -439,6 +446,7 @@ function validateIntent(intent: TarvisIntentV1): ExecutableLocalGlucoseIntent {
     },
     metrics: supportedMetrics,
     thresholds,
+    sourceThresholds: intent.thresholds,
     windowCount: scope.count,
   };
 }
@@ -790,6 +798,34 @@ function metricResults(
   });
 }
 
+function clockWindowTimeInRangeShare(
+  share: "inRange" | "below" | "above",
+  inRangePercent: number | null | undefined,
+  distribution: DurationDistribution | null,
+) {
+  switch (share) {
+    case "inRange":
+      return inRangePercent ?? null;
+    case "below":
+      return distribution?.belowPercent ?? null;
+    case "above":
+      return distribution?.abovePercent ?? null;
+  }
+}
+
+function timeInRangeHeadline(
+  executable: ExecutableLocalGlucoseIntent,
+  inRangePercent: number | null | undefined,
+  distribution: DurationDistribution | null,
+) {
+  const wording = tarvisTimeInRangeWording(executable.sourceThresholds);
+  if (!wording?.named) {
+    return `Observed time in range: ${inRangePercent == null ? "unavailable" : formatTarvisFixedNumber(inRangePercent, 1)}%`;
+  }
+  const share = clockWindowTimeInRangeShare(wording.share, inRangePercent, distribution);
+  return `${wording.title}: ${share === null ? "unavailable" : `${formatTarvisFixedNumber(share, 1)}%`}`;
+}
+
 function answerFor(
   executable: ExecutableLocalGlucoseIntent,
   bundle: ScopedGlucoseEvidenceBundle,
@@ -828,6 +864,13 @@ function answerFor(
       case "glucose.gmi":
         return `Across those readings, the estimated glucose management indicator was ${formatTarvisFixedNumber(metric.value, 1)}% (derived from mean sensor glucose, not a laboratory HbA1c result)`;
       case "glucose.time_in_range": {
+        const wording = tarvisTimeInRangeWording(executable.sourceThresholds);
+        if (wording?.named) {
+          const share = clockWindowTimeInRangeShare(wording.share, metric.value, distribution);
+          return share === null
+            ? `Across those readings, time ${wording.phrase} was unavailable`
+            : `Across those readings, ${formatTarvisFixedNumber(share, 1)}% of observed sensor time was ${wording.phrase}`;
+        }
         const lower = thresholdFor(executable.thresholds, "range_lower");
         const upper = thresholdFor(executable.thresholds, "range_upper");
         return `Across those readings, ${formatTarvisFixedNumber(metric.value, 1)}% of observed sensor time was within the requested ${regionalGlucoseRange(lower.value, upper.value)} range`;
@@ -900,7 +943,7 @@ function answerFor(
                   : first?.id === "glucose.gmi"
                     ? `Estimated glucose management indicator: ${first.value == null ? "unavailable" : formatTarvisFixedNumber(first.value, 1)}%`
                     : first?.id === "glucose.time_in_range"
-                      ? `Observed time in range: ${first.value == null ? "unavailable" : formatTarvisFixedNumber(first.value, 1)}%`
+                      ? timeInRangeHeadline(executable, first.value, distribution)
                       : first?.id === "glucose.low_episodes"
                         ? `Observed low-glucose events: ${first.value == null ? "unavailable" : formatTarvisNumber(first.value, { maximumFractionDigits: 0 })}`
                         : first?.id === "glucose.high_episodes"
@@ -929,6 +972,7 @@ function presentationFor(
   metrics: EvidenceCalculationReference["metrics"],
   distribution: DurationDistribution | null,
 ): TarvisEvidencePresentation {
+  const rowLabels = tarvisTimeInRangeRowLabels(executable.sourceThresholds);
   const metricPresentations: TarvisEvidenceMetric[] = metrics.flatMap(
     (metric): TarvisEvidenceMetric[] => {
       const displayedGlucose = regionalGlucoseMetric(metric.value);
@@ -1043,21 +1087,21 @@ function presentationFor(
           return [
             {
               id: "time-below-range" as const,
-              label: "Time below range",
+              label: rowLabels.below,
               value: distribution?.belowPercent ?? null,
               decimals: 1 as const,
               unit: "%" as const,
             },
             {
               id: "time-in-range" as const,
-              label: "Time in range",
+              label: rowLabels.inRange,
               value: distribution?.inRangePercent ?? null,
               decimals: 1 as const,
               unit: "%" as const,
             },
             {
               id: "time-above-range" as const,
-              label: "Time above range",
+              label: rowLabels.above,
               value: distribution?.abovePercent ?? null,
               decimals: 1 as const,
               unit: "%" as const,

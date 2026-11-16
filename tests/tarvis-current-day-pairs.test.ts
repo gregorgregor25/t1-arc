@@ -77,7 +77,7 @@ describe("same-date current-period observations", () => {
     const finding = packet.findings.find(({ id }) => id === "current-sleep-glucose-day-pairs");
     expect(finding?.summary).toContain("Across 7 of 7 complete local calendar days");
     expect(finding?.summary).toContain("2026-10-01: 2 recorded sleep sessions ending that day");
-    expect(finding?.summary).toContain("same-date CGM 100% in range");
+    expect(finding?.summary).toContain("same-date CGM 100% in the standard range");
     expect(packet.requiredFindingIds).toContain(finding?.id);
     for (const day of ["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"])
       expect(finding?.summary).toContain(day);
@@ -153,7 +153,7 @@ describe("same-date current-period observations", () => {
       expect(report.currentOnlyPairFindings?.[0]?.evidence[0]?.recordIds.length).toBeGreaterThan(100);
       expect(finding?.summary).toContain(`${day}: 1 recorded sleep session ending that day`);
       expect(finding?.summary).toContain(`${addDays(day, 1)}: 1 recorded sleep session ending that day`);
-      expect(finding?.summary).toContain("100% in range");
+      expect(finding?.summary).toContain("100% in the standard range");
     },
   );
 

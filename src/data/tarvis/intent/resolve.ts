@@ -1,5 +1,17 @@
 import { getRuntimeAnalysisTimeZone } from "@/domain/regionalProfileRuntime";
 import { extractTarvisLiterals } from "./literals";
+import {
+  detectTarvisTimeInRangeFocus,
+  inferTarvisThresholdUnit,
+  TARVIS_PERSONAL_RANGE_PROFILE_ID,
+  TARVIS_RANGE_FOCUS_METRIC_PATTERNS,
+  TARVIS_STANDARD_RANGE_PROFILE,
+  TARVIS_TIGHT_RANGE_PROFILE,
+  TARVIS_TIME_ABOVE_SOURCE_ID,
+  TARVIS_TIME_BELOW_SOURCE_ID,
+  tarvisConsensusThresholdIn,
+  type TarvisTimeInRangeFocus,
+} from "./rangeFocus";
 import { validateTarvisIntentV1 } from "./schema";
 import {
   IncompleteTarvisIntentResolution,
@@ -26,12 +38,8 @@ import {
   TarvisTemporalScope,
 } from "./types";
 
-const DEFAULT_TARGET_PROFILE: TarvisGlucoseTargetProfile = {
-  id: "standard-cgm-range",
-  unit: "mmol/L",
-  lowBelow: 3.9,
-  highAbove: 10,
-};
+const DEFAULT_TARGET_PROFILE: TarvisGlucoseTargetProfile =
+  TARVIS_STANDARD_RANGE_PROFILE;
 
 const DEFAULT_OVERNIGHT_PROFILE: TarvisOvernightProfile = {
   id: "t1-arc-default-overnight",
@@ -501,6 +509,19 @@ function extractMetricCandidates(
       /\b(?:time[- ]in[- ]range|tir|percentage\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|percent\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|(?:what\s+)?(?:percentage|percent)\s+(?:of\s+(?:my\s+)?(?:glucose\s+)?readings?\s+)?(?:(?:was|were|am|is)\s+(?:i\s+)?)?between)\b/,
     ),
   );
+
+  for (const expression of TARVIS_RANGE_FOCUS_METRIC_PATTERNS) {
+    pushCandidate(
+      candidates,
+      candidateFromPattern(
+        originalQuestion,
+        normalizedQuestion,
+        "glucose.time_in_range",
+        "range_distribution",
+        expression,
+      ),
+    );
+  }
 
   const lowReadings = candidateFromPattern(
     originalQuestion,
@@ -1411,13 +1432,171 @@ function comparisonField(
   );
 }
 
+interface TargetThresholdContext {
+  focus?: TarvisTimeInRangeFocus | null;
+  personalProfile?: TarvisGlucoseTargetProfile;
+}
+
+function profileRangeThresholds(
+  profile: TarvisGlucoseTargetProfile,
+  note: string,
+): TarvisIntentField<TarvisGlucoseThreshold>[] {
+  const provenance = {
+    kind: "profile" as const,
+    sourceText: profile.id,
+    sourceStart: null,
+    sourceEnd: null,
+    turnId: null,
+    note,
+  };
+  return [
+    {
+      value: {
+        operator: "gte",
+        value: profile.lowBelow,
+        unit: profile.unit,
+        role: "range_lower",
+      },
+      provenance,
+    },
+    {
+      value: {
+        operator: "lte",
+        value: profile.highAbove,
+        unit: profile.unit,
+        role: "range_upper",
+      },
+      provenance,
+    },
+  ];
+}
+
+/**
+ * Thresholds for a named range ("tight", "my range") or a one-sided time share
+ * ("time below 3"). A one-sided share is calculated as a range whose other
+ * bound is the standard range limit, so the requested share is the part below
+ * the lower bound or above the upper bound. Returns null when the question
+ * cannot be represented exactly; the ordinary rules then apply.
+ */
+function focusedRangeThresholds(
+  focus: TarvisTimeInRangeFocus,
+  explicitThresholds: ReturnType<typeof metricThresholdLiterals>,
+  personalProfile: TarvisGlucoseTargetProfile | undefined,
+): TarvisIntentField<TarvisGlucoseThreshold>[] | null {
+  if (focus.kind === "tight") {
+    if (explicitThresholds.length > 0) return null;
+    return profileRangeThresholds(
+      TARVIS_TIGHT_RANGE_PROFILE,
+      "Tight range 3.9–7.8 mmol/L (70–140 mg/dL) named in the question.",
+    );
+  }
+  if (focus.kind === "personal") {
+    if (explicitThresholds.length > 0 || !personalProfile) return null;
+    return profileRangeThresholds(
+      { ...personalProfile, id: TARVIS_PERSONAL_RANGE_PROFILE_ID },
+      "Your range: the In range band from glucose display settings.",
+    );
+  }
+  if (explicitThresholds.length > 1) return null;
+  const literal = explicitThresholds[0];
+  const below = focus.kind === "below";
+  let bound: TarvisIntentField<TarvisGlucoseThreshold>;
+  let unit: TarvisGlucoseThreshold["unit"];
+  if (literal) {
+    const directionMatches = below
+      ? literal.operator === "lt" || literal.operator === "lte"
+      : literal.operator === "gt" || literal.operator === "gte";
+    if (!directionMatches) return null;
+    unit = inferTarvisThresholdUnit(literal.value, literal.unit);
+    const operator: TarvisGlucoseThreshold["operator"] = below
+      ? literal.operator === "lt"
+        ? "gte"
+        : "gt"
+      : literal.operator === "gt"
+        ? "lte"
+        : "lt";
+    bound = explicitField(
+      {
+        operator,
+        value: literal.value,
+        unit,
+        role: below ? "range_lower" : "range_upper",
+      },
+      literal,
+      literal.unit
+        ? undefined
+        : `Unit inferred as ${unit} from the size of the number.`,
+    );
+  } else if (focus.presetMmolL !== null) {
+    unit = "mmol/L";
+    bound = {
+      value: {
+        operator: below ? "gte" : "lte",
+        value: focus.presetMmolL,
+        unit,
+        role: below ? "range_lower" : "range_upper",
+      },
+      provenance: {
+        kind: "profile",
+        sourceText: TARVIS_STANDARD_RANGE_PROFILE.id,
+        sourceStart: null,
+        sourceEnd: null,
+        turnId: null,
+        note: "Consensus threshold named in the question.",
+      },
+    };
+  } else {
+    return null;
+  }
+  const complement: TarvisIntentField<TarvisGlucoseThreshold> = {
+    value: {
+      operator: below ? "lte" : "gte",
+      value: tarvisConsensusThresholdIn(
+        below
+          ? TARVIS_STANDARD_RANGE_PROFILE.highAbove
+          : TARVIS_STANDARD_RANGE_PROFILE.lowBelow,
+        unit,
+      ),
+      unit,
+      role: below ? "range_upper" : "range_lower",
+    },
+    provenance: {
+      kind: "derived",
+      sourceText: below
+        ? TARVIS_TIME_BELOW_SOURCE_ID
+        : TARVIS_TIME_ABOVE_SOURCE_ID,
+      sourceStart: null,
+      sourceEnd: null,
+      turnId: null,
+      note: below
+        ? "Upper bound from the standard range; the answer reports the share below the lower bound."
+        : "Lower bound from the standard range; the answer reports the share above the upper bound.",
+    },
+  };
+  const [lower, upper] = below ? [bound, complement] : [complement, bound];
+  return lower.value.value < upper.value.value ? [lower, upper] : null;
+}
+
 function targetThresholds(
   metrics: TarvisIntentField<TarvisMetric>[],
   literals: ReturnType<typeof extractTarvisLiterals>,
   profile: TarvisGlucoseTargetProfile,
+  context: TargetThresholdContext = {},
 ): TarvisIntentField<TarvisGlucoseThreshold>[] {
   const metricValues = new Set(metrics.map((metric) => metric.value));
   const explicitThresholds = metricThresholdLiterals(literals);
+  if (
+    context.focus &&
+    metrics.length === 1 &&
+    metrics[0]!.value === "glucose.time_in_range"
+  ) {
+    const focused = focusedRangeThresholds(
+      context.focus,
+      explicitThresholds,
+      context.personalProfile,
+    );
+    if (focused) return focused;
+  }
   if (explicitThresholds.length > 0 && metrics.length === 1) {
     const metric = metrics[0]!.value;
     return explicitThresholds.map((literal) => {
@@ -1798,10 +1977,19 @@ export function resolveTarvisIntent(
   }
 
   const profile = options.targetProfile ?? DEFAULT_TARGET_PROFILE;
+  const thresholdContext: TargetThresholdContext = {
+    focus: detectTarvisTimeInRangeFocus(normalizedQuestion),
+    personalProfile: options.personalTargetProfile,
+  };
   const explicitMetricThresholds = metricThresholdLiterals(literals);
   if (compoundProblem) {
     if (explicitMetricThresholds.length === 0) {
-      draft.thresholds = targetThresholds(draft.metrics, literals, profile);
+      draft.thresholds = targetThresholds(
+        draft.metrics,
+        literals,
+        profile,
+        thresholdContext,
+      );
     }
     return incomplete(draft, literals, compoundProblem);
   }
@@ -1834,7 +2022,12 @@ export function resolveTarvisIntent(
       ),
     );
   }
-  draft.thresholds = targetThresholds(draft.metrics, literals, profile);
+  draft.thresholds = targetThresholds(
+    draft.metrics,
+    literals,
+    profile,
+    thresholdContext,
+  );
 
   if (draft.metrics.length === 0) {
     return incomplete(
@@ -2119,7 +2312,10 @@ export function resolveTarvisCompoundIntents(
     const boundThresholds = thresholdsByMetric.get(candidate.metric) ?? [];
     let thresholds = targetThresholds([metric], {
       ...literals, durations: [], thresholds: boundThresholds,
-    }, options.targetProfile ?? DEFAULT_TARGET_PROFILE);
+    }, options.targetProfile ?? DEFAULT_TARGET_PROFILE, {
+      focus: detectTarvisTimeInRangeFocus(checked.intent.normalizedQuestion),
+      personalProfile: options.personalTargetProfile,
+    });
     if (!options.targetProfile && boundThresholds.length === 0) {
       thresholds = thresholds.map((threshold) => {
         const family = threshold.value.role === "low" || threshold.value.role === "range_lower"
