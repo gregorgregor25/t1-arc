@@ -28,6 +28,7 @@ import { HypoTreatmentReviewCard } from '@/components/HypoTreatmentReviewCard';
 import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { ErrorCard } from "@/components/ErrorCard";
 import { GlucoseProfileCard } from "@/components/GlucoseProfileCard";
+import { GlucoseRangeStatisticsCard } from "@/components/GlucoseRangeStatisticsCard";
 import { InsulinEventList } from "@/components/InsulinEventList";
 import { LoadingCard } from "@/components/LoadingCard";
 import { MetabolicSummaryCard } from "@/components/MetabolicSummaryCard";
@@ -43,6 +44,11 @@ import {
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import { buildInsulinReconciliation } from "@/domain/dataCompleteness";
 import { calculateGlucoseStats } from "@/domain/stats";
+import {
+  calculateGlucoseRangeSummary,
+  personalGlucoseRange,
+} from "@/domain/glucoseRanges";
+import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { historySelectionForRequest, historySelectionLabel, isHistoryRangeSelection, type HistoryRangeSelection } from '@/domain/historySelection';
 import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
 import {
@@ -56,6 +62,7 @@ import { useTimeline } from "@/hooks/useTimeline";
 import { useFoodLogs } from "@/hooks/useFoodLogs";
 import { FoodLog } from "@/data/food/types";
 import { useDataContext } from "@/providers/DataProvider";
+import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
@@ -90,6 +97,8 @@ interface PopulatedHistoryContentProps {
   today: DateKey;
   summaryLabel?: string;
   multiDay?: boolean;
+  compareLabel?: string;
+  onCompare?: () => void;
 }
 
 const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
@@ -110,11 +119,33 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   today,
   summaryLabel,
   multiDay = days > 1,
+  compareLabel,
+  onCompare,
 }: PopulatedHistoryContentProps) {
-  const glucoseStats = useMemo(
-    () => calculateGlucoseStats(data.glucose, data.range),
-    [data.glucose, data.range],
+  const { settings: appearance } = useGlucoseAppearance();
+  const personalRange = useMemo(
+    () => personalGlucoseRange(appearance),
+    [appearance],
   );
+  const glucoseStats = useMemo(
+    () => calculateGlucoseStats(data.glucose, data.range, personalRange),
+    [data.glucose, data.range, personalRange],
+  );
+  const rangeSummary = useMemo(
+    () =>
+      calculateGlucoseRangeSummary({
+        readings: data.glucose,
+        range: data.range,
+        personalRange,
+      }),
+    [data.glucose, data.range, personalRange],
+  );
+  const periodLabel =
+    summaryLabel ?? (selectedDate === today && days === 1
+      ? "Today so far"
+      : days === 1
+        ? "Selected day"
+        : `${days}-day range`);
   const insulinSummary = useMemo(
     () =>
       summarizeInsulinRange(
@@ -143,6 +174,12 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
         data={data}
         layers={timelineLayers}
         onLayersChange={onLayersChange}
+      />
+      <GlucoseRangeStatisticsCard
+        compareLabel={compareLabel}
+        label={periodLabel}
+        onCompare={onCompare}
+        summary={rangeSummary}
       />
       {days > 1 ? (
         <>
@@ -178,13 +215,7 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
         insulinMissing={insulinMissing}
         reconciliation={insulinReconciliation}
         summary={insulinSummary}
-        label={
-          summaryLabel ?? (selectedDate === today && days === 1
-            ? "Today so far"
-            : days === 1
-              ? "Selected day"
-              : `${days}-day range`)
-        }
+        label={periodLabel}
       />
       {!insulinMissing ? (
         <InsulinEventList
@@ -252,6 +283,22 @@ export function HistoryScreen() {
     ? `history:selection:${activeSelection.start}:${activeSelection.end}:${activeSelection.ownerIdentity}`
     : `history:${selectedDate}:${rangeChoice}`;
   const timeline = useTimeline(range, rangeSelectionKey);
+  const comparison = useMemo(
+    () =>
+      activeSelection
+        ? undefined
+        : insightComparisonForHistoryView(days, selectedDate, addDays(today, -1)),
+    [activeSelection, days, selectedDate, today],
+  );
+  const compareLabel = comparison
+    ? `${formatRegionalNumber(comparison.periodDays, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(comparison.endDate, { day: "numeric", month: "short" })} with the ${formatRegionalNumber(comparison.periodDays, regional.locale, { maximumFractionDigits: 0 })} days before`
+    : undefined;
+  const openComparison = useCallback(() => {
+    if (!comparison) return;
+    navigation.navigate("Insights", {
+      comparison: { ...comparison, request: `history:${Date.now()}` },
+    });
+  }, [comparison, navigation]);
   const foodHistory = useFoodLogs(range, rangeSelectionKey);
   const selectDailySummaryDate = useCallback((date: DateKey) => {
     setExplicitSelection(undefined);
@@ -444,6 +491,8 @@ export function HistoryScreen() {
             days={activeSelection ? 1 : days}
             summaryLabel={activeSelection ? 'Selected period' : undefined}
             multiDay={activeSelection ? toDateKey(range.start) !== toDateKey(range.end - 1) : days > 1}
+            compareLabel={compareLabel}
+            onCompare={comparison ? openComparison : undefined}
             deleteManualContext={deleteManualContext}
             deleteManualInsulin={deleteManualInsulin}
             foodError={foodHistory.error}
