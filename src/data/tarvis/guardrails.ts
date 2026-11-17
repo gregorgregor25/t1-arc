@@ -59,15 +59,12 @@ const TREATMENT_DIRECTIVE_PATTERNS: readonly RegExp[] = [
 // test below.
 const PROHIBITED_TREATMENT_OUTPUT =
   /\b(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\bconsider\s+(?:taking|injecting|using|reducing|lowering|increasing|decreasing|adjusting|changing|skipping|stopping)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?)\b|\b(?:you (?:should|must|need to)|i (?:recommend|suggest|advise))\b[\s\S]{0,80}\b(?:take|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|double|halve|skip|stop|set)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|glucose tablets?)\b/i;
-const NUMBER_WORD =
-  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half|a couple of|a few|several";
 // Glucose-range wording is not a treatment topic.
 const RANGE_WORDING = /\b(?:target|glucose|standard|tight|personal)\s+ranges?\b|\btime in range\b/gi;
 const TREATMENT_TOPIC = new RegExp(
   "\\b(?:insulin|units?|u|doses?|dosing|bolus\\w*|basal|smbs?|super micro ?bolus\\w*|temp(?:orary)? (?:basal|target)s?|carbs?|carbohydrates?|grams?|g|ratios?|icr|isf|sensitivity|factors?|targets?|profiles?|juice|glucose tablets?|dextrose|glucagon|correct\\w*|pump|sugar|snacks?)\\b|\\d\\s*(?:u|g)\\b",
   "i",
 );
-const AMOUNT = new RegExp(`\\d|\\b(?:${NUMBER_WORD})\\b`, "i");
 // Verbs that are a treatment action in themselves, whatever the sentence is about.
 const INHERENT_TREATMENT_ACTION =
   /\b(?:inject|pre-?bolus|administer|eat|drink|consume|swallow|sip|chew|correct with|top up|give yourself|treat (?:the|a|your|it|this|that|any) (?:low|hypo|high))\b/i;
@@ -86,7 +83,11 @@ const DIRECTIVE_MARKER =
 // matches judgement words ("indicated", "warranted") and imperatives such as
 // "Proceed".
 const RECORD_MARKER =
-  /\b(?:was|were|had|been|took|ate|gave|ran|rose|fell|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|averaged|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are)|delivered|entered|imported|received|injected|bolused|corrected|counted|calculated|estimated|reported|stored|synced|uploaded|started|ended|stopped|finished|resumed|suspended|paused|changed|switched|cancelled|canceled|replaced|noted|added|increased|decreased|reduced|raised|lowered|treated|covered|peaked|dropped|measured|appeared|occurred|happened|followed|preceded|expired)\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b/i;
+  /\b(?:was|were|had|been|took|ate|gave|ran|rose|fell|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|averaged|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are)|delivered|entered|imported|received|injected|bolused|corrected|counted|calculated|estimated|reported|stored|synced|uploaded|started|ended|stopped|finished|resumed|suspended|paused|changed|switched|cancelled|canceled|replaced|noted|added|increased|decreased|reduced|raised|lowered|treated|covered|peaked|dropped|measured|appeared|occurred|happened|followed|preceded|expired|disconnected|reconnected|ceased|differed|varied|remained|stayed|lasted|began|continued|matched|exceeded)\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b/i;
+// "the recorded 3 U" names a record inside what may be an instruction
+// ("Continue the recorded 4 U dose"); it is not itself a past-tense record.
+const ADJECTIVAL_RECORD =
+  /\b(?:the|your|a|an|this|that|these|those|its|their|my|our)\s+(?:(?:two|three|last|previous|earlier|same)\s+)?(?:recorded|logged|delivered|entered|imported|reported|estimated|calculated)\b/gi;
 const NOUN_MODIFIER =
   "(?:meal|correction|extended|combo|combination|dual|square|wave|manual|automatic|automated|small|large|big|single|first|second|third|last|previous|recorded|logged|earlier|later|overnight|basal|insulin|carb|sharp|steep|gradual|slight|total|\\d+(?:[.,]\\d+)?\\s*(?:u|g|units?|%)?)";
 const NOUN_VERB =
@@ -112,7 +113,7 @@ const DESCRIPTIVE_MASKS: readonly RegExp[] = [
 ];
 
 const IMPERATIVE_START =
-  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial|dose|resume|restart|pause|bump|boost|tweak|turn|proceed|program|programme|deliver|bring|keep|cancel|drop)\b|^\W*up\s+(?:your|the)\b/i;
+  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial|dose|resume|restart|pause|bump|boost|tweak|turn|proceed|program|programme|deliver|bring|keep|cancel|drop|leave|stick|maintain|continue|replicate|disconnect|reconnect|activate|deactivate|enable|disable|silence|begin|choose|select|sip|chew|swallow|consume|use|hold|apply|enter|log|start)\b|^\W*up\s+(?:your|the)\b/i;
 // "Same again" or "repeat" points back at an earlier treatment on its own.
 const STRONG_BACK_REFERENCE = /\b(?:same again|repeat(?!ed\b)\w*)\b/i;
 // "The same" or "as before" is a comparison unless instruction wording joins
@@ -122,7 +123,7 @@ const BACK_REFERENCE =
   /\b(?:the same|same amount|again|that amount|that much|as much|as before|like last time|like before)\b/i;
 // Clause boundaries inside one sentence. A recorded clause must not shelter
 // an instruction after it: "You logged 3 U at lunch; repeat this dose".
-const CLAUSE_BOUNDARY = /;|\s[-–—]\s|,\s*(?=(?:so|then|and then|but|now|next time)\b)/i;
+const CLAUSE_BOUNDARY = /;|\s-\s|\s*[–—]\s*|,\s*(?=(?:so|then|and then|but|now|next time)\b)/i;
 
 function maskDescriptiveForms(sentence: string) {
   return DESCRIPTIVE_MASKS.reduce((text, mask) => text.replace(mask, " "), sentence);
@@ -136,11 +137,45 @@ function splitSentences(text: string) {
     .filter(Boolean);
 }
 
+// A treatment clause passes only with a positive record shape: an explicit
+// past-tense record verb or record noun, and no instruction wording. A
+// clause that cannot be shown to describe a record is rejected, whatever
+// verb it starts with.
 function isRecordedEventDescription(sentence: string, masked: string) {
   if (DIRECTIVE_MARKER.test(masked)) return false;
   if (BASE_TREATMENT_VERB.test(masked) || TREATMENT_GERUND_FORM.test(masked)) return false;
-  if (AMOUNT.test(sentence) && !RECORD_MARKER.test(sentence)) return false;
-  return true;
+  return RECORD_MARKER.test(sentence.replace(ADJECTIVAL_RECORD, " "));
+}
+
+// Judgement words that present a treatment as called for.
+const TREATMENT_JUDGEMENT =
+  /\b(?:indicated|warranted|justified|called for|advised|advisable|recommended|needed|required|necessary|appropriate|in order)\b/i;
+// "Your basal needs a small reduction", "Your ratio would benefit from".
+const YOUR_TREATMENT_NEEDS =
+  /\byour\s+(?:basal(?:\s+rates?)?|ratios?|bolus(?:es)?|insulin|doses?|pump|targets?|profiles?|corrections?|carbs?|isf|icr|factors?|temp(?:orary)?\s+(?:basal|target)s?)\b[^.;!?]{0,60}\b(?:needs?|should|must|ought|has to|have to|would benefit|will need|requires?)\b/i;
+// "An extra unit will bring the reading down."
+const QUANTITY_OUTCOME =
+  /\b(?:an?\s+extra|another|a\s+further|additional|one\s+more|half\s+an?|more|less)\s+(?:units?|u|grams?|g|insulin|carbs?|carbohydrates?|glucose\s+tablets?|bolus|correction|doses?)\b[^.;!?]{0,60}\b(?:will|would|should|could|might|may|can)\b/i;
+// "insulin needs" is a noun ("Illness can raise your insulin needs").
+const INSULIN_NEEDS_NOUN = /\binsulin\s+(?:needs|requirements?)\b/gi;
+
+// An imperative at the start of the clause or after a leading phrase:
+// "Before supper, proceed with half a unit."
+function startsAsInstruction(masked: string) {
+  return masked.split(",").some((piece) => IMPERATIVE_START.test(piece));
+}
+
+/** Instruction shapes checked in both personal and education answers. */
+function clauseGivesInstruction(clause: string, masked: string) {
+  const unmasked = clause.replace(INSULIN_NEEDS_NOUN, " ");
+  return (
+    startsAsInstruction(masked) ||
+    /\bgo ahead and\b/i.test(masked) ||
+    STRONG_BACK_REFERENCE.test(masked) ||
+    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(masked)) ||
+    YOUR_TREATMENT_NEEDS.test(unmasked) ||
+    QUANTITY_OUTCOME.test(unmasked)
+  );
 }
 
 function backReferenceInstruction(masked: string) {
@@ -154,11 +189,12 @@ function clauseIsTreatmentDirective(clause: string) {
   if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(clause))) return true;
   const masked = maskDescriptiveForms(clause);
   if (INHERENT_TREATMENT_ACTION.test(masked)) return true;
+  if (clauseGivesInstruction(clause, masked)) return true;
   const topical = clause.replace(RANGE_WORDING, " ");
   if (!TREATMENT_TOPIC.test(topical) && !PROHIBITED_TREATMENT_OUTPUT.test(topical)) {
     // A clause with no treatment word can still give the instruction by
     // pointing back at an earlier one: "Do the same tonight."
-    return IMPERATIVE_START.test(masked) || backReferenceInstruction(masked);
+    return backReferenceInstruction(masked);
   }
   return !isRecordedEventDescription(clause, masked);
 }
@@ -182,14 +218,7 @@ function containsEducationTreatmentDirective(text: string) {
   if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised))) return true;
   return splitSentences(normalised)
     .flatMap((sentence) => [sentence, ...sentence.split(CLAUSE_BOUNDARY)])
-    .some((clause) => {
-      const masked = maskDescriptiveForms(clause.trim());
-      return (
-        IMPERATIVE_START.test(masked) ||
-        /\bgo ahead and\b/i.test(masked) ||
-        STRONG_BACK_REFERENCE.test(masked)
-      );
-    });
+    .some((clause) => clauseGivesInstruction(clause.trim(), maskDescriptiveForms(clause.trim())));
 }
 
 /**

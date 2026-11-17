@@ -152,10 +152,12 @@ function reconcileCopies<T extends { id: string; sourceId: string }>(
       const queue = [start];
       let free: CopyGroup<T> | undefined;
       for (let head = 0; head < queue.length && free === undefined; head += 1) {
-        for (const group of options.get(queue[head]) ?? []) {
+        const current = queue[head];
+        if (current === undefined) break;
+        for (const group of options.get(current) ?? []) {
           if (visited.has(group)) continue;
           visited.add(group);
-          reachedFrom.set(group, queue[head]);
+          reachedFrom.set(group, current);
           const holder = groupHolder.get(group);
           if (holder === undefined) {
             free = group;

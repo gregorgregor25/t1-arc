@@ -250,6 +250,55 @@ const REVIEW_HARMLESS = [
   'You took 2 U at 08:00; glucose was 9.1 mmol/L at 09:00.',
 ];
 
+// Phrasings found by the third independent review. Every one must be
+// rejected by both the personal-evidence and the general education route.
+const THIRD_REVIEW_DIRECTIVES = [
+  'Disconnect your pump for an hour.',
+  'Deactivate insulin delivery until the walk ends.',
+  'Enable your exercise profile before the walk.',
+  'You logged 2 U at breakfast, so another unit at lunch.',
+  'You logged 2 U at breakfast; another unit at lunch.',
+  'You logged 2 U at breakfast — another unit at lunch.',
+  'You logged 2 U at breakfast—but another unit at lunch.',
+  'For dinner, stick with your recorded 3 U.',
+  'Maintain your basal at the recorded 0.8 U/h.',
+  'Continue the recorded 4 U dose before breakfast.',
+  'Replicate the recorded 2 U correction at dinner.',
+  'A correction of half a unit is warranted.',
+  'Your basal needs a small reduction overnight.',
+  'Your ratio would benefit from being changed to 1:9.',
+  'For this low, glucose tablets are called for.',
+  'Your pump was off at noon; leave it that way overnight.',
+  'An extra unit will bring the reading down.',
+  'Silence the pump by suspending insulin delivery.',
+  'Sip juice until the low resolves.',
+  'Chew three glucose tablets.',
+  'Swallow a glucose tablet for this low.',
+  'Begin a temporary basal of 50% for the walk.',
+  'Choose a temporary target of 8 mmol/L.',
+  'Before supper, proceed with half a unit.',
+];
+
+// Descriptions the third review found wrongly rejected, plus close variants.
+const THIRD_REVIEW_HARMLESS = [
+  'The pump disconnected at 01:10.',
+  'Insulin delivery ceased at 04:35.',
+  'The boluses differed by 0.3 U.',
+  'Basal delivery varied between 0.4 and 0.8 U/h.',
+  'The target remained at 6 mmol/L.',
+  'The pump remained off between 01:10 and 01:25.',
+  'The two recorded boluses differed by 0.2 U.',
+];
+
+const EDUCATION_HARMLESS = [
+  'Illness can raise your insulin needs.',
+  'Exercise can increase insulin sensitivity for up to 24 hours.',
+  'Insulin helps glucose move from the blood into cells.',
+  'Carbohydrate is digested into glucose, which then enters the blood.',
+  'A temporary target is a short-term change to the glucose level a pump system aims for.',
+  'Fast-acting carbohydrate, such as juice or glucose tablets, raises glucose quickly.',
+];
+
 describe('treatment directive filter', () => {
   it('has the regression coverage the safety review asked for', () => {
     expect(DIRECTIVES.length).toBeGreaterThanOrEqual(40);
@@ -339,5 +388,27 @@ describe('treatment directive filter', () => {
   it.each(REVIEW_HARMLESS)('allows a descriptive comparison or recorded state: %s', (sentence) => {
     expect(containsTreatmentDirective(sentence)).toBe(false);
     expect(parsePersonal(sentence).answer).toBe(sentence);
+  });
+
+  it.each(THIRD_REVIEW_DIRECTIVES)('blocks it in a personal answer: %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(true);
+    expect(() => parsePersonal(sentence)).toThrow(/safe evidence boundary/i);
+  });
+
+  it.each(THIRD_REVIEW_DIRECTIVES)('blocks it in a general education answer: %s', (sentence) => {
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify({
+      kind: 'explanation', headline: 'How boluses work', answer: sentence, limitations: [],
+    }))).toThrow(/safety boundary|safe evidence boundary/i);
+  });
+
+  it.each(THIRD_REVIEW_HARMLESS)('allows a recorded state or comparison: %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(false);
+    expect(parsePersonal(sentence).answer).toBe(sentence);
+  });
+
+  it.each(EDUCATION_HARMLESS)('allows descriptive physiology in education: %s', (sentence) => {
+    expect(parseTarvisGeneralEducationAnswer(JSON.stringify({
+      kind: 'explanation', headline: 'How insulin works', answer: sentence, limitations: [],
+    })).answer.answer).toBe(sentence);
   });
 });
