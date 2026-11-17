@@ -18,6 +18,8 @@ import {
 import { ACTIVE_COLOR_PALETTE } from '@/domain/appPalette';
 import type { AppThemeMode } from '@/domain/themePreference';
 
+import { spacing as spacingTokens, typeScale } from './tokens';
+
 export interface AppColors {
   background: string;
   backgroundGlow: string;
@@ -65,6 +67,8 @@ export interface AppTheme {
     xl: number;
     xxl: number;
   };
+  /** Font sizes in sp; see `src/theme/tokens.ts`. */
+  type: typeof typeScale;
   radius: {
     sm: number;
     md: number;
@@ -106,7 +110,15 @@ function makeTheme(
     colors: dark ? activeColors.dark : activeColors.light,
     mode,
     setMode,
-    spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 },
+    spacing: {
+      xs: spacingTokens.xs,
+      sm: spacingTokens.sm,
+      md: spacingTokens.md,
+      lg: spacingTokens.lg,
+      xl: spacingTokens.xl,
+      xxl: spacingTokens.xxl,
+    },
+    type: typeScale,
     radius: { sm: 8, md: 13, lg: 17, xl: 22, pill: 999 },
   };
 }
