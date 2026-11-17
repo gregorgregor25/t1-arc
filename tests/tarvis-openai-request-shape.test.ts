@@ -1029,7 +1029,7 @@ describe("Tarv1s direct model-request shape", () => {
   it.each([
     [{ type: "refusal", refusal: "Discard this private text." }],
     [{ type: "output_text", text: "{}" }, { type: "refusal", refusal: "" }],
-  ].map(content => ({ content })))("returns a local boundary and retains usage for a provider refusal", async ({ content }) => {
+  ].map(content => ({ content })))("keeps the local record review when a provider refuses a record answer", async ({ content }) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true, status: 200,
       json: async () => ({
@@ -1037,10 +1037,32 @@ describe("Tarv1s direct model-request shape", () => {
         usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
       }),
     } as Response);
-    const result = await askTarvis(
-      "Why did my glucose go low when I walked after dinner?",
-      retrospectivePacket(), [], { epoch: 1 },
-    );
+    let failure: unknown;
+    try {
+      await askTarvis(
+        "Why did my glucose go low when I walked after dinner?",
+        retrospectivePacket(), [], { epoch: 1 },
+      );
+    } catch (reason) {
+      failure = reason;
+    }
+    expect(getTarvisRequestFailureDetails(failure)).toMatchObject({
+      modelRequestSent: true,
+      requestMetrics: { totalTokens: 30 },
+      usage: { totalTokens: 30 },
+    });
+    expect(String(failure)).not.toContain("private text");
+  });
+
+  it("returns a local boundary and retains usage when a provider refuses a general explanation", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({
+        output: [{ content: [{ type: "refusal", refusal: "Discard this private text." }] }],
+        usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      }),
+    } as Response);
+    const result = await askTarvis("What is an extended bolus?", undefined, [], { epoch: 1 });
     expect(result).toMatchObject({
       answer: { headline: "I can explain, but not recommend treatment", responseKind: "safety-boundary", evidenceIds: [] },
       answerSource: "local", modelRequestSent: true,
@@ -1049,16 +1071,13 @@ describe("Tarv1s direct model-request shape", () => {
     expect(result.answer.answer).not.toContain("private text");
   });
 
-  it("shows the local boundary for a ChatGPT refusal on a record selection", async () => {
+  it("keeps the local record review when ChatGPT refuses a record selection", async () => {
     mocks.loadProvider.mockResolvedValue("chatgpt");
     mocks.chatGptRequest.mockRejectedValueOnce({
       code: "ERR_CHATGPT_STREAM_REJECTED", message: "ChatGPT declined this answer.",
     });
-    const result = await askTarvis("Why was my glucose different last week?", evidencePacket(), [], { epoch: 1 });
-    expect(result).toMatchObject({
-      answerSource: "local", modelRequestSent: true,
-      answer: { headline: "I can explain, but not recommend treatment", evidenceIds: [] },
-    });
+    await expect(askTarvis("Why was my glucose different last week?", evidencePacket(), [], { epoch: 1 }))
+      .rejects.toThrow();
   });
 
   it("keeps a refused follow-up out of both provider requests", async () => {

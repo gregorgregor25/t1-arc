@@ -142,7 +142,7 @@ function withoutUnitDefinition(sentence: string) {
 const CHOICE = /\b(?:my|our|best|better)\s+(?:pick|vote|bet|choice|preference)\b|\b(?:gets?|has)\s+my\s+vote\b/i;
 const PERSONAL_FRAME = /\b(?:you|your|yours|yourself)\b/i;
 const ADJUSTABLE_THERAPY = new RegExp(String.raw`\b(?:${SETTING}|bolus(?:es)?|doses?|units?|pen clicks?)\b`, "i");
-const DIRECTION_OR_AMOUNT = /\b(?:higher|lower|stronger|weaker|gentler|further|up|down|earlier|later|extra|fewer|units?|percent|quarter|half)\b|\d\s*%/i;
+const DIRECTION_OR_AMOUNT = /\b(?:higher|lower|stronger|weaker|gentler|further|up|down|earlier|later|extra|fewer|percent|quarter|half)\b|\d\s*%|\d+(?:[.,]\d+)?\s*(?:u|units?)\b/i;
 
 // Hosted prose is requested as plain text. A table can distribute its
 // condition, unit and treatment across cells with no complete sentence.

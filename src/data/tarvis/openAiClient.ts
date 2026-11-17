@@ -540,7 +540,9 @@ export async function askTarvis(
     await saveTarvisUsage(usage, writeLease);
     knownUsage = usage;
     connectionLease.assertCurrent();
-    if (providerWithheldAnswer(body)) {
+    // With a record packet, a refusal throws so the screen keeps the locally
+    // built record review; only a general explanation gets the boundary.
+    if (providerWithheldAnswer(body) && !selectedPacket) {
       return {
         answer: treatmentBoundaryResult().answer,
         answerSource: "local",

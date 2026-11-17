@@ -141,7 +141,10 @@ function maskDescriptiveForms(sentence: string) {
 function splitSentences(text: string) {
   return text
     // Semicolons stay inside a sentence so "...; do the same" keeps its topic.
-    .split(/[.!?](?=\s)|\n+/)
+    // Keep the closing mark ("Why not ...?") so every question is checked,
+    // not only the last one.
+    .replace(/([.!?])\s+/g, "$1\n")
+    .split(/\n+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }

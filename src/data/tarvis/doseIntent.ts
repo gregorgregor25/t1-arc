@@ -771,13 +771,13 @@ function isNewTopicAfterRefusal(text: string, isRecordQuestion: (question: strin
     const rest = text.replace(EXPLICIT_NEW_TOPIC, " ").replace(/^\W+/, "");
     return !rest || !REFUSAL_BACK_REFERENCE.test(rest);
   }
+  if (isRecordQuestion(text)) return true;
   if (CONTINUATION_START.test(text)) return false;
   if (PAST_NON_DOSE_RECORD.test(text) && !NON_DOSE_RECORD_BLOCKER.test(text) && !/\d/.test(text.replace(/\blast\s+\d+\s+days\b/gi, " "))) {
     return true;
   }
   if (REFUSAL_BACK_REFERENCE.test(text)) return false;
   if (FOLLOW_UP_AMOUNT.some((pattern) => pattern.test(text))) return false;
-  if (isRecordQuestion(text)) return true;
   // "what's 60 divided by 10": numbers after a refused dose request are the same request.
   return !/\d/.test(text) && isReadOnlySentence(text);
 }
@@ -808,8 +808,19 @@ export function isDoseFollowUp(
   if (!history.length) return false;
   const { user, assistant } = previousExchange(history);
   if (!user) return false;
-  const refused = assistant?.startsWith(TREATMENT_REFUSAL_HEADLINE) ||
-    assistant?.startsWith(HOSTED_TREATMENT_BOUNDARY_HEADLINE) || previousWasRefusal(user);
+  const refused = assistant?.startsWith(TREATMENT_REFUSAL_HEADLINE) || previousWasRefusal(user);
+  // A withheld hosted answer is not a refused dose request: only agreement
+  // or an amount continues it; any other question is a new turn.
+  const hostedBoundary = !refused && assistant?.startsWith(HOSTED_TREATMENT_BOUNDARY_HEADLINE);
+  if (hostedBoundary) {
+    const text = normaliseDoseWording(normaliseSafetyText(question));
+    if (isRecordQuestion(text)) return false;
+    if (BARE_AGREEMENT.test(text) || FOLLOW_UP_AMOUNT.some((pattern) => pattern.test(text))) return true;
+    // Short follow-ups ("explain more", "why?") and record questions pass;
+    // a longer message that keeps pressing is judged like a refused request.
+    if (question.length <= SHORT_FOLLOW_UP_MAX_LENGTH) return false;
+    return !isNewTopicAfterRefusal(text, isRecordQuestion);
+  }
   if (!refused && question.length > SHORT_FOLLOW_UP_MAX_LENGTH) return false;
   const text = normaliseDoseWording(normaliseSafetyText(question));
   if (refused) return BARE_AGREEMENT.test(text) || !isNewTopicAfterRefusal(text, isRecordQuestion);

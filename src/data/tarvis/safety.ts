@@ -13,6 +13,7 @@ import {
 import { safetyTextReadings } from "./textNormalise";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import { parseRecordQuestion } from "./recordQuestions";
+import { isReadyTarvisIntent, resolveTarvisIntent } from "./intent/resolve";
 
 export type TarvisSafetyDecision =
   | { kind: "allow" }
@@ -1796,7 +1797,8 @@ export function classifyTarvisFollowUpSafety(
 ): TarvisSafetyDecision {
   if (question.length > TARVIS_QUESTION_MAX_LENGTH) return { kind: "allow" };
   const refusedBefore = (previous: string) => classifyTarvisSafety(previous).kind === "treatment-advice";
-  const isRecordQuestion = (text: string) => parseRecordQuestion(text) !== undefined;
+  const isRecordQuestion = (text: string) =>
+    parseRecordQuestion(text) !== undefined || isReadyTarvisIntent(resolveTarvisIntent(text));
   return isDoseFollowUp(question, history, refusedBefore, isRecordQuestion)
     ? treatmentAdviceDecision()
     : { kind: "allow" };
