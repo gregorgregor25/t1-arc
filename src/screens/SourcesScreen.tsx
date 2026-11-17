@@ -85,6 +85,7 @@ import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useLatestData } from "@/hooks/useTimeline";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import {
+  NOT_TESTED_WITH_REAL_ACCOUNT_LABEL,
   SOURCE_CHOOSER_ANSWERS,
   SOURCE_MENU_ITEMS,
   SOURCE_MENU_SECTIONS,
@@ -640,7 +641,7 @@ export function SourcesScreen({
           <SourceJumpGrid
             active={activeSource}
             onSelect={showSource}
-            sectionIds={["help"]}
+            sectionIds={["help", "advanced"]}
           />
         </View>
       ) : null}
@@ -1258,7 +1259,10 @@ export function SourcesScreen({
             onToggle={() => toggleSetting("display-phone")}
             title="Phone and lock screen"
           >
-            <GlucoseDisplayCard connected={glucoseSourceReady} />
+            <GlucoseDisplayCard
+              connected={glucoseSourceReady}
+              onOpenAdvanced={() => showSource("advanced")}
+            />
           </SettingsDisclosure>
           <SettingsDisclosure
             detail="Set the alerts that deserve your attention."
@@ -1327,17 +1331,6 @@ export function SourcesScreen({
         <View style={styles.settingsSections}>
           <SectionCard><PrivacyPolicyLink /></SectionCard>
           <SectionCard><UsageReportingCard /></SectionCard>
-          {__DEV__ ? (
-            <SettingsDisclosure
-              detail="Only for a protected migration bundle from an earlier T1 Arc test installation."
-              expanded={expandedSetting === "privacy-migration"}
-              icon="swap-horizontal-outline"
-              onToggle={() => toggleSetting("privacy-migration")}
-              title="Earlier test-app migration"
-            >
-              <MaintainerMigrationCard onDataChanged={showChangedPersonalData} />
-            </SettingsDisclosure>
-          ) : null}
           <SettingsDisclosure
             detail="Keep a protected copy of your data that you control."
             expanded={expandedSetting === "privacy-backup"}
@@ -1365,6 +1358,31 @@ export function SourcesScreen({
           >
             <LocalDataControlCard onErased={resetConnectionUiAfterErase} />
           </SettingsDisclosure>
+        </View>
+      ) : null}
+      {activeSource === "advanced" ? (
+        <View style={styles.settingsSections}>
+          <SectionCard>
+            <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>
+              These features are still being tested. They may change, or may
+              not work on every phone. Your records do not depend on them.
+            </Text>
+          </SectionCard>
+          <GlucoseDisplayCard
+            connected={glucoseSourceReady}
+            variant="advanced"
+          />
+          {__DEV__ ? (
+            <SettingsDisclosure
+              detail="Only for a protected migration bundle from an earlier T1 Arc test installation."
+              expanded={expandedSetting === "advanced-migration"}
+              icon="swap-horizontal-outline"
+              onToggle={() => toggleSetting("advanced-migration")}
+              title="Earlier test-app migration"
+            >
+              <MaintainerMigrationCard onDataChanged={showChangedPersonalData} />
+            </SettingsDisclosure>
+          ) : null}
         </View>
       ) : null}
     </AppScreen>
@@ -1663,6 +1681,13 @@ function SourceDetailHeader({
         </Text>
         {guide ? <SourceSetupGuide key={source} {...guide} /> : null}
       </View>
+      {"notTestedWithRealAccount" in item && item.notTestedWithRealAccount ? (
+        <Text style={[styles.untestedNotice, { color: colors.textSecondary }]}>
+          {NOT_TESTED_WITH_REAL_ACCOUNT_LABEL}. It is built to the
+          provider’s published behaviour and checked with automated tests.
+          Please report any problems in Help and support.
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -1808,6 +1833,17 @@ function SourceJumpGrid({
                     >
                       {item.detail}
                     </Text>
+                    {item.notTestedWithRealAccount ? (
+                      <Text
+                        style={[
+                          styles.sourceJumpDetail,
+                          styles.untestedLabel,
+                          { color: colors.warning },
+                        ]}
+                      >
+                        {NOT_TESTED_WITH_REAL_ACCOUNT_LABEL}
+                      </Text>
+                    ) : null}
                   </View>
                   <Ionicons
                     accessibilityElementsHidden
@@ -1835,6 +1871,15 @@ const styles = StyleSheet.create({
   },
   overviewSections: {
     gap: 22,
+  },
+  untestedLabel: {
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  untestedNotice: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
   },
   overviewGroup: {
     gap: 10,

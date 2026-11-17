@@ -18,7 +18,8 @@ export type SourceJump =
   | "region"
   | "about"
   | "support"
-  | "privacy";
+  | "privacy"
+  | "advanced";
 
 /** A one-off request to open a panel when Settings is shown. */
 export type SourceSettingsPanel = "source-health" | "display-alerts";
@@ -28,7 +29,15 @@ export interface SourceMenuItem {
   label: string;
   detail: string;
   icon: keyof typeof Ionicons.glyphMap;
+  /**
+   * Set when the connector is implemented and contract-tested but has not
+   * been checked with a real account (docs/REGIONAL_CAPABILITY_MATRIX.md).
+   */
+  notTestedWithRealAccount?: true;
 }
+
+export const NOT_TESTED_WITH_REAL_ACCOUNT_LABEL =
+  "Not yet tested with a real account";
 
 export const DIABETES_PROFILE_MENU_ITEM = {
   source: "profile",
@@ -42,7 +51,8 @@ export type SourceMenuSectionId =
   | "health"
   | "display"
   | "data"
-  | "help";
+  | "help"
+  | "advanced";
 
 export const SOURCE_MENU_SECTIONS: {
   id: SourceMenuSectionId;
@@ -70,6 +80,7 @@ export const SOURCE_MENU_SECTIONS: {
         label: "Dexcom",
         detail: "Share and Clarity history",
         icon: "analytics-outline",
+        notTestedWithRealAccount: true,
       },
       {
         source: "nightscout",
@@ -82,6 +93,7 @@ export const SOURCE_MENU_SECTIONS: {
         label: "Medtrum",
         detail: "EasyFollow follower",
         icon: "people-outline",
+        notTestedWithRealAccount: true,
       },
       {
         source: "xdrip",
@@ -178,6 +190,18 @@ export const SOURCE_MENU_SECTIONS: {
         label: "About T1 Arc",
         detail: "Version, build details and source code",
         icon: "information-circle-outline",
+      },
+    ],
+  },
+  {
+    id: "advanced",
+    title: "Advanced and experimental",
+    items: [
+      {
+        source: "advanced",
+        label: "Advanced and experimental",
+        detail: "Always-on display, Android Auto and other features still being tested",
+        icon: "flask-outline",
       },
     ],
   },

@@ -42,6 +42,7 @@ const PAGE_KEYWORDS: Partial<Record<SourceJump, readonly string[]>> = {
   support: ["help", "problem", "diagnostics", "report", "bug"],
   about: ["version", "build", "source code", "licence", "update"],
   profile: ["carb ratio", "icr", "care plan"],
+  advanced: ["experimental", "beta", "always-on", "always on", "aod", "android auto", "car", "migration"],
 };
 
 function sectionTitle(source: SourceJump) {
@@ -105,6 +106,22 @@ const PANEL_ENTRIES: SettingsSearchEntry[] = [
     location: "Display and alerts",
     keywords: ["notification", "status bar", "lock screen", "iob", "cob"],
     target: { kind: "source", source: "display", expand: "display-phone" },
+  },
+  {
+    id: "panel:always-on",
+    label: "Glucose on always-on display",
+    detail: "Experimental overlay on the locked dark screen",
+    location: "Advanced and experimental",
+    keywords: ["aod", "always-on", "always on", "ambient", "overlay"],
+    target: { kind: "source", source: "advanced" },
+  },
+  {
+    id: "panel:android-auto",
+    label: "Android Auto glance",
+    detail: "Experimental glucose glance in the car",
+    location: "Advanced and experimental",
+    keywords: ["android auto", "car", "driving"],
+    target: { kind: "source", source: "advanced" },
   },
   {
     id: "panel:alerts",

@@ -32,6 +32,7 @@ const EXPECTED_SOURCE_JUMPS = [
   "privacy",
   "support",
   "about",
+  "advanced",
 ] as const satisfies readonly SourceJump[];
 
 const appMenuSource = readFileSync(
@@ -65,7 +66,37 @@ describe("Settings source back navigation", () => {
       "display",
       "data",
       "help",
+      "advanced",
     ]);
+  });
+
+  it("labels connectors that have not been checked with a real account", () => {
+    const untested = SOURCE_MENU_ITEMS.filter(
+      (item) => "notTestedWithRealAccount" in item && item.notTestedWithRealAccount,
+    ).map(({ source }) => source);
+    // docs/REGIONAL_CAPABILITY_MATRIX.md: "no real-account verification claimed".
+    expect(untested).toEqual(["dexcom", "medtrum"]);
+  });
+
+  it("collects experimental and development-only settings in one place", () => {
+    const screen = readFileSync(
+      path.join(process.cwd(), "src", "screens", "SourcesScreen.tsx"),
+      "utf8",
+    );
+    const advanced = screen.slice(screen.indexOf('{activeSource === "advanced" ? ('));
+    expect(advanced).toContain('variant="advanced"');
+    expect(advanced).toContain('title="Earlier test-app migration"');
+    const privacy = screen.slice(
+      screen.indexOf('{activeSource === "privacy" ? ('),
+      screen.indexOf('{activeSource === "advanced" ? ('),
+    );
+    expect(privacy).not.toContain("MaintainerMigrationCard");
+    const card = readFileSync(
+      path.join(process.cwd(), "src", "components", "GlucoseDisplayCard.tsx"),
+      "utf8",
+    );
+    expect(card).toContain("{advanced ? (\n      <SettingRow");
+    expect(card).toContain("{enabled && advanced ? (");
   });
 
   it("answers which source to choose with a short list of common setups", () => {

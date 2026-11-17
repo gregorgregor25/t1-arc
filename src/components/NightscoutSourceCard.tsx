@@ -746,7 +746,7 @@ export function NightscoutSourceCard() {
         </Pressable>
       </View>
       <Text style={[styles.label, { color: colors.text }]}>
-        Legacy API secret (optional)
+        API secret (optional)
       </Text>
       <View
         style={[
