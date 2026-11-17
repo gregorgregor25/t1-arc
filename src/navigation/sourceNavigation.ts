@@ -20,6 +20,9 @@ export type SourceJump =
   | "support"
   | "privacy";
 
+/** A one-off request to open a panel when Settings is shown. */
+export type SourceSettingsPanel = "source-health" | "display-alerts";
+
 export interface SourceMenuItem {
   source: SourceJump;
   label: string;

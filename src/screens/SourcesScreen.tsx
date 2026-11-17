@@ -89,6 +89,7 @@ import {
   SOURCE_MENU_SECTIONS,
   SourceJump,
   type SourceMenuSectionId,
+  type SourceSettingsPanel,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
   sourceSettingsRouteParams,
@@ -135,7 +136,7 @@ function maskEmail(value: string) {
 export function SourcesScreen({
   route,
 }: {
-  route?: { params?: { focused?: boolean; source?: SourceJump; panel?: "source-health" } };
+  route?: { params?: { focused?: boolean; source?: SourceJump; panel?: SourceSettingsPanel } };
 }) {
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const { colors, radius } = useAppTheme();
@@ -233,11 +234,15 @@ export function SourcesScreen({
 
   const requestedPanel = route?.params?.panel;
   useEffect(() => {
-    if (requestedPanel !== "source-health") return;
-    // A one-off request from a "data unavailable" state: open the panel once,
-    // then clear the request so it does not reopen on later visits.
+    if (!requestedPanel) return;
+    // A one-off request (from a "data unavailable" state or the tour): open the
+    // panel once, then clear the request so it does not reopen on later visits.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpandedSetting("overview-source-health");
+    setExpandedSetting(
+      requestedPanel === "display-alerts"
+        ? "display-alerts"
+        : "overview-source-health",
+    );
     navigation.setParams({ panel: undefined });
   }, [navigation, requestedPanel]);
 
@@ -488,7 +493,13 @@ export function SourcesScreen({
     return (
       <OnboardingScreen
         mode="replay"
-        onComplete={() => setTourOpen(false)}
+        onComplete={(destination) => {
+          setTourOpen(false);
+          if (destination === "Alerts") {
+            pendingExpandedSetting.current = "display-alerts";
+            navigation.setParams(sourceSettingsRouteParams("display"));
+          }
+        }}
         onRequestClose={() => setTourOpen(false)}
       />
     );

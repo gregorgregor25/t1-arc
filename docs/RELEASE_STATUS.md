@@ -58,8 +58,8 @@ and alert timing are unchanged. On the emulator with a five-minute source and
 the screen off, background requests and app CPU time fell by about 80%, and
 every reading was fetched within 22 seconds of being available.
 
-Anonymous usage counts are on by default and can be turned off in
-**Settings → Privacy**. The exact contents are listed in
+Anonymous usage counts are on by default and can be turned off in the
+first-run tour or in **Settings → Backup and privacy**. The exact contents are listed in
 [the privacy notice](../PRIVACY.md#anonymous-usage-counts-on-by-default); no
 health data or identifiers are sent. The production dependency audit reports
 no findings. The Wear protocol is unchanged; a working installed companion

@@ -297,7 +297,8 @@ path.
 - Connections go directly to the service selected by the user.
 - Anonymous usage counts (app version and how many days in a week the app
   was opened or monitoring, with no identifiers or health data) are on by
-  default and can be turned off in Settings → Privacy.
+  default and can be turned off in the first-run tour or in Settings → Backup
+  and privacy.
 - Encrypted portable backups exclude credentials, browser cookies and API keys.
 - Demo records are synthetic, temporary and kept separate from personal data.
 - Public bug reports must use synthetic fixtures and redacted screenshots.
