@@ -130,10 +130,11 @@ const TYPO_REPLACEMENTS: [RegExp, string][] = [
   // range", "time in rage" and the hyphenated "time-in-range". The spoken
   // forms are mapped only where they clearly name the metric ("my timing
   // range", "what's my time and range"), never in "what time and range were
-  // my highs" or "my bolus timing range".
+  // my highs" or "my bolus timing range". "for today" / "for the week" after
+  // the phrase is a period, so it no longer blocks the mapping.
   [/\btime-in-range\b/g, "time in range"],
   [
-    /(^|\b(?:my|your|the|what's|whats|what is|was|is)\s+)(?:timing[ -]range|time[ -](?:and|in)[ -]rage|time[ -]and[ -]range)\b(?!\s+(?:of|were|was|for|did)\b)/g,
+    /(^|\b(?:my|your|the|what's|whats|what is|was|is|show(?: me)?|compare|tell me|check|see)\s+)(?:timing[ -]range|time[ -](?:and|in)[ -]rage|time[ -]and[ -]range)\b(?!\s+(?:of|were|was|did|are|is|for\s+(?:my|the\s+(?:highs?|lows?|boluse?s?))\b))/g,
     "$1time in range",
   ],
   [/\byday\b/g, "yesterday"],

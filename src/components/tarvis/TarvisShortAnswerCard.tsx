@@ -51,18 +51,19 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
         : colors.text;
   const shownItems = listOpen ? model.listItems : model.listItems.slice(0, TARVIS_SHORT_LIST_VISIBLE);
   const hiddenItems = model.listItems.length - shownItems.length;
+  // Alert styling only for urgent advice in a safety box; a large label only for the
+  // phone's own urgent safety answers, never for a label an AI connection wrote.
+  const urgent = Boolean(model.urgent && model.safety);
+  const urgentLabel = urgent && model.urgentLabel === true;
   const hasDetails = Boolean(
     model.exactPeriod || model.detailText.length || model.limitations.length || details || model.source,
   );
 
   return (
     <View style={styles.card}>
-      {model.urgent ? (
-        <Text
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={[styles.urgentLabel, { color: colors.text }]}
-        >
+      {urgentLabel ? (
+        // Large, but not a second alert: the safety box is the card's only assertive region.
+        <Text accessibilityRole="header" style={[styles.urgentLabel, { color: colors.text }]}>
           {model.label}
         </Text>
       ) : (
@@ -85,6 +86,29 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
         <Text style={[styles.headline, { color: colors.text }]}>{model.headline}</Text>
       ) : null}
 
+      {/* Warnings and urgent advice sit above any list, so they are never behind "Show all". */}
+      {model.safety ? (
+        <View
+          {...(urgent ? { accessibilityRole: "alert" as const, accessibilityLiveRegion: "assertive" as const } : {})}
+          style={[
+            styles.safety,
+            { backgroundColor: colors.surfaceMuted, borderColor: colors.warning, borderRadius: radius.md },
+          ]}
+        >
+          <Ionicons accessibilityElementsHidden color={colors.warning} name="medical-outline" size={17} />
+          <View style={styles.safetyBody}>
+            <Text style={[urgent ? styles.urgentSafetyText : styles.safetyText, { color: colors.text }]}>
+              {model.safety}
+            </Text>
+            {model.safetyNotes?.map((note, index) => (
+              <Text key={`${index}:${note.slice(0, 24)}`} style={[styles.safetyNote, { color: colors.textSecondary }]}>
+                {note}
+              </Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {shownItems.length ? (
         <View style={styles.list}>
           {shownItems.map((item, index) => (
@@ -105,28 +129,6 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
               </Text>
             </Pressable>
           ) : null}
-        </View>
-      ) : null}
-
-      {model.safety ? (
-        <View
-          {...(model.urgent ? { accessibilityRole: "alert" as const, accessibilityLiveRegion: "assertive" as const } : {})}
-          style={[
-            styles.safety,
-            { backgroundColor: colors.surfaceMuted, borderColor: colors.warning, borderRadius: radius.md },
-          ]}
-        >
-          <Ionicons accessibilityElementsHidden color={colors.warning} name="medical-outline" size={17} />
-          <View style={styles.safetyBody}>
-            <Text style={[model.urgent ? styles.urgentSafetyText : styles.safetyText, { color: colors.text }]}>
-              {model.safety}
-            </Text>
-            {model.safetyNotes?.map((note, index) => (
-              <Text key={`${index}:${note.slice(0, 24)}`} style={[styles.safetyNote, { color: colors.textSecondary }]}>
-                {note}
-              </Text>
-            ))}
-          </View>
         </View>
       ) : null}
 

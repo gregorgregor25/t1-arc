@@ -47,8 +47,13 @@ export interface TarvisShortAnswer {
   meaning?: string;
   /** Shown in full and never collapsed: a safety boundary or urgent advice. */
   safety?: string;
-  /** Urgent help: the label is shown large and announced as an alert. */
+  /** Urgent help: the safety box is shown in bold and announced as the card's one alert. */
   urgent?: boolean;
+  /**
+   * The label is itself the phone's own urgent safety headline ("Call 999"), so it
+   * is shown large. Never set for a label an AI connection wrote.
+   */
+  urgentLabel?: boolean;
   /** Notes that belong to a safety boundary; shown with it, never collapsed. */
   safetyNotes?: string[];
   /** List answers: every item; the card shows {@link TARVIS_SHORT_LIST_VISIBLE} then "Show all". */
@@ -96,11 +101,19 @@ function cleanLabel(label: string) {
   return capitalise(label.replace(/^(?:observed|your)\s+/i, "").trim());
 }
 
+/** Headlines of the phone's own urgent safety answers ("Get urgent diabetes advice now"). */
 const URGENT_HEADLINE = /\b(?:now|urgent(?:ly)?|emergency|ambulance|immediately|999|911|112|A&E)\b/i;
+
+/**
+ * Text written by an AI connection is urgent only when it sends the person for
+ * emergency or urgent help, not merely because it says "now".
+ */
+const URGENT_ADVICE =
+  /\b(?:999|911|112|emergency|ambulance|A&E|hospital|urgent(?:ly)?|immediately|straight\s+away|right\s+away|medical\s+(?:attention|help)|unconscious|unresponsive|seizures?|glucagon|can(?:['’]|no)?t\s+keep\s+(?:any\s+)?(?:fluids?|drinks?|water|food|anything)\s+down)\b/i;
 
 /** Sentences a reply must never fold away: warnings and urgent advice. */
 const WARNING_SENTENCE =
-  /\b(?:999|911|112|111|emergency|ambulance|urgent(?:ly)?|A&E|immediately|seek\s+(?:urgent\s+|medical\s+)?(?:help|advice|care)|call\s+(?:your|the|a)\s+(?:diabetes|care|medical|clinical)|ketones?|DKA|ketoacidosis|do\s+not\s+drive|don't\s+drive|warning|danger(?:ous)?|unsafe|severe(?:ly)?)\b/i;
+  /\b(?:999|911|112|111|emergency|ambulance|hospital|urgent(?:ly)?|A&E|immediately|straight\s+away|right\s+away|medical\s+(?:attention|help|advice|care)|seek\s+(?:urgent\s+|medical\s+)?(?:help|advice|care)|call\s+(?:your|the|a)\s+(?:diabetes|care|medical|clinical)|ketones?|DKA|ketoacidosis|glucagon|unconscious|unresponsive|seizures?|can(?:['’]|no)?t\s+keep\s+(?:any\s+)?(?:fluids?|drinks?|water|food|anything)\s+down|do\s+not\s+drive|don['’]t\s+drive|warning|danger(?:ous)?|unsafe|severe(?:ly)?)\b/i;
 
 function percent(value: number, settings: Settings) {
   return `${formatRegionalNumber(value, settings.locale, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}%`;
@@ -236,9 +249,12 @@ function parseLocaleNumber(text: string) {
   return Number.isFinite(value) ? value : undefined;
 }
 
-/** A glucose level (an average, a reading, the lowest or highest), not a spread or a change. */
+/**
+ * A glucose level (an average, a reading, the lowest or highest), not a spread,
+ * a change, a range width, an excursion or a target setting.
+ */
 function isGlucoseLevelLabel(label: string) {
-  if (/\b(?:standard\s+deviation|sd|deviation|variab\w*|variation|coefficient|cv|change|changes|changed|difference|delta|drop|rise|fall|increase|decrease|spread|interquartile|iqr|swing|gap|vs\.?|versus|compared|per\s+hour|rate|gmi|management\s+indicator|a1c|hba1c)\b/i.test(label)) {
+  if (/\b(?:standard\s+deviation|sd|deviation|variab\w*|variation|coefficient|cv|change|changes|changed|difference|delta|drop|rise|rises|fall|increase|decrease|spread|interquartile|iqr|swing|swings|gap|vs\.?|versus|compared|per\s+hour|rate|gmi|management\s+indicator|a1c|hba1c|range|ranges|width|span|amplitude|excursions?|spikes?|mage|target|targets|isf|sensitivity|factor|ratio)\b/i.test(label)) {
     return false;
   }
   return /\b(?:glucose|bg|blood\s+sugar|sugar|reading|level|average|mean|median|lowest|highest|minimum|maximum|min|max|current|latest|peak|nadir)\b/i.test(label);
@@ -317,6 +333,24 @@ function keepWarningsVisible(paragraphs: readonly string[]) {
   return { visible, rest };
 }
 
+/**
+ * List items that hold a warning or urgent advice are taken out of the list,
+ * so they can never end up behind "Show all", and are shown in the safety box.
+ */
+function pinWarningItems(items: readonly string[]) {
+  const pinned: string[] = [];
+  const rest: string[] = [];
+  for (const item of items) (WARNING_SENTENCE.test(item) ? pinned : rest).push(item);
+  return { pinned, rest };
+}
+
+/** The always-visible safety box for text an AI connection wrote, if any part needs it. */
+function modelSafety(parts: readonly string[]) {
+  const shown = parts.map((part) => part.trim()).filter(Boolean);
+  if (!shown.length) return {};
+  return { safety: shown.join(" "), ...(shown.some((part) => URGENT_ADVICE.test(part)) ? { urgent: true } : {}) };
+}
+
 export interface BuildTarvisShortAnswerInput extends TarvisAnswerOrigin {
   answer: TarvisAnswer;
   evidenceLine?: TarvisEvidenceLineData;
@@ -340,7 +374,7 @@ export function buildTarvisShortAnswer({
     return {
       label: answer.headline,
       safety: answer.answer,
-      ...(URGENT_HEADLINE.test(answer.headline) ? { urgent: true } : {}),
+      ...(URGENT_HEADLINE.test(answer.headline) ? { urgent: true, urgentLabel: true } : {}),
       ...(answer.limitations.length ? { safetyNotes: answer.limitations } : {}),
       listItems: [],
       detailText: [],
@@ -384,7 +418,9 @@ export function buildTarvisShortAnswer({
   const headline = split.headline ?? (split.items.length ? undefined : text);
   // A reply from an AI connection keeps any warning or urgent advice visible;
   // only ordinary explanation folds into Details.
-  const kept = answerSource === "hosted" ? keepWarningsVisible(split.rest) : { visible: [], rest: split.rest };
+  const hosted = answerSource === "hosted";
+  const kept = hosted ? keepWarningsVisible(split.rest) : { visible: [], rest: split.rest };
+  const items = hosted ? pinWarningItems(split.items) : { pinned: [], rest: split.items };
   return {
     label: answer.headline,
     ...(headline ? { headline } : {}),
@@ -392,8 +428,8 @@ export function buildTarvisShortAnswer({
       ? "General explanation · no personal records used"
       : ownContext ?? contextLine(evidenceLine, settings, allPeriods),
     ...(meaning ? { meaning } : {}),
-    ...(kept.visible.length ? { safety: kept.visible.join(" "), urgent: kept.visible.some((item) => URGENT_HEADLINE.test(item)) } : {}),
-    listItems: split.items,
+    ...modelSafety([...items.pinned, ...kept.visible]),
+    listItems: items.rest,
     detailText: kept.rest,
     ...(exactPeriod ? { exactPeriod } : {}),
     source,
@@ -426,6 +462,8 @@ export function buildTarvisDirectShortAnswer({
   const meaning = meaningLine(evidenceLine, presentation.limitations, settings);
   const exactPeriod = evidenceLine ? formatTarvisEvidenceLine(evidenceLine, settings) : undefined;
   const findings = presentation.keyFindings.map((finding) => `${finding.title}: ${finding.detail}`);
+  // A finding with a warning or urgent advice is never left behind "Show all".
+  const pinnedFindings = pinWarningItems(findings);
   const value = metric && metric.value.trim() && NUMBER_VALUE.test(`${metric.value} ${metric.unit}`.trim())
     ? {
         text: metric.value,
@@ -438,10 +476,8 @@ export function buildTarvisDirectShortAnswer({
     ...(value ? { value } : { headline: sentences(presentation.summary)[0] ?? presentation.summary }),
     context: contextLine(evidenceLine, settings, value && period ? undefined : allPeriods),
     ...(meaning ? { meaning } : {}),
-    ...(presentation.safetyNotice
-      ? { safety: presentation.safetyNotice, ...(URGENT_HEADLINE.test(presentation.safetyNotice) ? { urgent: true } : {}) }
-      : {}),
-    listItems: findings,
+    ...modelSafety([...(presentation.safetyNotice ? [presentation.safetyNotice] : []), ...pinnedFindings.pinned]),
+    listItems: pinnedFindings.rest,
     detailText: [
       ...(value ? [presentation.headline, presentation.summary] : sentences(presentation.summary).slice(1)),
       ...(presentation.interpretation ? [presentation.interpretation] : []),

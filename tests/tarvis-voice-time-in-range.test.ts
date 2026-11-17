@@ -58,3 +58,27 @@ describe("speech-to-text forms of time in range", () => {
     );
   });
 });
+
+describe("round 3: spoken time in range with a period or a leading verb", () => {
+  it.each([
+    "what's my time and range for today",
+    "what was my time and range for yesterday",
+    "my timing range for this week",
+    "time in rage for the week",
+    "show time and range",
+    "compare time and range this week and last week",
+  ])("reads %s as time in range", (question) => {
+    expect(metricsOf(question)).toContain("glucose.time_in_range");
+  });
+
+  it.each([
+    "What time and range were my highs yesterday",
+    "my bolus timing range last week",
+    "insulin timing",
+    "glucose range",
+    "show the time and range of my lows over the last 7 days",
+    "what was the time and range for my highs yesterday",
+  ])("does not read %s as time in range", (question) => {
+    expect(metricsOf(question)).not.toContain("glucose.time_in_range");
+  });
+});

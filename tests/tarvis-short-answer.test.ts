@@ -298,6 +298,7 @@ describe("short answer card", () => {
       label: "Call 999 now",
       safety: "Synthetic urgent text.",
       urgent: true,
+      urgentLabel: true,
       safetyNotes: ["Synthetic urgent note."],
       listItems: [],
       detailText: [],
@@ -308,6 +309,26 @@ describe("short answer card", () => {
     expect(text).toContain('"accessibilityLiveRegion":"assertive"');
     expect(text).toContain('"fontSize":20');
     expect(text).toContain("Synthetic urgent note.");
+    // Round 3: one assertive live region per card, not one on the label and one on the box.
+    expect(text.split('"accessibilityLiveRegion":"assertive"')).toHaveLength(2);
+  });
+
+  it("keeps an AI-written label normal size when its safety box is urgent", () => {
+    const text = render({ ...model, safety: "Call 999 if you feel very unwell.", urgent: true }, false);
+    expect(text).not.toContain('"fontSize":20');
+    expect(text.split('"accessibilityLiveRegion":"assertive"')).toHaveLength(2);
+  });
+
+  it("does not style a card as urgent without its safety box", () => {
+    const text = render({ ...model, urgent: true }, false);
+    expect(text).not.toContain('"accessibilityLiveRegion":"assertive"');
+    expect(text).not.toContain('"fontSize":20');
+  });
+
+  it("shows the safety box above the list and its Show all", () => {
+    const text = render({ ...model, safety: "Synthetic pinned warning." }, false);
+    expect(text.indexOf("Synthetic pinned warning.")).toBeLessThan(text.indexOf('"One"'));
+    expect(text.indexOf("Synthetic pinned warning.")).toBeLessThan(text.indexOf("Show all 4"));
   });
 
   it("does not repeat the card label in the value's accessibility label", () => {
@@ -414,6 +435,7 @@ describe("review fixes: short answer card", () => {
     if (result.kind !== "urgent") throw new Error("Not urgent");
     const model = buildTarvisShortAnswer({ ...local, answer: result.answer, asOf, settings });
     expect(model.urgent).toBe(true);
+    expect(model.urgentLabel).toBe(true);
     expect(model.safety).toBe(result.answer.answer);
     expect(model.safetyNotes).toEqual(result.answer.limitations);
     expect(model.limitations).toEqual([]);
@@ -443,5 +465,107 @@ describe("review fixes: short answer card", () => {
     expect(model.safety).toBe("If you have ketones and feel unwell, seek urgent medical help.");
     expect(model.detailText.join(" ")).toContain("The average was similar on most nights.");
     expect(model.detailText.join(" ")).not.toContain("ketones");
+  });
+});
+
+describe("round 3: AI reply warnings, urgent styling and neutral labels", () => {
+  const hosted = { answerSource: "hosted" as const, modelRequestSent: true };
+  function hostedModel(text: string) {
+    return buildTarvisShortAnswer({ ...hosted, answer: answer({ headline: "About your evenings", answer: text }), asOf, settings });
+  }
+
+  it("pins an urgent bullet out of the list, so it is never behind Show all", () => {
+    const model = hostedModel(
+      "Here is what I found:\n- Evenings ran higher\n- Mornings were steady\n- Carbs on 3 evenings\n- Seek urgent help if you have ketones\n- Lows were rare",
+    );
+    expect(model.listItems).toEqual(["Evenings ran higher", "Mornings were steady", "Carbs on 3 evenings", "Lows were rare"]);
+    expect(model.safety).toBe("Seek urgent help if you have ketones");
+    expect(model.urgent).toBe(true);
+    expect(model.urgentLabel).toBeUndefined();
+  });
+
+  it("pins a warning finding from a rich AI reply", () => {
+    const model = buildTarvisDirectShortAnswer({
+      presentation: {
+        version: 1,
+        kind: "fact",
+        headline: "Evenings",
+        summary: "Evenings ran higher.",
+        confidence: "moderate",
+        primaryMetric: null,
+        keyFindings: [
+          { title: "One", detail: "a" },
+          { title: "Two", detail: "b" },
+          { title: "Three", detail: "c" },
+          { title: "Ketones", detail: "Go to A&E if you cannot keep fluids down" },
+        ],
+        interpretation: null,
+        evidence: [],
+        limitations: [],
+        followUpQuestions: [],
+        safetyNotice: null,
+      },
+      asOf,
+      settings,
+      ...hosted,
+    });
+    expect(model.listItems).toEqual(["One: a", "Two: b", "Three: c"]);
+    expect(model.safety).toBe("Ketones: Go to A&E if you cannot keep fluids down");
+    expect(model.urgent).toBe(true);
+  });
+
+  it.each([
+    "Go to hospital if you are vomiting.",
+    "Go to A&E if this continues.",
+    "Ask for an ambulance if they collapse.",
+    "Call 999 if you feel very unwell.",
+    "Call 911 if you feel very unwell.",
+    "Call 112 if you feel very unwell.",
+    "This could be an emergency.",
+    "Get medical attention if this happens again.",
+    "Get medical help if this happens again.",
+    "This is urgent if you feel sick.",
+    "Contact your team straight away if this happens.",
+    "Contact your team immediately if this happens.",
+    "Check for ketones when readings stay high.",
+    "Someone should know how to use glucagon.",
+    "If they are unconscious, do not give food.",
+    "A seizure needs help at once.",
+    "Get help if you can't keep fluids down.",
+    "Severe lows need help from someone else.",
+  ])("keeps the warning visible: %s", (warning) => {
+    const model = hostedModel(`Your evenings ran higher this week. ${warning} Carbs were logged on 3 evenings.`);
+    expect(model.safety).toBe(warning);
+    expect(model.detailText.join(" ")).not.toContain(warning);
+  });
+
+  it("does not style a warning as urgent just because it says now", () => {
+    const model = hostedModel("Your evenings ran higher. Do not drive now if you feel low. Carbs were logged on 3 evenings.");
+    expect(model.safety).toBe("Do not drive now if you feel low.");
+    expect(model.urgent).toBeUndefined();
+  });
+
+  it.each([
+    "Overnight glucose range: 4.0 mmol/L",
+    "Glucose spike: 4.0 mmol/L",
+    "Average glucose excursion: 3.2 mmol/L",
+    "Glucose target: 5.5 mmol/L",
+    "Average glucose range width: 6.0 mmol/L",
+    "Amplitude of glucose: 3.0 mmol/L",
+    "Typical rise: 2.5 mmol/L",
+    "Standard deviation: 2.1 mmol/L",
+  ])("keeps %s neutral", (headline) => {
+    const model = buildTarvisShortAnswer({ ...local, answer: answer({ headline, answer: "Detail." }), asOf, settings });
+    expect(model.value?.tone).toBe("neutral");
+  });
+
+  it.each([
+    "Average glucose: 13.4 mmol/L",
+    "Lowest glucose: 2.9 mmol/L",
+    "Median glucose: 6.1 mmol/L",
+    "Peak after dinner: 14.1 mmol/L",
+  ])("still colours the glucose level %s", (headline) => {
+    const model = buildTarvisShortAnswer({ ...local, answer: answer({ headline, answer: "Detail." }), asOf, settings });
+    expect(model.value?.tone).toBe("glucose");
   });
 });

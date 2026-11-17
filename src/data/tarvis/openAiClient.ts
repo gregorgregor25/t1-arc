@@ -17,7 +17,7 @@ import {
 import { estimateTarvisCostUsd } from "./cost";
 import { TARVIS_PROVIDERS, TarvisModelUnavailableError, type TarvisProvider } from "./providers";
 import { assertTarvisProviderReady, fetchTarvisProviderResponse, TarvisProviderError } from "./providerTransport";
-import { classifyTarvisSafety } from "./safety";
+import { classifyTarvisSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import { TARVIS_SYSTEM_PROMPT } from "./prompt";
 import {
@@ -74,7 +74,7 @@ import {
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const REQUEST_TIMEOUT_MS = 45_000;
-const MAX_QUESTION_LENGTH = 1_500;
+const MAX_QUESTION_LENGTH = TARVIS_QUESTION_MAX_LENGTH;
 const MAX_CONTEXT_CHARACTERS = 70_000;
 const MAX_OUTPUT_TOKENS = 800;
 

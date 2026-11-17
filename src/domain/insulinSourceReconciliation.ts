@@ -232,12 +232,34 @@ function isSmbDeliveryType(deliveryType: string | undefined) {
   return deliveryType?.trim().toUpperCase() === 'SMB';
 }
 
+/** Units stored by two systems for one delivery; within this they are the same amount. */
+const EXACT_UNITS_EPSILON = 1e-9;
+/** Exports round times to the minute, so a copy of the same delivery is at most this far apart. */
+const SMB_MARKING_WINDOW_MS = 60_000;
+
+/** Index of the first record at or after `time`, in records sorted by timestamp. */
+function firstAtOrAfter(records: readonly BolusDelivery[], time: number) {
+  let low = 0;
+  let high = records.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (records[middle]!.timestamp < time) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 /**
- * A kept Glooko copy loses AAPS's SMB marking. When a hidden copy of the same
- * delivery comes from a source that records it, the kept record carries that
- * marking (read-time only). Units, timestamps and totals are unchanged.
+ * A kept Glooko copy loses AAPS's SMB marking. The kept record carries the
+ * marking of a hidden copy (read-time only) only when that is certain:
+ * exactly one record from a source that marks SMBs could be this delivery,
+ * it was matched to this record, its units are exactly the same, it is less
+ * than a minute away, and it states a delivery type. Otherwise the record stays unmarked and is counted
+ * in the visible "doesn't mark automatic boluses" note. Units, timestamps and
+ * totals are unchanged.
  */
 function carrySmbMarking(
+  all: readonly BolusDelivery[],
   kept: BolusDelivery[],
   hidden: readonly { record: BolusDelivery; keptId: string }[],
 ): BolusDelivery[] {
@@ -249,14 +271,44 @@ function carrySmbMarking(
     copiesByKept.set(keptId, list);
   }
   if (!copiesByKept.size) return kept;
+  const marking = all
+    .filter((record) => bolusSourceRecordsSmbMarking(record.sourceId))
+    .sort((left, right) => left.timestamp - right.timestamp);
   return kept.map((record) => {
     if (bolusSourceRecordsSmbMarking(record.sourceId)) return record;
     const copies = copiesByKept.get(record.id);
     if (!copies?.length) return record;
-    const marked = copies.find((copy) => isSmbDeliveryType(copy.deliveryType)) ?? copies[0]!;
+    // Every record that could be this delivery, by source.
+    const candidatesBySource = new Map<string, number>();
+    let candidates = 0;
+    for (
+      let index = firstAtOrAfter(marking, record.timestamp - DUPLICATE_BOLUS_WINDOW_MS);
+      index < marking.length && marking[index]!.timestamp <= record.timestamp + DUPLICATE_BOLUS_WINDOW_MS;
+      index += 1
+    ) {
+      const candidate = marking[index]!;
+      if (!sameBolus(record, candidate)) continue;
+      candidates += 1;
+      candidatesBySource.set(candidate.sourceId, (candidatesBySource.get(candidate.sourceId) ?? 0) + 1);
+    }
+    // One candidate per source (AAPS and Nightscout may both hold the delivery),
+    // all of them matched to this record, exact units, a stated delivery type,
+    // and the same SMB marking.
+    const certain =
+      candidates === copies.length &&
+      [...candidatesBySource.values()].every((count) => count === 1) &&
+      copies.every(
+        (copy) =>
+          Math.abs(copy.units - record.units) <= EXACT_UNITS_EPSILON &&
+          Math.abs(copy.timestamp - record.timestamp) < SMB_MARKING_WINDOW_MS &&
+          Boolean(copy.deliveryType?.trim()),
+      ) &&
+      new Set(copies.map((copy) => isSmbDeliveryType(copy.deliveryType))).size === 1;
+    if (!certain) return record;
+    const copy = copies[0]!;
     return {
       ...record,
-      smbMarking: { sourceId: marked.sourceId, smb: isSmbDeliveryType(marked.deliveryType) },
+      smbMarking: { sourceId: copy.sourceId, smb: isSmbDeliveryType(copy.deliveryType) },
     };
   });
 }
@@ -270,7 +322,7 @@ export function reconcileBolusSources(
     eligible: () => true,
     matches: sameBolus,
   });
-  return { boluses: carrySmbMarking(kept, hidden), hidden };
+  return { boluses: carrySmbMarking(boluses, kept, hidden), hidden };
 }
 
 function scaled(record: BasalDelivery, start: number, end: number, part?: number): BasalDelivery {

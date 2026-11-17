@@ -143,15 +143,118 @@ function recordPeriods(text: string): RecordPeriod[] | undefined {
 
 // The parts of a breakdown question: SMBs, boluses the user entered, or a basal/bolus split.
 const BREAKDOWN_PART =
-  /\b(?:smbs?|super\s+micro[\s-]?bolus(?:es)?|automatic\s+(?:smbs?|bolus(?:es)?)|auto[\s-]?bolus(?:es)?|entered\s+by\s+me|i\s+entered|entered\s+(?:them\s+|it\s+)?myself|did\s+i\s+enter|i\s+gave\s+myself|split\s+(?:in)?to\s+basal\s+and\s+bolus(?:es)?|basal\s+(?:vs\.?|versus|and|or)\s+bolus(?:es)?|bolus(?:es)?\s+(?:vs\.?|versus|and)\s+basal)\b/i;
+  /\b(?:smbs?|super\s+micro[\s-]?bolus(?:es)?|automatic\s+(?:smbs?|bolus(?:es)?)|auto[\s-]?bolus(?:es)?|entered\s+by\s+me|i\s+entered|entered\s+(?:them\s+|it\s+)?myself|did\s+i\s+enter|i\s+gave\s+myself|split\s+(?:in)?to\s+basal\s+and\s+bolus(?:es)?|basal\s*(?:\/|vs\.?|versus|and|or|to)\s*bolus(?:es)?|bolus(?:es)?\s*(?:\/|vs\.?|versus|and)\s*basal)\b/i;
 // The question asks for amounts or counts, not about glucose or an explanation.
 const BREAKDOWN_AMOUNT =
-  /\b(?:how\s+(?:many|much)|totals?|split|units?|count|compare|comparison|versus|vs\.?|break\s*down|breakdown)\b/i;
+  /\b(?:how\s+(?:many|much)|totals?|split|units?|count|compare|comparison|versus|vs\.?|break\s*down|breakdown|ratio)\b/i;
+// "What is an SMB?" is education; "What is my basal to bolus ratio" is a record request.
 const GLUCOSE_OUTCOME =
-  /\b(?:glucose|bg|blood\s+sugar|sugars?|lows?|highs?|hypos?|hypers?|time\s+in\s+range|tir|spike\w*|drop\w*|why|explain|mean|means|what\s+is|what\s+are|what's\s+an?)\b/i;
+  /\b(?:glucose|bg|blood\s+sugar|sugars?|lows?|highs?|hypos?|hypers?|time\s+in\s+range|tir|spike\w*|drop\w*|why|explain|mean|means|what\s+is\s+(?!my\b)|what\s+are\s+(?!my\b)|what's\s+an?)\b/i;
+
+/*
+ * Allow-only grammar for the insulin and carb record cards.
+ *
+ * A prompt is answered locally only when every sentence is fully explained by
+ * this record grammar: breakdown parts, amount words, a supported period and a
+ * small fixed set of polite words. Any leftover content word ("do I", "want",
+ * "go for", "a basal rate", "down", "cut", "more", "set basal 1.2", "units for
+ * pizza", "3 days ago", "at 3") means the prompt is not a pure record request,
+ * so it falls through to the normal pipeline, where the safety preflight and
+ * the model route apply. Phrase blocklists kept leaking; this rule does not
+ * depend on predicting every way of asking for a dose.
+ */
+const RECORD_POLITE_PHRASES = [
+  String.raw`\b(?:please\s+)?(?:could|can|would|will)\s+you\s+(?:please\s+)?(?:show|tell|list)(?:\s+me)?\b`,
+  String.raw`\b(?:please\s+)?(?:could|can|may)\s+i\s+(?:please\s+)?see\b`,
+  String.raw`\bi\s+would\s+like(?:\s+to\s+see)?\b|\bi'd\s+like(?:\s+to\s+see)?\b`,
+  String.raw`\b(?:show|tell|list)(?:\s+me)?\b|\blet\s+me\s+see\b`,
+  String.raw`\bwhat(?:\s+is|'s|\s+was|\s+were|\s+are)\s+(?=my\b|the\b)`,
+  String.raw`\b(?:please|thanks|thank\s+you|cheers|hi|hello|hey|ok(?:ay)?|tarv[1i]s)\b`,
+];
+/** Supported periods only; anything else stays as leftover and is rejected. */
+const RECORD_PERIOD_PHRASES = [
+  String.raw`\b(?:the\s+)?(?:last|past|previous)\s+(?:\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty)\s+days\b`,
+  String.raw`\b(?:the\s+)?(?:past|this|last|previous)\s+week(?:'s)?\b`,
+  String.raw`\b(?:so\s+far\s+)?today(?:'s)?(?:\s+so\s+far)?\b|\bso\s+far\b`,
+  String.raw`\byesterday(?:'s)?\b`,
+];
+const RECORD_INSULIN_PHRASES = [
+  String.raw`\bratio\s+of\s+(?:basal\s+to\s+bolus(?:es)?|bolus(?:es)?\s+to\s+basal|smbs?\s+to\s+(?:entered\s+|other\s+|manual\s+)?bolus(?:es)?)\b`,
+  String.raw`\b(?:basal|bolus(?:es)?)\s*(?:\/|vs|versus|to|and|against)\s*(?:basal|bolus(?:es)?)(?:\s+(?:split|ratio|totals?|breakdown))?\b`,
+  String.raw`\bsplit\s+(?:in)?to\b|\bsplit\s+between\b|\bbroken\s+down\b|\bbreak\s*down\b|\bbreakdown\b|\bsplit\b`,
+  String.raw`\bsuper\s+micro[\s-]?bolus(?:es)?\b|\bauto[\s-]?bolus(?:es)?\b|\bautomatic(?:ally)?\b|\bsmbs?\b`,
+  String.raw`\b(?:meal|manual|other)\s+bolus(?:es)?\b|\bbolus(?:es)?\b|\bbasal(?:\s+insulin)?\b|\binsulin\b`,
+  String.raw`\b(?:did\s+)?(?:aaps|the\s+loop|my\s+loop|my\s+pump|the\s+pump)\s+(?:give|gave|deliver|delivered)(?:\s+me)?\b`,
+  String.raw`\bentered\s+by\s+me\b|\b(?:did\s+)?i\s+(?:enter|entered)(?:\s+(?:them\s+|it\s+)?myself)?\b|\bentered(?:\s+(?:them\s+|it\s+)?myself)?\b|\bi\s+gave\s+myself\b|\bmanually\b`,
+  String.raw`\b(?:was|were)\s+(?:delivered|given)\b|\bdelivered\b|\bgiven\b|\bgave\b`,
+];
+const RECORD_CARB_PHRASES = [
+  String.raw`\b(?:grams?|g)\s+of\s+(?:carbs?|carbohydrates?)\b|\bcarb(?:ohydrate)?\s+entries\b|\bcarbs?\b|\bcarbohydrates?\b`,
+  String.raw`\b(?:did\s+)?i\s+(?:eat|ate|eaten|enter|entered|log|logged|record|recorded|had)\b|\b(?:entered|logged|recorded|eaten|stored)\b`,
+];
+const RECORD_PER_DAY_PHRASES = [
+  String.raw`\beach\s+of\s+the\b`,
+  String.raw`\beach\s+day\b|\bevery\s+day\b|\bper\s+day\b|\bby\s+day\b|\bday\s+by\s+day\b|\bdaily\b|\ba\s+day\b`,
+];
+const RECORD_AMOUNT_PHRASES = [
+  String.raw`\bhow\s+(?:many|much)\b|\b(?:the\s+)?(?:number|amount|count)\s+of\b|\btotals?\b|\bcount\b`,
+  String.raw`\bin\s+(?:units?|u|grams?|g)\b|\bunits?\s+of\b|\bunits?\b|\bgrams?\b`,
+  String.raw`\bcompared?\s+(?:with|to)\b|\bcompare\b|\bcomparison\b|\bversus\b|\bvs\b|\bagainst\b`,
+];
+/** Words that may be left over: articles, the user's pronouns and past-tense helpers. */
+const RECORD_FUNCTION_WORDS = new Set([
+  "i", "me", "my", "the", "a", "an", "of", "in", "on", "for", "and", "or", "with", "over", "during",
+  "across", "were", "was", "is", "are", "did", "have", "had", "has", "get", "got", "receive", "received",
+  "there", "each", "all", "both", "aaps", "loop", "pump", "also",
+]);
+/**
+ * Belt and braces for the grammar: a request to judge, plan or change
+ * anything is never a record question, even if a phrase above matched it.
+ */
+const RECORD_DENY =
+  /\b(?:dose|doses|dosing|inject\w*|take|taking|want\w*|need\w*|should|shall|must|ought|enough|safe|correct\w*|isf|sensitivity|factor|targets?|profile|settings?|rates?|more|less|fewer|extra|up|down|off|higher|lower\w*|rais\w*|increas\w*|decreas\w*|reduc\w*|chang\w*|adjust\w*|tweak\w*|cut|halve|double|set|aim|goal|plan\w*|next|now|tomorrow|tonight|cover\w*|advi[cs]e|recommend\w*|suggest\w*|better|best|ideal|right|normal|too|if|would(?!\s+(?:like|you)\b)|could(?!\s+(?:you|i)\b)|will(?!\s+you\b)|calculat\w*|work\s+out|fix|tune|go|do|does|am|left|remain\w*|due|short|missing)\b/i;
+
+function compileGrammar(phrases: string[]) {
+  return new RegExp(phrases.join("|"), "gi");
+}
+const BREAKDOWN_GRAMMAR = compileGrammar([
+  ...RECORD_POLITE_PHRASES,
+  ...RECORD_PERIOD_PHRASES,
+  ...RECORD_INSULIN_PHRASES,
+  ...RECORD_CARB_PHRASES,
+  ...RECORD_AMOUNT_PHRASES,
+]);
+const CARBS_PER_DAY_GRAMMAR = compileGrammar([
+  ...RECORD_POLITE_PHRASES,
+  ...RECORD_PER_DAY_PHRASES,
+  ...RECORD_PERIOD_PHRASES,
+  ...RECORD_CARB_PHRASES,
+  ...RECORD_AMOUNT_PHRASES,
+]);
+
+function recordSentences(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/\bvs\./g, "vs")
+    .split(/[.?!;\n]+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+/** True only when every sentence is fully explained by the grammar, with no leftover words. */
+function fullyExplainedBy(text: string, grammar: RegExp) {
+  const sentences = recordSentences(text);
+  if (!sentences.length) return false;
+  return sentences.every((sentence) => {
+    if (RECORD_DENY.test(sentence)) return false;
+    const leftover = sentence.replace(grammar, " ").match(/[a-z0-9]+(?:'[a-z]+)?/g) ?? [];
+    return leftover.every((word) => RECORD_FUNCTION_WORDS.has(word));
+  });
+}
 
 function parseInsulinBreakdown(text: string): InsulinBreakdownQuestion | undefined {
   if (!BREAKDOWN_PART.test(text) || !BREAKDOWN_AMOUNT.test(text) || GLUCOSE_OUTCOME.test(text)) return undefined;
+  if (!fullyExplainedBy(text, BREAKDOWN_GRAMMAR)) return undefined;
   const periods = recordPeriods(text);
   return periods ? { kind: "insulin-breakdown", periods } : undefined;
 }
@@ -167,21 +270,30 @@ function parseCarbsPerDay(text: string): CarbsPerDayQuestion | undefined {
   if (GLUCOSE_OUTCOME.test(text) || /\b(?:insulin|bolus(?:es)?|smbs?|basal)\b/i.test(text)) return undefined;
   // Only "the last N days" (or "the past week"); a calendar week or other period is not answered here.
   if (OTHER_PERIOD.test(text) || THIS_WEEK.test(text) || LAST_CALENDAR_WEEK.test(text)) return undefined;
+  if (!fullyExplainedBy(text, CARBS_PER_DAY_GRAMMAR)) return undefined;
   const days = lastDays(text);
   if (days === undefined || days < 1 || days > RECORD_PERIOD_MAX_DAYS) return undefined;
   if (TODAY.test(text) || YESTERDAY.test(text)) return undefined;
   return { kind: "carbs-per-day", days };
 }
 
+// Anything in an insulin-on-board question that asks what to do with it.
+const IOB_DENY =
+  /\b(?:dose|doses|dosing|inject\w*|take|taking|give|bolus\w*|correct\w*|units?\s+(?:for|to)|want|need\w*|enough|safe|more|less|extra|carbs?|eat|basal|smbs?|targets?|profile|settings?)\b/i;
+
 function parseIobQuestion(text: string): RecordQuestion | undefined {
+  if (FORWARD.test(text) || IOB_DENY.test(text)) return undefined;
   if (!IOB.test(text) || !IOB_CURRENT.test(text)) return undefined;
   if (IOB_PAST_OR_PERIOD.test(text) || IOB_EXPLAIN.test(text)) return undefined;
   return { kind: "insulin-on-board" };
 }
 
+/** Longest question read here; the same as the Tarv1s composer limit. */
+const RECORD_QUESTION_MAX_LENGTH = 1_500;
+
 export function parseRecordQuestion(question: string): RecordQuestion | undefined {
+  if (question.length > RECORD_QUESTION_MAX_LENGTH) return undefined;
   const text = question.replace(/[‘’]/g, "'");
-  if (FORWARD.test(text)) return undefined;
   const iob = parseIobQuestion(text);
   if (iob) return iob;
   const carbsPerDay = parseCarbsPerDay(text);
@@ -203,15 +315,28 @@ function deviceChanges(sentence: string): RecordedChangeKind[] {
 
 const CHANGE_ORDER: readonly RecordedChangeKind[] = ["site", "sensor", "insulin"];
 
+// A sentence beside a device-change question that asks about insulin, food,
+// settings or what to do is not answered by the device card.
+const DEVICE_OTHER_SENTENCE_DENY =
+  /\b(?:units?|bolus\w*|basal|dose\w*|dosing|inject\w*|insulin|smbs?|carbs?|ratio|isf|sensitivity|correct\w*|targets?|profile|settings?|take|give|treat\w*|should|shall|ought|need\w*|due|overdue|how\s+often|recommend\w*|advi[sc]e|suggest\w*|remind\w*)\b/i;
+// Inside the device sentence itself, any dose or setting word.
+const DEVICE_SENTENCE_DENY =
+  /\b(?:units?|bolus\w*|basal|dose\w*|dosing|inject\w*|smbs?|carbs?|ratio|isf|correct\w*|targets?|profile|settings?|take|give)\b/i;
+
 function parseDeviceChange(text: string): DeviceChangeQuestion | undefined {
   // Each sentence is read on its own, so "When did I last change my sensor?
-  // My readings look off" still answers the change it asks about.
+  // My readings look off" or "...my site? Could it be failing?" still answers
+  // the change it asks about. A sentence about doses, settings or what to do
+  // sends the whole prompt to the normal pipeline instead.
   const sentences = text.split(/[.?!;\n]+/).map((sentence) => sentence.trim()).filter(Boolean);
   const found = new Set<RecordedChangeKind>();
   for (const sentence of sentences) {
-    if (!CHANGE.test(sentence) || !WHEN.test(sentence)) continue;
-    const changes = deviceChanges(sentence);
-    if (!changes.length) continue;
+    const changes = CHANGE.test(sentence) && WHEN.test(sentence) ? deviceChanges(sentence) : [];
+    if (!changes.length) {
+      if (DEVICE_OTHER_SENTENCE_DENY.test(sentence)) return undefined;
+      continue;
+    }
+    if (FORWARD.test(sentence) || DEVICE_SENTENCE_DENY.test(sentence)) return undefined;
     // A change used as an anchor for a glucose or therapy question ("my last
     // low after I changed my sensor") belongs to the history pipeline.
     if (DEVICE_CHANGE_OTHER_SUBJECT.test(sentence)) return undefined;

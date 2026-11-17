@@ -13,7 +13,7 @@ export type TarvisSafetyDecision =
 const DOSE_OR_SETTING =
   /\b(?:insulin|bolus|correction|dose|units?|basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b/i;
 const DIRECT_TREATMENT_REQUEST =
-  /\b(?:how much|how many|what (?:dose|bolus|correction))\b[\s\S]{0,60}\b(?:insulin|bolus|correction|dose|units?)\b|\bwhat\s+(?:dose|bolus|correction)\b(?:\s+should\s+i\s+(?:take|give|inject|do|use)|[\s\S]{0,40}\b(?:for|with)\b)|\bdo i need\s+(?:any\s+)?(?:insulin|a\s+bolus|a\s+correction)\b|\b(?:should|shall|do i need to|can i)\s+i?\s*(?:take|give|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|set)\b|\b(?:tell me (?:to|how to|my|the)|recommend|advise)\b[\s\S]{0,60}\b(?:take|give|inject|bolus|correct|correction dose|change|adjust|increase|decrease|raise|lower|set|insulin|dose|basal|ratio|factor|target)\b|\b(?:calculate|work out|give me)\b[\s\S]{0,50}\b(?:dose|bolus|correction|units?)\b|\b(?:change|adjust|increase|decrease|raise|lower|set)\s+(?:my|the)\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b|\b(?:what should|is) my\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)(?:\s+be|\s+too\s+(?:low|high))?\b/i;
+  /\b(?:how much|how many|what (?:dose|bolus|correction))\b[\s\S]{0,60}\b(?:insulin|bolus|correction|dose|units?)\b|\bwhat\s+(?:dose|bolus|correction)\b(?:\s+should\s+i\s+(?:take|give|inject|do|use)|[\s\S]{0,40}\b(?:for|with)\b)|\bdo i need\s+(?:any\s+)?(?:insulin|a\s+bolus|a\s+correction)\b|\b(?:should|shall|do i need to|can i)\s+i?\s*(?:take|give|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|set)\b|\b(?:tell me (?:to|how to|my|the)|recommend|advise)\b[\s\S]{0,60}\b(?:take|give|inject|bolus|correct|correction dose|change|adjust|increase|decrease|raise|lower|set|insulin|dose|basal|ratio|factor|target)\b|\b(?:calculate|work out|give me)\b[\s\S]{0,50}\b(?:dose|bolus|correction|units?)\b|\b(?:change|adjust|increase|decrease|raise|lower|set)\s+(?:my|the)\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b|\bwhat should my\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b|\bis my\s+(?:basal(?: rate)?|carb(?:ohydrate)? ratio|correction factor|sensitivity|target(?: glucose)?|pump setting|profile)\b(?!\s+(?:in|on|from)\s+(?:my\s+|the\s+)?(?:profile|aaps|pump|nightscout|records?)\s*[?.!]?\s*$|\s+(?:stored|saved|recorded|listed|totals?|to\s+bolus|vs\.?|versus|and\s+bolus|split|history|records?|data|delivery|delivered)\b)/i;
 const UNAMBIGUOUS_TREATMENT_ACTION =
   /\b(?:(?:should|shall)\s+i|do i need to|can i)\s+(?:inject|correct)\b|\b(?:tell me (?:to|how to)|recommend|advise)\b[\s\S]{0,40}\b(?:inject|correct)\b/i;
 // A historical clause must not exempt a second clause asking for treatment.
@@ -69,7 +69,7 @@ const ONGOING_URGENT_CONTINUATION =
 const HISTORICAL_STATE_LANGUAGE =
   /\b(?:used to|no longer|previously|in the past)\b/i;
 const DESCRIPTIVE_INSULIN_HISTORY =
-  /\b(?:how much|how many|what)\b[\s\S]{0,70}\b(?:did i (?:take|receive|deliver|use|have|enter|give|bolus|log|record)|i (?:took|received|used|had|entered|gave|bolused|logged|recorded)|(?:entered|given|logged) by me|by myself|was delivered|were (?:given|delivered|entered|recorded|automatic)|did (?:my )?pump deliver|did (?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:give|deliver)|(?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:gave|delivered))\b|\b(?:how much|how many|what)\s+(?:total\s+)?(?:insulin|bolus|basal)\b[\s\S]{0,50}\b(?:today|yesterday|last|past|previous|on\s+\d|between|from)\b|\bhow many\s+(?:boluses|smbs?|micro ?boluses)\s+(?:were|did)\b/i;
+  /\b(?:how much|how many|what)\b[\s\S]{0,70}\b(?:did i (?:take|receive|deliver|use|have|enter|give|bolus|log|record)|i (?:took|received|used|had|entered|gave|bolused|logged|recorded)|(?:entered|given|logged) by me|by myself|was delivered|were (?:given|delivered|entered|recorded|automatic)|did (?:my )?pump deliver|did (?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:give|deliver|use)|(?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:gave|delivered))\b|\b(?:how much|how many|what)\s+(?:total\s+)?(?:insulin|bolus|basal)\b[\s\S]{0,50}\b(?:today|yesterday|last|past|previous|on\s+\d|between|from)\b|\bhow many\s+(?:boluses|smbs?|micro ?boluses)\s+(?:were|did)\b/i;
 // A sentence that also asks what to do now or next is never only history.
 const FORWARD_LOOKING_TREATMENT =
   /\b(?:should|shall|do i need|will i need|right now|now|next|going to)\b|\bwhat\s+(?:dose|bolus|correction)\b[\s\S]{0,40}\b(?:for|with|to)\b|\bfor\s+(?:dinner|lunch|breakfast|tonight|tomorrow|later)\b/i;
@@ -1537,11 +1537,109 @@ const SETTING_OR_DOSE_JUDGEMENT = new RegExp(
   ].join("|"),
   "i",
 );
-/** "did I change my basal", "when AAPS last lowered" describe history, not a request. */
-const HISTORICAL_SETTING_CHANGE =
-  /\b(?:did|have|has|had|when|was|were)\s+(?:i|you|aaps|the\s+loop|my\s+loop|it|we)\s+(?:last\s+|first\s+)?(?:lower|raise|increase|decrease|reduce|change|adjust|tweak|bump)\w*\b/gi;
+/** Verb stems for changing a dose or setting, in any tense. */
+const SETTING_CHANGE_STEM =
+  String.raw`(?:lower|rais|increas|decreas|reduc|chang|adjust|tweak|bump|turn|switch|disabl|enabl|stopp?|paus|dropp?|doubl|halv|boost|strengthen|weaken|cutt?)`;
+/**
+ * History, not a request: "did AAPS lower my basal", "has AAPS been reducing",
+ * "why does AAPS keep lowering", "was AAPS increasing", "how did changing my
+ * basal affect", "after increasing my basal", "since changing my ratio",
+ * "my team lowered my basal". These phrases are removed before the dose and
+ * setting rules run. They are never removed when the prompt also speaks of a
+ * hypothetical, a plan or what to do (see HYPOTHETICAL_OR_FORWARD), so "Did
+ * AAPS lower my basal? Should I lower it more?" is still refused.
+ */
+const HISTORICAL_SETTING_CHANGE = new RegExp(
+  [
+    // Auxiliary + subject + optional adverb + verb. Modal or judgement words never count as the subject.
+    String.raw`\b(?:did|does|has|have|had|was|were|when|why)\s+(?:(?!(?:can|could|would|will|shall|should|must|might|may|do|does|need|needs|want|wants|ought|to|try|tried|plan|planning|going|right|wrong|ok|okay|safe|better|best)\b)[\w']+\s+){1,3}?(?:(?:last|first|ever|been|keep|keeps|kept|just|recently|automatically|already)\s+)*${SETTING_CHANGE_STEM}\w*\b`,
+    // A gerund as the subject of a past question: "did reducing my target help".
+    String.raw`\b(?:did|has|had|have|was|were)\s+${SETTING_CHANGE_STEM}\w*ing\b`,
+    // After/since/before a past change: "after increasing my basal", "since I changed my ratio".
+    String.raw`\b(?:after|since|before|following)\s+(?:(?:i|aaps|we|they|the\s+loop|my\s+loop|my\s+(?:team|nurse|doctor|consultant))\s+)?(?:last\s+|first\s+)?${SETTING_CHANGE_STEM}\w*(?:ing|ed)\b`,
+    // A past change with a named subject: "I increased my basal on Monday", "my team lowered my basal".
+    String.raw`\b(?:i|aaps|we|they|the\s+loop|my\s+loop|my\s+(?:team|nurse|doctor|consultant))\s+(?:(?:last|just|recently|automatically|already)\s+)?${SETTING_CHANGE_STEM}\w*ed\b`,
+  ].join("|"),
+  "gi",
+);
+/** A hypothetical, plan or forward request keeps every history phrase in place. */
+const HYPOTHETICAL_OR_FORWARD =
+  /\b(?:would(?!\s+you\b)|could(?!\s+you\b)|what\s+if|if\s+(?:i|aaps|we|you|the\s+loop)|will|going\s+to|plan\w*|thinking\s+(?:of|about)|should|shall|must|ought|tomorrow|next|try(?:ing)?\b(?!\s+to\s+(?:work\s+out|understand|see|find))|might|may|now)\b/i;
+
+function withoutHistoricalSettingChanges(prompt: string) {
+  if (HYPOTHETICAL_OR_FORWARD.test(prompt)) return prompt;
+  return prompt.replace(HISTORICAL_SETTING_CHANGE, " ");
+}
+
 const INSULIN_OR_SETTING_CONTEXT =
-  /\b(?:insulin|basal|bolus(?:es)?|smbs?|units?|dose|doses|dosing|ratio|isf|sensitivity|correction|carbs?|target|factor)\b/i;
+  /\b(?:insulin|basal|bolus(?:es)?|bolused|smbs?|units?|dose|doses|dosing|ratio|isf|sensitivity|correction|carbs?|target|factor|aaps|loop|profile|settings?|\d+(?:[.,]\d+)?\s*(?:u|iu))\b/i;
+
+/** A dose, setting or therapy object. */
+const SETTING_NOUN =
+  String.raw`(?:basal(?:\s+rates?)?|bolus(?:es)?|smbs?|max\s+(?:iob|smb|basal)|(?:carb(?:ohydrate)?\s+|insulin[\s-]to[\s-]carb\s+|i\s*:\s*c\s+)?ratios?|isf|(?:insulin\s+)?sensitivity(?:\s+factor)?|correction(?:\s+factor)?|factors?|targets?|profiles?|settings?|aaps|dia|doses?|insulin)`;
+const SETTING_VERB =
+  String.raw`(?:set|up|upp?ing|halve|halving|cut|cutting|drop|dropping|double|doubling|boost\w*|strengthen\w*|weaken\w*|make|making|turn\w*|switch\w*|dial\w*|tune|tuning|fix|fixing|optimi[sz]e|bump\w*|lower(?:ing)?|rais(?:e|ing)|increas(?:e|ing)|decreas(?:e|ing)|reduc(?:e|ing)|chang(?:e|ing)|adjust(?:ing)?|tweak(?:ing)?|disable|enable|stop|pause|push|knock|bring)`;
+const NOT_A_SETTING_JUDGEMENT_WORD = String.raw`(?!(?:total|totals|record|records|history|data|number|figures?|count|reading|readings)\b)`;
+
+/**
+ * Requests to change, judge, choose or plan a dose or setting in forms the
+ * older rules missed: imperative ("Halve my basal", "Turn SMB off"),
+ * elliptical ("More basal?"), judgement ("Is my ratio too weak", "should my
+ * basal be higher"), hypothetical ("what if I bolused 2 more units", "would
+ * 5u be enough") and planning ("units for pizza", "what do I take now", "give
+ * me a basal rate", "fix my settings"). Checked after history phrases are
+ * removed and only with an insulin or setting word in the prompt.
+ */
+const DOSE_OR_SETTING_REQUEST = new RegExp(
+  [
+    String.raw`\b${SETTING_VERB}\s+(?:(?:off|on|up|down|in)\s+)?(?:(?:my|the|our|its|their|your|a|an|some)\s+)?(?:new\s+)?${SETTING_NOUN}\b`,
+    String.raw`\b(?:lower|raise|increase|decrease|reduce|cut|halve|double|up|drop|change|adjust|tweak|bump)\s+(?:it|them|that|this)\b`,
+    String.raw`\b(?:should|could|would|does|do|must|ought|can)\s+(?:my|the|our)\s+${SETTING_NOUN}\b[^.?!]{0,30}?\b(?:be|go|get|need|come|change|move|stay)\b`,
+    String.raw`\b(?:is|are|was|were|isn't|aren't)\s+(?:(?:my|the|our)\s+)?${SETTING_NOUN}\s+(?:${NOT_A_SETTING_JUDGEMENT_WORD}[\w']+\s+)?(?:too\s+\w+|right|correct|ok(?:ay)?|wrong|enough|(?:high|low|strong|weak)\s+enough|aggressive|off)\b`,
+    String.raw`\b(?:is|are|was|were)\s+(?:that|it|this|those|these)\s+too\s+(?:much|many|little|few|high|low|strong|weak|aggressive)\b`,
+    String.raw`\btoo\s+(?:much|many|little|few)\s+(?:basal|bolus(?:es)?|insulin|smbs?|units?)\b`,
+    String.raw`\b(?:am\s+i|i'm|i\s+am)\s+(?:under|over)[\s-]?(?:bolus\w*|basal\w*|dos\w*|insulin\w*)`,
+    String.raw`\b(?:would|will|is|could|are|should)\s+\d+(?:[.,]\d+)?\s*(?:u|units?|iu)\b`,
+    String.raw`\b\d+(?:[.,]\d+)?\s*(?:u|units?|iu)\b[^.?!]{0,25}\b(?:enough|right|ok(?:ay)?|safe|too\s+\w+|now|instead|better|fine)\b`,
+    String.raw`\bwhat\s+if\s+(?:i|aaps|we|the\s+loop)\b[^.?!]{0,40}\b(?:bolus\w*|inject\w*|took|take|gave|give|dos\w*|lower\w*|rais\w*|increas\w*|decreas\w*|reduc\w*|chang\w*|turn\w*|set|cut|halv\w*|doubl\w*|add\w*|skip\w*|units?|basal|ratio|isf|target|smbs?)\b`,
+    String.raw`\b(?:tell\s+me|show\s+me|explain)\s+how\s+(?:to|i\s+(?:should|can|could))\s+(?:tweak|tune|change|adjust|set|fix|optimi[sz]e|improve|configure|increase|decrease|raise|lower)\b`,
+    String.raw`\bdo\s+i\s+need\s+(?:any\s+|more\s+|less\s+|extra\s+|some\s+|a\s+bit\s+(?:more|less)\s+)?(?:insulin|basal|bolus\w*|correction|units?|smbs?)\b`,
+    String.raw`\b(?:do|should|shall|can|must)\s+i\s+(?:take|inject|give|bolus|dose|correct)\b`,
+    String.raw`\b(?:give\s+me|pick|choose|suggest|propose|recommend|find\s+me|work\s+out|calculate|figure\s+out|estimate|determine)\s+(?:me\s+)?(?:(?:a|an|my|the)\s+)?(?:new\s+|better\s+|good\s+|right\s+)?(?:basal(?:\s+rate)?|rate|(?:carb\s+)?ratio|i\s*:\s*c(?:\s+ratio)?|isf|target|setting|profile|dose|bolus|correction|split|units?\s+per\s+gram|grams?\s+per\s+unit)\b`,
+    String.raw`\b(?:number|amount|figure|units?)\s+(?:of\s+units\s+)?to\s+(?:inject|take|bolus|give|dose|use)\b`,
+    String.raw`\b(?:number|amount|figure|dose|units?|insulin|bolus)\s+(?:for|to\s+cover|to\s+match)\s+(?:(?:my|the|a|an|this|that|some|tonight's)\s+)?(?:pizza|pasta|dinner|lunch|breakfast|tea|supper|snack|meal|food|bed(?:time)?|carbs?|\d+\s*g\b|them|those|these|that|it)\b`,
+    String.raw`\bunits?\s+to\s+match\b`,
+    String.raw`\bwhat\s+(?:(?:basal|bolus)\s+)?(?:basal(?:\s+rate)?|rate|ratio|i\s*:\s*c|isf|target|dose|bolus|setting|profile|split|numbers?)\s+(?:is\s+|are\s+|would\s+be\s+)?(?:needed|required|recommended|best|right|do\s+you\s+(?:think|suggest|recommend)|should|fits?|suits?|works?)\b`,
+    String.raw`\bwhat\s+(?:i\s*:\s*c|ic|carb(?:ohydrate)?|insulin[\s-]to[\s-]carb)\s+ratio\b(?!\s+(?:did|was|were|had|is\s+(?:in|on|stored|set|saved)))`,
+    String.raw`\bsettings?\s+changes?\b|\bthoughts\s+on\s+(?:my\s+)?(?:settings?|profile|basal|ratios?|isf|doses?|targets?)\b|\bautotune\s+me\b`,
+    String.raw`\b(?:how\s+(?:much|many)|what)\b[^.?!]{0,50}\b(?:do|should|would|will|shall|am)\s+i\s+(?:going\s+to\s+)?(?:want|go\s+for|aim\s+(?:for|at)|need|target|pick|choose|be\s+(?:on|taking|giving))\b`,
+    String.raw`\bhow\s+(?:much|many)\s+(?:more|now|extra|else|again)\b(?![^.?!]{0,40}\b(?:did|was|were|than|got|had|received|yesterday|last)\b)`,
+    String.raw`\bhow\s+(?:many|much)\s+(?:units?\s+)?(?:for|before|with|at)\s+(?:(?:my|the|a)\s+)?(?:tea|dinner|lunch|breakfast|supper|snack|bed(?:time)?|pizza|pasta|meal|\d+\s*g\b)`,
+    String.raw`\b${SETTING_NOUN}\s+(?:needs?|wants?)\s+(?:to\s+)?(?:go\s+(?:up|down)|be\s+\w+|lowering|raising|changing|increasing|decreasing|reducing|adjusting|tweaking)\b`,
+    String.raw`\b(?:go|going)\s+(?:lower|higher|up|down|stronger|weaker)\s+on\s+(?:(?:my|the)\s+)?${SETTING_NOUN}\b`,
+    String.raw`\b\d{1,3}\s*\/\s*\d{1,3}\b[^.?!]{0,40}\b(?:normal|want|right|ok(?:ay)?|good|aim|target|get\s+to|gets?\s+me|should|split|ideal|best)\b|\b(?:get\s+to|gets?\s+me\s+to|aim\s+for)\s+(?:a\s+)?\d{1,3}\s*\/\s*\d{1,3}\b`,
+    String.raw`\b(?:is\s+(?:that|this|it|mine)\s+normal|what(?:'s|\s+is)\s+normal|normal\s+for\s+(?:me|someone|people))\b`,
+    String.raw`\b(?:new|switch\w*|go(?:ing)?\s+(?:to|for)|change\w*|try|use|run|set)\b[^.?!]{0,25}\b\d{2,3}\s*(?:%|percent)|\b\d{1,3}\s*(?:%|percent)\s+(?:stronger|weaker|more|less|higher|lower|up|down)\b|\bprofile\s+(?:at|to)\s+\d`,
+    String.raw`\bcorrect\s+(?:for\s+)?(?:(?:a|my|this|that)\s+)?(?:\d|high\b|hyper)|\bfor\s+dos(?:ing|e)\s+purposes\b|\bdose\s+me\b|\bcalculate\s+(?:(?:my|the)\s+)?(?:dinner|lunch|breakfast|tea|meal|dose|bolus|insulin|units?|correction|basal)\b`,
+    String.raw`\bsame\s+again\b`,
+  ].join("|"),
+  "i",
+);
+/** A whole sentence that only names a direction or amount: "More basal?", "Basal down?", "Basal 1.1 from now", "Advise." */
+const ELLIPTICAL_SETTING_REQUEST = new RegExp(
+  String.raw`^\s*(?:(?:and|so|then|or|maybe|ok(?:ay)?|time\s+to)\s+)?(?:(?:more|less|extra|additional|higher|lower|stronger|weaker)\s+(?:basal|bolus(?:es)?|insulin|smbs?|units?)\b|(?:my\s+)?(?:basal(?:\s+rate)?|bolus|isf|ratio|target|profile)\s+(?:up|down|higher|lower|off|[+-]\s*\d|(?:to|at|of)\s+\d|\d)|(?:please\s+)?(?:advise|advice|recommend(?:ations?)?|suggestions?|what\s+do\s+you\s+(?:suggest|recommend|advise))\b\s*(?:please)?\s*$)`,
+  "i",
+);
+
+/**
+ * `withoutHistory` has history phrases removed; elliptical sentences are read
+ * from the original prompt so a removed phrase never creates a false sentence
+ * start ("Why did AAPS increase basal at 3am?" is not "basal at 3").
+ */
+function requestsDoseOrSettingChange(prompt: string, withoutHistory: string) {
+  if (DOSE_OR_SETTING_REQUEST.test(withoutHistory)) return true;
+  return promptSentences(prompt).some((sentence) => ELLIPTICAL_SETTING_REQUEST.test(sentence));
+}
 
 /** A sentence that asks for an amount. */
 const QUANTITY_QUESTION =
@@ -1555,19 +1653,28 @@ const QUANTITY_QUESTION =
  * the prompt asks about now or next. A history clause never exempts a personal
  * treatment change elsewhere in the prompt.
  */
+/**
+ * Short dose requests that need no insulin word to be clear: "correct 14",
+ * "what do I take now", "what do I inject", "give me a number to inject".
+ */
+const STANDALONE_DOSE_REQUEST =
+  /\bcorrect\s+(?:for\s+|a\s+|my\s+|this\s+|that\s+)?\d+(?:[.,]\d+)?\b(?!\s*(?:%|percent|days?|weeks?|times?|readings?|records?|entries|of\b))|\bwhat\s+(?:do|should|shall|can|must)\s+I\s+(?:take|inject|bolus|give\s+myself|dose)\b(?!\s+to\s+(?:see|view|read|check|find|look|open|get|show)\b)|\b(?:number|amount|units?|dose)\s+(?:for\s+me\s+)?to\s+(?:inject|bolus|dose|give\s+myself)\b(?![^.?!\n]*\b(?:yesterday|last|was|were|did)\b)/i;
+
 function requestsTreatmentAdvice(prompt: string) {
+  const withoutHistory = withoutHistoricalSettingChanges(prompt);
+  if (STANDALONE_DOSE_REQUEST.test(withoutHistory)) return true;
   if (
-    SETTING_OR_DOSE_JUDGEMENT.test(prompt.replace(HISTORICAL_SETTING_CHANGE, " ")) &&
-    INSULIN_OR_SETTING_CONTEXT.test(prompt)
+    INSULIN_OR_SETTING_CONTEXT.test(prompt) &&
+    (SETTING_OR_DOSE_JUDGEMENT.test(withoutHistory) || requestsDoseOrSettingChange(prompt, withoutHistory))
   ) {
     return true;
   }
   const request =
-    UNAMBIGUOUS_TREATMENT_ACTION.test(prompt) ||
-    (DIRECT_TREATMENT_REQUEST.test(prompt) && DOSE_OR_SETTING.test(prompt)) ||
+    UNAMBIGUOUS_TREATMENT_ACTION.test(withoutHistory) ||
+    (DIRECT_TREATMENT_REQUEST.test(withoutHistory) && DOSE_OR_SETTING.test(prompt)) ||
     (LOW_GLUCOSE_CONTEXT.test(prompt) && DIRECT_LOW_CARB_TREATMENT.test(prompt));
   if (!request) return false;
-  if (DOSE_OR_SETTING.test(prompt) && PERSONAL_TREATMENT_CHANGE.test(prompt)) {
+  if (DOSE_OR_SETTING.test(prompt) && PERSONAL_TREATMENT_CHANGE.test(withoutHistory)) {
     return true;
   }
   if (FORWARD_LOOKING_TREATMENT.test(prompt)) return true;
@@ -1578,7 +1685,35 @@ function requestsTreatmentAdvice(prompt: string) {
   return !quantitySentences.every(describesInsulinHistoryOnly);
 }
 
+/**
+ * The Tarv1s composer limit. Longer prompts are never answered (see
+ * requestCoordinator and openAiClient); the safety pass reads only bounded
+ * windows of them so its regular expressions cannot take seconds.
+ */
+export const TARVIS_QUESTION_MAX_LENGTH = 1_500;
+
+const SAFETY_SEVERITY: Record<TarvisSafetyDecision["kind"], number> = {
+  urgent: 4,
+  "treatment-advice": 3,
+  diagnosis: 2,
+  prediction: 1,
+  allow: 0,
+};
+
 export function classifyTarvisSafety(question: string): TarvisSafetyDecision {
+  if (question.length <= TARVIS_QUESTION_MAX_LENGTH) return classifyBoundedTarvisSafety(question);
+  // An over-long prompt is refused as too long by the caller. Its opening and
+  // closing windows are still checked, so urgent wording at either end is not
+  // hidden behind a length message.
+  return [
+    question.slice(0, TARVIS_QUESTION_MAX_LENGTH),
+    question.slice(-TARVIS_QUESTION_MAX_LENGTH),
+  ]
+    .map(classifyBoundedTarvisSafety)
+    .reduce((worst, next) => (SAFETY_SEVERITY[next.kind] > SAFETY_SEVERITY[worst.kind] ? next : worst));
+}
+
+function classifyBoundedTarvisSafety(question: string): TarvisSafetyDecision {
   const regional = getRuntimeRegionalDefaults();
   const emergencyCare = getRuntimeEmergencyCareTerms();
   const reviewedUkDkaPack = regional.clinicalJurisdiction === "GB";

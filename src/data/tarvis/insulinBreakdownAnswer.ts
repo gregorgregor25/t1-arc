@@ -340,11 +340,23 @@ function recordsThrough(sources: readonly DataSourceStatus[]) {
   return through.length ? Math.max(...through) : undefined;
 }
 
-/** The time records stop, when that is inside the period and well before its end. */
-function staleThrough(window: RecordPeriodWindow, through: number | undefined) {
-  return through !== undefined && through < window.range.end - FRESHNESS_TOLERANCE_MS && through >= window.range.start
-    ? through
-    : undefined;
+/** The time records stop, when that is well before the end of the period (inside it or before it starts). */
+function recordsStopBefore(window: RecordPeriodWindow, through: number | undefined) {
+  return through !== undefined && through < window.range.end - FRESHNESS_TOLERANCE_MS ? through : undefined;
+}
+
+/** True when the stored records stop before the period even starts. */
+function periodNotCovered(window: RecordPeriodWindow, through: number | undefined) {
+  return through !== undefined && through < window.range.start;
+}
+
+/** "20:00", "20:00 yesterday" or "Sun 10 Nov 20:00", relative to the day of `reference`. */
+function whenText(time: number, reference: number) {
+  const day = toDateKey(time);
+  const referenceDay = toDateKey(reference);
+  if (day === referenceDay) return formatTime(time);
+  if (day === addDays(referenceDay, -1)) return `${formatTime(time)} yesterday`;
+  return `${formatShortDate(day)} ${formatTime(time)}`;
 }
 
 /** Uses only the sources this answer reads, not the earliest record of any source. */
@@ -359,11 +371,25 @@ function storedStartSentence(sources: readonly DataSourceStatus[], start: number
     : undefined;
 }
 
-function staleSentence(window: RecordPeriodWindow, through: number, named: boolean) {
+/**
+ * Records stop inside the period: "Records are stored only up to 09:00, so later
+ * ones are not included yet." Records stop before it starts: "Records are stored
+ * only up to 20:00 yesterday, so today isn't covered."
+ */
+function staleSentence(window: RecordPeriodWindow, through: number, named: boolean, asOf: number, subject = "Records") {
+  if (through < window.range.start) {
+    const name = window.name.replace(/\s+so far$/, "");
+    return `${subject} are stored only up to ${whenText(through, asOf)}, so ${name} ${/^the last /.test(name) ? "aren't" : "isn't"} covered.`;
+  }
   const when = toDateKey(through) === toDateKey(window.range.end - 1)
     ? formatTime(through)
     : `${formatShortDate(toDateKey(through))} ${formatTime(through)}`;
-  return `Records are stored only up to ${when}${named ? ` for ${window.name}` : ""}, so later ones are not included yet.`;
+  return `${subject} are stored only up to ${when}${named ? ` for ${window.name}` : ""}, so later ones are not included yet.`;
+}
+
+/** No source that holds or can provide these records is connected. */
+function noSourceSentence(kind: "insulin" | "carb") {
+  return `No ${kind} records are stored on this phone, so "none" here means nothing is stored, not that nothing happened.`;
 }
 
 /** Sources marked stale or missing, when no record time is known. */
@@ -430,10 +456,14 @@ const BREAKDOWN_LIMITATIONS = [
   "These are stored records, not advice about doses.",
 ];
 
-/** "Tue 17 Nov, until 14:30", or "..., records up to 09:00" when the sources are behind. */
+/**
+ * "Tue 17 Nov, until 14:30", "..., records up to 09:00" when the sources are
+ * behind, or "..., not covered by stored records" when they stop before it.
+ */
 function periodHeading(window: RecordPeriodWindow, asOf: number, through: number | undefined) {
+  if (periodNotCovered(window, through)) return `${window.dates}, not covered by stored records`;
   if (window.range.end !== asOf) return window.dates;
-  const stale = staleThrough(window, through);
+  const stale = recordsStopBefore(window, through);
   return stale !== undefined
     ? `${window.dates}, records up to ${formatTime(stale)}`
     : `${window.dates}, until ${formatTime(window.range.end)}`;
@@ -459,10 +489,17 @@ function sourcesText(sources: readonly string[]) {
  */
 function breakdownNotices(
   parts: readonly PeriodBreakdown[],
-  sources: readonly DataSourceStatus[],
-  through: number | undefined,
+  coverageSources: {
+    insulin: readonly DataSourceStatus[];
+    carbs: readonly DataSourceStatus[];
+    insulinThrough: number | undefined;
+    carbsThrough: number | undefined;
+  },
   rangeStart: number,
+  asOf: number,
 ) {
+  const { insulin, carbs, insulinThrough, carbsThrough } = coverageSources;
+  const sources = [...new Map([...insulin, ...carbs].map((source) => [source.id, source])).values()];
   const many = parts.length > 1;
   /** Already explained in full in the limitations. */
   const explained: string[] = [];
@@ -498,18 +535,31 @@ function breakdownNotices(
       `${countLabel(total, "bolus", "boluses")}${counts} came from ${sourcesText(names)}, which doesn't mark automatic boluses, so ${total === 1 ? "it is" : "they are"} counted as other boluses.`,
     );
   }
-  let stale = false;
-  for (const part of parts) {
-    const stop = staleThrough(part.window, through);
-    if (stop !== undefined) {
-      stale = true;
-      coverage.push(staleSentence(part.window, stop, many));
+  // Insulin and carbs can come from different sources that stop at different times.
+  // Carbs are checked on their own only when carb records exist and their sources stop at another time.
+  const separateCarbs = insulinThrough !== carbsThrough && parts.some((part) => part.meals.length);
+  const checks = !separateCarbs
+    ? [{ subject: "Records", through: insulinThrough, sources: insulinThrough === carbsThrough ? sources : insulin }]
+    : [
+        { subject: "Insulin records", through: insulinThrough, sources: insulin },
+        { subject: "Carb records", through: carbsThrough, sources: carbs },
+      ];
+  for (const check of checks) {
+    let stale = false;
+    for (const part of parts) {
+      const stop = recordsStopBefore(part.window, check.through);
+      if (stop !== undefined) {
+        stale = true;
+        const sentence = staleSentence(part.window, stop, many, asOf, check.subject);
+        if (!coverage.includes(sentence)) coverage.push(sentence);
+      }
+    }
+    if (!stale && check.through === undefined) {
+      const behind = behindSentence(check.sources);
+      if (behind && !coverage.includes(behind)) coverage.push(behind);
     }
   }
-  if (!stale && through === undefined) {
-    const behind = behindSentence(sources);
-    if (behind) coverage.push(behind);
-  }
+  if (!insulin.length && parts.every((part) => !part.boluses.length)) coverage.push(noSourceSentence("insulin"));
   const started = storedStartSentence(sources, rangeStart);
   if (started) coverage.push(started);
   return { all: [...explained, ...coverage], coverage };
@@ -551,8 +601,15 @@ export function buildInsulinBreakdownAnswer({
   const windows = question.periods.map((period) => recordPeriodWindow(period, asOf));
   const parts = windows.map((window) => breakdownFor(window, timeline));
   const range = recordPeriodsRange(question.periods, asOf);
-  const sources = relevantSources(timeline, ["insulin", "carbs"]);
-  const through = recordsThrough(sources);
+  const insulinSources = relevantSources(timeline, ["insulin"]);
+  const carbSources = relevantSources(timeline, ["carbs"]);
+  // The lead line and rows are mostly insulin, so they follow the insulin sources.
+  const through = recordsThrough(insulinSources);
+  const carbsThrough = recordsThrough(carbSources);
+  /** "none" would read as no insulin; when the records stop before the period, say so instead. */
+  const partCount = (part: PeriodBreakdown, value: { count: number; units: number }) =>
+    !value.count && periodNotCovered(part.window, through) ? "not covered by stored records" : bolusCount(value);
+  const smbCount = (part: PeriodBreakdown) => (part.smbUnknown ? smbText(part) : partCount(part, part.smb));
   const limitations = [...BREAKDOWN_LIMITATIONS];
   for (const part of parts) {
     const where = parts.length > 1 ? ` for ${part.window.name}` : "";
@@ -579,7 +636,12 @@ export function buildInsulinBreakdownAnswer({
       limitations.push(`Long-acting injections${where} are the ones you entered in T1 Arc, listed on their own line.`);
     }
   }
-  const { all: notices, coverage } = breakdownNotices(parts, sources, through, range.start);
+  const { all: notices, coverage } = breakdownNotices(
+    parts,
+    { insulin: insulinSources, carbs: carbSources, insulinThrough: through, carbsThrough },
+    range.start,
+    asOf,
+  );
   for (const notice of coverage) if (!limitations.includes(notice)) limitations.push(notice);
 
   let lines: string[];
@@ -592,8 +654,8 @@ export function buildInsulinBreakdownAnswer({
       `${capitalise(part.window.name)}, ${periodHeading(part.window, asOf, through)}:`,
       `• Basal delivered: ${basalText(part.basal)}`,
       ...(part.longActing.count ? [`• Long-acting injections: ${longActingText(part)}`] : []),
-      `• SMBs delivered, marked SMB by AAPS: ${smbText(part)}`,
-      `• Other boluses delivered, not marked SMB: ${bolusCount(part.other)}`,
+      `• SMBs delivered, marked SMB by AAPS: ${smbCount(part)}`,
+      `• Other boluses delivered, not marked SMB: ${partCount(part, part.other)}`,
       ...(part.sourceMismatch ? [`• Saved daily bolus total: ${unitsText(part.sourceMismatch.source)}`] : []),
       ...(total ? [`• Total delivered: ${total}`] : []),
       `• Carbs entered: ${carbText(part.carbs)}`,
@@ -604,8 +666,8 @@ export function buildInsulinBreakdownAnswer({
       parts.map((part) => `${part.window.name} ${text(part)}`).join(" · ");
     lines = [
       `${parts.map((part, index) => `${index ? part.window.name : capitalise(part.window.name)} (${periodHeading(part.window, asOf, through)})`).join(" compared with ")}:`,
-      `• SMBs delivered, marked SMB by AAPS: ${both(smbText)}`,
-      `• Other boluses delivered, not marked SMB: ${both((part) => bolusCount(part.other))}`,
+      `• SMBs delivered, marked SMB by AAPS: ${both(smbCount)}`,
+      `• Other boluses delivered, not marked SMB: ${both((part) => partCount(part, part.other))}`,
       ...(parts.some((part) => part.longActing.count) ? [`• Long-acting injections: ${both(longActingText)}`] : []),
       ...(parts.some((part) => part.sourceMismatch)
         ? [`• Saved daily bolus total: ${both((part) => (part.sourceMismatch ? unitsText(part.sourceMismatch.source) : "none saved"))}`]
@@ -673,12 +735,13 @@ export function buildCarbsPerDayAnswer({
       : "No carb entries are stored for these days.",
   ];
   const notices: string[] = [];
-  const stop = staleThrough(window, through);
-  if (stop !== undefined) notices.push(staleSentence(window, stop, false));
+  const stop = recordsStopBefore(window, through);
+  if (stop !== undefined) notices.push(staleSentence(window, stop, false, asOf));
   else if (through === undefined) {
     const behind = behindSentence(sources);
     if (behind) notices.push(behind);
   }
+  if (!sources.length && !meals.length) notices.push(noSourceSentence("carb"));
   const started = storedStartSentence(sources, range.start);
   if (started) notices.push(started);
   if (multiSourceDays) {

@@ -493,3 +493,142 @@ describe("review fixes: freshness and coverage (M4, M6)", () => {
     expect(answer.shortNotice).toContain("1 day has carbs from more than one source");
   });
 });
+
+describe("round 3: records that stop before the period (M4 residual)", () => {
+  it("says today isn't covered when the insulin source stopped yesterday evening", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({
+        sources: [source({ id: "nightscout", label: "Nightscout", capabilities: [{ kind: "bolus-events", fidelity: "source-event" }, { kind: "carbohydrates", fidelity: "source-event" }], freshness: "stale", dataFrom: YESTERDAY - 30 * 24 * HOUR, dataThrough: YESTERDAY + 20 * HOUR })],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toContain("Records are stored only up to 20:00 yesterday, so today isn't covered.");
+    expect(answer.answer.split("\n")[0]).toContain("not covered by stored records");
+    expect(answer.answer).toContain("SMBs delivered, marked SMB by AAPS: not covered by stored records");
+    expect(answer.answer).toContain("Other boluses delivered, not marked SMB: not covered by stored records");
+    expect(answer.answer).not.toMatch(/: none$/m);
+    expect(answer.confidence).toBe("moderate");
+  });
+
+  it("checks insulin on its own when carbs come from a source that is up to date", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({
+        boluses: [bolus(YESTERDAY + 9 * HOUR, 2, { sourceId: "glooko-export" })],
+        context: [meal(TODAY + 8 * HOUR, 30, { sourceId: MANUAL_CONTEXT_SOURCE_ID })],
+        sources: [
+          source({ id: "glooko-export", label: "Glooko", freshness: "stale", dataThrough: YESTERDAY + 20 * HOUR }),
+          source({ id: MANUAL_CONTEXT_SOURCE_ID, label: "Entered in T1 Arc", dataThrough: NOW }),
+        ],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toContain("Insulin records are stored only up to 20:00 yesterday, so today isn't covered.");
+    expect(answer.answer).toContain("Carbs entered: 30 g");
+    expect(answer.confidence).toBe("moderate");
+  });
+
+  it("names the period when records stop before an earlier compared period", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: both,
+      timeline: timeline({
+        sources: [source({ id: "nightscout", capabilities: [{ kind: "bolus-events", fidelity: "source-event" }, { kind: "carbohydrates", fidelity: "source-event" }], freshness: "stale", dataThrough: YESTERDAY - 4 * HOUR })],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toContain("so yesterday isn't covered.");
+    expect(answer.shortNotice).toContain("so today isn't covered.");
+  });
+
+  it("says when no insulin records are stored at all, instead of a bare none", () => {
+    // A source that does not say it holds insulin records (here a glucose-only one) is not used for coverage.
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({ sources: [source({ id: "libre", freshness: "stale", dataThrough: YESTERDAY + 20 * HOUR })] }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toContain("No insulin records are stored on this phone");
+    expect(answer.confidence).toBe("moderate");
+  });
+
+  it("says the carbs days aren't covered when the carb source stopped before them", () => {
+    const { answer } = buildCarbsPerDayAnswer({
+      question: { kind: "carbs-per-day", days: 3 },
+      timeline: timeline({
+        context: [meal(YESTERDAY - 5 * 24 * HOUR, 40)],
+        sources: [source({ id: "nightscout", freshness: "stale", dataThrough: YESTERDAY - 5 * 24 * HOUR })],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toMatch(/Records are stored only up to .+, so the last 3 days aren't covered\./);
+    expect(answer.answer.split("\n")[0]).toContain("not covered by stored records");
+    expect(answer.confidence).toBe("moderate");
+  });
+
+  it("keeps an up-to-date answer free of coverage notices", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({
+        basal: [basal(TODAY, NOW, 0.5)],
+        boluses: [smb(TODAY + HOUR, 0.2)],
+        sources: [source({ id: "nightscout", dataFrom: YESTERDAY - 30 * 24 * HOUR, dataThrough: NOW })],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice ?? "").not.toMatch(/stored only up to|not covered|No insulin records/);
+  });
+});
+
+describe("round 3: SMB marking is carried only when certain (H2 residual)", () => {
+  const glooko = (id: string, timestamp: number, units: number): BolusDelivery =>
+    ({ id, timestamp, units, deliveryType: "Normal", sourceId: "glooko-export" });
+
+  it.each([
+    [
+      "two Nightscout records could be the same delivery",
+      [
+        glooko("gl-1", TODAY + HOUR + 20_000, 0.3),
+        { id: "ns-1", timestamp: TODAY + HOUR, units: 0.3, deliveryType: "SMB", sourceId: "nightscout" },
+        { id: "ns-2", timestamp: TODAY + HOUR + 60_000, units: 0.3, deliveryType: "Correction Bolus", sourceId: "nightscout" },
+      ],
+    ],
+    [
+      "the amounts differ, even within the duplicate tolerance",
+      [glooko("gl-1", TODAY + HOUR, 0.3), { id: "ns-1", timestamp: TODAY + HOUR, units: 0.32, deliveryType: "SMB", sourceId: "nightscout" }],
+    ],
+    [
+      "the only Nightscout match is 90 seconds away, so it may be another delivery",
+      [glooko("gl-1", TODAY + 12 * HOUR, 0.5), { id: "ns-1", timestamp: TODAY + 12 * HOUR + 90_000, units: 0.5, deliveryType: "SMB", sourceId: "nightscout" }],
+    ],
+    [
+      "the Nightscout copy has no delivery type",
+      [glooko("gl-1", TODAY + HOUR, 0.3), { id: "ns-1", timestamp: TODAY + HOUR, units: 0.3, sourceId: "nightscout" }],
+    ],
+    [
+      "the AAPS and Nightscout copies disagree",
+      [
+        glooko("gl-1", TODAY + HOUR, 0.3),
+        { id: "ns-1", timestamp: TODAY + HOUR, units: 0.3, deliveryType: "SMB", sourceId: "nightscout" },
+        { id: "aaps-1", timestamp: TODAY + HOUR, units: 0.3, deliveryType: "Correction Bolus", sourceId: "aaps-local" },
+      ],
+    ],
+  ] as [string, BolusDelivery[]][])("leaves the Glooko bolus unmarked when %s, and counts it in the note", (_, raw) => {
+    const reconciled = reconcileBolusSources(raw).boluses;
+    const kept = reconciled.find((record) => record.id === "gl-1");
+    expect(kept).toBeDefined();
+    expect(kept?.smbMarking).toBeUndefined();
+    const { answer } = buildInsulinBreakdownAnswer({ question: today, timeline: timeline({ boluses: reconciled }), asOf: NOW });
+    expect(answer.shortNotice).toMatch(/came from Glooko, which doesn't mark automatic boluses/);
+    expect(answer.answer).not.toContain("SMBs delivered, marked SMB by AAPS: 1 (0.30 U)");
+  });
+
+  it("carries the marking when AAPS and Nightscout each hold one matching SMB copy", () => {
+    const reconciled = reconcileBolusSources([
+      glooko("gl-1", TODAY + HOUR, 0.3),
+      { id: "ns-1", timestamp: TODAY + HOUR, units: 0.3, deliveryType: "SMB", sourceId: "nightscout" },
+      { id: "aaps-1", timestamp: TODAY + HOUR, units: 0.3, deliveryType: "SMB", sourceId: "aaps-local" },
+    ]).boluses;
+    expect(reconciled).toEqual([expect.objectContaining({ id: "gl-1", smbMarking: expect.objectContaining({ smb: true }) })]);
+  });
+});

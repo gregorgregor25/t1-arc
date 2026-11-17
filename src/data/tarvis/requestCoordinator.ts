@@ -11,7 +11,8 @@ import {
 } from "./intent";
 import { resolveTarvisEvidenceRangeRequest } from "./evidenceRange";
 import { routeTarvisIntent } from "./onDeviceRouting";
-import { classifyTarvisSafety } from "./safety";
+import { classifyTarvisSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
+import { formatTarvisNumber } from "./regionalNumberPresentation";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import {
   classifyTarvisQuestion,
@@ -220,6 +221,16 @@ function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
   };
 }
 
+function questionTooLongAnswer(): TarvisAnswer {
+  return {
+    headline: "That message is too long",
+    answer: `Please keep the question under ${formatTarvisNumber(TARVIS_QUESTION_MAX_LENGTH, { maximumFractionDigits: 0 })} characters. No records were read and no AI provider request was made.`,
+    confidence: "high",
+    evidenceIds: [],
+    limitations: [],
+  };
+}
+
 function unsupportedRangeAnswer(reason: string): TarvisAnswer {
   return {
     headline: "I need an exact period for that review",
@@ -273,6 +284,11 @@ export function coordinateTarvisRequest({
   );
   if (safety.kind !== "allow") {
     return { kind: "answer", answer: safety.answer, source: "safety" };
+  }
+  // Same limit as the composer and the provider client; nothing longer is
+  // parsed locally or sent anywhere.
+  if (question.length > TARVIS_QUESTION_MAX_LENGTH) {
+    return { kind: "answer", answer: questionTooLongAnswer(), source: "scope" };
   }
 
   const scope = classifyTarvisQuestion(question, conversationHistory);
