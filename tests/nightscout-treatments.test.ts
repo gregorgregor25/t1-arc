@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { normalizeNightscoutTreatments } from '@/data/nightscout/NightscoutTreatmentImporter';
 import { DEFAULT_REGIONAL_PROFILE } from '@/domain/regionalProfile';
+import { therapyStateEventsFromRawRecords } from '@/domain/therapyStates';
 import { setRuntimeRegionalProfile } from '@/domain/regionalProfileRuntime';
 
 vi.mock('expo-crypto', () => ({
@@ -119,9 +120,23 @@ describe('Nightscout treatment normalization', () => {
     expect(normalized.rawRecords).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ recordKind: 'nightscout-profile' }),
-        expect.objectContaining({ recordKind: 'pump-state-interval' }),
+        expect.objectContaining({ recordKind: 'nightscout-treatment' }),
       ]),
     );
+    // A temporary target is a typed therapy state read from the stored
+    // treatment, not a pump activity-mode interval.
+    expect(
+      normalized.rawRecords.some((record) => record.recordKind === 'pump-state-interval'),
+    ).toBe(false);
+    expect(therapyStateEventsFromRawRecords(normalized.rawRecords)).toEqual([
+      expect.objectContaining({
+        kind: 'temporary-target',
+        start: Date.parse('2026-08-01T13:00:00.000Z'),
+        programmedDurationMs: 60 * 60_000,
+        reasonText: 'Exercise target',
+        source: expect.objectContaining({ sourceId: 'nightscout' }),
+      }),
+    ]);
     expect(
       normalized.basal.some((delivery) => delivery.id.includes('profile')),
     ).toBe(false);

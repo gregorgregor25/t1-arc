@@ -5,6 +5,10 @@ import {
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
 import {
+  THERAPY_STATE_LOOKBACK_MS,
+  therapyStatesForRange,
+} from '@/domain/therapyStates';
+import {
   reconcileBasalSources,
   reconcileBolusSources,
 } from '@/domain/insulinSourceReconciliation';
@@ -31,6 +35,7 @@ export class ImportedInsulinSource implements InsulinSource {
     private readonly liveImporter?: LiveInsulinImporter,
     /** On-phone intake, such as AAPS treatments, drained before remote reads. */
     private readonly localImporters: readonly { refresh(): Promise<unknown> }[] = [],
+    private readonly clock: () => number = Date.now,
   ) {}
 
   async refresh() {
@@ -56,6 +61,20 @@ export class ImportedInsulinSource implements InsulinSource {
 
   async getPumpStates(range: TimeRange) {
     return this.store.getPumpStateIntervals(range);
+  }
+
+  /**
+   * Resolved at read time from stored AAPS treatments, so history imported
+   * before this view existed is included and a later cancel or edit is
+   * reflected without re-importing.
+   */
+  async getTherapyStates(range: TimeRange) {
+    if (!this.store.getTherapyStateRecords || range.end <= range.start) return [];
+    const records = await this.store.getTherapyStateRecords({
+      start: range.start - THERAPY_STATE_LOOKBACK_MS,
+      end: range.end,
+    });
+    return therapyStatesForRange(records, range, this.clock());
   }
 
   async getStatus(now = Date.now()): Promise<DataSourceStatus> {
