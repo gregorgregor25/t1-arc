@@ -26,6 +26,8 @@ import {
 import { AppScreen } from "@/components/AppScreen";
 import { SectionCard } from "@/components/SectionCard";
 import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
+import { TarvisPeriodSummaryCard } from "@/components/TarvisPeriodSummaryCard";
+import { TarvisEvidenceLine } from "@/components/TarvisEvidenceLine";
 import { TarvisWorkspaceSwitcher } from "@/components/TarvisWorkspaceSwitcher";
 import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
@@ -36,6 +38,10 @@ import {
 } from "@/data/tarvis/evidencePacket";
 import { localTarvisEvidenceFallback } from "@/data/tarvis/evidenceAnswerGuardrail";
 import { compactTarvisEvidence } from "@/data/tarvis/evidenceCompaction";
+import {
+  buildTarvisEvidenceLineData,
+  type TarvisEvidenceLineData,
+} from "@/data/tarvis/evidenceLine";
 import {
   buildTarvisEvidencePresentation,
   TarvisEvidencePresentation,
@@ -172,7 +178,7 @@ import {
 
 const CHATGPT_PLAN_INFO_KEY = "t1arc.tarvis.chatgpt-plan-info-seen.v1";
 const PROVIDER_CHOICE_META = {
-  chatgpt: { subtitle: "Use an eligible ChatGPT plan", icon: "chatbubble-ellipses-outline" },
+  chatgpt: { subtitle: "Simplest option: sign in with an eligible ChatGPT plan. No API key.", icon: "chatbubble-ellipses-outline" },
   openai: { subtitle: "Bring your OpenAI API key", icon: "key-outline" },
   gemini: { subtitle: "Bring your Gemini API key", icon: "key-outline" },
   claude: { subtitle: "Bring your Claude API key", icon: "key-outline" },
@@ -243,6 +249,7 @@ interface ChatExchange {
   clarificationQuestion?: string;
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
+  evidenceLine?: TarvisEvidenceLineData;
   requestMetrics?: TarvisRequestMetrics;
   modelRequestSent: boolean;
   answerSource: "hosted" | "local";
@@ -1376,6 +1383,7 @@ export function TarvisScreen({
   const [selectedModels, setSelectedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
   const [savedModels, setSavedModels] = useState<Record<TarvisProvider, string>>({ openai: TARVIS_PROVIDERS.openai.model, gemini: TARVIS_PROVIDERS.gemini.model, claude: TARVIS_PROVIDERS.claude.model, chatgpt: "" });
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [advancedModelOpen, setAdvancedModelOpen] = useState(false);
   const [providerTermsOpen, setProviderTermsOpen] = useState(false);
   const [privacyExpanded, setPrivacyExpanded] = useState(false);
   const [changeKeyVisible, setChangeKeyVisible] = useState(false);
@@ -1484,6 +1492,17 @@ export function TarvisScreen({
       clarificationQuestion: exchange.clarificationQuestion,
       intent: exchange.intent,
       presentation: exchange.presentation,
+      // Older exchanges: rebuild from what was saved with them, never from the
+      // current packet, which may describe a different period.
+      evidenceLine:
+        exchange.evidenceLine ??
+        buildTarvisEvidenceLineData({
+          answer: exchange.answer,
+          answerBundle: exchange.answerBundle,
+          presentation: exchange.presentation,
+          question: exchange.question,
+          references: exchange.evidence,
+        }),
       requestMetrics: exchange.requestMetrics,
       modelRequestSent:
         exchange.modelRequestSent ?? Boolean(exchange.requestMetrics),
@@ -1761,6 +1780,7 @@ export function TarvisScreen({
       clarificationQuestion: exchange.clarificationQuestion,
       intent: exchange.intent,
       presentation: exchange.presentation,
+      evidenceLine: exchange.evidenceLine,
       requestMetrics: exchange.requestMetrics,
       modelRequestSent: exchange.modelRequestSent,
       answerSource: exchange.answerSource,
@@ -1833,6 +1853,17 @@ export function TarvisScreen({
         evidence: evidenceLookup,
         intent,
         presentation,
+        evidenceLine: buildTarvisEvidenceLineData({
+          answer,
+          answerBundle,
+          presentation,
+          packet: evidenceLookup.packet,
+          question: prompt,
+          references: answer.evidenceIds.flatMap((id) => {
+            const reference = evidenceLookup.references.get(id);
+            return reference ? [reference] : [];
+          }),
+        }),
         requestMetrics,
         modelRequestSent,
         answerSource,
@@ -3297,7 +3328,7 @@ export function TarvisScreen({
           </View>
         ) : null}
         <Text style={[styles.boundary, { color: colors.textSecondary }]}>
-          {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Local answers available. Connect an AI provider in settings for broader questions."}
+          {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Exact questions and period summaries work on this phone. Connect an AI provider in settings for broader questions."}
         </Text>
         {provider === "chatgpt" && hasApiKey ? (
           <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", paddingVertical: 5 }}>
@@ -3404,6 +3435,17 @@ export function TarvisScreen({
       </Pressable>
     </View>
   ) : null;
+
+  // Key-free period summaries are the first thing a person sees until an AI
+  // provider is connected. They are calculated on this phone from templates.
+  const periodSummaryCard = liveData && loadTimelineData ? (
+    <TarvisPeriodSummaryCard
+      disabled={working}
+      loadTimelineData={loadTimelineData}
+      now={selectionAsOf ?? asOf}
+    />
+  ) : null;
+  const periodSummaryFirst = !loadingSettings && !hasApiKey;
 
   return (
     <KeyboardAvoidingView
@@ -3540,9 +3582,21 @@ export function TarvisScreen({
                         { color: colors.textSecondary },
                       ]}
                     >
-                      Local answers work without a connection. Choose a provider for broader questions. Keys and sign-ins stay on this phone, outside backups. Your question and health context are sent only when you tap Send.
+                      Local answers work without a connection. Connect a provider only if you want broader questions answered. Keys and sign-ins stay on this phone, outside backups. Your question and health context are sent only when you tap Send.
                     </Text>
                   </View>
+                </View>
+                <View accessible accessibilityLabel="Works without a connection: exact questions about your records, and period summaries for today, last night, 7, 14 or 30 days." style={[styles.providerDetails, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
+                  <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>WORKS WITHOUT A CONNECTION</Text>
+                  {[
+                    "Exact questions about your records, such as “What was my time in range yesterday?”",
+                    "Period summaries for today, last night, 7, 14 or 30 days",
+                  ].map((item) => (
+                    <View key={item} style={styles.localFeatureRow}>
+                      <Ionicons accessibilityElementsHidden name="checkmark-circle-outline" size={17} color={colors.accent} />
+                      <Text style={[styles.localFeatureText, { color: colors.text }]}>{item}</Text>
+                    </View>
+                  ))}
                 </View>
                 <Text style={[styles.settingsEyebrow, { color: colors.textSecondary }]}>CHOOSE A CONNECTION</Text>
                 <View accessibilityRole="radiogroup" style={styles.providerChoiceList}>
@@ -3561,6 +3615,7 @@ export function TarvisScreen({
                           setSelectedModels(savedModels);
                           setSelectedProvider(id);
                           setModelMenuOpen(false);
+                          setAdvancedModelOpen(false);
                           setProviderTermsOpen(false);
                           setChangeKeyVisible(false);
                           setApiKey("");
@@ -3594,7 +3649,7 @@ export function TarvisScreen({
                   <View style={styles.providerDetailsHeader}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.providerDetailsTitle, { color: colors.text }]}>{TARVIS_PROVIDERS[selectedProvider].label}</Text>
-                      <Text style={[styles.providerDetailsHint, { color: colors.textSecondary }]}>{selectedProvider === "chatgpt" ? "Connect your plan and choose a model" : configuredProviders[selectedProvider] ? "Manage your model and saved key" : "Choose a model and add an API key"}</Text>
+                      <Text style={[styles.providerDetailsHint, { color: colors.textSecondary }]}>{selectedProvider === "chatgpt" ? "Connect your plan and choose a model" : configuredProviders[selectedProvider] ? "Manage your saved key" : "Add an API key. A suitable model is already chosen."}</Text>
                     </View>
                     {provider === selectedProvider && hasApiKey ? <Text style={[styles.providerChoiceBadge, { color: colors.primary, backgroundColor: `${colors.primary}18`, borderRadius: radius.pill }]}>IN USE</Text> : null}
                   </View>
@@ -3630,6 +3685,17 @@ export function TarvisScreen({
                           : "API usage may cost money. Chat subscriptions do not include API credit."}
                       </Text>
                     </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Advanced: model, ${selectedModels[selectedProvider]}`}
+                      accessibilityState={{ expanded: advancedModelOpen }}
+                      onPress={() => { setAdvancedModelOpen((open) => !open); setModelMenuOpen(false); }}
+                      style={styles.settingsDisclosure}
+                    >
+                      <Text style={{ flex: 1, color: colors.primary, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>Advanced · Model: {selectedModels[selectedProvider]}</Text>
+                      <Ionicons accessibilityElementsHidden name={advancedModelOpen ? "chevron-up" : "chevron-down"} size={17} color={colors.primary} />
+                    </Pressable>
+                    {advancedModelOpen ? (<>
                     <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>MODEL</Text>
                     <Pressable
                       accessibilityRole="button"
@@ -3643,8 +3709,9 @@ export function TarvisScreen({
                       <Text style={[styles.settingsSelectText, { color: colors.text }]} numberOfLines={1}>{selectedModels[selectedProvider]}</Text>
                       <Ionicons accessibilityElementsHidden name={modelMenuOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
                     </Pressable>
-                    {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger, fontSize: 12 }}>This saved model is unavailable. Choose an available model before sending.</Text> : null}
-                    {modelMenuOpen ? (
+                    </>) : null}
+                    {!TARVIS_MODELS[selectedProvider].includes(selectedModels[selectedProvider]) ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger, fontSize: 12 }}>This saved model is unavailable. Open Advanced and choose an available model before sending.</Text> : null}
+                    {advancedModelOpen && modelMenuOpen ? (
                       <View accessibilityRole="radiogroup" style={[styles.settingsDropdown, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md }]}>
                         {TARVIS_MODELS[selectedProvider].map((model) => (
                           <Pressable key={model} accessibilityRole="radio" accessibilityState={{ checked: selectedModels[selectedProvider] === model, disabled: settingsWorking || working }} disabled={settingsWorking || working} onPress={() => { setSelectedModels((previous) => ({ ...previous, [selectedProvider]: model })); setModelMenuOpen(false); setSettingsNotice(undefined); setSettingsActionError(undefined); }} style={({ pressed }) => [styles.settingsDropdownOption, { opacity: pressed ? 0.68 : 1 }]}>
@@ -3828,6 +3895,7 @@ export function TarvisScreen({
                 </Text>
               </SectionCard>
             ) : null}
+            {!conversationVisible && periodSummaryFirst ? periodSummaryCard : null}
             {!conversationVisible ? (
               <View style={styles.introHero}>
                 <TarvisOrb
@@ -3916,6 +3984,8 @@ export function TarvisScreen({
                 ))}
               </View>
             ) : null}
+
+            {!conversationVisible && !periodSummaryFirst ? periodSummaryCard : null}
 
             {!conversationVisible && recentThreads.length ? (
               <View style={styles.recentSection}>
@@ -4293,6 +4363,7 @@ export function TarvisScreen({
                             ) : null}
                           </>
                         )}
+                        <TarvisEvidenceLine data={exchange.evidenceLine} />
                         {exchange.scope.kind !== 'legacy-unknown' ? <SaveToNotebookButton id={exchange.id} title={exchange.question} answer={exchange.answer} evidence={[...exchange.evidence.references.values()]} createdAt={exchange.createdAt} ownerIdentity={exchange.scope.ownerIdentity} dataMode={exchange.scope.dataMode} disabled={working} onSaved={entry => { setNotebookSeed(entry); setNotebookVisible(true); }} /> : null}
                         <TarvisReportButton key={`report-${exchange.id}-${exchange.scope.kind === 'legacy-unknown' ? 'legacy' : `${exchange.scope.ownerIdentity}-${exchange.scope.dataMode}`}`} response={exchange.answer.answer} disabled={working} />
                         <TarvisRouteMarker
@@ -4443,6 +4514,8 @@ const styles = StyleSheet.create({
   keyStatusRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 5, marginTop: 5 },
   settingsLinkRow: { flexDirection: "row", flexWrap: "wrap", columnGap: 17 },
   settingsLink: { minHeight: 44, justifyContent: "center" },
+  localFeatureRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 6 },
+  localFeatureText: { flex: 1, fontSize: 13, lineHeight: 19 },
   settingsDisclosure: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   settingsDisclosureText: { fontSize: 12, lineHeight: 18 },
   credentialRemove: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: StyleSheet.hairlineWidth, marginTop: 4 },

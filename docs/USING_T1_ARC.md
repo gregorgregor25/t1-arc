@@ -48,6 +48,22 @@ Choose **Edit** beside **At a glance** to move your priorities up or down. Today
 shows the first three with available data. A priority without records is skipped,
 not replaced with zero. **Use default order** restores the original order.
 
+Small chips beside the glucose area show **Sensor day N** and **Site N days**
+(hours on the first day) from your recorded sensor and site changes, and from
+imported AAPS or Nightscout "Site Change", "Sensor Change" and "Sensor Start"
+events. Ages are elapsed time, so a clock change does not add or remove a day.
+Tap a chip to see which record it came from. For the sensor chip you can set an
+optional expected life of 10, 14 or 15 days to show "day 8 of 10". The chips
+create no reminders or notifications and are hidden when there is no record
+from the last 30 days.
+
+Between 05:00 and 12:00, a **Last night** card summarises the night: 00:00–06:00,
+or your night alert hours when night alerts are on. It shows sensor coverage,
+time in each band, the lowest and highest values with their times, low episodes
+and any alarms recorded by a connected device. Below 70% coverage it shows only
+"Not enough sensor data overnight to summarise". Close it with **×** to hide it
+until the next night.
+
 If a connection needs attention, open its small status row to see the last
 available record time and a route to connection settings. An ordinary delay in a
 successful history import is not presented as a broken connection.
@@ -128,7 +144,10 @@ packet goes directly to the selected provider only after the user taps Send.
 Read the [Tarv1s connection guide](TARV1S_BYOK.md) before enabling either route.
 
 Starter questions reflect records available in the app. You can still ask in
-your own words. For a personal answer, **View calculation and records** opens
+your own words. **Summarise a period** gives a template summary of today, last
+night or the last 7, 14 or 30 days without any AI connection. Each answer that
+uses your records shows a fixed **Calculated from** line with the dates, number
+of glucose readings, sensor coverage and range used. For a personal answer, **View calculation and records** opens
 supporting details; important gaps and limitations remain visible in the answer.
 If an import has daily basal totals but no detailed delivery history, Tarv1s can
 summarise those totals while explaining that it cannot locate the delivery by
@@ -174,11 +193,18 @@ item from the notebook does not remove its conversation or health records.
 
 ## Insights
 
-In the Tarv1s tab, choose **Insights** at the top to review recent periods of
+In the Tarv1s tab, choose **Compare periods** at the top, or **Compare periods**
+from the menu on Today or History, to review recent periods of
 3, 7, 14, 30 or 90 days. Coverage appears beside each observation, and each
 time-in-range figure names its range. An association is a pattern worth
 reviewing, not proof that one event caused another. The app should withhold a
-claim when coverage is too weak. Choose **Tarv1s** to return to questions.
+claim when coverage is too weak. Choose **Ask** to return to questions.
+
+**Steadiest day** names the day in the period with the highest standard time in
+range, among days with at least 70% sensor coverage, for example "Highest time
+in range: Tue 12 Nov, 86%". Days with equal figures are all named. **Yesterday
+vs today so far** compares today with the same clock hours yesterday and is
+withheld when either has under 70% coverage.
 
 **Weekly evidence review** lets you choose the review day and time and turn its
 notification on or off. It uses local records, without an AI provider request. Android

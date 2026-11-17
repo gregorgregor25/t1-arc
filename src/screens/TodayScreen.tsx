@@ -29,6 +29,8 @@ import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
 import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
 import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
+import { DeviceAgeChips } from '@/components/DeviceAgeChips';
+import { OvernightSummaryCard } from '@/components/OvernightSummaryCard';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
 import { FOOD_LOG_SOURCE_ID } from "@/data/food/foodLogRepository";
@@ -37,7 +39,8 @@ import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualCont
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
-import { dayRange } from "@/domain/time";
+import { addDays, dayRange } from "@/domain/time";
+import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
 import { useAapsCardSnapshot } from "@/hooks/useAapsCardSnapshot";
@@ -234,8 +237,18 @@ export function TodayScreen() {
       detail: 'Large glucose, arrow and age on a dim black screen',
       icon: 'moon-outline' as const,
       onPress: () => setBedsideVisible(true),
+    }, {
+      label: 'Compare periods',
+      detail: 'Last 7 complete days with the 7 days before',
+      icon: 'git-compare-outline' as const,
+      onPress: () => navigation.navigate("Insights", {
+        comparison: {
+          ...insightComparisonForHistoryView(7, addDays(today, -1), addDays(today, -1)),
+          request: `today:${Date.now()}`,
+        },
+      }),
     }],
-    [],
+    [navigation, today],
   );
   const insulinThrough = todayTimeline.data
     ? laggingDataStamps(
@@ -284,6 +297,7 @@ export function TodayScreen() {
           />
         )}
         <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
+        <DeviceAgeChips />
         <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
@@ -303,6 +317,7 @@ export function TodayScreen() {
             )}
           </View>
         ) : null}
+        <OvernightSummaryCard />
 
         <TodayGlanceCard
           events={todayTimeline.data?.context ?? []}

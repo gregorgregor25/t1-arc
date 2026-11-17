@@ -12,6 +12,7 @@ import {
 import { clearHevyConnection } from "@/data/hevy/secureStore";
 import { invalidateHevyConnectionOwnership } from "@/data/hevy/repository";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
+import { clearTodayCardPreferences } from "@/data/todayCardPreferences";
 import { clearBackupStatus } from "@/data/backup/backupStatus";
 import { disableCommunityReminderForErasureAsync } from "@/data/feedback/communityReminder";
 import { INSIGHT_REVIEW_PREFERENCES_DB_KEY } from "@/data/insights/insightReviewMetadata";
@@ -411,6 +412,7 @@ export async function resumePendingLocalDataErase() {
       saveGlucoseAlertPreferences({ ...alerts, enabled: false }),
       resetGlucoseAlertState(),
       clearInsightReviewPreferences(),
+      clearTodayCardPreferences(),
       clearBackupStatus(),
       disableCommunityReminderForErasureAsync(),
       clearUsageReportingAsync(),

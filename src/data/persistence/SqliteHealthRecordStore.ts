@@ -865,6 +865,24 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
     return row ? noteFromRow(row) : undefined;
   }
 
+  /**
+   * Recent pump and sensor notes for the device-age chips. The domain layer
+   * keeps only explicit sensor starts, site changes and imported therapy
+   * events; nothing here is inferred from glucose gaps.
+   */
+  async getRecentDeviceChangeNotes(now: number, lookbackMs = 31 * 24 * 60 * 60 * 1000) {
+    const database = await this.getDatabase();
+    const rows = await database.getAllAsync<ContextNoteRow>(
+      `SELECT * FROM context_notes
+       WHERE category IN ('pump', 'sensor') AND start_ms <= ? AND start_ms >= ?
+         AND (sensor_started = 1 OR observation_json IS NOT NULL
+           OR lower(trim(title)) IN ('site change', 'sensor change', 'sensor start'))
+       ORDER BY start_ms DESC LIMIT 200`,
+      now, now - lookbackMs,
+    );
+    return rows.map(noteFromRow);
+  }
+
   /** A recorded change is context, not a provider-reported warm-up state. */
   async getSensorChangeStatus(sourceId: string | undefined, now: number): Promise<SensorChangeStatusValue | undefined> {
     const database = await this.getDatabase();

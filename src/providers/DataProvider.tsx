@@ -115,6 +115,7 @@ import {
   syncHevyIfDue,
 } from "@/data/hevy/sync";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
+import { clearTodayCardPreferences } from "@/data/todayCardPreferences";
 import { clearBackupStatus } from "@/data/backup/backupStatus";
 import { DiabetesRepository } from "@/data/contracts";
 import { DexcomShareGlucoseSource } from "@/data/dexcomShare/DexcomShareGlucoseSource";
@@ -2564,6 +2565,7 @@ export function DataProvider({ children }: PropsWithChildren) {
             saveGlucoseAlertPreferences({ ...alerts, enabled: false }),
             resetGlucoseAlertState(),
             clearInsightReviewPreferences(),
+            clearTodayCardPreferences(),
             clearBackupStatus(),
           ]);
 

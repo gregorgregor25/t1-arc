@@ -10,6 +10,7 @@ import { AppMenuButton } from "@/components/AppMenuButton";
 import { DateNavigator } from "@/components/DateNavigator";
 import { EmptyState } from "@/components/EmptyState";
 import { EvidenceRecordInspector } from "@/components/EvidenceRecordInspector";
+import { InsightDayHighlightsCard } from "@/components/InsightDayHighlightsCard";
 import { InsightReviewHistoryCard } from "@/components/InsightReviewHistoryCard";
 import { InsightReviewScheduleCard } from "@/components/InsightReviewScheduleCard";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -1086,6 +1087,11 @@ export function InsightsScreen() {
                 Shares of observed sensor time. Standard and tight ranges follow the international consensus on time in ranges; time without readings is not counted.
               </Text>
             </SectionCard>
+            <InsightDayHighlightsCard
+              loadGlucose={loadTarvisGlucoseReadings}
+              now={now}
+              periodRange={activeReport.currentRange}
+            />
 
             {reviewFindings.length ? (
               <>
