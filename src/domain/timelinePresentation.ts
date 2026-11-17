@@ -1,4 +1,5 @@
 import type { InsulinDailyTotal, PumpStateInterval, TimeRange } from "./models";
+import type { TherapyStateInterval } from "./therapyStates";
 import { formatRegionalFixedNumber } from "./regionalFormat";
 import type { T1ArcRegionalDefaults } from "./regionalProfile";
 import { getRuntimeRegionalDefaults } from "./regionalProfileRuntime";
@@ -108,6 +109,7 @@ export type TimelineLayerAvailability = {
   bolus: boolean;
   activity: boolean;
   pause: boolean;
+  therapy: boolean;
 };
 
 export function resolveTimelineLayerAvailability({
@@ -116,12 +118,14 @@ export function resolveTimelineLayerAvailability({
   bolusCount,
   dailyTotals,
   pumpStates,
+  therapyStates = [],
 }: {
   glucoseCount: number;
   basalCount: number;
   bolusCount: number;
   dailyTotals: InsulinDailyTotal[];
   pumpStates: PumpStateInterval[];
+  therapyStates?: readonly TherapyStateInterval[];
 }): TimelineLayerAvailability {
   return {
     glucose: glucoseCount > 0,
@@ -133,6 +137,7 @@ export function resolveTimelineLayerAvailability({
       dailyTotals.some((total) => total.bolusUnits !== undefined),
     activity: pumpStates.some((state) => state.kind === "activity-mode"),
     pause: pumpStates.some((state) => state.kind === "automated-pause"),
+    therapy: therapyStates.some((state) => !state.baseline),
   };
 }
 

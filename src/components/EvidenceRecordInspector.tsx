@@ -1115,6 +1115,8 @@ function sourceRecordLabel(kind: string) {
   if (kind === "pump-mode-daily") return "Daily Omnipod operating modes";
   if (kind === "pump-state-interval") return "Timed pump state";
   if (kind === "pump-settings") return "Omnipod settings snapshot";
+  if (kind === "nightscout-treatment") return "Nightscout treatment record";
+  if (kind === "aaps-local-treatment") return "AAPS treatment received on this phone";
   return kind.replace(/[-_]+/g, " ");
 }
 

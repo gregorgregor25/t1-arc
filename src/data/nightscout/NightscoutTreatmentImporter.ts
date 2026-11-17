@@ -394,12 +394,6 @@ export function normalizeNightscoutTreatments(
       }
     }
 
-    const descriptor = [
-      eventType,
-      safeText(treatment.profile),
-      safeText(treatment.reason),
-      safeText(treatment.notes),
-    ].join(' ');
     const therapyCategory = THERAPY_EVENTS[eventType.toLowerCase()];
     if (/profile switch|temporary target|override/i.test(eventType)) {
       context.push({
@@ -434,27 +428,9 @@ export function normalizeNightscoutTreatments(
         sourceRow: index + 1,
       });
     }
-    if (
-      duration !== undefined &&
-      duration > 0 &&
-      duration <= 1_440 &&
-      /(exercise|activity)/i.test(descriptor)
-    ) {
-      rawRecords.push({
-        id: `${origin.sourceId}:pump-state:activity:${sourceId}`,
-        sourceId: origin.sourceId,
-        recordKind: 'pump-state-interval',
-        timestamp,
-        sourceFile: origin.sourceFile,
-        sourceRow: index + 1,
-        payloadJson: JSON.stringify({
-          start: timestamp,
-          end: timestamp + duration * 60_000,
-          kind: 'activity-mode',
-        }),
-        importedAt,
-      });
-    }
+    // Temporary targets, profile switches and logged exercise are read as
+    // typed therapy states from this raw record (see domain/therapyStates);
+    // they are no longer stored as Omnipod-style "Activity mode" intervals.
   });
 
   valid.forEach((item, index) => {

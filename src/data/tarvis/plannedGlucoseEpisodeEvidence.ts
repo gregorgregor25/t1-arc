@@ -30,6 +30,7 @@ import {
 } from "./regionalNumberPresentation";
 
 import { buildTarvisEvidencePacket } from "./evidencePacket";
+import { therapyStateEpisodeFinding } from "./therapyStateEvidence";
 import {
   TARVIS_EXPLICIT_DATA_QUALITY_CHECK_IDS,
   type TarvisExcludedContextCheck,
@@ -186,6 +187,9 @@ function restrictTimelineToRange(
       ({ timestamp }) => timestamp >= range.start && timestamp < range.end,
     ),
     pumpStates: timeline.pumpStates?.filter(({ start, end }) =>
+      overlapsRange(start, end, range),
+    ),
+    therapyStates: timeline.therapyStates?.filter(({ start, end }) =>
       overlapsRange(start, end, range),
     ),
     context: timeline.context.filter((event) =>
@@ -1080,6 +1084,12 @@ function eventFindings(
 ) {
   const findings: (InsightFinding | undefined)[] = [
     eventOverviewFinding(selected, timeline),
+    // Recorded AAPS settings are always named: a temporary target or a
+    // reduced profile is part of what was happening, whatever was asked.
+    therapyStateEpisodeFinding(selected.episode.kind, timeline, {
+      start: selected.episode.start,
+      end: selected.episode.end,
+    }),
     requestedEvidenceCheckFinding(
       selected.episode.kind,
       timeline,
@@ -1327,8 +1337,14 @@ export async function loadPlannedGlucoseEpisodeEvidence({
   const requestedCheck = plannedFindings.find(({ id }) =>
     id.endsWith("requested-evidence-availability"),
   );
-  if (requestedCheck) {
-    lookup.packet.requiredFindingIds = [requestedCheck.id];
+  const therapyStates = plannedFindings.find(({ id }) =>
+    id.endsWith("-therapy-states"),
+  );
+  const required = [requestedCheck?.id, therapyStates?.id].filter(
+    (id): id is string => id !== undefined,
+  );
+  if (required.length) {
+    lookup.packet.requiredFindingIds = required;
   }
   lookup.packet.comparison.current = redactUnselectedSummaryCategories(
     lookup.packet.comparison.current,

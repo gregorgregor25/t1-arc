@@ -15,6 +15,7 @@ import { parsePersonalObservation, presentPersonalObservation, validatePersonalO
 import { NUTRITION_SOURCE_KEY, selectNutritionSource, validateNutritionSource } from '@/domain/nutritionSource';
 import { SENSOR_RESUMED_RECEIPT_WINDOW_MS, SENSOR_RESUMED_CLOCK_SKEW_MS, type SensorChangeStatusValue } from '@/domain/sensorChange';
 import { toDateKey } from '@/domain/time';
+import { THERAPY_STATE_PAYLOAD_MARKERS } from '@/domain/therapyStates';
 import { hevyWorkoutDetail } from '@/data/hevy/mapping';
 import { parseHevyWorkout } from '@/data/hevy/validation';
 import { mergeHevyHealthConnectActivities } from '@/data/hevy/contextMerge';
@@ -37,8 +38,11 @@ import {
   ImportedSourceDeleteResult,
   ImportWriteOptions,
   ImportWriteResult,
+  isTherapyStateCandidate,
   ManualContextSaveOptions,
   pumpStateIntervalFromRawRecord,
+  REVISABLE_RAW_RECORD_KINDS,
+  THERAPY_STATE_SOURCE_IDS,
   StoredImportBatch,
   StoredImportSourcePayload,
   StoredImportSourceReference,
@@ -582,6 +586,9 @@ const REVISED_ID_CHUNK = 200;
  * Removes only imported rows owned by `sourceId`. Manual entries and other
  * sources' rows can never match because every statement is source-scoped.
  */
+/** Fixed literals, not user input: the raw kinds re-imports may revise. */
+const REVISABLE_RAW_KIND_SQL = REVISABLE_RAW_RECORD_KINDS.map((kind) => `'${kind}'`).join(', ');
+
 async function removeRevisedImportedRecords(
   transaction: SQLiteDatabase,
   sourceId: string,
@@ -765,6 +772,47 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           : [];
       })
       .sort((left, right) => left.start - right.start);
+  }
+
+  async getTherapyStateRecords(range: TimeRange): Promise<ImportRawRecord[]> {
+    if (range.end <= range.start) return [];
+    const database = await this.getDatabase();
+    const rows = await database.getAllAsync<{
+      id: string;
+      source_id: string;
+      record_kind: string;
+      timestamp_ms: number | null;
+      source_file: string;
+      source_row: number;
+      payload_json: string;
+      last_seen_at_ms: number;
+    }>(
+      `SELECT id, source_id, record_kind, timestamp_ms, source_file,
+              source_row, payload_json, last_seen_at_ms
+         FROM import_raw_records
+        WHERE source_id IN (${THERAPY_STATE_SOURCE_IDS.map(() => '?').join(', ')})
+          AND record_kind IN (${REVISABLE_RAW_RECORD_KINDS.map(() => '?').join(', ')})
+          AND timestamp_ms >= ? AND timestamp_ms < ?
+          AND (${THERAPY_STATE_PAYLOAD_MARKERS.map(() => 'payload_json LIKE ?').join(' OR ')})
+        ORDER BY timestamp_ms ASC`,
+      ...THERAPY_STATE_SOURCE_IDS,
+      ...REVISABLE_RAW_RECORD_KINDS,
+      range.start,
+      range.end,
+      ...THERAPY_STATE_PAYLOAD_MARKERS.map((marker) => `%${marker}%`),
+    );
+    return rows
+      .filter((row) => isTherapyStateCandidate(row.source_id, row.record_kind, row.payload_json))
+      .map((row) => ({
+        id: row.id,
+        sourceId: row.source_id,
+        recordKind: row.record_kind,
+        timestamp: row.timestamp_ms ?? undefined,
+        sourceFile: row.source_file,
+        sourceRow: row.source_row,
+        payloadJson: row.payload_json,
+        importedAt: row.last_seen_at_ms,
+      }));
   }
 
   async getDailyInsulinTotals(range: TimeRange) {
@@ -1707,6 +1755,18 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
              last_import_batch_id, last_seen_at_ms
            ) VALUES ${values.join(', ')}
            ON CONFLICT(id) DO UPDATE SET
+             payload_json = CASE
+               WHEN excluded.record_kind IN (${REVISABLE_RAW_KIND_SQL})
+                 AND excluded.last_seen_at_ms >= import_raw_records.last_seen_at_ms
+               THEN excluded.payload_json
+               ELSE import_raw_records.payload_json
+             END,
+             timestamp_ms = CASE
+               WHEN excluded.record_kind IN (${REVISABLE_RAW_KIND_SQL})
+                 AND excluded.last_seen_at_ms >= import_raw_records.last_seen_at_ms
+               THEN excluded.timestamp_ms
+               ELSE import_raw_records.timestamp_ms
+             END,
              last_import_batch_id = excluded.last_import_batch_id,
              last_seen_at_ms = MAX(
                import_raw_records.last_seen_at_ms,

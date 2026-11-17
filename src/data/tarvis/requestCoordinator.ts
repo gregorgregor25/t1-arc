@@ -37,6 +37,11 @@ import {
   selectTarvisReviewedKnowledge,
 } from "./reviewedKnowledge";
 import { reviewedKnowledgeFallback } from "./reviewedKnowledgeAnswerGuardrail";
+import {
+  parseTherapyStateQuestion,
+  rangeForTherapyStateQuestion,
+  type TherapyStateQuery,
+} from "./therapyStateEvidence";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import {
   buildTarvisEvidencePlanningOptions,
@@ -139,6 +144,12 @@ export type TarvisRequestPlan =
   | TarvisAnswerRequestPlan
   | {
       kind: "treatment-profile";
+    }
+  | {
+      /** A recorded AAPS temporary target, profile switch or running mode. */
+      kind: "therapy-state";
+      query: TherapyStateQuery;
+      range: { start: number; end: number };
     }
   | {
       kind: "scoped-compound";
@@ -267,6 +278,20 @@ export function coordinateTarvisRequest({
   }
   if (scope === "in_scope" && isTarvisTreatmentProfileQuestion(question)) {
     return { kind: "treatment-profile" };
+  }
+  // Before the activity review: "during my Activity temp target" names a
+  // recorded AAPS state, not an activity to search for.
+  const therapyStateQuery = parseTherapyStateQuestion(question);
+  if (therapyStateQuery) {
+    const resolved = rangeForTherapyStateQuestion(question, asOf);
+    if ("issue" in resolved) {
+      return {
+        kind: "answer",
+        answer: unsupportedRangeAnswer(resolved.issue),
+        source: "evidence-range",
+      };
+    }
+    return { kind: "therapy-state", query: therapyStateQuery, range: resolved.range };
   }
   const dependentEducationFollowUp =
     isTarvisDependentFollowUp(question) && conversationHistory.length >= 2;
