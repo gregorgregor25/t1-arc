@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -25,11 +25,14 @@ const BAND_COLOUR_RANGE: Record<ConsensusGlucoseBand, Exclude<GlucoseRange, 'sta
 export function GlucoseRangeStatisticsCard({
   compareLabel,
   label,
+  moreStatistics,
   onCompare,
   summary,
 }: {
   compareLabel?: string;
   label: string;
+  /** Extra rows shown inside "More statistics", for example GMI. */
+  moreStatistics?: ReactNode;
   onCompare?: () => void;
   summary: GlucoseRangeSummary;
 }) {
@@ -46,6 +49,12 @@ export function GlucoseRangeStatisticsCard({
     return dark ? palette.dark : palette.light;
   };
   const barTotal = presentation.bands.reduce((total, row) => total + (row.percent ?? 0), 0);
+  const canCompare = Boolean(onCompare && compareLabel);
+  const moreStatisticsContents = [
+    presentation.observed ? 'the Glycemia Risk Index' : undefined,
+    presentation.observed && moreStatistics ? 'GMI' : undefined,
+    canCompare ? 'a comparison with the previous period' : undefined,
+  ].filter(Boolean).join(', ');
 
   return (
     <SectionCard>
@@ -102,7 +111,13 @@ export function GlucoseRangeStatisticsCard({
               </View>
             ))}
           </View>
+        </>
+      ) : null}
+
+      {presentation.observed || canCompare ? (
+        <>
           <Pressable
+            accessibilityHint={`Shows ${moreStatisticsContents}`}
             accessibilityRole="button"
             accessibilityState={{ expanded: moreVisible }}
             onPress={() => setMoreVisible((visible) => !visible)}
@@ -111,7 +126,7 @@ export function GlucoseRangeStatisticsCard({
             <Text style={[styles.moreLabel, { color: colors.primary }]}>More statistics</Text>
             <Ionicons accessibilityElementsHidden color={colors.primary} name={moreVisible ? 'chevron-up' : 'chevron-down'} size={16} />
           </Pressable>
-          {moreVisible ? (
+          {moreVisible && presentation.observed ? (
             <View style={[styles.more, { backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
               <View style={styles.rangeRow}>
                 <Text style={[styles.rangeLabel, styles.rangeCopy, { color: colors.text }]}>Glycemia Risk Index</Text>
@@ -121,12 +136,13 @@ export function GlucoseRangeStatisticsCard({
               </View>
               <Text style={[styles.rangeDetail, { color: colors.textSecondary }]}>{presentation.riskIndex.detail}</Text>
               <Text style={[styles.rangeDetail, { color: colors.textSecondary }]}>{presentation.riskIndex.explanation}</Text>
+              {moreStatistics}
             </View>
           ) : null}
         </>
       ) : null}
 
-      {onCompare && compareLabel ? (
+      {moreVisible && onCompare && compareLabel ? (
         <Pressable
           accessibilityHint="Opens Insights with this period compared with the one before it."
           accessibilityRole="button"

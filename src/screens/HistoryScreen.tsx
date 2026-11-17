@@ -8,7 +8,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppScreen } from "@/components/AppScreen";
+import { AppScreen, SectionHeading } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import {
   CombinedTimeline,
@@ -30,6 +30,9 @@ import { ErrorCard } from "@/components/ErrorCard";
 import { GlucoseProfileCard } from "@/components/GlucoseProfileCard";
 import { GlucoseRangeStatisticsCard } from "@/components/GlucoseRangeStatisticsCard";
 import { HistoryShareCard } from "@/components/HistoryShareCard";
+import { HistoryRecordsSection } from "@/components/history/HistoryRecordsSection";
+import { HISTORY_GMI_EXPLANATION, presentHistoryGmi } from "@/components/history/historyGmi";
+import { PageSheet } from "@/components/history/PageSheet";
 import { InsulinEventList } from "@/components/InsulinEventList";
 import { LoadingCard } from "@/components/LoadingCard";
 import { MetabolicSummaryCard } from "@/components/MetabolicSummaryCard";
@@ -63,6 +66,8 @@ import {
 import { useTimeline } from "@/hooks/useTimeline";
 import { useFoodLogs } from "@/hooks/useFoodLogs";
 import { FoodLog } from "@/data/food/types";
+import { FOOD_LOG_SOURCE_ID } from "@/data/food/foodLogRepository";
+import { MANUAL_CONTEXT_SOURCE_ID } from "@/data/manualContext";
 import { useDataContext } from "@/providers/DataProvider";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
@@ -92,6 +97,9 @@ interface PopulatedHistoryContentProps {
   onEditManualContext(event: HealthContextEvent): void;
   onEditManualInsulin(delivery: BolusDelivery): void;
   onInspect(evidence: EvidenceReference): void;
+  onAddFromTimeline(timestamp: number, kind: "meal" | "note"): void;
+  onEditFromTimeline(event: HealthContextEvent): void;
+  timelineActionError?: string;
   onLayersChange(layers: TimelineLayerVisibility): void;
   onSelectDay(date: DateKey): void;
   selectedDate: DateKey;
@@ -114,6 +122,9 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   onEditManualContext,
   onEditManualInsulin,
   onInspect,
+  onAddFromTimeline,
+  onEditFromTimeline,
+  timelineActionError,
   onLayersChange,
   onSelectDay,
   selectedDate,
@@ -177,13 +188,52 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
     [data.context],
   );
 
+  const gmi = useMemo(
+    () => presentHistoryGmi(data.glucose, data.range, regional.locale),
+    [data.glucose, data.range, regional.locale],
+  );
+  const hasFood = foodLogs.length > 0 || data.context.some((event) => event.kind === "meal");
+
   return (
     <View style={styles.stack}>
+      <GlucoseRangeStatisticsCard
+        compareLabel={compareLabel}
+        label={periodLabel}
+        moreStatistics={
+          <View accessible accessibilityLabel={gmi.accessibilityLabel} style={[styles.gmi, { borderTopColor: colors.divider }]}>
+            <View style={styles.gmiRow}>
+              <Text style={[styles.gmiLabel, { color: colors.text }]}>GMI for this period</Text>
+              <Text style={[styles.gmiValue, { color: colors.text }]}>{gmi.value}</Text>
+            </View>
+            <Text style={[styles.stampText, { color: colors.textSecondary }]}>{gmi.coverage}</Text>
+            {gmi.limitedNotice ? (
+              <Text style={[styles.stampText, { color: colors.warning }]}>{gmi.limitedNotice}</Text>
+            ) : null}
+            <Text style={[styles.stampText, { color: colors.textSecondary }]}>{HISTORY_GMI_EXPLANATION}</Text>
+          </View>
+        }
+        onCompare={onCompare}
+        summary={rangeSummary}
+      />
+      {days > 1 ? (
+        <>
+          <GlucoseProfileCard data={data} onInspect={onInspect} />
+          <DailySummaryCard data={data} onSelect={onSelectDay} />
+        </>
+      ) : null}
       <HistoryTimeline
         data={data}
         layers={timelineLayers}
+        onAddContext={onAddFromTimeline}
+        onEditContext={onEditFromTimeline}
         onLayersChange={onLayersChange}
+        title="Timeline"
       />
+      {timelineActionError ? (
+        <Text accessibilityLiveRegion="polite" style={[styles.stampText, { color: colors.warning }]}>
+          {timelineActionError}
+        </Text>
+      ) : null}
       {dataStamps.length ? (
         <View accessibilityLabel="Records may be incomplete" style={styles.stamps}>
           {dataStamps.map((stamp) => (
@@ -193,59 +243,69 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
           ))}
         </View>
       ) : null}
-      <GlucoseRangeStatisticsCard
-        compareLabel={compareLabel}
-        label={periodLabel}
-        onCompare={onCompare}
-        summary={rangeSummary}
-      />
-      <HistoryShareCard data={data} />
-      {days > 1 ? (
-        <>
-          <GlucoseProfileCard data={data} onInspect={onInspect} />
-          <DailySummaryCard data={data} onSelect={onSelectDay} />
-        </>
-      ) : null}
-      <FoodDiaryCard
-        events={data.context}
-        logs={foodLogs}
-        onEditManualContext={onEditManualContext}
-        onEditFoodLog={onEditFoodLog}
-        timeline={data}
-        onInspect={onInspect}
-      />
-      {days === 1 ? <FoodCompletenessAction data={data} /> : null}
-      <HypoTreatmentReviewCard data={data} />
-      {foodError ? (
-        <ErrorCard
-          details={foodError}
-          message="Your other records are still shown. Food details will appear when they load."
-          title="Food details could not be loaded"
+
+      <View>
+        <SectionHeading
+          title="Food and treatments"
+          detail="Meals and hypo treatments in this period, with the glucose around them."
         />
-      ) : null}
-      <ContextEventList
-        events={contextEvents}
-        onDeleteManualKetone={deleteManualContext}
-        onEditManualContext={onEditManualContext}
-        onInspect={onInspect}
-        timeline={data}
-      />
-      <MetabolicSummaryCard
-        glucose={glucoseStats}
-        insulin={insulinSummary.stats}
+        <View style={styles.stack}>
+          {hasFood || foodError ? null : (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No food or hypo treatments are logged in this period.
+            </Text>
+          )}
+          <FoodDiaryCard
+            events={data.context}
+            logs={foodLogs}
+            onEditManualContext={onEditManualContext}
+            onEditFoodLog={onEditFoodLog}
+            timeline={data}
+            onInspect={onInspect}
+          />
+          {days === 1 ? <FoodCompletenessAction data={data} /> : null}
+          <HypoTreatmentReviewCard data={data} />
+          {foodError ? (
+            <ErrorCard
+              details={foodError}
+              message="Your other records are still shown. Food details will appear when they load."
+              title="Food details could not be loaded"
+            />
+          ) : null}
+        </View>
+      </View>
+
+      <HistoryRecordsSection
+        context={
+          <ContextEventList
+            events={contextEvents}
+            onDeleteManualKetone={deleteManualContext}
+            onEditManualContext={onEditManualContext}
+            onInspect={onInspect}
+            timeline={data}
+          />
+        }
+        contextCount={contextEvents.length}
+        insulin={
+          <InsulinEventList
+            boluses={data.boluses}
+            multiDay={multiDay}
+            onDeleteManualInsulin={deleteManualInsulin}
+            onEditManualInsulin={onEditManualInsulin}
+          />
+        }
         insulinMissing={insulinMissing}
-        reconciliation={insulinReconciliation}
-        summary={insulinSummary}
-        label={periodLabel}
+        summary={
+          <MetabolicSummaryCard
+            glucose={glucoseStats}
+            insulin={insulinSummary.stats}
+            insulinMissing={insulinMissing}
+            reconciliation={insulinReconciliation}
+            summary={insulinSummary}
+            label={periodLabel}
+          />
+        }
       />
-      {!insulinMissing ? (
-        <InsulinEventList
-          boluses={data.boluses}
-          multiDay={multiDay}
-          onDeleteManualInsulin={deleteManualInsulin}
-          onEditManualInsulin={onEditManualInsulin}
-        />
-      ) : null}
     </View>
   );
 });
@@ -295,6 +355,11 @@ export function HistoryScreen() {
   const [selectedInsulinToEdit, setSelectedInsulinToEdit] =
     useState<BolusDelivery>();
   const [selectedFoodLogToEdit, setSelectedFoodLogToEdit] = useState<FoodLog>();
+  const [shareVisible, setShareVisible] = useState(false);
+  const [logTimestamp, setLogTimestamp] = useState(now);
+  const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
+  const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
+  const [timelineActionError, setTimelineActionError] = useState<string>();
   const days = RANGE_DAYS[rangeChoice];
   const range = useMemo(
     () => activeSelection ? { start: activeSelection.start, end: activeSelection.end } : multiDayRange(selectedDate, days, now),
@@ -320,12 +385,6 @@ export function HistoryScreen() {
       comparison: { ...comparison, request: `history:${Date.now()}` },
     });
   }, [comparison, navigation]);
-  const historyMenuActions = useMemo(
-    () => comparison && compareLabel
-      ? [{ label: 'Compare periods', detail: compareLabel, icon: 'git-compare-outline' as const, onPress: openComparison }]
-      : [],
-    [compareLabel, comparison, openComparison],
-  );
   const foodHistory = useFoodLogs(range, rangeSelectionKey);
   const selectDailySummaryDate = useCallback((date: DateKey) => {
     setExplicitSelection(undefined);
@@ -341,6 +400,49 @@ export function HistoryScreen() {
     (timeline.data.pumpStates?.length ?? 0) === 0 &&
     timeline.data.context.length === 0,
   );
+  const canShare = Boolean(timeline.data && !timelineIsEmpty && !timeline.error);
+  const historyMenuActions = useMemo(
+    () => [
+      ...(canShare
+        ? [{ label: 'Share or export', detail: 'Copy a text summary of this period, or save your records as files', icon: 'share-outline' as const, onPress: () => setShareVisible(true) }]
+        : []),
+      ...(comparison && compareLabel
+        ? [{ label: 'Compare periods', detail: compareLabel, icon: 'git-compare-outline' as const, onPress: openComparison }]
+        : []),
+    ],
+    [canShare, compareLabel, comparison, openComparison],
+  );
+  const addFromTimeline = useCallback((timestamp: number, kind: "meal" | "note") => {
+    setTimelineActionError(undefined);
+    setSelectedContextToEdit(undefined);
+    setSelectedInsulinToEdit(undefined);
+    setSelectedFoodLogToEdit(undefined);
+    setLogTimestamp(timestamp);
+    if (kind === "meal") setFoodLaunchRequest((value) => value + 1);
+    else setContextLaunchRequest((value) => value + 1);
+  }, []);
+  const editFromTimeline = useCallback((event: HealthContextEvent) => {
+    setTimelineActionError(undefined);
+    if (event.origin !== "manual") return;
+    if (event.sourceId === FOOD_LOG_SOURCE_ID && event.kind === "meal") {
+      if (foodHistory.loading) {
+        setTimelineActionError("Meal details are still loading. Try again in a moment.");
+        return;
+      }
+      if (foodHistory.error) {
+        setTimelineActionError("Meal details could not be loaded just now. Try again in a moment.");
+        return;
+      }
+      const log = foodHistory.logs.find((item) => item.contextEventId === event.id);
+      if (!log) {
+        setTimelineActionError("This meal could not be opened for editing.");
+        return;
+      }
+      setSelectedFoodLogToEdit(log);
+    } else if (event.sourceId === MANUAL_CONTEXT_SOURCE_ID) {
+      setSelectedContextToEdit(event);
+    }
+  }, [foodHistory.error, foodHistory.loading, foodHistory.logs]);
   const pumpStatesOutsideRange = Boolean(
     pumpStateCoverage &&
     (pumpStateCoverage.end <= range.start ||
@@ -387,6 +489,12 @@ export function HistoryScreen() {
     navigation.setParams({ focus: undefined, request: undefined, selectedRange: undefined });
   }, [navigation, now, ownerIdentity, route.params?.focus, route.params?.request, route.params?.selectedRange, today]);
 
+  const periodCaption = days === 1
+    ? selectedDate === today
+      ? "Today so far"
+      : "Selected day"
+    : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`;
+
   function chooseDate(date: DateKey) {
     setExplicitSelection(undefined);
     setSelectedDate(date);
@@ -400,6 +508,31 @@ export function HistoryScreen() {
         onRefresh={() => void refreshData()}
         trailing={<AppMenuButton screenActions={historyMenuActions} />}
       >
+        <SegmentedControl<HistoryRange | 'selection'>
+          accessibilityLabel="History range"
+          options={[
+            { value: "1d", label: "Day" },
+            {
+              value: "3d",
+              label: `${formatRegionalNumber(3, regional.locale, { maximumFractionDigits: 0 })} days`,
+            },
+            {
+              value: "7d",
+              label: `${formatRegionalNumber(7, regional.locale, { maximumFractionDigits: 0 })} days`,
+            },
+            {
+              value: "30d",
+              label: `${formatRegionalNumber(30, regional.locale, { maximumFractionDigits: 0 })} days`,
+            },
+          ]}
+          value={activeSelection ? 'selection' : rangeChoice}
+          onChange={(choice) => {
+            if (choice === 'selection') return;
+            setExplicitSelection(undefined);
+            setRangeChoice(choice);
+          }}
+        />
+
         {activeSelection ? (
           <View style={[styles.selectionHeader, { backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
             <Text style={[styles.selectionTitle, { color: colors.text }]}>Selected period</Text>
@@ -424,31 +557,6 @@ export function HistoryScreen() {
           todayDate={today}
           isToday={selectedDate === today}
         />}
-        <SegmentedControl<HistoryRange | 'selection'>
-          accessibilityLabel="History range"
-          options={[
-            { value: "1d", label: "Day" },
-            {
-              value: "3d",
-              label: `${formatRegionalNumber(3, regional.locale, { maximumFractionDigits: 0 })}D`,
-            },
-            {
-              value: "7d",
-              label: `${formatRegionalNumber(7, regional.locale, { maximumFractionDigits: 0 })}D`,
-            },
-            {
-              value: "30d",
-              label: `${formatRegionalNumber(30, regional.locale, { maximumFractionDigits: 0 })}D`,
-            },
-          ]}
-          value={activeSelection ? 'selection' : rangeChoice}
-          onChange={(choice) => {
-            if (choice === 'selection') return;
-            setExplicitSelection(undefined);
-            setRangeChoice(choice);
-          }}
-        />
-
         {pumpStatesOutsideRange && pumpStateCoverage ? (
           <View
             style={[
@@ -489,11 +597,7 @@ export function HistoryScreen() {
         ) : null}
 
         {!activeSelection ? <Text style={[styles.rangeCaption, { color: colors.textSecondary }]}>
-          {days === 1
-            ? selectedDate === today
-              ? "Today so far"
-              : "Selected day"
-            : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`}
+          {periodCaption}
         </Text> : null}
         {timeline.error ? (
           <ErrorCard
@@ -543,6 +647,9 @@ export function HistoryScreen() {
             onEditManualContext={setSelectedContextToEdit}
             onEditManualInsulin={setSelectedInsulinToEdit}
             onInspect={setSelectedEvidence}
+            onAddFromTimeline={addFromTimeline}
+            onEditFromTimeline={editFromTimeline}
+            timelineActionError={timelineActionError}
             onLayersChange={setTimelineLayers}
             onSelectDay={selectDailySummaryDate}
             selectedDate={selectedDate}
@@ -551,10 +658,24 @@ export function HistoryScreen() {
           />
         )}
       </AppScreen>
+      {timeline.data && canShare ? (
+        <PageSheet
+          closeLabel="Close share options"
+          onClose={() => setShareVisible(false)}
+          subtitle={activeSelection ? 'Selected period' : periodCaption}
+          title="Share or export"
+          visible={shareVisible}
+        >
+          <HistoryShareCard data={timeline.data} />
+        </PageSheet>
+      ) : null}
       <ManualContextCard
         editingEvent={selectedContextToEdit}
         editingInsulin={selectedInsulinToEdit}
-        initialTimestamp={now}
+        initialKind="note"
+        initialTimestamp={contextLaunchRequest > 0 ? logTimestamp : now}
+        launchRequest={contextLaunchRequest}
+        lockKind
         onEditEnd={() => {
           setSelectedContextToEdit(undefined);
           setSelectedInsulinToEdit(undefined);
@@ -563,7 +684,8 @@ export function HistoryScreen() {
       />
       <FoodLoggerCard
         editingLog={selectedFoodLogToEdit}
-        initialTimestamp={now}
+        initialTimestamp={foodLaunchRequest > 0 ? logTimestamp : now}
+        launchRequest={foodLaunchRequest}
         onEditEnd={() => setSelectedFoodLogToEdit(undefined)}
         showLauncher={false}
       />
@@ -607,4 +729,9 @@ const styles = StyleSheet.create({
   stamps: { gap: 2 },
   stampText: { fontSize: 12, lineHeight: 18 },
   sourceHealthLink: { justifyContent: 'center' },
+  emptyText: { fontSize: 14, lineHeight: 21 },
+  gmi: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 8, paddingTop: 8, gap: 4 },
+  gmiRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
+  gmiLabel: { flex: 1, minWidth: 120, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  gmiValue: { fontSize: 16, lineHeight: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
 });
