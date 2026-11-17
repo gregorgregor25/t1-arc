@@ -4,7 +4,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  SETTINGS_OVERVIEW_MENU_ITEM,
   SOURCE_MENU_ITEMS,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
@@ -39,20 +38,16 @@ const appMenuSource = readFileSync(
 );
 
 describe("Settings source back navigation", () => {
-  it("keeps the full Settings overview discoverable from the shortcuts menu", () => {
-    expect(SETTINGS_OVERVIEW_MENU_ITEM).toEqual({
-      accessibilityHint:
-        "Opens the full Settings screen, including Help and learning and Automatic updates",
-      detail: "Help, app tour, automatic updates and every connection",
-      icon: "settings-outline",
-      label: "All settings",
-    });
+  it("opens the Settings overview directly from the gear", () => {
     expect(sourceSettingsRouteParams()).toEqual({
       focused: false,
       source: undefined,
     });
-    expect(appMenuSource).toContain("menuRow(SETTINGS_OVERVIEW_MENU_ITEM)");
-    expect(appMenuSource).toContain("menuRow(DIABETES_PROFILE_MENU_ITEM)");
+    expect(appMenuSource).toContain(
+      'navigation.navigate("Sources", sourceSettingsRouteParams())',
+    );
+    expect(appMenuSource).not.toContain("<Modal");
+    expect(appMenuSource).not.toContain("Settings shortcuts");
   });
 
   it("keeps the complete settings shortcut contract explicit", () => {
@@ -89,10 +84,8 @@ describe("Settings source back navigation", () => {
     });
   });
 
-  it("keeps shortcut details visible and available to assistive technology", () => {
-    expect(appMenuSource).toContain(
-      "accessibilityLabel={`${item.label}. ${item.detail}`}",
-    );
-    expect(appMenuSource).not.toContain("numberOfLines={1}");
+  it("keeps screen shortcuts beside the gear available to assistive technology", () => {
+    expect(appMenuSource).toContain("accessibilityLabel={action.label}");
+    expect(appMenuSource).toContain("accessibilityHint={action.detail}");
   });
 });

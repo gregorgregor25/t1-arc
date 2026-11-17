@@ -27,16 +27,6 @@ export interface SourceMenuItem {
   icon: keyof typeof Ionicons.glyphMap;
 }
 
-export const SETTINGS_OVERVIEW_MENU_ITEM = {
-  accessibilityHint:
-    "Opens the full Settings screen, including Help and learning and Automatic updates",
-  detail: "Help, app tour, automatic updates and every connection",
-  icon: "settings-outline",
-  label: "All settings",
-} as const satisfies Omit<SourceMenuItem, "source"> & {
-  accessibilityHint: string;
-};
-
 export const DIABETES_PROFILE_MENU_ITEM = {
   source: "profile",
   label: "Diabetes profile",

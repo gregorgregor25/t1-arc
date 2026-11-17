@@ -92,6 +92,10 @@ import {
   sourceSettingsRouteParams,
 } from "@/navigation/sourceNavigation";
 import { SOURCE_SETUP_GUIDES } from "@/navigation/sourceSetupGuides";
+import {
+  searchSettings,
+  type SettingsSearchEntry,
+} from "@/navigation/settingsSearch";
 import { useDataContext } from "@/providers/DataProvider";
 import {
   beginLibreVerification,
@@ -182,7 +186,10 @@ export function SourcesScreen({
   const requestedSource = sourceJumpFromRoute(route?.params?.source);
   const activeSource = requestedSource;
   const [expandedSetting, setExpandedSetting] = useState<string>();
+  const pendingExpandedSetting = useRef<string | undefined>(undefined);
   const [tourOpen, setTourOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchResults = useMemo(() => searchSettings(searchQuery), [searchQuery]);
 
   useEffect(() => observeRegionalProfile(setRegionalProfile), []);
 
@@ -209,8 +216,9 @@ export function SourcesScreen({
   useEffect(() => {
     // Route changes are navigation commands. Collapse any previously expanded
     // card before showing the requested source so stale controls cannot linger.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpandedSetting(undefined);
+    // A Settings search result may name the one panel it should open instead.
+    setExpandedSetting(pendingExpandedSetting.current);
+    pendingExpandedSetting.current = undefined;
     if (requestedSource !== "libre") {
       activeLibreVerificationAbort.current?.abort();
       invalidateLibreVerification(
@@ -432,6 +440,27 @@ export function SourcesScreen({
     });
   }
 
+  function openSearchResult(entry: SettingsSearchEntry) {
+    const target = entry.target;
+    setSearchQuery("");
+    if (target.kind === "screen") {
+      if (target.screen === "Tour") setTourOpen(true);
+      else if (target.screen === "TarvisSettings") {
+        navigation.navigate('Insights', { settings: true });
+      } else navigation.navigate(target.screen);
+      return;
+    }
+    if (target.kind === "overview") {
+      setExpandedSetting(target.expand);
+      return;
+    }
+    pendingExpandedSetting.current = target.expand;
+    navigation.setParams(sourceSettingsRouteParams(target.source));
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }
+
   const showSourceOverview = useCallback(() => {
     setExpandedSetting(undefined);
     navigation.setParams(sourceSettingsRouteParams());
@@ -501,6 +530,15 @@ export function SourcesScreen({
           guide={SOURCE_SETUP_GUIDES[activeSource]}
           onBack={showSourceOverview}
           source={activeSource}
+        />
+      ) : null}
+      {!activeSource ? (
+        <SettingsSearchBox onChange={setSearchQuery} value={searchQuery} />
+      ) : null}
+      {!activeSource && searchQuery.trim() ? (
+        <SettingsSearchResults
+          onSelect={openSearchResult}
+          results={searchResults}
         />
       ) : !activeSource ? (
         <View style={styles.overviewSections}>
@@ -1266,6 +1304,129 @@ export function SourcesScreen({
   );
 }
 
+function SettingsSearchBox({
+  onChange,
+  value,
+}: {
+  onChange(value: string): void;
+  value: string;
+}) {
+  const { colors, radius } = useAppTheme();
+  return (
+    <View
+      style={[
+        styles.searchBox,
+        {
+          backgroundColor: colors.surfaceMuted,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+        },
+      ]}
+    >
+      <Ionicons
+        accessibilityElementsHidden
+        color={colors.textTertiary}
+        name="search-outline"
+        size={19}
+      />
+      <TextInput
+        accessibilityHint="Shows matching settings as you type"
+        accessibilityLabel="Search settings"
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={onChange}
+        placeholder="Search settings, for example alerts or backup"
+        placeholderTextColor={colors.textTertiary}
+        returnKeyType="search"
+        style={[styles.searchInput, { color: colors.text }]}
+        value={value}
+      />
+      {value ? (
+        <Pressable
+          accessibilityLabel="Clear search"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onChange("")}
+          style={({ pressed }) => [
+            styles.searchClear,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textSecondary}
+            name="close-circle"
+            size={20}
+          />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function SettingsSearchResults({
+  onSelect,
+  results,
+}: {
+  onSelect(entry: SettingsSearchEntry): void;
+  results: readonly SettingsSearchEntry[];
+}) {
+  const { colors, radius } = useAppTheme();
+  if (!results.length) {
+    return (
+      <SectionCard accessibilityLabel="No matching settings. Try a shorter word, such as alerts, backup, units or Libre.">
+        <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+          No matching settings
+        </Text>
+        <Text
+          style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+        >
+          Try a shorter word, such as alerts, backup, units or Libre.
+        </Text>
+      </SectionCard>
+    );
+  }
+  return (
+    <View accessibilityLiveRegion="polite" style={styles.sourceJumpGrid}>
+      {results.map((entry) => (
+        <Pressable
+          accessibilityHint={`Opens ${entry.label} in ${entry.location}`}
+          accessibilityLabel={`${entry.label}. ${entry.detail}`}
+          accessibilityRole="button"
+          key={entry.id}
+          onPress={() => onSelect(entry)}
+          style={({ pressed }) => [
+            styles.sourceJump,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              opacity: pressed ? 0.68 : 1,
+            },
+          ]}
+        >
+          <View style={styles.sourceJumpCopy}>
+            <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+              {entry.label}
+            </Text>
+            <Text
+              style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+            >
+              {entry.location} · {entry.detail}
+            </Text>
+          </View>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textTertiary}
+            name="chevron-forward"
+            size={16}
+          />
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function TourReplayCard({ onPress }: { onPress(): void }) {
   const { colors, radius } = useAppTheme();
   return (
@@ -1543,6 +1704,28 @@ const styles = StyleSheet.create({
   },
   overviewSections: {
     gap: 22,
+  },
+  searchBox: {
+    minHeight: 50,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 12,
+    paddingRight: 6,
+    marginTop: 4,
+    marginBottom: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 48,
+    fontSize: 15,
+  },
+  searchClear: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   body: {
     fontSize: 13,
