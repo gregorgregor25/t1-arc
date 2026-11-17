@@ -139,6 +139,8 @@ export interface DataSourceStatus {
   lastAttemptAt?: number;
   lastUpdatedAt?: number;
   dataThrough?: number;
+  /** The earliest stored record from this source, when it is known. */
+  dataFrom?: number;
   recordCount?: number;
   errorCode?: string;
   capabilities?: readonly SourceCapability[];

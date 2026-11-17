@@ -14,6 +14,10 @@ import {
   syncHealthConnectIfDue,
 } from '@/data/healthConnect/healthConnectRepository';
 import {
+  HEALTH_CONNECT_BACKGROUND_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_BACKGROUND_TIME_BUDGET_MS,
+} from '@/data/healthConnect/healthConnectSyncPolicy';
+import {
   acquireLocalDataWriteLease,
   isLocalDataWriteSupersededError,
   type LocalDataWriteLease,
@@ -57,15 +61,27 @@ if (!TaskManager.isTaskDefined(HEALTH_CONNECT_BACKGROUND_TASK)) {
       }
     }
 
+    // Android stops a job after 10 minutes but cannot stop this JavaScript.
+    // The sync therefore stops itself at a budget well inside that limit, or
+    // earlier if the platform reports expiry (iOS only in expo-background-task).
+    const startedAt = Date.now();
+    const stop = new AbortController();
+    const expiry = subscribeToBackgroundTaskExpiry(() => stop.abort());
     try {
       const result = await syncHealthConnectIfDue(
-        undefined,
-        undefined,
+        Date.now(),
+        HEALTH_CONNECT_BACKGROUND_SYNC_INTERVAL_MS,
         writeLease,
+        {
+          signal: stop.signal,
+          deadlineAt: Date.now() + HEALTH_CONNECT_BACKGROUND_TIME_BUDGET_MS,
+          // The daily 48-hour re-check runs when the app is open instead.
+          allowWindowCheck: false,
+        },
       );
       const outcome = !result
         ? 'skipped'
-        : result.failures.length
+        : result.failures.length || result.stoppedEarly
           ? 'partial'
           : 'success';
       const count = (value: number) =>
@@ -82,7 +98,9 @@ if (!TaskManager.isTaskDefined(HEALTH_CONNECT_BACKGROUND_TASK)) {
               recordsRemoved: result?.recordsRemoved ?? 0,
               detail: !result
                 ? 'Health data was already current.'
-                : result.failures.length
+                : result.stoppedEarly
+                  ? `${count(result.successfulCategories.length)} categories updated. Stopped early to save battery; the rest will update next time.`
+                  : result.failures.length
                   ? `${count(result.successfulCategories.length)} categories updated; ${count(result.failures.length)} need attention.`
                   : `${count(result.successfulCategories.length)} categories updated.`,
             },
@@ -97,6 +115,8 @@ if (!TaskManager.isTaskDefined(HEALTH_CONNECT_BACKGROUND_TASK)) {
           recordsProcessed: result?.recordsProcessed ?? 0,
           recordsRemoved: result?.recordsRemoved ?? 0,
           failures: result?.failures.length ?? 0,
+          recordsWritten: result?.recordsWritten ?? 0,
+          durationMs: Date.now() - startedAt,
         },
         writeLease,
       );
@@ -143,8 +163,21 @@ if (!TaskManager.isTaskDefined(HEALTH_CONNECT_BACKGROUND_TASK)) {
         }
       }
       return BackgroundTask.BackgroundTaskResult.Failed;
+    } finally {
+      expiry.remove();
     }
   });
+}
+
+function subscribeToBackgroundTaskExpiry(onExpired: () => void) {
+  try {
+    if (typeof BackgroundTask.addExpirationListener === 'function') {
+      return BackgroundTask.addExpirationListener(onExpired);
+    }
+  } catch {
+    // Not available on this platform; the time budget still applies.
+  }
+  return { remove: () => undefined };
 }
 
 let healthConnectRegistrationTail: Promise<void> = Promise.resolve();

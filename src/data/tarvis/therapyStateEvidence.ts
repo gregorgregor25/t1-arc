@@ -10,6 +10,7 @@ import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { calculateGlucoseStats } from "@/domain/stats";
 import {
   describeTherapyState,
+  formatTherapyStateSpan,
   notableTherapyStates,
   therapyStateLabel,
   therapyStateRecordIds,
@@ -30,6 +31,7 @@ import {
 } from "@/domain/time";
 
 import { formatTarvisNumber } from "./regionalNumberPresentation";
+import { formatShortDate, formatTime } from "@/domain/time";
 import {
   rangeForRetrospectiveEventQuestion,
   retrospectiveTemporalIssue,
@@ -61,24 +63,37 @@ const MIN_WINDOW_COVERAGE_PERCENT = 70;
 const MIN_MATCHED_WINDOWS = 3;
 const MIN_OBSERVED_MINUTES = 30;
 const MAX_LISTED_STATES = 6;
+/** List mode shows this many records, then "and N more". */
+const MAX_LIST_MODE_STATES = 20;
 
 // Each sentence is phrased as a description of records, so the answer
 // passes the same treatment-directive check as model-written answers.
 const OBSERVATION_CAVEAT =
   "This is an observation from recorded data. Food, activity, insulin and other conditions also differed between these periods. It does not show that the recorded setting made the difference.";
 
-export type TherapyStateQuery =
+export type TherapyStateQuery = (
   | { family: "temporary-target"; reason?: TemporaryTargetReason }
   | { family: "profile-switch"; percentage?: number }
   | {
       family: "loop-mode";
       group: "suspended" | "disconnected" | "open-loop" | "disabled" | "super-bolus" | "low-glucose-suspend" | "not-closed";
-    };
+    }
+) & {
+  /**
+   * "list": the question asks whether or when a state was recorded, with no
+   * glucose wording. The answer lists the records and compares nothing.
+   */
+  mode?: "list";
+};
 
 const GLUCOSE_OUTCOME =
   /\b(?:glucose|bg|blood sugars?|sugars?|levels?|readings?|numbers|time in range|tir|lows?|highs?|hypos?|average|in range|how did (?:i|it|things|my \w+) (?:do|go|look)|how (?:was|were|did) (?:i|my|it|things))\b/i;
 const STATE_LIST_REQUEST =
   /\b(?:when|how often|how many|list|show|which)\b[\s\S]{0,40}\b(?:temp(?:orary)? targets?|profile switch(?:es)?|profiles?|suspen(?:ded|sions?)|loop)\b/i;
+// "Any temp targets yesterday?", "Did I use a profile switch?", "Was my pump
+// suspended?" ask whether a state was recorded, not how glucose went.
+const RECORD_PRESENCE_REQUEST =
+  /\b(?:any|were there|did i (?:use|have|set|run|start|turn on|activate|switch|change)|did (?:the|my) (?:loop|pump|pod) (?:suspend|stop|disconnect)|(?:was|were) (?:my|the) (?:loop|pump|pod)|have i (?:used|had|set|run|started|switched))\b/i;
 const SETTING_ADVICE_REQUEST =
   /\b(?:should|shall|recommend\w*|suggest\w*|advis\w*|what (?:percentage|percent|target|profile) (?:should|to|do)|which (?:percentage|percent|target|profile) (?:should|to|is best)|too (?:low|high|much|little|aggressive))\b/i;
 
@@ -98,8 +113,17 @@ const LOOP_STATE =
  */
 export function parseTherapyStateQuestion(question: string): TherapyStateQuery | undefined {
   if (SETTING_ADVICE_REQUEST.test(question)) return undefined;
-  if (!GLUCOSE_OUTCOME.test(question) && !STATE_LIST_REQUEST.test(question)) return undefined;
-  const text = question.toLowerCase();
+  const glucoseOutcome = GLUCOSE_OUTCOME.test(question);
+  const listRequest =
+    !glucoseOutcome &&
+    (STATE_LIST_REQUEST.test(question) || RECORD_PRESENCE_REQUEST.test(question));
+  if (!glucoseOutcome && !listRequest) return undefined;
+  const query = therapyStateFamily(question.toLowerCase());
+  if (!query) return undefined;
+  return listRequest ? { ...query, mode: "list" } : query;
+}
+
+function therapyStateFamily(text: string): TherapyStateQuery | undefined {
   if (TEMP_TARGET.test(text)) {
     const reason: TemporaryTargetReason | undefined = /\bactivity\b|\bexercise\b/.test(text)
       ? "activity"
@@ -401,6 +425,137 @@ export interface TherapyStateAnswerResult {
   evidence: EvidenceReference[];
 }
 
+function elapsed(ms: number) {
+  if (ms < MINUTE_MS) {
+    const seconds = Math.max(1, Math.round(ms / 1000));
+    return `under 1 minute (about ${formatTarvisNumber(seconds, { maximumFractionDigits: 0 })} second${seconds === 1 ? "" : "s"})`;
+  }
+  return duration(ms / MINUTE_MS);
+}
+
+function localStart(timestamp: number) {
+  return `${formatShortDate(toDateKey(timestamp))} ${formatTime(timestamp)}`;
+}
+
+/** How long a listed state lasted, or that it is still running. */
+function listedLength(state: TherapyStateInterval, asOf: number) {
+  const permanentProfile =
+    state.kind === "profile-switch" && state.programmedDurationMs === undefined;
+  if (state.end > asOf) {
+    if (permanentProfile) return "until changed; still active";
+    return state.programmedDurationMs !== undefined
+      ? `programmed for ${elapsed(state.programmedDurationMs)}; still active`
+      : "still active";
+  }
+  const length = elapsed(state.end - state.start);
+  if (permanentProfile) return `until changed, after ${length}`;
+  switch (state.endBasis) {
+    case "programmed":
+      return `${length}, ran for its programmed time`;
+    case "cancelled":
+      return `${length}, ended early by a later record`;
+    case "next-record":
+      return `${length}, replaced by the next record`;
+    default:
+      return `${length}, no end was recorded`;
+  }
+}
+
+/**
+ * List mode: the matching records in the asked period, one line each, with
+ * no glucose comparison. Every line describes a stored record.
+ */
+function buildTherapyStateList({
+  query,
+  range,
+  timeline,
+  asOf,
+}: {
+  query: TherapyStateQuery;
+  range: TimeRange;
+  timeline: TimelineData;
+  asOf: number;
+}): TherapyStateAnswerResult {
+  const label = therapyStateQueryLabel(query);
+  const periodText = formatTarvisCompactPeriod(range);
+  const effectiveEnd = Math.min(range.end, asOf);
+  const allStates = timeline.therapyStates ?? [];
+  const states = allStates
+    .filter((state) => matchesQuery(state, query))
+    .filter((state) => state.start < effectiveEnd && state.end > range.start)
+    .sort((left, right) => left.start - right.start);
+  const limitations = [
+    "Therapy states come from AAPS records T1 Arc has stored. Nightscout uploads can arrive late or be missing while AAPS is offline.",
+  ];
+  const headline = `${label.charAt(0).toUpperCase()}${label.slice(1)}, ${periodText}`;
+
+  if (!states.length) {
+    const earliest = allStates.reduce<number | undefined>(
+      (first, state) => (first === undefined || state.start < first ? state.start : first),
+      undefined,
+    );
+    const lines = [`No ${label} are recorded for ${periodText} in the AAPS records T1 Arc has stored.`];
+    if (earliest === undefined) {
+      lines.push("No AAPS setting records are stored for this period at all, so T1 Arc has no record either way.");
+    } else if (earliest > range.start) {
+      lines.push(`The stored AAPS setting records read for this answer start on ${localStart(earliest)}.`);
+    }
+    return {
+      answer: { headline, answer: lines.join("\n"), confidence: "limited", evidenceIds: [], limitations },
+      evidence: [],
+    };
+  }
+
+  const shown = states.slice(0, MAX_LIST_MODE_STATES);
+  const lines = [
+    `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded in ${periodText}:`,
+    ...shown.map((state) => {
+      const before = state.start < range.start ? " (started before this period)" : "";
+      return `• ${localStart(state.start)}: ${therapyStateLabel(state)} recorded, ${listedLength(state, asOf)}${before}`;
+    }),
+  ];
+  if (states.length > shown.length) {
+    lines.push(`• and ${formatTarvisNumber(states.length - shown.length, { maximumFractionDigits: 0 })} more, listed in the evidence.`);
+  }
+  if (
+    query.family === "profile-switch" &&
+    allStates.some(
+      (state) =>
+        state.baseline &&
+        state.kind === "profile-switch" &&
+        state.start < effectiveEnd &&
+        state.end > range.start,
+    )
+  ) {
+    lines.push("Outside these, your usual 100% profile was recorded as active.");
+  }
+  const evidence: EvidenceReference = {
+    id: "therapy-state-intervals",
+    label: `Recorded ${label}`,
+    description: `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded interval${states.length === 1 ? "" : "s"} from ${sourceSummary(states)}.`,
+    range,
+    recordIds: [...new Set(states.flatMap(therapyStateRecordIds))].slice(0, 200),
+    examples: states.slice(0, 5).map((state) => ({
+      id: state.source.rawRecordId,
+      kind: "source-record",
+      timestamp: state.start,
+      primary: therapyStateLabel(state),
+      secondary: `${formatTherapyStateSpan(state, true)} · ${therapyStateSourceNote(state)}`,
+      sourceId: state.source.sourceId,
+    })),
+  };
+  return {
+    answer: {
+      headline,
+      answer: lines.join("\n"),
+      confidence: "limited",
+      evidenceIds: [evidence.id],
+      limitations,
+    },
+    evidence: [evidence],
+  };
+}
+
 /**
  * Builds the local answer from a timeline loaded over
  * {@link therapyStateLoadRange}. `range` is the period the user asked about.
@@ -416,6 +571,7 @@ export function buildTherapyStateAnswer({
   timeline: TimelineData;
   asOf: number;
 }): TherapyStateAnswerResult {
+  if (query.mode === "list") return buildTherapyStateList({ query, range, timeline, asOf });
   const label = therapyStateQueryLabel(query);
   const period = `the requested period (${formatTarvisCompactPeriod(range)})`;
   const effectiveEnd = Math.min(range.end, asOf);

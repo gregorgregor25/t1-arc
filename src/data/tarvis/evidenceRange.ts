@@ -26,7 +26,7 @@ const TEMPORAL_OUTCOME_CODES = new Set([
 ]);
 
 const EXPLICIT_TEMPORAL_OR_COMPARISON_TEXT =
-  /\b(?:today|yesterday|tonight|last night|this (?:week|month)|last (?:week|month|year|summer|winter|spring|autumn)|past\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|fourteen|thirty|ninety)\s+(?:hours?|days?|weeks?|months?|years?)|\d+\s+(?:hours?|days?|weeks?|months?|years?)\s+ago|between|from\s+.+\s+to|since|before|after|during|on\s+(?:mon|tue|wed|thu|fri|sat|sun|\d)|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|january|february|march|april|may|june|july|august|september|october|november|december|compare|compared|versus|vs\.?|previous period|prior period)\b/i;
+  /\b(?:today|yesterday|tonight|last night|this (?:week|month)|last (?:week|month|year|summer|winter|spring|autumn)|past\s+(?:week|fortnight|month)|past\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|fourteen|thirty|ninety)\s+(?:hours?|days?|weeks?|months?|years?)|\d+\s+(?:hours?|days?|weeks?|months?|years?)\s+ago|between|from\s+.+\s+to|since|before|after|during|on\s+(?:mon|tue|wed|thu|fri|sat|sun|\d)|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|january|february|march|april|may|june|july|august|september|october|november|december|compare|compared|versus|vs\.?|previous period|prior period)\b/i;
 
 function derivedPreviousComparison() {
   return {

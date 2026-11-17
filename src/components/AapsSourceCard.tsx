@@ -16,9 +16,10 @@ import {
   loadAapsLocalTreatmentRoute,
   saveAapsLocalTreatmentRoute,
 } from '@/data/aaps/localAapsTreatments';
+import { seedNightscoutHistoryAfterSourceChange } from '@/data/nightscout/historyStateStore';
 import { loadNightscoutConnection } from '@/data/nightscout/secureStore';
 import { formatTime, relativeAge } from '@/domain/time';
-import { useDataContext } from '@/providers/DataProvider';
+import { type SourceReloadOptions, useDataContext } from '@/providers/DataProvider';
 import { startForegroundInterval } from '@/hooks/foregroundInterval';
 import { useAppTheme } from '@/theme/theme';
 
@@ -41,7 +42,7 @@ export function AapsSourceCard({
 }: {
   /** "Count carbs from" choice, shown while AAPS is the selected source. */
   foodTotals?: ReactNode;
-  onDataChanged?: () => Promise<void> | void;
+  onDataChanged?: (options?: SourceReloadOptions) => Promise<void> | void;
   onOpenNightscout?: () => void;
 }) {
   const { colors, radius } = useAppTheme();
@@ -85,7 +86,12 @@ export function AapsSourceCard({
     try {
       const saved = await saveAapsNightscoutTreatmentFill(enabled);
       setFillEnabled(saved.enabled);
-      await onDataChanged?.();
+      if (saved.enabled) {
+        // Read the last 14 days of treatments again, now that they are
+        // wanted. Best effort: the choice itself is already saved.
+        await seedNightscoutHistoryAfterSourceChange('fill-enabled').catch(() => undefined);
+      }
+      await onDataChanged?.({ refreshNow: saved.enabled });
     } catch {
       setFillError('The Nightscout history choice could not be saved. Try again.');
     } finally {

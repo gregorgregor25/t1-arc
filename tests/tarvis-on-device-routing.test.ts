@@ -79,7 +79,7 @@ describe("Tarv1s on-device routing", () => {
     expect(result.kind).toBe("capability");
     if (result.kind !== "capability")
       throw new Error("Expected capability answer");
-    expect(result.answer.answer).toMatch(/a\.m\.\/p\.m\.|clarif/i);
+    expect(result.answer.answer).toMatch(/a\.m\. or p\.m\.|24-hour time/i);
     expect(result.answer.limitations[0]).toContain("No calculation");
   });
 

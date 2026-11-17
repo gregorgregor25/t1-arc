@@ -1,0 +1,161 @@
+import { describe, expect, it } from 'vitest';
+
+import { containsTreatmentDirective } from '@/data/tarvis/guardrails';
+import { coordinateTarvisRequest } from '@/data/tarvis/requestCoordinator';
+import {
+  buildTherapyStateAnswer,
+  parseTherapyStateQuestion,
+  type TherapyStateQuery,
+} from '@/data/tarvis/therapyStateEvidence';
+import type { TimelineData, TimeRange } from '@/domain/models';
+import type { TherapyStateInterval } from '@/domain/therapyStates';
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+// Synthetic records only.
+function timeline(range: TimeRange, therapyStates: TherapyStateInterval[]): TimelineData {
+  return { range, glucose: [], basal: [], boluses: [], dailyInsulinTotals: [], pumpStates: [], context: [], sources: [], therapyStates };
+}
+
+function state(partial: Partial<TherapyStateInterval> & Pick<TherapyStateInterval, 'start' | 'end'>): TherapyStateInterval {
+  const id = partial.id ?? `raw-${partial.start}`;
+  return {
+    id: `therapy-state:${id}`,
+    kind: 'temporary-target',
+    endBasis: 'programmed',
+    baseline: false,
+    source: { rawRecordId: id, sourceId: 'nightscout', sourceFile: 'treatments.json' },
+    duplicateSources: [],
+    ...partial,
+  };
+}
+
+describe('therapy-state list questions', () => {
+  it.each([
+    ['Did I use any temp targets in the past week?', { family: 'temporary-target', reason: undefined, mode: 'list' }],
+    ['Any activity temp targets yesterday?', { family: 'temporary-target', reason: 'activity', mode: 'list' }],
+    ['Were there any profile switches in the last 3 days?', { family: 'profile-switch', mode: 'list' }],
+    ['Was my pump suspended yesterday?', { family: 'loop-mode', group: 'suspended', mode: 'list' }],
+    ['Show my temp targets this week', { family: 'temporary-target', reason: undefined, mode: 'list' }],
+  ])('lists records for "%s"', (question, expected) => {
+    expect(parseTherapyStateQuestion(question)).toEqual(expected);
+  });
+
+  it('keeps glucose questions on the comparison answer', () => {
+    expect(parseTherapyStateQuestion('How did my glucose go during my Activity temp target yesterday?')).toEqual({
+      family: 'temporary-target',
+      reason: 'activity',
+    });
+    expect(parseTherapyStateQuestion('Any lows during my temp targets this week?')?.mode).toBeUndefined();
+  });
+
+  it('does not claim setting requests', () => {
+    expect(parseTherapyStateQuestion('What percentage should I use?')).toBeUndefined();
+    expect(parseTherapyStateQuestion('Should I set any temp target tonight?')).toBeUndefined();
+  });
+
+  it('routes a list question to the local therapy-state answer for the asked period', () => {
+    const asOf = Date.parse('2030-11-19T15:00:00Z');
+    const plan = coordinateTarvisRequest({ question: 'Did I use any temp targets in the past week?', asOf });
+    expect(plan.kind).toBe('therapy-state');
+    if (plan.kind === 'therapy-state') {
+      expect(plan.query.mode).toBe('list');
+      expect(plan.range.end).toBe(asOf);
+      expect(plan.range.start).toBe(Date.parse('2030-11-13T00:00:00Z'));
+    }
+  });
+});
+
+describe('therapy-state list answers', () => {
+  const asOf = Date.parse('2030-11-19T15:00:00Z');
+  const range = { start: Date.parse('2030-11-16T00:00:00Z'), end: asOf };
+  const loaded = { start: asOf - 30 * DAY, end: asOf };
+
+  it('lists each record with time, setting, length and how it ended, and no glucose text', () => {
+    const query: TherapyStateQuery = { family: 'temporary-target', mode: 'list' };
+    const data = timeline(loaded, [
+      state({ id: 'tt-1', targetReason: 'activity', targetLowMmolL: 8, targetHighMmolL: 8, start: Date.parse('2030-11-17T17:00:00Z'), end: Date.parse('2030-11-17T18:00:00Z'), programmedDurationMs: HOUR }),
+      state({ id: 'tt-2', targetReason: 'eating-soon', targetLowMmolL: 4.5, targetHighMmolL: 4.5, start: Date.parse('2030-11-18T11:30:00Z'), end: Date.parse('2030-11-18T11:50:00Z'), endBasis: 'cancelled', programmedDurationMs: HOUR }),
+      // Still running: programmed end is after now.
+      state({ id: 'tt-3', targetReason: 'activity', targetLowMmolL: 8, targetHighMmolL: 8, start: asOf - 30 * MINUTE, end: asOf + 30 * MINUTE, programmedDurationMs: HOUR }),
+      // Outside the asked period.
+      state({ id: 'tt-old', start: Date.parse('2030-11-04T10:00:00Z'), end: Date.parse('2030-11-04T11:00:00Z') }),
+    ]);
+    const { answer, evidence } = buildTherapyStateAnswer({ query, range, timeline: data, asOf });
+    expect(answer.headline).toBe('Temporary targets, 16 Nov 2030 to 19 Nov 2030, through 15:00');
+    expect(answer.answer).toContain('3 recorded in');
+    expect(answer.answer).toContain('Sun 17 Nov 17:00: Activity temporary target (target 8.0 mmol/L) recorded, 1 h, ran for its programmed time');
+    expect(answer.answer).toContain('Mon 18 Nov 11:30: Eating soon temporary target (target 4.5 mmol/L) recorded, 20 min, ended early by a later record');
+    expect(answer.answer).toContain('programmed for 1 h; still active');
+    expect(answer.answer).not.toMatch(/glucose|average|in range/i);
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]!.range).toEqual(range);
+    expect(evidence[0]!.recordIds).toEqual(['tt-1', 'tt-2', 'tt-3']);
+    for (const line of answer.answer.split('\n').filter((text) => !text.includes('Eating soon'))) {
+      expect(containsTreatmentDirective(line)).toBe(false);
+    }
+  });
+
+  it('describes sub-minute suspensions in seconds and permanent profile switches as until changed', () => {
+    const suspend = state({
+      id: 'suspend-1', kind: 'loop-mode', loopMode: 'suspended-by-pump', endBasis: 'cancelled',
+      start: Date.parse('2030-11-18T03:00:00Z'), end: Date.parse('2030-11-18T03:00:02Z'),
+    });
+    const suspended = buildTherapyStateAnswer({
+      query: { family: 'loop-mode', group: 'suspended', mode: 'list' },
+      range, timeline: timeline(loaded, [suspend]), asOf,
+    });
+    expect(suspended.answer.answer).toContain('under 1 minute (about 2 seconds)');
+    expect(suspended.answer.answer).not.toContain('0 min');
+    expect(containsTreatmentDirective(suspended.answer.answer)).toBe(false);
+
+    const profiles = timeline(loaded, [
+      state({ id: 'p-base', kind: 'profile-switch', baseline: true, percentage: 100, endBasis: 'next-record', start: loaded.start, end: Date.parse('2030-11-17T08:00:00Z') }),
+      state({ id: 'p-80', kind: 'profile-switch', percentage: 80, profileName: 'Default', programmedDurationMs: 2 * HOUR, start: Date.parse('2030-11-17T08:00:00Z'), end: Date.parse('2030-11-17T10:00:00Z') }),
+      state({ id: 'p-90', kind: 'profile-switch', percentage: 90, profileName: 'Default', endBasis: 'open', start: Date.parse('2030-11-18T09:00:00Z'), end: asOf + DAY }),
+    ]);
+    const listed = buildTherapyStateAnswer({ query: { family: 'profile-switch', mode: 'list' }, range, timeline: profiles, asOf });
+    expect(listed.answer.answer).toContain('Profile at 80% (profile "Default") recorded, 2 h, ran for its programmed time');
+    expect(listed.answer.answer).toContain('Profile at 90% (profile "Default") recorded, until changed; still active');
+    expect(containsTreatmentDirective(listed.answer.answer)).toBe(false);
+    expect(listed.answer.answer).toContain('usual 100% profile');
+    expect(listed.answer.answer).not.toMatch(/Profile switch,/);
+  });
+
+  it('marks a record that started before the period', () => {
+    const early = state({ id: 'tt-early', start: range.start - HOUR, end: range.start + HOUR });
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'temporary-target', mode: 'list' }, range, timeline: timeline(loaded, [early]), asOf,
+    });
+    expect(answer.answer).toContain('(started before this period)');
+  });
+
+  it('says nothing is recorded, and where stored records start, without a count of zero', () => {
+    const later = state({ id: 'tt-later', kind: 'profile-switch', percentage: 80, programmedDurationMs: HOUR, start: Date.parse('2030-11-18T08:00:00Z'), end: Date.parse('2030-11-18T09:00:00Z') });
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'temporary-target', mode: 'list' }, range, timeline: timeline(loaded, [later]), asOf,
+    });
+    expect(answer.headline).toMatch(/^Temporary targets/);
+    expect(answer.answer).toContain('No temporary targets are recorded for');
+    expect(answer.answer).toContain('start on Mon 18 Nov 08:00');
+    expect(answer.answer).not.toMatch(/\b0\b/);
+
+    const empty = buildTherapyStateAnswer({
+      query: { family: 'temporary-target', mode: 'list' }, range, timeline: timeline(loaded, []), asOf,
+    });
+    expect(empty.answer.answer).toContain('no record either way');
+  });
+
+  it('stops at 20 lines and says how many more', () => {
+    const many = Array.from({ length: 23 }, (_, index) =>
+      state({ id: `tt-${index}`, start: range.start + index * 2 * HOUR, end: range.start + index * 2 * HOUR + HOUR, programmedDurationMs: HOUR }),
+    );
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'temporary-target', mode: 'list' }, range, timeline: timeline(loaded, many), asOf,
+    });
+    expect(answer.answer.split('\n').filter((line) => line.startsWith('• ') && !line.startsWith('• and'))).toHaveLength(20);
+    expect(answer.answer).toContain('and 3 more, listed in the evidence.');
+  });
+});

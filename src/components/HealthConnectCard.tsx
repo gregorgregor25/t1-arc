@@ -1226,6 +1226,14 @@ export function HealthConnectCard({
                     overview.background.recordsRemoved
                       ? ` · ${regionalCount(overview.background.recordsRemoved)} removed items cleared`
                       : ''
+                  }${
+                    overview.background.recordsWritten !== undefined
+                      ? ` · ${regionalCount(overview.background.recordsWritten)} stored`
+                      : ''
+                  }${
+                    overview.background.durationMs !== undefined
+                      ? ` · took ${regionalCount(Math.max(1, Math.round(overview.background.durationMs / 1000)))} s`
+                      : ''
                   }${overview.background.failures ? ` · ${overview.background.failures} ${overview.background.failures === 1 ? 'area needs' : 'areas need'} attention` : ''}.`
                 : 'Automatic checks are ready and waiting for their first run.'}
             </Text>

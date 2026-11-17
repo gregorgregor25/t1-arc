@@ -48,6 +48,7 @@ import {
   type TarvisEvidencePlanningOptions,
 } from "./evidencePlanner";
 import { isTarvisTreatmentProfileQuestion } from "./treatmentProfileAnswer";
+import { parseRecordQuestion, type RecordQuestion } from "./recordQuestions";
 import type { TarvisHealthMetric } from '@/domain/tarvisEntry';
 
 const PERSONAL_ACTIVITY_GUIDANCE_REVIEW =
@@ -144,6 +145,11 @@ export type TarvisRequestPlan =
   | TarvisAnswerRequestPlan
   | {
       kind: "treatment-profile";
+    }
+  | {
+      /** A question answered from stored records on the phone, with no AI request. */
+      kind: "record-question";
+      question: RecordQuestion;
     }
   | {
       /** A recorded AAPS temporary target, profile switch or running mode. */
@@ -278,6 +284,12 @@ export function coordinateTarvisRequest({
   }
   if (scope === "in_scope" && isTarvisTreatmentProfileQuestion(question)) {
     return { kind: "treatment-profile" };
+  }
+  // Safety and scope have already run, so a request for advice never
+  // reaches this record lookup.
+  const recordQuestion = parseRecordQuestion(question);
+  if (recordQuestion) {
+    return { kind: "record-question", question: recordQuestion };
   }
   // Before the activity review: "during my Activity temp target" names a
   // recorded AAPS state, not an activity to search for.

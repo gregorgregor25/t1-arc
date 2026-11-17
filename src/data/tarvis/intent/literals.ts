@@ -17,6 +17,10 @@ import {
   getRuntimeLocale,
 } from "@/domain/regionalProfileRuntime";
 import { getCachedDateTimeFormat } from "@/domain/intlFormatterCache";
+import {
+  findRecentWeekPhrases,
+  RECENT_WEEK_DAYS,
+} from "@/data/tarvis/recentWeekPhrase";
 
 const SMALL_NUMBER_WORDS: Record<string, number> = {
   zero: 0,
@@ -194,6 +198,24 @@ function extractDurations(
       value: number.value,
       unit,
       number,
+    });
+  }
+
+  for (const phrase of findRecentWeekPhrases(question)) {
+    durations.push({
+      raw: phrase.raw,
+      start: phrase.start,
+      end: phrase.end,
+      value: RECENT_WEEK_DAYS,
+      unit: "day",
+      recentLocalWeek: true,
+      number: {
+        raw: phrase.raw,
+        start: phrase.start,
+        end: phrase.end,
+        value: RECENT_WEEK_DAYS,
+        notation: "words",
+      },
     });
   }
 
@@ -594,11 +616,14 @@ function extractClockWindows(question: string): TarvisClockWindowLiteral[] {
     let window: TarvisRecurringClockWindow | null = null;
     let ambiguity: string | undefined;
     if (startTime.minuteOfDay === 24 * 60) {
-      ambiguity = "24:00 can only be used as the end of a clock window.";
+      ambiguity =
+        "24:00 can only be the end of a time window, for example 'between 22:00 and 24:00'.";
     } else if (startTime.minuteOfDay === null || endTime.minuteOfDay === null) {
-      ambiguity = "One or both clock times need an a.m./p.m. qualifier.";
+      ambiguity =
+        "Please say whether each time is a.m. or p.m., or use 24-hour time, for example 'between 17:00 and 19:00'.";
     } else if (startTime.minuteOfDay === endTime.minuteOfDay) {
-      ambiguity = "The start and end time are identical.";
+      ambiguity =
+        "The start and end times are the same. Please give two different times, for example 'between 06:00 and 07:30'.";
     } else {
       window = {
         start: clockTime(startTime.minuteOfDay),

@@ -1,4 +1,5 @@
 import type { SourceJump } from "@/navigation/sourceNavigation";
+import type { SourceReloadOptions } from "@/providers/DataProvider";
 
 /** What every Settings page receives from the Settings screen. */
 export interface SettingsPageProps {
@@ -9,5 +10,5 @@ export interface SettingsPageProps {
   /** Opens another Settings page, optionally with one panel open. */
   openPage(page: SourceJump, expand?: string): void;
   /** Reloads sources after a page changed personal data. */
-  onDataChanged(): Promise<void>;
+  onDataChanged(options?: SourceReloadOptions): Promise<void>;
 }

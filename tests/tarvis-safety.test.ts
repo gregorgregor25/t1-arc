@@ -1356,3 +1356,35 @@ describe("Tarv1s deterministic safety preflight", () => {
     expect(classifyTarvisSafety(question).kind).toBe("prediction");
   });
 });
+
+describe("Tarv1s record questions about boluses versus dose requests", () => {
+  it.each([
+    "Of the boluses AAPS gave me today, how many were automatic SMBs and how many did I enter myself? Totals in units.",
+    "How many units did I enter myself yesterday?",
+    "How many SMBs did AAPS give overnight, in units?",
+    "How much insulin did the loop deliver today, split into basal and boluses?",
+    "How many boluses were automatic yesterday? Show the units.",
+  ])("answers the record question %s", (question) => {
+    expect(classifyTarvisSafety(question).kind).toBe("allow");
+  });
+
+  it.each([
+    "How much should I bolus for my dinner?",
+    "Should I increase my basal rate overnight?",
+    "How many SMBs did AAPS give today, and how many units should I take now?",
+    "How many units did I enter myself today and what dose do I need for dinner?",
+    "AAPS gave 20 SMBs overnight. How much should I raise my basal?",
+    "How many units for 40 g?",
+    "What bolus for 60 g of carbs?",
+    "How much insulin did I take yesterday? And how many units for dinner?",
+    "How many units did I enter myself today. How many units do I need right now?",
+  ])("still refuses the dose or setting request %s", (question) => {
+    const decision = classifyTarvisSafety(question);
+    expect(decision.kind).toBe("treatment-advice");
+    if (decision.kind === "treatment-advice") {
+      expect(decision.answer.headline).toBe(
+        "I can review the records, but not set treatment",
+      );
+    }
+  });
+});

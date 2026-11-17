@@ -59,7 +59,7 @@ describe('Tarv1s therapy-state questions', () => {
     ['What was my time in range during eating soon targets?', { family: 'temporary-target', reason: 'eating-soon' }],
     ['How were my readings while the loop was suspended?', { family: 'loop-mode', group: 'suspended' }],
     ['How did my glucose look during open loop?', { family: 'loop-mode', group: 'open-loop' }],
-    ['When did I use temp targets this month?', { family: 'temporary-target', reason: undefined }],
+    ['When did I use temp targets this month?', { family: 'temporary-target', reason: undefined, mode: 'list' }],
   ])('recognises "%s"', (question, expected) => {
     expect(parseTherapyStateQuestion(question)).toEqual(expected);
   });

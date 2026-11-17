@@ -3,6 +3,7 @@ import {
   HealthRecordStore,
 } from '@/data/persistence/HealthRecordStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
+import { isLocalDataWriteSupersededError } from '@/data/privacy/localDataWriteEpoch';
 import { DataSourceStatus, TimeRange } from '@/domain/models';
 import {
   THERAPY_STATE_LOOKBACK_MS,
@@ -27,6 +28,34 @@ interface LiveInsulinImporter {
   refresh(): Promise<unknown>;
 }
 
+interface LiveImportFailure {
+  at: number;
+  /** A short machine code such as `authentication`; never a message body. */
+  code: string;
+}
+
+function liveImportFailureCode(error: unknown) {
+  const code =
+    error && typeof error === 'object'
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === 'string' && /^[a-z][a-z-]{0,39}$/.test(code)
+    ? code
+    : 'unknown';
+}
+
+/** Where stored insulin history starts, across imported and manual doses. */
+function storedFrom(...values: (number | undefined)[]): { dataFrom?: number } {
+  const known = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
+  return known.length ? { dataFrom: Math.min(...known) } : {};
+}
+
+function liveImportFailureDetail(label: string, failure: LiveImportFailure) {
+  return failure.code === 'authentication'
+    ? `${label} treatments could not be read. Check that the token allows reading treatments. Glucose is not affected.`
+    : `${label} treatments could not be read at the last check. Glucose is not affected.`;
+}
+
 export class ImportedInsulinSource implements InsulinSource {
   readonly sourceId = SOURCE_ID;
 
@@ -38,11 +67,26 @@ export class ImportedInsulinSource implements InsulinSource {
     private readonly clock: () => number = Date.now,
   ) {}
 
+  /** Kept in memory only; cleared by the next successful treatment read. */
+  private lastLiveImportFailure?: LiveImportFailure;
+
   async refresh() {
     for (const importer of this.localImporters) {
       await importer.refresh().catch(() => undefined);
     }
-    await this.liveImporter?.refresh().catch(() => undefined);
+    if (!this.liveImporter) return;
+    try {
+      await this.liveImporter.refresh();
+      this.lastLiveImportFailure = undefined;
+    } catch (error) {
+      // An erase in progress must stop this pass. Any other treatment
+      // failure never blocks glucose; it is shown in Source health instead.
+      if (isLocalDataWriteSupersededError(error)) throw error;
+      this.lastLiveImportFailure = {
+        at: this.clock(),
+        code: liveImportFailureCode(error),
+      };
+    }
   }
 
   async getBasalDeliveries(range: TimeRange) {
@@ -104,6 +148,14 @@ export class ImportedInsulinSource implements InsulinSource {
             ) === index,
         )
       : GLOOKO_IMPORT_CAPABILITIES;
+    const failure = this.liveImporter ? this.lastLiveImportFailure : undefined;
+    const failureStatus = failure
+      ? {
+          detail: liveImportFailureDetail(this.liveImporter!.label, failure),
+          errorCode: failure.code,
+          lastAttemptAt: Math.max(failure.at, latestImport?.importedAt ?? 0),
+        }
+      : undefined;
     if (!bounds.count) {
       return {
         id: this.sourceId,
@@ -118,11 +170,15 @@ export class ImportedInsulinSource implements InsulinSource {
         lastUpdatedAt: latestImport?.importedAt,
         capabilities,
         isLive: Boolean(this.liveImporter),
+        ...failureStatus,
       };
     }
 
+    // A running temp basal ends in the future; records reach only up to now.
+    const dataThrough =
+      bounds.latest === undefined ? undefined : Math.min(bounds.latest, now);
     const dataRecent =
-      bounds.latest !== undefined && now - bounds.latest <= RECENT_DATA_MS;
+      dataThrough !== undefined && now - dataThrough <= RECENT_DATA_MS;
     const importRecent =
       latestImport !== undefined &&
       now - latestImport.importedAt <= RECENT_IMPORT_MS;
@@ -162,10 +218,12 @@ export class ImportedInsulinSource implements InsulinSource {
           : 'imported',
       lastAttemptAt: latestImport?.importedAt,
       lastUpdatedAt: latestImport?.importedAt ?? bounds.lastRecordedAt,
-      dataThrough: bounds.latest,
+      dataThrough,
+      ...storedFrom(bounds.earliest, manualBounds.earliest),
       recordCount: bounds.count,
       capabilities,
       isLive: Boolean(this.liveImporter),
+      ...failureStatus,
     };
   }
 }

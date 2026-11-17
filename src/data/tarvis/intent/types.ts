@@ -175,6 +175,8 @@ export interface TarvisDurationLiteral extends TarvisSourceSpan {
   value: number;
   unit: "minute" | "hour" | "day" | "week" | "month";
   number: TarvisNumberLiteral;
+  /** "the past week": the last 7 local calendar days including today. */
+  recentLocalWeek?: true;
 }
 
 export interface TarvisDateLiteral extends TarvisSourceSpan {

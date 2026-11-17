@@ -66,6 +66,7 @@ import {
 } from "@/domain/regionalFormat";
 import { TarvisScreen } from "@/screens/TarvisScreen";
 import { loadRetrospectivePhysiology } from "@/data/tarvis/retrospectivePhysiology";
+import { createCurrentIobLoader } from "@/data/tarvis/currentIobLoader";
 import { createRetrospectiveIobLoader } from "@/data/tarvis/retrospectiveIobLoader";
 import { useAppTheme } from "@/theme/theme";
 import {
@@ -461,6 +462,10 @@ export function InsightsScreen() {
     (request: Parameters<typeof loadRetrospectivePhysiology>[0]) =>
       loadRetrospectivePhysiology({ ...request, asOf: now }),
     [now],
+  );
+  const loadTarvisCurrentIob = useMemo(
+    () => createCurrentIobLoader(dataMode),
+    [dataMode],
   );
   const loadTarvisTimestampedIob = useMemo(
     () => createRetrospectiveIobLoader(dataMode),
@@ -861,6 +866,9 @@ export function InsightsScreen() {
             }
             loadTimestampedIob={
               tarvisContext.liveData ? loadTarvisTimestampedIob : undefined
+            }
+            loadCurrentIob={
+              tarvisContext.liveData ? loadTarvisCurrentIob : undefined
             }
             loadReportForRange={loadTarvisReportForRange}
             onBack={() => {

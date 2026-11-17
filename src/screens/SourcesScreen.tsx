@@ -25,7 +25,7 @@ import {
   searchSettings,
   type SettingsSearchEntry,
 } from "@/navigation/settingsSearch";
-import { useDataContext } from "@/providers/DataProvider";
+import { type SourceReloadOptions, useDataContext } from "@/providers/DataProvider";
 import { OnboardingScreen } from "@/screens/OnboardingScreen";
 import { SettingsHome } from "@/screens/settings/SettingsHome";
 import {
@@ -105,9 +105,12 @@ export function SourcesScreen({
     });
   }, [navigation, requestedPanel, route?.params?.source]);
 
-  const showChangedPersonalData = useCallback(async () => {
-    await reloadSources();
-  }, [reloadSources]);
+  const showChangedPersonalData = useCallback(
+    async (options?: SourceReloadOptions) => {
+      await reloadSources(options);
+    },
+    [reloadSources],
+  );
 
   const toggleSetting = useCallback((setting: string) => {
     setExpandedSetting((current) => (current === setting ? undefined : setting));

@@ -32,9 +32,12 @@ const persistence = vi.hoisted(() => {
         runAsync: vi.fn(async (sql: string, ...parameters: unknown[]) => {
           events.push('write');
           if (/INSERT INTO health_connect_records/.test(sql)) {
-            recordWrites += 1;
-            if (typeof parameters[11] === 'string') {
-              recordPayloads.push(parameters[11]);
+            // Multi-row insert: 13 bound values per record row.
+            const rows = parameters.length / 13;
+            recordWrites += rows;
+            for (let row = 0; row < rows; row += 1) {
+              const payload = parameters[row * 13 + 11];
+              if (typeof payload === 'string') recordPayloads.push(payload);
             }
           }
           if (/DELETE FROM health_connect_records/.test(sql)) {
@@ -164,7 +167,8 @@ describe('Health Connect write batching', () => {
       HEALTH_CONNECT_WRITE_BATCH_SIZE,
       1,
     ]);
-    expect(persistence.sourceWritesPerTransaction).toEqual([1, 1, 1]);
+    // Source labels are page-level, so only the first batch writes them.
+    expect(persistence.sourceWritesPerTransaction).toEqual([1, 0, 0]);
   });
 
   it('retains sampled parent interval bounds in the local record payload', async () => {

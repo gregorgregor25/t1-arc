@@ -157,7 +157,7 @@ function MetricTile({ metric, wide, children }: { metric: GlanceMetric; wide: bo
           </View>
         ) : null}
       </Pressable>
-      {children}
+      {children ? <View style={styles.tileExtra}>{children}</View> : null}
     </View>
   );
 }
@@ -511,6 +511,11 @@ const styles = StyleSheet.create({
     minHeight: 96,
     padding: 14,
     gap: 4,
+  },
+  // Lines up extra rows (such as GMI) with the tile text above them.
+  tileExtra: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
   },
   tileHeader: {
     flexDirection: "row",

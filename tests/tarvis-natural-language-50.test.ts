@@ -421,11 +421,14 @@ function productionPath(testCase: NaturalQuestionCase): ExpectedPath {
     plan.kind === "scoped-personal-data" ||
     plan.kind === "retrospective-event" ||
     plan.kind === "treatment-profile" ||
-    plan.kind === "therapy-state"
+    plan.kind === "therapy-state" ||
+    plan.kind === "record-question"
   ) {
     return plan.kind === "retrospective-event"
       ? "scoped-personal-data"
-      : plan.kind === "treatment-profile" || plan.kind === "therapy-state"
+      : plan.kind === "treatment-profile" ||
+        plan.kind === "therapy-state" ||
+        plan.kind === "record-question"
         ? "scoped-personal-data"
       : plan.kind;
   }

@@ -706,7 +706,7 @@ describe("Tarv1s production request coordinator", () => {
     expect(result.kind).toBe("answer");
     if (result.kind !== "answer") throw new Error("Expected clarification");
     expect(result.source).toBe("capability");
-    expect(result.answer.answer).toContain("exclusion");
+    expect(result.answer.answer).toContain("leave out particular records");
   });
 
   it("keeps a hypothetical clinical definition on the record-free education route", () => {

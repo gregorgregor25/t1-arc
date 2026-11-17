@@ -83,6 +83,12 @@ import {
 import { coordinateTarvisContextRequest, resolveSelectedContextAsOf } from "@/data/tarvis/contextRequestCoordinator";
 import { loadLocalCompoundAnswer } from "@/data/tarvis/localCompoundAnswer";
 import { loadTherapyStateAnswer } from "@/data/tarvis/therapyStateEvidence";
+import type { CurrentIobLoader } from "@/data/tarvis/currentIobLoader";
+import {
+  buildCurrentIobAnswer,
+  buildDeviceChangeAnswer,
+  recordQuestionRange,
+} from "@/data/tarvis/recordAnswers";
 import { tarvisEvidencePlanClarificationAnswer } from "@/data/tarvis/evidencePlanner";
 import { loadPlannedGlucoseEpisodeEvidence } from "@/data/tarvis/plannedGlucoseEpisodeEvidence";
 import { loadRetrospectiveEventReview } from "@/data/tarvis/retrospectiveEventReview";
@@ -143,6 +149,7 @@ import {
   signOutChatGpt,
   type ChatGptConnectionState,
 } from "@/data/tarvis/chatGptConnection";
+import { providerSwitchHint } from "@/data/tarvis/providerSwitchHint";
 import { loadTarvisTreatmentProfile } from "@/data/tarvis/treatmentProfile";
 import {
   buildTarvisTreatmentProfileAnswer,
@@ -326,6 +333,8 @@ interface Props {
   loadTimelineData?(range: TimeRange): Promise<TimelineData>;
   loadPhysiologyData?: RetrospectivePhysiologyLoader;
   loadTimestampedIob?: RetrospectiveIobLoader;
+  /** The latest insulin-on-board estimate AAPS or Nightscout reported; live data only. */
+  loadCurrentIob?: CurrentIobLoader;
   loadReportForRange?(
     current: TimeRange,
     previous: TimeRange,
@@ -1373,6 +1382,7 @@ export function TarvisScreen({
   loadTimelineData,
   loadPhysiologyData,
   loadTimestampedIob,
+  loadCurrentIob,
   loadReportForRange,
   onBack,
   onInspectEvidence,
@@ -2439,6 +2449,51 @@ export function TarvisScreen({
         );
         return;
       }
+      if (plan.kind === "record-question") {
+        let local;
+        if (plan.question.kind === "insulin-on-board") {
+          // Read the estimate AAPS or Nightscout reported; never calculated here.
+          const estimateAsOf = Date.now();
+          local = buildCurrentIobAnswer({
+            estimate: loadCurrentIob ? await loadCurrentIob(estimateAsOf) : undefined,
+            liveData: Boolean(loadCurrentIob),
+            asOf: estimateAsOf,
+          });
+        } else {
+          if (!loadTimelineData) {
+            throw new Error("Your local health data is not ready yet.");
+          }
+          const timeline = await loadTimelineData(
+            recordQuestionRange(plan.question, questionAsOf),
+          );
+          local = buildDeviceChangeAnswer({
+            question: plan.question,
+            timeline,
+            asOf: questionAsOf,
+          });
+        }
+        operation.assertCurrent();
+        await assertLocalDataWriteLeaseCurrent(activeWriteLease);
+        const localEvidence = compactTarvisEvidence(local.evidence);
+        await appendExchange(
+          {
+            answer: local.answer,
+            answerSource: "local",
+            modelRequestSent: false,
+            modelSharing: "local-only",
+            evidenceLookup: {
+              references: new Map(
+                localEvidence.map((reference) => [reference.id, reference]),
+              ),
+            },
+            nextPendingClarification: undefined,
+            prompt,
+          },
+          activeWriteLease,
+          operation,
+        );
+        return;
+      }
       if (plan.kind === "therapy-state") {
         if (!loadTimelineData) {
           throw new Error("Your local health data is not ready yet.");
@@ -3385,6 +3440,11 @@ export function TarvisScreen({
             <Text style={[styles.errorText, { color: colors.textSecondary }]}>
               {error}
             </Text>
+            {providerSwitchHint(provider, errorNeedsSettings, chatGptState.connected) ? (
+              <Text style={[styles.errorText, { color: colors.textSecondary }]}>
+                {providerSwitchHint(provider, errorNeedsSettings, chatGptState.connected)}
+              </Text>
+            ) : null}
             {provider === "chatgpt" && errorManageUsage ? (
               <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ padding: 12 }}><Text style={{ color: colors.primary, fontWeight: "700" }}>Manage usage in ChatGPT</Text></Pressable>
             ) : errorNeedsSettings ? <Pressable accessibilityRole="button" accessibilityHint="Opens Tarv1s in Settings" onPress={openTarvisSettingsPage} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>Connection settings</Text></Pressable> : null}

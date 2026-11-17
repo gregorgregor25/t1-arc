@@ -39,6 +39,7 @@ import {
 } from "@/domain/time";
 
 import type { TarvisAnswer } from "./types";
+import { hasRecentWeekPhrase, RECENT_WEEK_DAYS } from "./recentWeekPhrase";
 import { mealNutritionSummary } from "@/domain/mealNutrition";
 import { extractTarvisLiterals } from "./intent/literals";
 import {
@@ -342,6 +343,11 @@ export function rangeForRetrospectiveEventQuestion(
   const requestedWeekday = weekdayDateKey(question, today);
   if (requestedWeekday) {
     return rangeForRetrospectiveDate(requestedWeekday, question, asOf);
+  }
+  // "the past week" is the last 7 local days including today, never the
+  // previous calendar week that bare "last week" means.
+  if (hasRecentWeekPhrase(question)) {
+    return multiDayRange(today, RECENT_WEEK_DAYS, asOf);
   }
   const calendarPeriod = retrospectiveCalendarPeriodRange(
     question,

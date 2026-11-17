@@ -2446,10 +2446,75 @@ private object T1ArcGlucoseNotification {
     return notification.build()
   }
 
+  // What the posted glucose notification shows, so an identical re-post (and
+  // its value icon and chart bitmaps) can be skipped. Read and written only
+  // inside the phone-surface gate.
+  @Volatile private var shownKey: String? = null
+
+  /**
+   * A small key for everything the glucose notification shows, from cheap
+   * inputs only: reading, value text, trend, age text, on-board text, alarm
+   * warning, colour and privacy mode. A change in any of them re-posts.
+   */
+  private fun contentKey(context: Context): String {
+    val snapshot = T1ArcGlucoseDisplayState.snapshot(context)
+    val now = System.currentTimeMillis()
+    val freshness = T1ArcGlucoseDisplayState.freshness(context, now)
+    val parts = mutableListOf<Any?>(
+      freshness,
+      T1ArcGlucoseDisplayState.lockScreenVisible(context),
+      T1ArcGlucoseAlarmEngine.ongoingWarning,
+      T1ArcGlucoseDisplayState.displayColor(context, snapshot, freshness),
+    )
+    if (snapshot == null) {
+      parts.add(AapsLocalStore.selectedSource(context))
+    } else {
+      val locale = T1ArcGlucoseDisplayState.displayLocale(context)
+      val onBoard =
+        T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.NOTIFICATION, now)
+      parts.add(snapshot.timestampMs)
+      parts.add(snapshot.mmolL)
+      parts.add(snapshot.trend)
+      parts.add(snapshot.trendOrigin)
+      parts.add(snapshot.sourceLabel)
+      parts.add(T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL))
+      parts.add(T1ArcGlucoseDisplayState.displayGlucoseUnit(context))
+      parts.add(locale)
+      parts.add(GlucoseSurfaceCopy.age(snapshot.timestampMs, now, locale))
+      parts.add(GlucoseSurfaceCopy.staleTitle(snapshot.timestampMs, now, locale))
+      parts.add(formatTime(context, snapshot.timestampMs))
+      parts.add(T1ArcGlucoseDisplayState.appearance(context).categoryFor(snapshot.mmolL))
+      parts.add(onBoard?.compact)
+      parts.add(onBoard?.detail)
+    }
+    return parts.joinToString("\u001f")
+  }
+
+  private fun stillShown(manager: NotificationManager): Boolean =
+    runCatching { manager.activeNotifications.any { it.id == NOTIFICATION_ID } }
+      .getOrDefault(false)
+
+  /** Records that the service just posted the glucose notification itself. */
+  fun rememberShown(context: Context) {
+    shownKey = runCatching { contentKey(context) }.getOrNull()
+  }
+
+  /** The notification id now shows something else, or nothing. */
+  fun forgetShown() {
+    shownKey = null
+  }
+
   fun notify(context: Context) {
     T1ArcGlucosePhoneSurfaceGate.publishIfEnabled(context) {
       val manager = context.getSystemService(NotificationManager::class.java)
+      val key = runCatching { contentKey(context) }.getOrNull()
+      // Same content still on screen: nothing to post. A new reading, a new
+      // age text or an alarm warning changes the key and posts at once.
+      if (key != null && key == shownKey && stillShown(manager)) {
+        return@publishIfEnabled
+      }
       manager.notify(NOTIFICATION_ID, build(context))
+      shownKey = key
       T1ArcGlucoseWidget.updateAll(context)
       T1ArcAodAccessibilityService.snapshotChanged()
     }
@@ -2458,6 +2523,7 @@ private object T1ArcGlucoseNotification {
   fun cancel(context: Context) {
     T1ArcGlucosePhoneSurfaceGate.mutate {
       context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+      shownKey = null
       T1ArcAodAccessibilityService.snapshotChanged()
     }
   }
@@ -2949,6 +3015,9 @@ class T1ArcGlucoseDisplayService : Service() {
   private var networkCallbackRegistered = false
   private var serviceAlive = false
   private var alarmPlaybackActive = false
+  // The mode and service type of this instance's last startForeground call.
+  private var foregroundStartedMode: GlucoseCollectorForegroundMode? = null
+  private var foregroundStartedType = 0
   private var validatedNetworkSyncPending = false
   private var aapsSyncPending = false
   private val cadenceTracker = ReadingCadenceTracker()
@@ -3122,6 +3191,14 @@ class T1ArcGlucoseDisplayService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val foregroundType =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+          (if (alarmPlaybackActive) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
+      } else {
+        0
+      }
+    var refreshShownNotification = false
     // Resolve ownership inside the publication fence. A service start that was
     // queued while display was on must not publish the old glucose foreground
     // notification after disable has committed and cancelled it.
@@ -3130,6 +3207,17 @@ class T1ArcGlucoseDisplayService : Service() {
         val resolvedMode = T1ArcGlucoseDisplayState.collectorMode(this)
         if (resolvedMode == GlucoseCollectorForegroundMode.STOPPED) {
           return@mutate null
+        }
+        // A restart of the running display service does not need another
+        // foreground post: refresh the shown content once below instead, which
+        // skips the post when nothing visible changed.
+        if (
+          resolvedMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY &&
+            resolvedMode == foregroundStartedMode &&
+            foregroundType == foregroundStartedType
+        ) {
+          refreshShownNotification = true
+          return@mutate resolvedMode
         }
         val notification =
           when (resolvedMode) {
@@ -3143,11 +3231,17 @@ class T1ArcGlucoseDisplayService : Service() {
           startForeground(
             NOTIFICATION_ID,
             notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-              (if (alarmPlaybackActive) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
+            foregroundType,
           )
         } else {
           startForeground(NOTIFICATION_ID, notification)
+        }
+        foregroundStartedMode = resolvedMode
+        foregroundStartedType = foregroundType
+        if (resolvedMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY) {
+          T1ArcGlucoseNotification.rememberShown(this)
+        } else {
+          T1ArcGlucoseNotification.forgetShown()
         }
         resolvedMode
       }
@@ -3155,6 +3249,7 @@ class T1ArcGlucoseDisplayService : Service() {
       stopSelf()
       return START_NOT_STICKY
     }
+    if (refreshShownNotification) T1ArcGlucoseNotification.notify(this)
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)
