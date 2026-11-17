@@ -84,8 +84,8 @@ function withShortcutResources(config) {
 <resources>
   <string name="t1arc_shortcut_log_food_short">Log food</string>
   <string name="t1arc_shortcut_log_food_long">Log a meal in T1 Arc</string>
-  <string name="t1arc_shortcut_log_context_short">Log context</string>
-  <string name="t1arc_shortcut_log_context_long">Log health context in T1 Arc</string>
+  <string name="t1arc_shortcut_log_context_short">Log something</string>
+  <string name="t1arc_shortcut_log_context_long">Log something in T1 Arc</string>
 </resources>
 `,
       );

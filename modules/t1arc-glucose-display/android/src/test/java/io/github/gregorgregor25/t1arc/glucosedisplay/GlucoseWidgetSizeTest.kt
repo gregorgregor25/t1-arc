@@ -59,6 +59,31 @@ class GlucoseWidgetSizeTest {
     assertEquals(WidgetVariant.COMPACT, GlucoseWidgetLayoutPolicy.variant(110f, 50f))
   }
 
+  @Test fun `one widget adapts across small, medium and large tiers`() {
+    // Large: today's default 4 x 2 and every size that already showed the full card.
+    assertEquals(WidgetTier.LARGE, GlucoseWidgetLayoutPolicy.tier(380f, 238f))
+    assertEquals(WidgetTier.LARGE, GlucoseWidgetLayoutPolicy.tier(531.0476f, 118.09524f))
+    assertEquals(WidgetTier.LARGE, GlucoseWidgetLayoutPolicy.tier(280f, 110f))
+    assertEquals(WidgetTier.LARGE, GlucoseWidgetLayoutPolicy.tier(Float.NaN, 0f))
+    // Medium: about 4 x 1, wide enough for direction and range words.
+    assertEquals(WidgetTier.MEDIUM, GlucoseWidgetLayoutPolicy.tier(340f, 60f))
+    assertEquals(WidgetTier.MEDIUM, GlucoseWidgetLayoutPolicy.tier(250f, 76f))
+    assertEquals(WidgetTier.MEDIUM, GlucoseWidgetLayoutPolicy.tier(400f, 100f))
+    // Small: about 2 x 1, and square or tall shapes below the full card.
+    assertEquals(WidgetTier.SMALL, GlucoseWidgetLayoutPolicy.tier(160f, 76f))
+    assertEquals(WidgetTier.SMALL, GlucoseWidgetLayoutPolicy.tier(249f, 60f))
+    assertEquals(WidgetTier.SMALL, GlucoseWidgetLayoutPolicy.tier(150f, 150f))
+    assertEquals(WidgetTier.SMALL, GlucoseWidgetLayoutPolicy.tier(260f, 150f))
+    assertEquals(WidgetTier.SMALL, GlucoseWidgetLayoutPolicy.tier(110f, 40f))
+  }
+
+  @Test fun `only the large tier keeps the full card variant`() {
+    listOf(WidgetSize(340f, 60f), WidgetSize(160f, 76f), WidgetSize(150f, 150f)).forEach {
+      assertEquals(WidgetVariant.COMPACT, GlucoseWidgetLayoutPolicy.variant(it.width, it.height))
+    }
+    assertEquals(WidgetVariant.FULL, GlucoseWidgetLayoutPolicy.variant(380f, 238f))
+  }
+
   @Test fun `compact card adds insulin and carbs on board only when there is room`() {
     assertEquals(CompactWidgetPlan(row = true, showOnBoard = true),
       GlucoseWidgetLayoutPolicy.compactPlan(340f, 60f, hasOnBoard = true))

@@ -2060,14 +2060,11 @@ private object T1ArcGlucoseNotification {
       T1ArcGlucoseDisplayState.displayTimeZone(context),
     )
 
-  private fun ageCopy(timestampMs: Long, now: Long, locale: Locale): String {
-    val minutes = floor(max(0L, now - timestampMs) / 60_000.0).toInt()
-    return when (minutes) {
-      0 -> "just now"
-      1 -> "${RegionalNumberFormatter.integer(1L, locale)} min ago"
-      else -> "${RegionalNumberFormatter.integer(minutes.toLong(), locale)} min ago"
+  /** Strikes through the last known value where the host renders spans. */
+  private fun struck(copy: StruckText): CharSequence =
+    SpannableString(copy.text).apply {
+      setSpan(StrikethroughSpan(), copy.struckStart, copy.struckEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
-  }
 
   private fun trendPresentation(trend: String): Pair<String, String> =
     GlucoseTrendPresentation.phone(trend) ?: ("?" to "Direction unavailable")
@@ -2263,17 +2260,13 @@ private object T1ArcGlucoseNotification {
     context: Context,
     freshness: DisplayFreshness,
     timestampMs: Long?,
-  ): Notification =
-    builder(context)
+  ): Notification {
+    // Never the value or insulin and carbs on board: only freshness, as before.
+    val copy = GlucoseSurfaceCopy.redacted(freshness)
+    return builder(context)
       .setSmallIcon(R.drawable.t1arc_notification_pulse)
-      .setContentTitle("T1 Arc glucose")
-      .setContentText(
-        if (freshness == DisplayFreshness.STALE) {
-          "Last known glucose is stale"
-        } else {
-          "${freshness.label} reading available"
-        }
-      )
+      .setContentTitle(copy.title)
+      .setContentText(copy.text)
       .setCategory(Notification.CATEGORY_STATUS)
       .setVisibility(Notification.VISIBILITY_PUBLIC)
       .setOnlyAlertOnce(true)
@@ -2281,6 +2274,7 @@ private object T1ArcGlucoseNotification {
       .setShowWhen(timestampMs != null)
       .setWhen(timestampMs ?: System.currentTimeMillis())
       .build()
+  }
 
   fun buildPrivateMonitoring(context: Context): Notification {
     ensureChannel(context)
@@ -2299,9 +2293,10 @@ private object T1ArcGlucoseNotification {
       builder(context)
         .setSmallIcon(R.drawable.t1arc_notification_pulse)
         .setContentTitle("T1 Arc private monitoring")
-        .setContentText(if (T1ArcGlucoseDisplayState.alertMonitoringEnabled(context))
-          "Your chosen alerts are being checked on this phone."
-          else "Your home screen glucose widget is being kept up to date.")
+        .setContentText(GlucoseSurfaceCopy.monitoringText(
+          T1ArcGlucoseDisplayState.alertMonitoringEnabled(context),
+          GlucoseSurfaceCopy.selectedSourceName(AapsLocalStore.selectedSource(context)),
+        ))
         .setContentIntent(pendingIntent(context))
         .setCategory(Notification.CATEGORY_SERVICE)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
@@ -2325,80 +2320,85 @@ private object T1ArcGlucoseNotification {
     val freshness = T1ArcGlucoseDisplayState.freshness(context, now)
     val notification =
       if (snapshot == null) {
+        // Name the source chosen in Settings; never assume LibreLinkUp.
+        val waiting = GlucoseSurfaceCopy.waiting(
+          GlucoseSurfaceCopy.selectedSourceName(AapsLocalStore.selectedSource(context)),
+        )
         builder(context)
           .setSmallIcon(R.drawable.t1arc_notification_pulse)
-          .setContentTitle("Waiting for personal glucose")
-          .setContentText("T1 Arc is checking your saved LibreLinkUp connection.")
-          .setStyle(
-            Notification.BigTextStyle().bigText(
-              "T1 Arc is checking your saved LibreLinkUp connection. The notification will update when a reading is available."
-            )
-          )
+          .setContentTitle(waiting.title)
+          .setContentText(waiting.text)
+          .setStyle(Notification.BigTextStyle().bigText(waiting.bigText))
           .setShowWhen(false)
       } else {
         val (arrow, direction) = trendPresentation(snapshot.trend)
-        val directionCopy =
-          if (snapshot.trendOrigin == "calculated") "$direction (calculated)" else direction
+        val calculated = snapshot.trendOrigin == "calculated"
+        val locale = T1ArcGlucoseDisplayState.displayLocale(context)
         val value = T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL)
         val unit = T1ArcGlucoseDisplayState.displayGlucoseUnit(context)
-        val age =
-          ageCopy(
-            snapshot.timestampMs,
-            now,
-            T1ArcGlucoseDisplayState.displayLocale(context),
-          )
-        val status =
-          if (freshness == DisplayFreshness.STALE) {
-            "Stale · Last known · $age · ${formatTime(context, snapshot.timestampMs)}"
-          } else {
-            "${freshness.label} · $age · ${formatTime(context, snapshot.timestampMs)}"
-          }
+        val age = GlucoseSurfaceCopy.age(snapshot.timestampMs, now, locale)
+        val rangeWord = GlucoseSurfaceCopy.rangeWord(
+          T1ArcGlucoseDisplayState.appearance(context).categoryFor(snapshot.mmolL),
+        )
+        val sourceName = GlucoseSurfaceCopy.readingSourceName(snapshot.sourceLabel)
+        val stale = freshness == DisplayFreshness.STALE
         // Shown with the private notification only. The redacted lock-screen
         // version below never includes it, matching glucose privacy.
         val onBoard =
           T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.NOTIFICATION, now)
+        val expandedTitle =
+          glucoseDisplayTitle(
+            value,
+            GlucoseSurfaceCopy.directionSuffix(arrow, direction, calculated, unit),
+            freshness,
+          )
+        val title: CharSequence
+        val text: CharSequence
+        val summary: CharSequence
+        if (stale) {
+          val lastKnown = struck(
+            GlucoseSurfaceCopy.staleLine(value, formatTime(context, snapshot.timestampMs), sourceName),
+          )
+          title = GlucoseSurfaceCopy.staleTitle(snapshot.timestampMs, now, locale)
+          text = lastKnown
+          summary = SpannableStringBuilder(lastKnown).apply {
+            if (onBoard != null) append(" · ${onBoard.compact} · ${onBoard.detail}")
+          }
+        } else {
+          title = glucoseDisplayTitle(
+            value,
+            GlucoseSurfaceCopy.directionSuffix(arrow, direction, calculated),
+            freshness,
+          )
+          text = GlucoseSurfaceCopy.readingLine(age, freshness, rangeWord, onBoard?.compact)
+          summary = GlucoseSurfaceCopy.expandedSummary(
+            age, freshness, sourceName, onBoard?.compact, onBoard?.detail,
+          )
+        }
         val readingBuilder =
           builder(context)
           .setSmallIcon(valueIcon(context, snapshot, freshness))
-          .setContentTitle(
-            glucoseDisplayTitle(value, " $arrow  $directionCopy", freshness)
-          )
-          .setContentText("$unit · $status")
+          .setContentTitle(title)
+          .setContentText(text)
           .setShowWhen(true)
           .setWhen(snapshot.timestampMs)
-        if (onBoard != null) readingBuilder.setSubText(onBoard.compact)
         val chart = historyBitmap(context, snapshot)
         if (chart != null) {
           readingBuilder.setStyle(
             Notification.BigPictureStyle()
               .bigPicture(chart)
-              .setBigContentTitle(
-                glucoseDisplayTitle(
-                  value,
-                  " $unit $arrow · $directionCopy",
-                  freshness,
-                )
-              )
-              .setSummaryText(
-                if (onBoard == null) "$status · ${snapshot.sourceLabel}"
-                else "$status · ${onBoard.detail}"
-              )
+              .setBigContentTitle(if (stale) title else expandedTitle)
+              .setSummaryText(summary)
           )
         } else {
           readingBuilder.setStyle(
-            Notification.BigTextStyle().bigText(
-              SpannableStringBuilder()
-                .append(
-                  glucoseDisplayTitle(
-                    value,
-                    " $unit $arrow · $directionCopy",
-                    freshness,
-                  )
-                )
-                .append("\n$status")
-                .append(if (onBoard == null) "" else "\n${onBoard.compact}\n${onBoard.detail}")
-                .append("\n${snapshot.sourceLabel} · Tap to inspect the timeline.")
-            )
+            Notification.BigTextStyle()
+              .setBigContentTitle(if (stale) title else expandedTitle)
+              .bigText(
+                SpannableStringBuilder()
+                  .append(summary)
+                  .append("\nTap to inspect the timeline.")
+              )
           )
         }
         readingBuilder
@@ -2417,14 +2417,14 @@ private object T1ArcGlucoseNotification {
       .addAction(
         Notification.Action.Builder(
           null,
-          "Log food",
+          GlucoseSurfaceCopy.LOG_FOOD_ACTION,
           foodLogPendingIntent(context),
         ).build()
       )
       .addAction(
         Notification.Action.Builder(
           null,
-          "Log context",
+          GlucoseSurfaceCopy.LOG_SOMETHING_ACTION,
           contextLogPendingIntent(context),
         ).build()
       )
