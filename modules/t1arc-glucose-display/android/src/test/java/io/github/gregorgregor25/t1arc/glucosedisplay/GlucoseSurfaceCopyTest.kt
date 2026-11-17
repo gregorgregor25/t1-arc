@@ -146,7 +146,7 @@ class GlucoseSurfaceCopyTest {
     assertEquals(WidgetLines("↘ Gently falling", "In range · 2 min ago"),
       GlucoseSurfaceCopy.mediumLines("↘", "Gently falling", "In range", false, "2 min ago",
         DisplayFreshness.CURRENT, "08:39", null))
-    assertEquals(WidgetLines("↓ Falling · Low", "1 min ago"),
+    assertEquals(WidgetLines("Low · ↓ Falling", "1 min ago"),
       GlucoseSurfaceCopy.mediumLines("↓", "Falling", "Low", true, "1 min ago", DisplayFreshness.CURRENT, "08:39", null))
     assertEquals(WidgetLines("→ Steady", "Delayed · High · 8 min ago"),
       GlucoseSurfaceCopy.mediumLines("→", "Steady", "High", false, "8 min ago", DisplayFreshness.DELAYED, "08:39", null))
@@ -156,6 +156,12 @@ class GlucoseSurfaceCopyTest {
     assertEquals(WidgetLines("No new reading", "Last known at 08:14"),
       GlucoseSurfaceCopy.mediumLines("↘", "Gently falling", "In range", false, "Just now",
         DisplayFreshness.STALE, "08:14", null))
+    assertEquals(WidgetLines("Very low · ↓ Falling quickly (calculated)", "1 min ago"),
+      GlucoseSurfaceCopy.mediumLines("↓", "Falling quickly (calculated)", "Very low", true, "1 min ago",
+        DisplayFreshness.CURRENT, "08:39", null))
+    assertEquals(WidgetLines("Reading time is ahead", "10 min ahead · check this phone's clock"),
+      GlucoseSurfaceCopy.mediumLines("↘", "Gently falling", "In range", false, "10 min ahead",
+        DisplayFreshness.STALE, "08:49", null, clockAhead = true))
   }
 
   @Test fun `widget descriptions speak the range word and stale state`() {

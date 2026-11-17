@@ -175,14 +175,20 @@ internal object GlucoseSurfaceCopy {
     freshness: DisplayFreshness,
     lastKnownTime: String,
     staleDuration: String?,
+    clockAhead: Boolean = false,
   ): WidgetLines {
+    if (freshness == DisplayFreshness.STALE && clockAhead) {
+      // A reading stamped ahead of this phone is a clock problem, not an outage.
+      return WidgetLines("Reading time is ahead", "$age · check this phone's clock")
+    }
     if (freshness == DisplayFreshness.STALE) {
       return WidgetLines("No new reading",
         listOfNotNull("Last known at $lastKnownTime", staleDuration).joinToString(" · "))
     }
     val delayed = freshness == DisplayFreshness.DELAYED
     return if (lowEmphasis) {
-      WidgetLines("$arrow $direction · $rangeWord", listOfNotNull("Delayed".takeIf { delayed }, age).joinToString(" · "))
+      // The range word leads so ellipsizing trims the direction, never "Low" or "Very low".
+      WidgetLines("$rangeWord · $arrow $direction", listOfNotNull("Delayed".takeIf { delayed }, age).joinToString(" · "))
     } else {
       WidgetLines("$arrow $direction", listOfNotNull("Delayed".takeIf { delayed }, rangeWord, age).joinToString(" · "))
     }

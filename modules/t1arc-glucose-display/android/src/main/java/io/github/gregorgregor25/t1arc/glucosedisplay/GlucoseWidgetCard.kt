@@ -448,12 +448,13 @@ internal object GlucoseWidgetCard {
     val age = age(snapshot.timestampMs, now, locale)
     val rangeWord = GlucoseSurfaceCopy.rangeWord(category)
     // A reading time ahead of the phone is stale too, but has no "minutes without a reading".
-    val staleDuration = if (!stale || snapshot.timestampMs - now > 120_000L) null
+    val clockAhead = snapshot.timestampMs - now > 120_000L
+    val staleDuration = if (!stale || clockAhead) null
       else GlucoseSurfaceCopy.duration(max(0L, now - snapshot.timestampMs) / 60_000L, locale)
     val lines = GlucoseSurfaceCopy.mediumLines(arrow, direction, rangeWord,
       GlucoseSurfaceCopy.lowEmphasis(category, fresh), age, fresh,
       RegionalTimeFormatter.format(snapshot.timestampMs, locale, T1ArcGlucoseDisplayState.displayTimeZone(context)),
-      staleDuration)
+      staleDuration, clockAhead)
     // The number takes at most about two fifths of the width.
     var valueSize = min(innerH * 0.8f, 46f)
     valueSize = min(valueSize, valueSize * innerW * 0.42f / max(1f, measure(value, valueSize, true)))
