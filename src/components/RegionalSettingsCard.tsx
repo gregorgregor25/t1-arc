@@ -22,7 +22,13 @@ import {
   type T1ArcEnergyUnit,
   type T1ArcRegionalProfile,
 } from "@/domain/regionalProfile";
+import {
+  countryOptions,
+  timeZoneLabel,
+  timeZoneOptions,
+} from "@/domain/regionalPickerOptions";
 import { useAppTheme } from "@/theme/theme";
+import { SearchablePickerModal } from "./SearchablePickerModal";
 import { SectionCard } from "./SectionCard";
 
 const OPTIONS: { label: string; value: T1ArcRegion }[] = [
@@ -88,10 +94,15 @@ const LANGUAGE_OPTIONS = [
 ];
 
 export function RegionalSettingsCard({
+  moreOptionsOpen,
   onChange,
+  onToggleMoreOptions,
   showHeading = true,
 }: {
+  /** When given with onToggleMoreOptions, the parent controls "More options". */
+  moreOptionsOpen?: boolean;
   onChange?(profile: T1ArcRegionalProfile): void;
+  onToggleMoreOptions?(): void;
   showHeading?: boolean;
 }) {
   const { colors, radius } = useAppTheme();
@@ -100,6 +111,10 @@ export function RegionalSettingsCard({
   const [error, setError] = useState<string>();
   const [timeZoneDraft, setTimeZoneDraft] = useState("");
   const [countryDraft, setCountryDraft] = useState("");
+  const [localMoreOpen, setLocalMoreOpen] = useState(false);
+  const [picker, setPicker] = useState<"country" | "timeZone">();
+  const controlled = moreOptionsOpen !== undefined && onToggleMoreOptions !== undefined;
+  const showMore = controlled ? moreOptionsOpen : localMoreOpen;
 
   useEffect(
     () =>
@@ -119,6 +134,24 @@ export function RegionalSettingsCard({
     () => resolveRegionalDefaults(profile ?? DEFAULT_REGIONAL_PROFILE),
     [profile],
   );
+  const timeZoneList = useMemo(() => timeZoneOptions(), []);
+  const countryList = useMemo(() => countryOptions(defaults.locale), [defaults.locale]);
+  const selectedTimeZone =
+    profile && profile.analysisTimeZone !== "automatic"
+      ? profile.analysisTimeZone
+      : defaults.timeZone;
+  const otherCountryName =
+    profile &&
+    profile.countryCode !== "automatic" &&
+    !COUNTRY_OPTIONS.some((option) => option.value === profile.countryCode)
+      ? (countryList?.find((option) => option.value === profile.countryCode)?.label ??
+        profile.countryCode)
+      : undefined;
+
+  function toggleMoreOptions() {
+    if (controlled) onToggleMoreOptions();
+    else setLocalMoreOpen((open) => !open);
+  }
 
   async function updateProfile(update: Partial<T1ArcRegionalProfile>) {
     if (!profile || working) return;
@@ -128,7 +161,7 @@ export function RegionalSettingsCard({
     try {
       await saveRegionalProfile(next);
     } catch {
-      setError("T1 Arc could not save the regional defaults.");
+      setError("T1 Arc could not save this change. Please try again.");
     } finally {
       setWorking(false);
     }
@@ -174,6 +207,51 @@ export function RegionalSettingsCard({
     );
   }
 
+  function pickerButton(label: string, value: string, hint: string, open: () => void) {
+    return (
+      <Pressable
+        accessibilityHint={hint}
+        accessibilityLabel={`${label}: ${value}`}
+        accessibilityRole="button"
+        disabled={working}
+        onPress={open}
+        style={({ pressed }) => [
+          styles.pickerButton,
+          {
+            borderColor: colors.border,
+            borderRadius: radius.md,
+            opacity: working ? 0.5 : pressed ? 0.68 : 1,
+          },
+        ]}
+      >
+        <Text numberOfLines={1} style={[styles.pickerValue, { color: colors.text }]}>
+          {value}
+        </Text>
+        <Text style={[styles.pickerAction, { color: colors.primary }]}>Change</Text>
+      </Pressable>
+    );
+  }
+
+  function saveButton(onPress: () => void) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        disabled={working}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.saveSetting,
+          {
+            backgroundColor: colors.primary,
+            borderRadius: radius.md,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
+      >
+        <Text style={[styles.saveSettingText, { color: colors.onPrimary }]}>Save</Text>
+      </Pressable>
+    );
+  }
+
   return (
     <SectionCard>
       <View style={styles.header}>
@@ -191,172 +269,215 @@ export function RegionalSettingsCard({
         <ActivityIndicator color={colors.primary} style={styles.loading} />
       ) : (
         <>
-          {optionGroup("Region preset", profile.region, OPTIONS, (region) =>
-            void updateProfile({ region }),
-          )}
-          {optionGroup("Country", profile.countryCode, COUNTRY_OPTIONS, (countryCode) =>
-            void updateProfile({ countryCode, region: "automatic" }),
-          )}
-          <View style={styles.group}>
-            <Text style={[styles.groupLabel, { color: colors.textSecondary }]}>
-              OTHER COUNTRY OR TERRITORY
-            </Text>
-            <View style={styles.textSettingRow}>
-              <TextInput
-                accessibilityLabel="Two-letter country or territory code"
-                autoCapitalize="characters"
-                autoCorrect={false}
-                editable={!working}
-                maxLength={2}
-                onChangeText={setCountryDraft}
-                placeholder="CA"
-                placeholderTextColor={colors.textTertiary}
-                style={[
-                  styles.countryInput,
-                  {
-                    borderColor: colors.border,
-                    borderRadius: radius.md,
-                    color: colors.text,
-                  },
-                ]}
-                value={countryDraft}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={working}
-                onPress={() => {
-                  const countryCode = normaliseCountryCode(countryDraft);
-                  if (!countryCode) {
-                    setError("Enter a valid two-letter ISO country code.");
-                    return;
-                  }
-                  void updateProfile({ countryCode, region: "automatic" });
-                }}
-                style={({ pressed }) => [
-                  styles.saveSetting,
-                  {
-                    backgroundColor: colors.primary,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text style={[styles.saveSettingText, { color: colors.onPrimary }]}>SAVE</Text>
-              </Pressable>
-            </View>
-          </View>
-          {optionGroup(
-            "Numbers and dates",
-            profile.languageTag,
-            LANGUAGE_OPTIONS,
-            (languageTag) => void updateProfile({ languageTag }),
-          )}
-          <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
-            This changes number/date formatting, food search language and accessible units. App interface text remains English until reviewed translations ship.
-          </Text>
           {optionGroup("Glucose unit", profile.glucoseUnit, GLUCOSE_OPTIONS, (glucoseUnit) =>
             void updateProfile({ glucoseUnit }),
           )}
-          {optionGroup(
-            "Measurements",
-            profile.measurementSystem,
-            MEASUREMENT_OPTIONS,
-            (measurementSystem) => void updateProfile({ measurementSystem }),
-          )}
-          {optionGroup("Energy", profile.energyUnit, ENERGY_OPTIONS, (energyUnit) =>
-            void updateProfile({ energyUnit }),
-          )}
-          {optionGroup(
-            "Calendar time zone mode",
-            profile.followDeviceTimeZone ? "device" : "fixed",
-            [
-              { label: "Follow device", value: "device" },
-              { label: `Keep ${defaults.timeZone}`, value: "fixed" },
-            ],
-            (choice) =>
-              void updateProfile(
-                choice === "device"
-                  ? { followDeviceTimeZone: true, analysisTimeZone: "automatic" }
-                  : {
-                      followDeviceTimeZone: false,
-                      analysisTimeZone: defaults.timeZone,
-                    },
-              ),
-          )}
-          {!profile.followDeviceTimeZone ? (
-            <View style={styles.group}>
-              <Text style={[styles.groupLabel, { color: colors.textSecondary }]}>
-                HOME / ANALYSIS TIME ZONE
-              </Text>
-              <View style={styles.textSettingRow}>
-                <TextInput
-                  accessibilityLabel="Home or analysis IANA time zone"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!working}
-                  onChangeText={setTimeZoneDraft}
-                  placeholder="America/New_York"
-                  placeholderTextColor={colors.textTertiary}
-                  style={[
-                    styles.textSettingInput,
-                    {
-                      borderColor: colors.border,
-                      borderRadius: radius.md,
-                      color: colors.text,
-                    },
-                  ]}
-                  value={timeZoneDraft}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={working}
-                  onPress={() => {
-                    const candidate = timeZoneDraft.trim();
-                    if (!isIanaTimeZone(candidate)) {
-                      setError(
-                        "Enter an IANA time zone such as Europe/London, America/New_York or Asia/Tokyo.",
-                      );
-                      return;
-                    }
-                    void updateProfile({
-                      analysisTimeZone: candidate,
-                      followDeviceTimeZone: false,
-                    });
-                  }}
-                  style={({ pressed }) => [
-                    styles.saveSetting,
-                    {
-                      backgroundColor: colors.primary,
-                      borderRadius: radius.md,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.saveSettingText, { color: colors.onPrimary }]}>SAVE</Text>
-                </Pressable>
-              </View>
-              <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
-                Calendar days, reports, schedules and Tarv1s analysis use this zone while travelling.
-              </Text>
-            </View>
-          ) : null}
-          {optionGroup(
-            "Reviewed clinical guidance",
-            profile.clinicalJurisdiction === "generic" ? "generic" : "automatic",
-            CLINICAL_OPTIONS,
-            (clinicalJurisdiction) => void updateProfile({ clinicalJurisdiction }),
-          )}
           <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
-            {defaults.clinicalJurisdiction === "GB"
-              ? "Reviewed UK guidance is available."
-              : "No reviewed country-specific clinical pack is available here; T1 Arc uses general safety wording and local emergency terminology only."}
+            Changes how glucose is shown. Your saved readings are not changed.
           </Text>
+          <Pressable
+            accessibilityHint="Shows country, number formats, measurements and time zone"
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showMore }}
+            onPress={toggleMoreOptions}
+            style={({ pressed }) => [
+              styles.moreButton,
+              { borderTopColor: colors.divider, opacity: pressed ? 0.68 : 1 },
+            ]}
+          >
+            <Text style={[styles.moreButtonText, { color: colors.text }]}>More options</Text>
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.textSecondary}
+              name={showMore ? "chevron-up" : "chevron-down"}
+              size={18}
+            />
+          </Pressable>
+          {showMore ? (
+            <>
+              {optionGroup("Region preset", profile.region, OPTIONS, (region) =>
+                void updateProfile({ region }),
+              )}
+              {optionGroup("Country", profile.countryCode, COUNTRY_OPTIONS, (countryCode) =>
+                void updateProfile({ countryCode, region: "automatic" }),
+              )}
+              <View style={styles.group}>
+                <Text style={[styles.groupLabel, { color: colors.textSecondary }]}>
+                  Another country or territory
+                </Text>
+                {countryList ? (
+                  pickerButton(
+                    "Another country or territory",
+                    otherCountryName ?? "Not chosen",
+                    "Opens a searchable list of countries and territories",
+                    () => setPicker("country"),
+                  )
+                ) : (
+                  <View style={styles.textSettingRow}>
+                    <TextInput
+                      accessibilityLabel="Two-letter country code, for example CA"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      editable={!working}
+                      maxLength={2}
+                      onChangeText={setCountryDraft}
+                      placeholder="CA"
+                      placeholderTextColor={colors.textTertiary}
+                      style={[
+                        styles.countryInput,
+                        {
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                          color: colors.text,
+                        },
+                      ]}
+                      value={countryDraft}
+                    />
+                    {saveButton(() => {
+                      const countryCode = normaliseCountryCode(countryDraft);
+                      if (!countryCode) {
+                        setError("Enter a two-letter country code, for example GB or CA.");
+                        return;
+                      }
+                      void updateProfile({ countryCode, region: "automatic" });
+                    })}
+                  </View>
+                )}
+              </View>
+              {optionGroup(
+                "Numbers and dates",
+                profile.languageTag,
+                LANGUAGE_OPTIONS,
+                (languageTag) => void updateProfile({ languageTag }),
+              )}
+              <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
+                This changes number and date formats, food search language and spoken units. The app itself stays in English until reviewed translations are ready.
+              </Text>
+              {optionGroup(
+                "Measurements",
+                profile.measurementSystem,
+                MEASUREMENT_OPTIONS,
+                (measurementSystem) => void updateProfile({ measurementSystem }),
+              )}
+              {optionGroup("Energy", profile.energyUnit, ENERGY_OPTIONS, (energyUnit) =>
+                void updateProfile({ energyUnit }),
+              )}
+              {optionGroup(
+                "Calendar time zone",
+                profile.followDeviceTimeZone ? "device" : "fixed",
+                [
+                  { label: "Follow phone", value: "device" },
+                  { label: `Keep ${defaults.timeZone}`, value: "fixed" },
+                ],
+                (choice) =>
+                  void updateProfile(
+                    choice === "device"
+                      ? { followDeviceTimeZone: true, analysisTimeZone: "automatic" }
+                      : {
+                          followDeviceTimeZone: false,
+                          analysisTimeZone: defaults.timeZone,
+                        },
+                  ),
+              )}
+              {!profile.followDeviceTimeZone ? (
+                <View style={styles.group}>
+                  <Text style={[styles.groupLabel, { color: colors.textSecondary }]}>
+                    Home time zone
+                  </Text>
+                  {timeZoneList ? (
+                    pickerButton(
+                      "Home time zone",
+                      timeZoneLabel(selectedTimeZone),
+                      "Opens a searchable list of time zones",
+                      () => setPicker("timeZone"),
+                    )
+                  ) : (
+                    <View style={styles.textSettingRow}>
+                      <TextInput
+                        accessibilityLabel="Time zone, for example Europe/London"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        editable={!working}
+                        onChangeText={setTimeZoneDraft}
+                        placeholder="Europe/London"
+                        placeholderTextColor={colors.textTertiary}
+                        style={[
+                          styles.textSettingInput,
+                          {
+                            borderColor: colors.border,
+                            borderRadius: radius.md,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={timeZoneDraft}
+                      />
+                      {saveButton(() => {
+                        const candidate = timeZoneDraft.trim();
+                        if (!isIanaTimeZone(candidate)) {
+                          setError(
+                            "T1 Arc does not recognise that time zone. Use the form Region/City, for example Europe/London or America/New_York.",
+                          );
+                          return;
+                        }
+                        void updateProfile({
+                          analysisTimeZone: candidate,
+                          followDeviceTimeZone: false,
+                        });
+                      })}
+                    </View>
+                  )}
+                  <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
+                    Calendar days, reports, schedules and Tarv1s analysis use this zone while you travel.
+                  </Text>
+                </View>
+              ) : null}
+              {optionGroup(
+                "Reviewed clinical guidance",
+                profile.clinicalJurisdiction === "generic" ? "generic" : "automatic",
+                CLINICAL_OPTIONS,
+                (clinicalJurisdiction) => void updateProfile({ clinicalJurisdiction }),
+              )}
+              <Text style={[styles.settingHelp, { color: colors.textTertiary }]}>
+                {defaults.clinicalJurisdiction === "GB"
+                  ? "Reviewed UK guidance is available."
+                  : "No reviewed country-specific clinical pack is available here; T1 Arc uses general safety wording and local emergency terminology only."}
+              </Text>
+            </>
+          ) : null}
           <Text style={[styles.resolved, { color: colors.textTertiary }]}>
             {regionalProfileLabel(defaults)} · {defaults.timeZone} · {defaults.glucoseUnit === "mgDl" ? "mg/dL" : "mmol/L"} · {defaults.measurementSystem} · {defaults.energyUnit}
           </Text>
         </>
       )}
       {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+      {countryList ? (
+        <SearchablePickerModal
+          onClose={() => setPicker(undefined)}
+          onSelect={(countryCode) => {
+            setPicker(undefined);
+            void updateProfile({ countryCode, region: "automatic" });
+          }}
+          options={countryList}
+          searchLabel="Search countries and territories"
+          selected={profile?.countryCode}
+          title="Country or territory"
+          visible={picker === "country"}
+        />
+      ) : null}
+      {timeZoneList ? (
+        <SearchablePickerModal
+          onClose={() => setPicker(undefined)}
+          onSelect={(analysisTimeZone) => {
+            setPicker(undefined);
+            void updateProfile({ analysisTimeZone, followDeviceTimeZone: false });
+          }}
+          options={timeZoneList}
+          searchLabel="Search time zones, for example London"
+          selected={selectedTimeZone}
+          title="Home time zone"
+          visible={picker === "timeZone"}
+        />
+      ) : null}
     </SectionCard>
   );
 }
@@ -378,6 +499,27 @@ const styles = StyleSheet.create({
   countryInput: { width: 86, minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 13 },
   saveSetting: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   saveSettingText: { fontSize: 11, fontWeight: "900" },
+  moreButton: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 14,
+    paddingTop: 4,
+  },
+  moreButtonText: { fontSize: 14, lineHeight: 19, fontWeight: "800" },
+  pickerButton: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    marginTop: 7,
+  },
+  pickerValue: { flex: 1, fontSize: 13, lineHeight: 18 },
+  pickerAction: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
   settingHelp: { fontSize: 10, lineHeight: 15, marginTop: 6 },
   resolved: { fontSize: 10, lineHeight: 15, marginTop: 11 },
   error: { fontSize: 11, lineHeight: 17, marginTop: 9 },

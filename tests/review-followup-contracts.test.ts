@@ -44,8 +44,8 @@ describe('review follow-up UI contracts', () => {
     );
   });
   it('keeps the focused regional heading once while retaining the standalone card heading', () => {
-    expect(readFileSync('src/screens/SourcesScreen.tsx', 'utf8')).toContain(
-      '<RegionalSettingsCard showHeading={false} />',
+    expect(readFileSync('src/screens/SourcesScreen.tsx', 'utf8')).toMatch(
+      /<RegionalSettingsCard\b[^;]*?showHeading=\{false\}\s*\/>/,
     );
     expect(
       readFileSync('src/components/RegionalSettingsCard.tsx', 'utf8'),

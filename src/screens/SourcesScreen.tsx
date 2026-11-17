@@ -24,6 +24,7 @@ import { AapsSourceCard } from "@/components/AapsSourceCard";
 import { AppInfoCard } from "@/components/AppInfoCard";
 import { SupportReportCard } from "@/components/SupportReportCard";
 import { FeatureEntry } from '@/components/FeatureEntry';
+import { GlucoseAppearanceSettingsScreen } from "@/components/GlucoseAppearanceSettings";
 import { PrivacyPolicyLink } from "@/components/PrivacyPolicyLink";
 import { AutomationStatusCard } from "@/components/AutomationStatusCard";
 import { DexcomClarityImportCard } from "@/components/DexcomClarityImportCard";
@@ -1172,7 +1173,11 @@ export function SourcesScreen({
 
       {activeSource === "region" ? (
         <View style={styles.settingsSections}>
-          <RegionalSettingsCard showHeading={false} />
+          <RegionalSettingsCard
+            moreOptionsOpen={expandedSetting === "region-more"}
+            onToggleMoreOptions={() => toggleSetting("region-more")}
+            showHeading={false}
+          />
         </View>
       ) : null}
 
@@ -1227,6 +1232,16 @@ export function SourcesScreen({
 
       {activeSource === "display" ? (
         <View style={styles.settingsSections}>
+          <FeatureEntry
+            title="Glucose ranges"
+            detail="Your target range, low and high levels, and their colours"
+            icon="options-outline"
+            onPress={() => setExpandedSetting("display-ranges")}
+          />
+          <GlucoseAppearanceSettingsScreen
+            onClose={() => setExpandedSetting(undefined)}
+            visible={expandedSetting === "display-ranges"}
+          />
           <SettingsDisclosure
             detail="Follow your phone, or choose a light or dark app theme."
             expanded={expandedSetting === "display-theme"}
