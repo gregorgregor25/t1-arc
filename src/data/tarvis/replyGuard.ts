@@ -142,7 +142,13 @@ function withoutUnitDefinition(sentence: string) {
 const CHOICE = /\b(?:my|our|best|better)\s+(?:pick|vote|bet|choice|preference)\b|\b(?:gets?|has)\s+my\s+vote\b/i;
 const PERSONAL_FRAME = /\b(?:you|your|yours|yourself)\b/i;
 const ADJUSTABLE_THERAPY = new RegExp(String.raw`\b(?:${SETTING}|bolus(?:es)?|doses?|units?|pen clicks?)\b`, "i");
-const DIRECTION_OR_AMOUNT = /\b(?:higher|lower|stronger|weaker|gentler|further|up|down|earlier|later|extra|fewer|percent|quarter|half)\b|\d\s*%|\d+(?:[.,]\d+)?\s*(?:u|units?)\b/i;
+// "units" alone can be a definition ("measured in units"); with a quantity
+// before it ("6 units", "a dozen units", "several units") it is an amount.
+const UNIT_QUANTITY = String.raw`(?:\d+(?:[.,]\d+)?\s*|\b(?:several|some|many|dozen|handful\s+of|few|more|fewer|less|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred)\s+)(?:u|units?)\b`;
+const DIRECTION_OR_AMOUNT = new RegExp(
+  String.raw`\b(?:higher|lower|stronger|weaker|gentler|further|up|down|earlier|later|extra|fewer|more|less|bigger|smaller|larger|percent|quarter|half|(?:double|single)\s+digits?|(?:looks?|seems?|is|are)\s+(?:a\s+bit\s+|too\s+|quite\s+|rather\s+)?(?:small|big|large|low|high|light|heavy))\b|\d\s*%|${UNIT_QUANTITY}`,
+  "i",
+);
 
 // Hosted prose is requested as plain text. A table can distribute its
 // condition, unit and treatment across cells with no complete sentence.

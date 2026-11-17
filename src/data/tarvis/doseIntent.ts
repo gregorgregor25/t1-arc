@@ -674,6 +674,10 @@ const BARE_AGREEMENT =
  */
 const NUMBER = String.raw`\d+(?:[.,]\d+)?`;
 const SMALL_NUMBER_WORD = String.raw`(?:half|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)`;
+/** "how much insulin...", "how many units...": can ask about records or for a dose. */
+const HOW_MUCH_QUESTION = /\bhow\s+(?:much|many)\s+(?:for|to|should|do|now|more|then|extra|less|would|insulin|units?|u)\b/i;
+/** "how much to correct", "how much more", "how much for 60g": asks for an amount to take. */
+const HOW_MUCH_TO_TAKE = /\bhow\s+(?:much|many)\s+(?:(?:insulin|units?|u)\s+)?(?:for|to|should|more|extra|less|would|do\s+i\s+(?:need|take|give))\b/i;
 const FOLLOW_UP_AMOUNT: readonly RegExp[] = [
   // "6u", "2 units"
   new RegExp(String.raw`\b${NUMBER}\s*(?:u|units?|iu)\b`, "i"),
@@ -715,10 +719,46 @@ const FOLLOW_UP_AMOUNT: readonly RegExp[] = [
     String.raw`\bfor\s+(?:(?:my|the|a|this)\s+)?(?:dinner|lunch|breakfast|tea|supper|snack|meal|pizza|pasta|${CARB_AMOUNT})|^\W*(?:(?:ok(?:ay)?|so|and|then|what|how)\W+)*(?:about\s+)?for\s+(?:it|that|this|them)\W*$`,
     "i",
   ),
-  /\bhow\s+(?:much|many)\s+(?:for|to|should|do|now|more|then|extra|less|would|insulin|units?|u)\b/i,
+  HOW_MUCH_QUESTION,
   /\bwhat\s+would\s+you\s+(?:do|take|give|suggest|recommend|say|go\s+with|change|set)\b|\bwhat\s+(?:do|should|shall)\s+i\s+(?:do|take|give|need|set|change|use)\b/i,
   // "+10% profile", "drop basal 20%", "80% then"
   /[+-]\s*\d+\s*%|\b\d+\s*%\s*(?:profile|basal|temp|less|more|lower|higher|up|down|then|instead)\b|\b(?:profile|basal|temp\s+basal)\s+(?:to\s+|at\s+)?\d+\s*%/i,
+];
+
+/*
+ * A record question ("how much insulin did AAPS give me today?") starts a new
+ * topic after a refusal, unless it also proposes or asks for an amount to
+ * take ("total insulin today then add 6", "glucose now and how much to
+ * correct"). "How much/many" on its own asks about records.
+ */
+const DOSE_PROPOSAL: readonly RegExp[] = [
+  ...FOLLOW_UP_AMOUNT.filter((pattern) => pattern !== HOW_MUCH_QUESTION),
+  HOW_MUCH_TO_TAKE,
+];
+const TOO_MUCH_TIME = /\btoo\s+(?:much|many|little|few)\s+(?:time|lows?|highs?|hypos?|readings?|days?|nights?)\b/i;
+
+function proposesDose(text: string) {
+  const checked = text.replace(TOO_MUCH_TIME, " ");
+  return DOSE_PROPOSAL.some((pattern) => pattern.test(checked));
+}
+
+function isRecordQuestionWithoutDose(text: string, isRecordQuestion: (question: string) => boolean) {
+  return isRecordQuestion(text) && !proposesDose(text);
+}
+
+/*
+ * After a withheld hosted answer, a short message that floats a number or
+ * asks for the sum presses for the withheld amount: "would 6 be right",
+ * "about 6 yeah", "double it", "give me a number", "work it out".
+ */
+const HOSTED_PRESS: readonly RegExp[] = [
+  new RegExp(
+    String.raw`^\W*(?:\w+\W+){0,4}(?:${NUMBER}|${SMALL_NUMBER_WORD})\b(?!\s*(?:mmol|mg|days?|weeks?|months?|years?|hours?|hrs?|minutes?|mins?|am|pm|o'?clock|%|percent|times?|diabetes|diabetics?))(?:\W+\w+){0,4}\W*$`,
+    "i",
+  ),
+  /\b(?:double|triple|halve)\s+(?:it|that|this|them)\b/i,
+  /\b(?:give|tell|say|want|need|just)\s+(?:me\s+)?(?:a|the|an\s+exact|your)\s+(?:number|figure|amount)\b/i,
+  /\bwork\s+(?:it|that|this)\s+out\b|\bdo\s+the\s+(?:maths?|math|sums?)\b|\bcalculat\w*\b/i,
 ];
 
 /** "show all", "show more", "tell me more": asking to see more of the records. */
@@ -771,7 +811,7 @@ function isNewTopicAfterRefusal(text: string, isRecordQuestion: (question: strin
     const rest = text.replace(EXPLICIT_NEW_TOPIC, " ").replace(/^\W+/, "");
     return !rest || !REFUSAL_BACK_REFERENCE.test(rest);
   }
-  if (isRecordQuestion(text)) return true;
+  if (isRecordQuestionWithoutDose(text, isRecordQuestion)) return true;
   if (CONTINUATION_START.test(text)) return false;
   if (PAST_NON_DOSE_RECORD.test(text) && !NON_DOSE_RECORD_BLOCKER.test(text) && !/\d/.test(text.replace(/\blast\s+\d+\s+days\b/gi, " "))) {
     return true;
@@ -814,8 +854,9 @@ export function isDoseFollowUp(
   const hostedBoundary = !refused && assistant?.startsWith(HOSTED_TREATMENT_BOUNDARY_HEADLINE);
   if (hostedBoundary) {
     const text = normaliseDoseWording(normaliseSafetyText(question));
-    if (isRecordQuestion(text)) return false;
+    if (isRecordQuestionWithoutDose(text, isRecordQuestion)) return false;
     if (BARE_AGREEMENT.test(text) || FOLLOW_UP_AMOUNT.some((pattern) => pattern.test(text))) return true;
+    if (HOSTED_PRESS.some((pattern) => pattern.test(text))) return true;
     // Short follow-ups ("explain more", "why?") and record questions pass;
     // a longer message that keeps pressing is judged like a refused request.
     if (question.length <= SHORT_FOLLOW_UP_MAX_LENGTH) return false;
