@@ -38,7 +38,7 @@ describe("Hevy foreground sync isolation", () => {
     expect(primaryRefresh).toMatch(
       /repositoryState\.mode === "live" && includeHealthConnect\s*\? syncConfiguredNightscoutHistoryIfDue/,
     );
-    const cadenceStart = source.indexOf("const refreshInterval = setInterval");
+    const cadenceStart = source.indexOf("const stopRefreshInterval = startForegroundInterval");
     const cadenceEnd = source.indexOf("const subscription", cadenceStart);
     const frequentCadence = source.slice(cadenceStart, cadenceEnd);
     expect(frequentCadence).toContain("refreshGlucoseSilently()");
@@ -48,10 +48,13 @@ describe("Hevy foreground sync isolation", () => {
     );
     expect(frequentCadence).toContain("60_000");
     const localClockStart = source.indexOf("const reconcileClock");
-    const localClockEnd = source.indexOf("return () => clearInterval", localClockStart);
+    const localClockEnd = source.indexOf("}, [publishLatestStoredGlucose]);", localClockStart);
     const localClock = source.slice(localClockStart, localClockEnd);
     expect(localClock).toContain("publishLatestStoredGlucose()");
     expect(localClock).toContain("15_000");
+    // Both timers stop while the app is in the background.
+    expect(localClock).toContain("startForegroundInterval(reconcileClock");
+    expect(frequentCadence).toContain("AppState);");
     expect(localClock).not.toContain("refreshGlucoseSilently()");
     expect(localClock).not.toContain("refreshSilently()");
     expect(source).toContain(

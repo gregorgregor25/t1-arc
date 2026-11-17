@@ -47,7 +47,7 @@ describe('foreground refresh wiring', () => {
 
   it('re-reads SQLite instead of fetching when the native collector runs', () => {
     const source = read('../src/providers/DataProvider.tsx');
-    const start = source.indexOf('const refreshInterval = setInterval');
+    const start = source.indexOf('const stopRefreshInterval = startForegroundInterval');
     const cadence = source.slice(start, source.indexOf('const subscription', start));
     expect(cadence).toContain('T1ArcGlucoseDisplay.getStatusAsync()');
     expect(cadence).toContain('nativeCollectorOwnsGlucoseSync(status, Date.now())');
