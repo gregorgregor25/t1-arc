@@ -84,9 +84,11 @@ import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useLatestData } from "@/hooks/useTimeline";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import {
+  SOURCE_CHOOSER_ANSWERS,
   SOURCE_MENU_ITEMS,
   SOURCE_MENU_SECTIONS,
   SourceJump,
+  type SourceMenuSectionId,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
   sourceSettingsRouteParams,
@@ -542,53 +544,92 @@ export function SourcesScreen({
         />
       ) : !activeSource ? (
         <View style={styles.overviewSections}>
-          <FeatureEntry title="Share feedback" detail="Help shape T1 Arc and manage your weekly reminder" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} />
-          <FeatureEntry title="Cycle tracking" detail="Periods, symptoms and cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
-          <SectionCard style={styles.disclosureShell}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open Tarv1s settings"
-              accessibilityHint="Manage your AI provider connection and privacy"
-              onPress={() => navigation.navigate('Insights', { settings: true })}
-              style={({ pressed }) => [styles.tourReplayButton, { opacity: pressed ? 0.68 : 1 }]}
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Data connections" />
+            <SettingsDisclosure
+              detail="Answer one question to find the right connection."
+              expanded={expandedSetting === "overview-source-chooser"}
+              icon="help-circle-outline"
+              onToggle={() => toggleSetting("overview-source-chooser")}
+              title="Which source do I need?"
             >
-              <Ionicons accessibilityElementsHidden name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
-              <View style={styles.tourReplayCopy}>
-                <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>Tarv1s</Text>
-                <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>AI provider connection and privacy</Text>
-              </View>
-              <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
-            </Pressable>
-          </SectionCard>
-          <SettingsDisclosure
-            detail="When each connection last updated, its newest records and any gaps."
-            expanded={expandedSetting === "overview-source-health"}
-            icon="pulse-outline"
-            onToggle={() => toggleSetting("overview-source-health")}
-            title="Source health"
-          >
-            <SourceHealthCard />
-          </SettingsDisclosure>
-          <SourceJumpGrid active={activeSource} onSelect={showSource} />
-          <SettingsDisclosure
-            detail="Add the insulin-to-carb ratios already agreed in your care plan."
-            expanded={expandedSetting === "overview-diabetes-profile"}
-            icon="person-circle-outline"
-            onToggle={() => toggleSetting("overview-diabetes-profile")}
-            title="Diabetes profile"
-          >
-            <TarvisTreatmentProfileCard />
-          </SettingsDisclosure>
-          <TourReplayCard onPress={() => setTourOpen(true)} />
-          <SettingsDisclosure
-            detail="Runs quietly in the background. Open only if something needs attention."
-            expanded={expandedSetting === "overview-automation"}
-            icon="sync-outline"
-            onToggle={() => toggleSetting("overview-automation")}
-            title="Automatic updates"
-          >
-            <AutomationStatusCard />
-          </SettingsDisclosure>
+              <SourceChooser onSelect={showSource} />
+            </SettingsDisclosure>
+            <SourceJumpGrid
+              active={activeSource}
+              onSelect={showSource}
+              sectionIds={["glucose", "health"]}
+            />
+            <SettingsDisclosure
+              detail="When each connection last updated, its newest records and any gaps."
+              expanded={expandedSetting === "overview-source-health"}
+              icon="pulse-outline"
+              onToggle={() => toggleSetting("overview-source-health")}
+              title="Source health"
+            >
+              <SourceHealthCard />
+            </SettingsDisclosure>
+          </View>
+          <SourceJumpGrid
+            active={activeSource}
+            onSelect={showSource}
+            sectionIds={["display"]}
+          />
+          <View style={styles.overviewGroup}>
+            <SourceJumpGrid
+              active={activeSource}
+              onSelect={showSource}
+              sectionIds={["data"]}
+            />
+            <SettingsDisclosure
+              detail="Runs quietly in the background. Open only if something needs attention."
+              expanded={expandedSetting === "overview-automation"}
+              icon="sync-outline"
+              onToggle={() => toggleSetting("overview-automation")}
+              title="Automatic updates"
+            >
+              <AutomationStatusCard />
+            </SettingsDisclosure>
+          </View>
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Assistant" />
+            <SectionCard style={styles.disclosureShell}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open Tarv1s settings"
+                accessibilityHint="Manage your AI provider connection and privacy"
+                onPress={() => navigation.navigate('Insights', { settings: true })}
+                style={({ pressed }) => [styles.tourReplayButton, { opacity: pressed ? 0.68 : 1 }]}
+              >
+                <Ionicons accessibilityElementsHidden name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
+                <View style={styles.tourReplayCopy}>
+                  <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>Tarv1s</Text>
+                  <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>AI provider connection and privacy</Text>
+                </View>
+                <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+            </SectionCard>
+            <SettingsDisclosure
+              detail="Add the insulin-to-carb ratios already agreed in your care plan."
+              expanded={expandedSetting === "overview-diabetes-profile"}
+              icon="person-circle-outline"
+              onToggle={() => toggleSetting("overview-diabetes-profile")}
+              title="Diabetes profile"
+            >
+              <TarvisTreatmentProfileCard />
+            </SettingsDisclosure>
+          </View>
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Feedback and more" />
+            <FeatureEntry title="Share feedback" detail="Help shape T1 Arc and manage your weekly reminder" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} />
+            <FeatureEntry title="Cycle tracking" detail="Periods, symptoms and cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
+            <TourReplayCard onPress={() => setTourOpen(true)} />
+          </View>
+          <SourceJumpGrid
+            active={activeSource}
+            onSelect={showSource}
+            sectionIds={["help"]}
+          />
         </View>
       ) : null}
 
@@ -1431,12 +1472,9 @@ function TourReplayCard({ onPress }: { onPress(): void }) {
   const { colors, radius } = useAppTheme();
   return (
     <View>
-      <Text style={[styles.sourceGroupTitle, { color: colors.textSecondary }]}>
-        Help & learning
-      </Text>
       <SectionCard style={styles.tourReplayShell}>
         <Pressable
-          accessibilityHint="Opens a five-step visual guide to the app."
+          accessibilityHint="Opens a short visual guide to the app."
           accessibilityRole="button"
           onPress={onPress}
           style={({ pressed }) => [
@@ -1603,17 +1641,84 @@ function SourceDetailHeader({
   );
 }
 
+function SettingsGroupTitle({ title }: { title: string }) {
+  const { colors } = useAppTheme();
+  return (
+    <Text
+      accessibilityRole="header"
+      style={[styles.overviewGroupTitle, { color: colors.text }]}
+    >
+      {title}
+    </Text>
+  );
+}
+
+function SourceChooser({ onSelect }: { onSelect(source: SourceJump): void }) {
+  const { colors, radius } = useAppTheme();
+  return (
+    <SectionCard>
+      {SOURCE_CHOOSER_ANSWERS.map((item, index) => {
+        const label = SOURCE_MENU_ITEMS.find(
+          (candidate) => candidate.source === item.source,
+        )?.label;
+        return (
+          <View
+            key={item.source}
+            style={[
+              styles.chooserRow,
+              index > 0 && {
+                borderTopColor: colors.divider,
+                borderTopWidth: StyleSheet.hairlineWidth,
+              },
+            ]}
+          >
+            <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+              {item.question}
+            </Text>
+            <Text
+              style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+            >
+              {item.answer}
+            </Text>
+            <Pressable
+              accessibilityHint={`Opens ${label} settings`}
+              accessibilityRole="button"
+              onPress={() => onSelect(item.source)}
+              style={({ pressed }) => [
+                styles.chooserButton,
+                {
+                  borderColor: colors.primary,
+                  borderRadius: radius.pill,
+                  opacity: pressed ? 0.68 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.chooserButtonText, { color: colors.primary }]}>
+                Open {label}
+              </Text>
+            </Pressable>
+          </View>
+        );
+      })}
+    </SectionCard>
+  );
+}
+
 function SourceJumpGrid({
   active,
   onSelect,
+  sectionIds,
 }: {
   active?: SourceJump;
   onSelect(source: SourceJump): void;
+  sectionIds: readonly SourceMenuSectionId[];
 }) {
   const { colors, radius } = useAppTheme();
   return (
     <View style={styles.sourceJumpSections}>
-      {SOURCE_MENU_SECTIONS.map((section) => (
+      {SOURCE_MENU_SECTIONS.filter((section) =>
+        sectionIds.includes(section.id),
+      ).map((section) => (
         <View key={section.id}>
           <Text
             style={[styles.sourceGroupTitle, { color: colors.textSecondary }]}
@@ -1704,6 +1809,31 @@ const styles = StyleSheet.create({
   },
   overviewSections: {
     gap: 22,
+  },
+  overviewGroup: {
+    gap: 10,
+  },
+  overviewGroupTitle: {
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "800",
+  },
+  chooserRow: {
+    paddingVertical: 12,
+    gap: 4,
+  },
+  chooserButton: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    marginTop: 6,
+    justifyContent: "center",
+  },
+  chooserButtonText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
   },
   searchBox: {
     minHeight: 50,

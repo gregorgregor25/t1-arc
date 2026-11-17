@@ -4,7 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  SOURCE_CHOOSER_ANSWERS,
   SOURCE_MENU_ITEMS,
+  SOURCE_MENU_SECTIONS,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
   sourceSettingsRouteParams,
@@ -24,9 +26,9 @@ const EXPECTED_SOURCE_JUMPS = [
   "glooko",
   "hevy",
   "strava",
-  "region",
   "display",
   "watch",
+  "region",
   "privacy",
   "support",
   "about",
@@ -54,6 +56,28 @@ describe("Settings source back navigation", () => {
     expect(SOURCE_MENU_ITEMS.map(({ source }) => source)).toEqual(
       EXPECTED_SOURCE_JUMPS,
     );
+  });
+
+  it("orders Settings with data connections first and help last", () => {
+    expect(SOURCE_MENU_SECTIONS.map(({ id }) => id)).toEqual([
+      "glucose",
+      "health",
+      "display",
+      "data",
+      "help",
+    ]);
+  });
+
+  it("answers which source to choose with a short list of common setups", () => {
+    expect(SOURCE_CHOOSER_ANSWERS.length).toBeGreaterThanOrEqual(3);
+    expect(SOURCE_CHOOSER_ANSWERS.length).toBeLessThanOrEqual(6);
+    const sources = SOURCE_CHOOSER_ANSWERS.map(({ source }) => source);
+    expect(sources).toEqual(
+      expect.arrayContaining(["aaps", "libre", "nightscout", "dexcom", "xdrip"]),
+    );
+    for (const answer of SOURCE_CHOOSER_ANSWERS) {
+      expect(SOURCE_MENU_ITEMS.some(({ source }) => source === answer.source)).toBe(true);
+    }
   });
 
   it.each(EXPECTED_SOURCE_JUMPS)(

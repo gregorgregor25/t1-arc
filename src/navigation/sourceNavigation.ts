@@ -34,8 +34,15 @@ export const DIABETES_PROFILE_MENU_ITEM = {
   icon: "person-circle-outline",
 } as const satisfies SourceMenuItem;
 
+export type SourceMenuSectionId =
+  | "glucose"
+  | "health"
+  | "display"
+  | "data"
+  | "help";
+
 export const SOURCE_MENU_SECTIONS: {
-  id: string;
+  id: SourceMenuSectionId;
   title: string;
   items: SourceMenuItem[];
 }[] = [
@@ -118,20 +125,14 @@ export const SOURCE_MENU_SECTIONS: {
     ],
   },
   {
-    id: "app",
-    title: "App and privacy",
+    id: "display",
+    title: "Display, alerts and units",
     items: [
-      {
-        source: "region",
-        label: "Region and services",
-        detail: "Country, number formats and units",
-        icon: "globe-outline",
-      },
       {
         source: "display",
         label: "Display and alerts",
-        detail: "Theme, alerts and glucose displays",
-        icon: "watch-outline",
+        detail: "Glucose ranges, alerts, theme and glucose displays",
+        icon: "notifications-outline",
       },
       {
         source: "watch",
@@ -140,11 +141,29 @@ export const SOURCE_MENU_SECTIONS: {
         icon: "watch-outline",
       },
       {
+        source: "region",
+        label: "Region and services",
+        detail: "Glucose unit, country, number formats and time zone",
+        icon: "globe-outline",
+      },
+    ],
+  },
+  {
+    id: "data",
+    title: "Data and backup",
+    items: [
+      {
         source: "privacy",
         label: "Backup and privacy",
-        detail: "Your local data",
+        detail: "Backups, exports and your local data",
         icon: "shield-checkmark-outline",
       },
+    ],
+  },
+  {
+    id: "help",
+    title: "Help and information",
+    items: [
       {
         source: "support",
         label: "Help and support",
@@ -158,6 +177,47 @@ export const SOURCE_MENU_SECTIONS: {
         icon: "information-circle-outline",
       },
     ],
+  },
+];
+
+/**
+ * Plain answers for "Which source do I need?". Each maps a common setup to the
+ * Settings page that connects it. T1 Arc only reads from these sources.
+ */
+export const SOURCE_CHOOSER_ANSWERS: readonly {
+  question: string;
+  answer: string;
+  source: SourceJump;
+}[] = [
+  {
+    question: "I use AndroidAPS on this phone",
+    answer: "Choose AAPS local. It reads glucose, IOB and COB from AAPS on this phone, even without the internet.",
+    source: "aaps",
+  },
+  {
+    question: "I use a FreeStyle Libre sensor with the LibreLink app",
+    answer: "Choose LibreLinkUp. You need a separate follower account invited from the Libre app.",
+    source: "libre",
+  },
+  {
+    question: "I use a Dexcom sensor with the Dexcom app",
+    answer: "Choose Dexcom and sign in with the account that shares from the Dexcom app.",
+    source: "dexcom",
+  },
+  {
+    question: "I use Nightscout",
+    answer: "Choose Nightscout and enter your site address. T1 Arc only reads from your site.",
+    source: "nightscout",
+  },
+  {
+    question: "I use xDrip+ or Juggluco on this phone",
+    answer: "Choose xDrip. Turn on the app's local web service, then use the same-phone option.",
+    source: "xdrip",
+  },
+  {
+    question: "My app is not listed here",
+    answer: "Try Notification source. T1 Arc can read glucose from the notifications of supported apps.",
+    source: "notification",
   },
 ];
 
