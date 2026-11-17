@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { tarvisHeaderMenuItems } from "@/components/tarvis/headerMenuItems";
+import { TARVIS_MENU_TOP_GAP, tarvisMenuSheetLayout } from "@/components/tarvis/headerMenuLayout";
 
 const home = {
   historyVisible: false,
@@ -49,5 +50,30 @@ describe("Tarv1s header menu", () => {
     const items = tarvisHeaderMenuItems(home);
     expect(items.find(({ id }) => id === "settings")?.detail).toBe("Connection and privacy, in Settings");
     expect(items.find(({ id }) => id === "weekly-reviews")?.detail).toBe("In Settings, Notifications and reminders");
+  });
+});
+
+describe("Tarv1s header menu sheet layout", () => {
+  const insets = { top: 32, right: 48, bottom: 24, left: 0 };
+
+  it("keeps the sheet clear of the system bars and caps its height to the window", () => {
+    expect(tarvisMenuSheetLayout(800, insets)).toEqual({
+      paddingTop: 32 + TARVIS_MENU_TOP_GAP,
+      paddingLeft: 0,
+      paddingRight: 48,
+      bottomInset: 24,
+      maxHeight: 800 - 32 - TARVIS_MENU_TOP_GAP,
+    });
+  });
+
+  it("leaves a short landscape window a bounded sheet whose list scrolls", () => {
+    // Seven 56dp rows plus the title and Cancel need far more than this.
+    const { maxHeight } = tarvisMenuSheetLayout(360, insets);
+    expect(maxHeight).toBe(360 - 32 - TARVIS_MENU_TOP_GAP);
+    expect(maxHeight).toBeLessThan(7 * 56);
+  });
+
+  it("never returns a negative height", () => {
+    expect(tarvisMenuSheetLayout(10, insets).maxHeight).toBe(0);
   });
 });

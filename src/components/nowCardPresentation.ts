@@ -164,24 +164,122 @@ function untilText(until: number | undefined, at: number) {
 }
 
 /**
- * Picks the recorded states active at `at` and words them. Shows nothing
- * when the records are missing or older than {@link NOW_THERAPY_STATE_MAX_AGE_MS}
- * (`recordsFreshAt` is when T1 Arc last saw current AAPS data). Baseline
- * states (closed loop, 100% profile) and logged exercise are left out.
- * Overlapping states are ordered pump suspend, loop mode, temporary target,
- * profile, then most recent first, and at most {@link NOW_THERAPY_STATE_LIMIT} show.
+ * When each route that delivers therapy states last showed recent,
+ * successful activity, keyed by the state's `source.sourceId`
+ * (`nightscout`, `aaps-local`). A route that is missing has unknown
+ * freshness, and its states are not shown as current.
+ */
+export type TherapyStateRouteActivity = Readonly<Partial<Record<string, number>>>;
+
+/**
+ * Whether a route's last activity counts as current at `at`: not older than
+ * {@link NOW_THERAPY_STATE_MAX_AGE_MS} and not dated more than
+ * {@link NOW_CARD_CLOCK_AHEAD_MS} ahead of the phone clock (a time ahead of
+ * the clock is a clock mismatch, not evidence of recent data).
+ */
+export function therapyStateRouteIsCurrent(seenAt: number | undefined, at: number): boolean {
+  if (seenAt === undefined || !Number.isFinite(seenAt) || !Number.isFinite(at)) return false;
+  if (seenAt - at > NOW_CARD_CLOCK_AHEAD_MS) return false;
+  return at - seenAt <= NOW_THERAPY_STATE_MAX_AGE_MS;
+}
+
+/** A state counts as current only if a route that delivered it is current. */
+function therapyStateDeliveredByCurrentRoute(
+  state: TherapyStateInterval,
+  activity: TherapyStateRouteActivity,
+  at: number,
+) {
+  return [state.source, ...state.duplicateSources].some(({ sourceId }) =>
+    therapyStateRouteIsCurrent(activity[sourceId], at));
+}
+
+/**
+ * A newer record of the same kind, started by now, that reached T1 Arc
+ * through a different current route. Building intervals already ends a state
+ * at the next record of its kind, so this mainly covers overlapping running
+ * modes; when two current routes disagree, the older state is not shown.
+ */
+function therapyStateContradictedByOtherRoute(
+  state: TherapyStateInterval,
+  states: readonly TherapyStateInterval[],
+  activity: TherapyStateRouteActivity,
+  at: number,
+) {
+  const own = new Set([state.source, ...state.duplicateSources].map(({ sourceId }) => sourceId));
+  return states.some((other) =>
+    other !== state
+    && other.kind === state.kind
+    && other.start > state.start
+    && other.start <= at
+    && [other.source, ...other.duplicateSources].some(({ sourceId }) =>
+      !own.has(sourceId) && therapyStateRouteIsCurrent(activity[sourceId], at)));
+}
+
+/**
+ * Builds the per-route activity map for {@link nowTherapyStateLines} from
+ * what Today knows. Only evidence of the route working counts:
+ *
+ * - `nightscout`: the last successful Nightscout treatment sync;
+ * - `aaps-local`: the last AAPS treatment batch received on this phone, or
+ *   the latest glucose reading from AAPS on this phone while the AAPS
+ *   treatment route is on.
+ *
+ * Manual records and programmed ends are never used. Times more than
+ * {@link NOW_CARD_CLOCK_AHEAD_MS} ahead of `now` are dropped before anything
+ * else, and the rest are capped at `readThrough` (when the states were read),
+ * so an old load cannot look current.
+ */
+export function therapyStateRouteActivity(input: {
+  now: number;
+  readThrough: number;
+  nightscoutTreatmentSyncAt?: number;
+  aapsLocalTreatmentsReceivedAt?: number;
+  aapsLocalReadingAt?: number;
+  aapsLocalTreatmentRouteOn?: boolean;
+}): TherapyStateRouteActivity {
+  const usable = (value: number | undefined) =>
+    value !== undefined && Number.isFinite(value) && value - input.now <= NOW_CARD_CLOCK_AHEAD_MS
+      ? Math.min(value, input.readThrough)
+      : undefined;
+  const latest = (...values: (number | undefined)[]) => {
+    const kept = values.map(usable).filter((value): value is number => value !== undefined);
+    return kept.length ? Math.max(...kept) : undefined;
+  };
+  const activity: Partial<Record<string, number>> = {};
+  const nightscout = latest(input.nightscoutTreatmentSyncAt);
+  if (nightscout !== undefined) activity.nightscout = nightscout;
+  const local = latest(
+    input.aapsLocalTreatmentsReceivedAt,
+    input.aapsLocalTreatmentRouteOn ? input.aapsLocalReadingAt : undefined,
+  );
+  if (local !== undefined) activity['aaps-local'] = local;
+  return activity;
+}
+
+/**
+ * Picks the recorded states active at `at` and words them. A state shows
+ * only when the route that delivered it (its source or a duplicate copy) is
+ * current in `routeActivity` (see {@link therapyStateRouteIsCurrent}); a
+ * state from a route with unknown or old activity is left out. A newer
+ * record from any route (a resume, cancel or later state of the same kind)
+ * already ends an earlier state when intervals are built, and a newer
+ * same-kind state from another current route hides it. Baseline states
+ * (closed loop, 100% profile) and logged exercise are left out. Overlapping
+ * states are ordered pump suspend, loop mode, temporary target, profile,
+ * then most recent first, and at most {@link NOW_THERAPY_STATE_LIMIT} show.
  */
 export function nowTherapyStateLines(
   states: readonly TherapyStateInterval[] | undefined,
   at: number,
-  recordsFreshAt: number | undefined,
+  routeActivity: TherapyStateRouteActivity | undefined,
 ): NowTherapyStateLine[] {
-  if (!states?.length || recordsFreshAt === undefined) return [];
-  if (at - recordsFreshAt > NOW_THERAPY_STATE_MAX_AGE_MS) return [];
+  if (!states?.length || !routeActivity) return [];
   return states
     .filter((state) => {
       if (state.baseline || NOW_THERAPY_STATE_PRIORITY[state.kind] === undefined) return false;
       if (state.start > at) return false;
+      if (!therapyStateDeliveredByCurrentRoute(state, routeActivity, at)) return false;
+      if (therapyStateContradictedByOtherRoute(state, states, routeActivity, at)) return false;
       const until = therapyStateRecordedUntil(state);
       return until === undefined || until > at;
     })

@@ -1,17 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
+import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 import { useAppTheme } from '@/theme/theme';
 import { PREFERRED_TOUCH_TARGET } from '@/theme/tokens';
 
 import type { TarvisHeaderMenuItem, TarvisHeaderMenuItemId } from './headerMenuItems';
+import { tarvisMenuSheetLayout } from './headerMenuLayout';
 
 /**
  * The "More" button in the Tarv1s header and the short sheet it opens.
  * The sheet closes before an item runs, so the next screen or dialog is not
- * hidden behind it.
+ * hidden behind it. The sheet stays inside the system bars and its list
+ * scrolls, so every item is reachable in landscape and with large text;
+ * Android back closes it.
  */
 export function TarvisHeaderMenu({
   items,
@@ -24,6 +27,8 @@ export function TarvisHeaderMenu({
 }) {
   const { colors, radius, type } = useAppTheme();
   const [open, setOpen] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
+  const layout = tarvisMenuSheetLayout(windowHeight, useSystemBarInsets());
 
   function choose(item: TarvisHeaderMenuItem) {
     if (item.disabled) return;
@@ -66,11 +71,19 @@ export function TarvisHeaderMenu({
           onPress={() => setOpen(false)}
           style={[styles.backdrop, { backgroundColor: colors.overlay }]}
         />
-        <SafeAreaView edges={['bottom']} style={styles.sheetFrame} pointerEvents="box-none">
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.sheetFrame,
+            { paddingTop: layout.paddingTop, paddingLeft: layout.paddingLeft, paddingRight: layout.paddingRight },
+          ]}
+        >
           <View
             style={[
               styles.sheet,
               {
+                maxHeight: layout.maxHeight,
+                paddingBottom: SHEET_PADDING_BOTTOM + layout.bottomInset,
                 backgroundColor: colors.surfaceElevated,
                 borderColor: colors.border,
                 borderTopLeftRadius: radius.lg,
@@ -81,31 +94,39 @@ export function TarvisHeaderMenu({
             <Text accessibilityRole="header" style={[styles.title, { color: colors.text, fontSize: type.title }]}>
               Tarv1s
             </Text>
-            {items.map((item, index) => (
-              <Pressable
-                key={item.id}
-                accessibilityHint={item.detail}
-                accessibilityLabel={item.label}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: item.disabled }}
-                disabled={item.disabled}
-                onPress={() => choose(item)}
-                style={({ pressed }) => [
-                  styles.row,
-                  index > 0 && { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth },
-                  { opacity: item.disabled ? 0.5 : pressed ? 0.65 : 1 },
-                ]}
-              >
-                <Ionicons accessibilityElementsHidden color={colors.primary} name={item.icon} size={21} />
-                <View style={styles.rowCopy}>
-                  <Text style={[styles.rowTitle, { color: colors.text, fontSize: type.bodyLarge }]}>{item.label}</Text>
-                  <Text style={[{ color: colors.textSecondary, fontSize: type.callout }]}>
-                    {item.detail}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
+            <ScrollView
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              persistentScrollbar
+              style={styles.list}
+            >
+              {items.map((item, index) => (
+                <Pressable
+                  key={item.id}
+                  accessibilityHint={item.detail}
+                  accessibilityLabel={item.label}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: item.disabled }}
+                  disabled={item.disabled}
+                  onPress={() => choose(item)}
+                  style={({ pressed }) => [
+                    styles.row,
+                    index > 0 && { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth },
+                    { opacity: item.disabled ? 0.5 : pressed ? 0.65 : 1 },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.primary} name={item.icon} size={21} />
+                  <View style={styles.rowCopy}>
+                    <Text style={[styles.rowTitle, { color: colors.text, fontSize: type.bodyLarge }]}>{item.label}</Text>
+                    <Text style={[{ color: colors.textSecondary, fontSize: type.callout }]}>
+                      {item.detail}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
             <Pressable
+              accessibilityLabel="Cancel"
               accessibilityRole="button"
               onPress={() => setOpen(false)}
               style={({ pressed }) => [
@@ -116,11 +137,13 @@ export function TarvisHeaderMenu({
               <Text style={[styles.cancelText, { color: colors.text, fontSize: type.bodyLarge }]}>Cancel</Text>
             </Pressable>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
     </>
   );
 }
+
+const SHEET_PADDING_BOTTOM = 16;
 
 const styles = StyleSheet.create({
   button: {
@@ -136,9 +159,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 16,
   },
   title: { fontWeight: '700', marginBottom: 6 },
+  // Shrinks to fit the capped sheet; the title and Cancel stay visible.
+  list: { flexGrow: 0, flexShrink: 1 },
   row: {
     minHeight: PREFERRED_TOUCH_TARGET + 8,
     flexDirection: 'row',

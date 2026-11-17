@@ -9,7 +9,7 @@ import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
 import { CurrentGlucoseCard, NowTherapyStateChips } from "@/components/CurrentGlucoseCard";
-import { nowTherapyStateLines } from "@/components/nowCardPresentation";
+import { nowTherapyStateLines, therapyStateRouteActivity } from "@/components/nowCardPresentation";
 import { ErrorCard } from "@/components/ErrorCard";
 import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -27,6 +27,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
 import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
 import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
+import { useTherapyStateRouteTimes } from "@/hooks/useTherapyStateRouteTimes";
 import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
 import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
@@ -116,6 +117,7 @@ export function TodayScreen() {
   const latest = useLatestData();
   const aaps = useAapsCardSnapshot(dataMode === 'live', repository, revision);
   const aapsInsulin = useAapsInsulinContext(dataMode === 'live', revision);
+  const therapyStateRoutes = useTherapyStateRouteTimes(dataMode === 'live', ownerIdentity, revision);
   const aapsSelected = aaps.kind === 'aaps';
   // Never attach a prior session's independently loaded glucose to new estimates.
   const cardReading = aapsSelected ? aaps.reading
@@ -277,23 +279,24 @@ export function TodayScreen() {
     : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
-  // Recorded AAPS states active now ("Activity target until 11:30"). They
-  // are trusted as current only while AAPS or Nightscout data is arriving:
-  // a glucose reading from the loop source, or a recent live insulin record.
+  // Recorded AAPS states active now ("Activity target until 11:30"). Each
+  // state is trusted as current only while the route that delivered it is
+  // working: a recent Nightscout treatment sync for Nightscout copies, and
+  // AAPS treatments or glucose received on this phone for local copies.
   const therapyStateLines = useMemo(() => {
     const data = todayTimeline.data;
     if (!data?.therapyStates?.length) return [];
-    const loopReadingAt =
-      cardReading && (cardReading.sourceId === "aaps-local" || cardReading.sourceId === NIGHTSCOUT_SOURCE_ID)
-        ? cardReading.timestamp
-        : undefined;
-    const insulinStatus = data.sources.find((source) => source.label === "Insulin");
-    const liveInsulinAt = insulinStatus?.isLive ? insulinStatus.dataThrough : undefined;
-    const seen = Math.max(loopReadingAt ?? Number.NEGATIVE_INFINITY, liveInsulinAt ?? Number.NEGATIVE_INFINITY);
-    // States are read up to the end of the loaded day; an old load is stale too.
-    const freshAt = Number.isFinite(seen) ? Math.min(seen, data.range.end) : undefined;
-    return nowTherapyStateLines(data.therapyStates, now, freshAt);
-  }, [cardReading, now, todayTimeline.data]);
+    const activity = therapyStateRouteActivity({
+      now,
+      // States are read up to the end of the loaded day; an old load is stale too.
+      readThrough: data.range.end,
+      nightscoutTreatmentSyncAt: therapyStateRoutes.nightscoutTreatmentSyncAt,
+      aapsLocalTreatmentsReceivedAt: therapyStateRoutes.aapsLocalTreatmentsReceivedAt,
+      aapsLocalReadingAt: cardReading?.sourceId === "aaps-local" ? cardReading.timestamp : undefined,
+      aapsLocalTreatmentRouteOn: therapyStateRoutes.aapsLocalTreatmentRouteOn,
+    });
+    return nowTherapyStateLines(data.therapyStates, now, activity);
+  }, [cardReading, now, therapyStateRoutes, todayTimeline.data]);
 
   return (
     <View style={styles.screen}>
