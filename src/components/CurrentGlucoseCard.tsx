@@ -46,6 +46,7 @@ import type { AapsEstimateInput } from './aapsEstimatePresentation';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
 import {
   lowReadingMessage,
+  NOW_CARD_CLOCK_AHEAD_MS,
   nowCardSourceName,
   nowCardState,
   staleReadingMessage,
@@ -395,7 +396,9 @@ export function CurrentGlucoseCard({
           {staleMode ? (
             <View style={styles.stateBlock}>
               <Text style={[styles.stateMessage, { color: colors.text }]}>
-                {staleReadingMessage(sourceName, formatTime(reading.timestamp))}
+                {staleReadingMessage(sourceName, formatTime(reading.timestamp), {
+                  clockAhead: reading.timestamp - now > NOW_CARD_CLOCK_AHEAD_MS,
+                })}
               </Text>
               {onCheckConnection ? (
                 <Pressable

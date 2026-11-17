@@ -66,3 +66,15 @@ describe("sensor change action near sensor end", () => {
     expect(sensorChangeDue([], start + 12 * day, 10)).toBe(false);
   });
 });
+
+describe("clock-ahead stale message", () => {
+  it("explains a phone clock mismatch instead of a missing connection", () => {
+    const text = staleReadingMessage("AAPS", "13:00", { clockAhead: true });
+    expect(text).toContain("ahead of this phone's clock");
+    expect(text).not.toContain("has not sent");
+  });
+
+  it("keeps the connection message for ordinary old readings", () => {
+    expect(staleReadingMessage("AAPS", "08:14")).toContain("AAPS has not sent a glucose reading since 08:14");
+  });
+});

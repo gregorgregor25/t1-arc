@@ -67,11 +67,21 @@ export function nowCardSourceName(sourceId: string | undefined): string | undefi
  * Plain explanation for a reading that stopped updating. Says what is known
  * (the last time) and where to look, without guessing at the cause.
  */
-export function staleReadingMessage(sourceName: string | undefined, lastTime: string) {
+export function staleReadingMessage(
+  sourceName: string | undefined,
+  lastTime: string,
+  options: { clockAhead?: boolean } = {},
+) {
+  if (options.clockAhead) {
+    return `This reading is dated ${lastTime}, which is ahead of this phone's clock, so it is not shown as current. Check this phone's date, time and time zone. Use a meter if you need a reading now.`;
+  }
   const source = sourceName && sourceName !== 'Other source' ? sourceName : 'Your glucose source';
   const check = sourceName && sourceName !== 'Other source' ? `your sensor and ${sourceName}` : 'your sensor and glucose source';
   return `${source} has not sent a glucose reading since ${lastTime}. Check ${check}. Use a meter if you need a reading now.`;
 }
+
+/** Readings dated more than this far ahead of the phone clock are a clock mismatch. */
+export const NOW_CARD_CLOCK_AHEAD_MS = 120_000;
 
 /** Plain statement of which configured level the current value is below. */
 export function lowReadingMessage(range: GlucoseRange, levelText: string) {
