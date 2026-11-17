@@ -43,6 +43,15 @@ The always-on overlay uses the position and size you choose. It does not move
 automatically, so consider image retention on an OLED display and change its
 position periodically. Manufacturer power and lock-screen policies can affect it.
 
+## Bedside view
+
+On **Today**, open the settings menu and choose **Bedside view**. It shows the
+latest glucose, direction arrow and reading age in large, dim text on a black
+screen. Tap anywhere to close it. A delayed reading is labelled **Delayed**; a
+stale one is struck through and labelled **Last known**. With no reading in
+the last hour it says **No recent reading** instead of a number. The view does
+not keep the screen awake, so your phone's screen timeout still applies.
+
 ## Glucose alerts
 
 Open **Glucose alerts**, enable **Allow T1 Arc alerts**, then choose low, high

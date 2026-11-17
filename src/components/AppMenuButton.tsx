@@ -24,7 +24,17 @@ import { useAppTheme } from "@/theme/theme";
 
 import { SectionCard } from "./SectionCard";
 
-export function AppMenuButton() {
+/** A shortcut that belongs to the current screen, listed above settings. */
+export interface AppMenuScreenAction {
+  label: string;
+  detail: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress(): void;
+}
+
+export function AppMenuButton({
+  screenActions = [],
+}: { screenActions?: readonly AppMenuScreenAction[] } = {}) {
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const { colors, radius } = useAppTheme();
   const [visible, setVisible] = useState(false);
@@ -43,6 +53,12 @@ export function AppMenuButton() {
     closeTimer.current = setTimeout(() => setVisible(false), 140);
   }
 
+  function runScreenAction(action: AppMenuScreenAction) {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setVisible(false);
+    action.onPress();
+  }
+
   function menuRow(
     item: {
       source?: SourceJump;
@@ -51,18 +67,21 @@ export function AppMenuButton() {
       icon: keyof typeof Ionicons.glyphMap;
     },
     index = 0,
+    action?: AppMenuScreenAction,
   ) {
     return (
       <Pressable
         accessibilityHint={
-          item.source
-            ? `Opens ${item.label} settings`
-            : SETTINGS_OVERVIEW_MENU_ITEM.accessibilityHint
+          action
+            ? `Opens ${item.label}`
+            : item.source
+              ? `Opens ${item.label} settings`
+              : SETTINGS_OVERVIEW_MENU_ITEM.accessibilityHint
         }
         accessibilityLabel={`${item.label}. ${item.detail}`}
         accessibilityRole="button"
-        key={item.source ?? "overview"}
-        onPress={() => openSettings(item.source)}
+        key={action ? `action:${item.label}` : (item.source ?? "overview")}
+        onPress={() => (action ? runScreenAction(action) : openSettings(item.source))}
         style={({ pressed }) => [
           styles.row,
           index > 0 && {
@@ -187,6 +206,18 @@ export function AppMenuButton() {
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
           >
+            {screenActions.length > 0 ? (
+              <View style={styles.section}>
+                <Text
+                  style={[styles.sectionTitle, { color: colors.textSecondary }]}
+                >
+                  On this screen
+                </Text>
+                <SectionCard style={styles.group}>
+                  {screenActions.map((action, index) => menuRow(action, index, action))}
+                </SectionCard>
+              </View>
+            ) : null}
             <View style={styles.section}>
               <SectionCard style={styles.group}>
                 {menuRow(SETTINGS_OVERVIEW_MENU_ITEM)}

@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
+import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
 import { CurrentGlucoseCard } from "@/components/CurrentGlucoseCard";
@@ -65,6 +66,7 @@ export function TodayScreen() {
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
+  const [bedsideVisible, setBedsideVisible] = useState(false);
   const [logLauncherVisible, setLogLauncherVisible] = useState(false);
   const [initialContextKind, setInitialContextKind] =
     useState<ManualContextKind>("meal");
@@ -223,6 +225,15 @@ export function TodayScreen() {
         range: dayRange(today, now),
       })
     : undefined;
+  const todayMenuActions = useMemo(
+    () => [{
+      label: 'Bedside view',
+      detail: 'Large glucose, arrow and age on a dim black screen',
+      icon: 'moon-outline' as const,
+      onPress: () => setBedsideVisible(true),
+    }],
+    [],
+  );
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
 
@@ -233,8 +244,15 @@ export function TodayScreen() {
         quietHeader
         refreshing={syncing}
         onRefresh={() => void refreshData()}
-        trailing={<AppMenuButton />}
+        trailing={<AppMenuButton screenActions={todayMenuActions} />}
       >
+        <BedsideGlucoseView
+          visible={bedsideVisible}
+          onClose={() => setBedsideVisible(false)}
+          reading={cardReading}
+          trend={trendAssessment.direction}
+          now={now}
+        />
         {latest.loading && !latest.reading ? (
           <LoadingCard label="Loading saved glucose…" />
         ) : (
