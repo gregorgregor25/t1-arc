@@ -19,7 +19,7 @@ concurrency:
 jobs:
   quality:
     name: Check candidate source
-    if: github.repository == 'gregorgregor25/t1-arc' && (github.ref == 'refs/heads/codex/aaps-local-source' || github.ref == 'refs/heads/codex/aaps-overnight')
+    if: github.repository == 'gregorgregor25/t1-arc' && (github.ref == 'refs/heads/codex/aaps-local-source' || github.ref == 'refs/heads/codex/aaps-overnight' || github.ref == 'refs/heads/codex/app-redesign')
     uses: ./.github/workflows/quality.yml
     permissions:
       contents: read
@@ -27,7 +27,7 @@ jobs:
   build-phone:
     name: Build phone APK for local signing
     needs: quality
-    if: github.repository == 'gregorgregor25/t1-arc' && (github.ref == 'refs/heads/codex/aaps-local-source' || github.ref == 'refs/heads/codex/aaps-overnight')
+    if: github.repository == 'gregorgregor25/t1-arc' && (github.ref == 'refs/heads/codex/aaps-local-source' || github.ref == 'refs/heads/codex/aaps-overnight' || github.ref == 'refs/heads/codex/app-redesign')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
