@@ -13,9 +13,13 @@ build must review the exact build, hosting, support and store configuration.
 The development glucose alarm engine stores its configuration, episode state,
 snooze deadlines and imported audio names in Android Keystore-backed encrypted
 storage. User-selected audio is copied into private app storage and is not sent
-to a server or Tarv1s. Android system backup remains disabled. The new alarm
-configuration and custom sounds are excluded from portable backups; users must
-configure and test them on a replacement phone. Full local-data erasure disables
+to a server or Tarv1s. Android system backup remains disabled. User-created
+encrypted portable backups include the alarm choices (thresholds, enabled
+levels, sound choices, snooze-related and night-schedule settings) but never the
+alert or sound switches, so a restore leaves alarms off for review. Custom
+sounds appear only as an opaque ID and the name the user saw; the audio files
+are never included. A missing custom sound falls back to a built-in sound after
+restore. Users should still check and test alarms on a replacement phone. Full local-data erasure disables
 the alarm owner and removes its private audio copies. Hiding lock-screen values
 redacts alarm notification content without acknowledging the alert or stopping
 its audio. See [glucose alarms](docs/GLUCOSE_ALARMS.md) for development limitations.
