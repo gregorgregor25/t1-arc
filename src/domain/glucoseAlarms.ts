@@ -158,6 +158,16 @@ export function glucoseAlarmSilenceExplanation(kind: GlucoseAlarmKind): string {
     : 'Silencing is not a recovery. If the alert remains unresolved, your repeat setting controls reminders. A new urgent low, low or very high alert is separate.';
 }
 
+/**
+ * The small on-screen alert card. A snoozed or silenced alert has nothing to
+ * act on until it sounds again, so the card would only cover the screen
+ * (for example the Tarv1s message box). The alert notification keeps its
+ * controls, and the alert sounds again when the snooze or reminder is due.
+ */
+export function glucoseAlarmBannerVisible(state: { panelOpen: boolean; snoozed: boolean; silenced: boolean }): boolean {
+  return !state.panelOpen && !state.snoozed && !state.silenced;
+}
+
 export function validateGlucoseAlarmConfiguration(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return 'The alarm choices could not be read.';
   const config = value as Record<string, unknown>;

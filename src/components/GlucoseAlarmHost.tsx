@@ -7,7 +7,7 @@ import {
   acknowledgeGlucoseAlarm, cancelGlucoseAlarmSnooze, getGlucoseAlarmStatus, snoozeGlucoseAlarm,
 } from '@/data/glucoseAlerts/glucoseAlarms';
 import {
-  customClockSnoozeUntil, glucoseAlarmSilenceExplanation, glucoseAlarmSnoozeOptions, glucoseAlarmSnoozeUntil,
+  customClockSnoozeUntil, glucoseAlarmBannerVisible, glucoseAlarmSilenceExplanation, glucoseAlarmSnoozeOptions, glucoseAlarmSnoozeUntil,
   type GlucoseAlarmKind, type GlucoseAlarmStatus,
 } from '@/domain/glucoseAlarms';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
@@ -125,10 +125,10 @@ export function GlucoseAlarmHost() {
 
   return (
     <>
-      {!visible ? <View pointerEvents="box-none" style={[styles.bannerWrap, { bottom: insets.bottom + 78 }]}>
+      {glucoseAlarmBannerVisible({ panelOpen: visible, snoozed, silenced: status.acknowledged }) ? <View pointerEvents="box-none" style={[styles.bannerWrap, { bottom: insets.bottom + 78 }]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Manage ${label.toLowerCase()}`} onPress={() => setExpanded(true)} style={[styles.banner, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md }]}>
           <Text style={[styles.bannerTitle, { color: colors.text }]}>{label}</Text>
-          <Text style={[styles.small, { color: colors.textSecondary }]}>{snoozed && status.snoozedUntilMs !== null ? `Snoozed · ${alarmUntilLabel(status.snoozedUntilMs, regional.locale, observedAt)}` : status.acknowledged ? 'Silenced · tap for snooze controls' : 'Tap for alert controls'}</Text>
+          <Text style={[styles.small, { color: colors.textSecondary }]}>Tap for alert controls</Text>
         </Pressable>
       </View> : null}
       <Modal transparent visible={visible} animationType="fade" statusBarTranslucent onRequestClose={dismiss} onShow={() => { const handle = findNodeHandle(titleRef.current); if (handle) AccessibilityInfo.setAccessibilityFocus(handle); }}>
