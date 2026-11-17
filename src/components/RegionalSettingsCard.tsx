@@ -326,7 +326,7 @@ export function RegionalSettingsCard({
                       style={[
                         styles.countryInput,
                         {
-                          borderColor: colors.border,
+                          borderColor: colors.controlBorder,
                           borderRadius: radius.md,
                           color: colors.text,
                         },
@@ -404,7 +404,7 @@ export function RegionalSettingsCard({
                         style={[
                           styles.textSettingInput,
                           {
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.md,
                             color: colors.text,
                           },

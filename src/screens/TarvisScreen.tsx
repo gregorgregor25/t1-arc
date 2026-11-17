@@ -3743,7 +3743,7 @@ export function TarvisScreen({
                         placeholder={TARVIS_PROVIDERS[selectedProvider].placeholder}
                         placeholderTextColor={colors.textTertiary}
                         secureTextEntry
-                        style={[styles.keyInput, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md, color: colors.text }]}
+                        style={[styles.keyInput, { backgroundColor: colors.surfaceElevated, borderColor: colors.controlBorder, borderRadius: radius.md, color: colors.text }]}
                         value={apiKey}
                       />
                     )}

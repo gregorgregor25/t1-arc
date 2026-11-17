@@ -185,7 +185,7 @@ export function TarvisTreatmentProfileCard() {
                   selectTextOnFocus
                   style={[
                     styles.input,
-                    { borderColor: colors.border, color: colors.text },
+                    { borderColor: colors.controlBorder, color: colors.text },
                   ]}
                   value={segment.time}
                 />
@@ -204,7 +204,7 @@ export function TarvisTreatmentProfileCard() {
                     style={[
                       styles.input,
                       styles.ratioInput,
-                      { borderColor: colors.border, color: colors.text },
+                      { borderColor: colors.controlBorder, color: colors.text },
                     ]}
                     value={segment.ratio}
                   />

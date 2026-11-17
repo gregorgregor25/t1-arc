@@ -2445,7 +2445,7 @@ export function FoodLoggerCard({
                         styles.mealTitleInput,
                         {
                           backgroundColor: colors.surface,
-                          borderColor: colors.border,
+                          borderColor: colors.controlBorder,
                           borderRadius: radius.md,
                           color: colors.text,
                         },
@@ -3570,7 +3570,7 @@ export function FoodLoggerCard({
                                   styles.countInput,
                                   {
                                     backgroundColor: colors.surface,
-                                    borderColor: colors.border,
+                                    borderColor: colors.controlBorder,
                                     borderRadius: radius.sm,
                                     color: colors.text,
                                   },
@@ -3698,7 +3698,7 @@ export function FoodLoggerCard({
                               styles.recipeNameInput,
                               {
                                 backgroundColor: colors.surface,
-                                borderColor: colors.border,
+                                borderColor: colors.controlBorder,
                                 borderRadius: radius.sm,
                                 color: colors.text,
                               },
@@ -4672,7 +4672,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4694,7 +4694,7 @@ export function FoodLoggerCard({
                             styles.quickCarbInput,
                             {
                               backgroundColor: colors.surface,
-                              borderColor: colors.border,
+                              borderColor: colors.controlBorder,
                               borderRadius: radius.sm,
                               color: colors.text,
                             },
@@ -4834,7 +4834,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4859,7 +4859,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4887,7 +4887,7 @@ export function FoodLoggerCard({
                               styles.customNumberInput,
                               {
                                 backgroundColor: colors.surface,
-                                borderColor: colors.border,
+                                borderColor: colors.controlBorder,
                                 borderRadius: radius.sm,
                                 color: colors.text,
                               },
@@ -5028,7 +5028,7 @@ export function FoodLoggerCard({
                                 styles.customNumberInput,
                                 {
                                   backgroundColor: colors.surface,
-                                  borderColor: colors.border,
+                                  borderColor: colors.controlBorder,
                                   borderRadius: radius.sm,
                                   color: colors.text,
                                 },

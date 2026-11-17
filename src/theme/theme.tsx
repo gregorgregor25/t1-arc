@@ -47,6 +47,8 @@ export interface AppColors {
   warning: string;
   danger: string;
   border: string;
+  /** Outline of inputs and other controls; at least 3:1 against surfaces. */
+  controlBorder: string;
   divider: string;
   grid: string;
   tabBar: string;

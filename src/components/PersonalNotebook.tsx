@@ -170,10 +170,10 @@ function NotebookContent({ visible, onClose, ownerIdentity, dataMode, seed }: Pr
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {!ready ? <View style={styles.loading}>{loading ? <><ActivityIndicator color={colors.primary} /><Text style={[styles.body, { color: colors.textSecondary }]}>Opening your notebook…</Text></> : null}</View>
             : editor ? <View style={styles.editor}>
-              {editor.isNew ? <><Text style={[styles.label, { color: colors.text }]}>Title</Text><TextInput accessibilityLabel="Note title" value={editor.title} onChangeText={(title) => setEditor({ ...editor, title })} maxLength={1000} style={[styles.input, { color: colors.text, borderColor: colors.border }]} /></> : <Text style={[styles.entryTitle, { color: colors.text }]}>{editor.title}</Text>}
+              {editor.isNew ? <><Text style={[styles.label, { color: colors.text }]}>Title</Text><TextInput accessibilityLabel="Note title" value={editor.title} onChangeText={(title) => setEditor({ ...editor, title })} maxLength={1000} style={[styles.input, { color: colors.text, borderColor: colors.controlBorder }]} /></> : <Text style={[styles.entryTitle, { color: colors.text }]}>{editor.title}</Text>}
               <Text style={[styles.label, { color: colors.text }]}>My note or question</Text>
               <TextInput accessibilityLabel="My note or question" value={editor.note} onChangeText={(note) => setEditor({ ...editor, note })} multiline maxLength={4000} textAlignVertical="top"
-                style={[styles.input, styles.noteInput, { color: colors.text, borderColor: colors.border }]} />
+                style={[styles.input, styles.noteInput, { color: colors.text, borderColor: colors.controlBorder }]} />
               <NotebookAction label={busy ? "Saving…" : "Save note"} onPress={() => void saveNote()} disabled={busy} primary />
             </View>
               : preview ? <View style={styles.editor}>

@@ -449,7 +449,7 @@ export function DexcomClarityImportCard() {
             styles.timeZoneInput,
             {
               backgroundColor: colors.surface,
-              borderColor: colors.border,
+              borderColor: colors.controlBorder,
               borderRadius: radius.md,
               color: colors.text,
               opacity: settingsLocked ? 0.72 : 1,

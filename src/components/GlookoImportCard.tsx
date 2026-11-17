@@ -1615,7 +1615,7 @@ export function GlookoImportCard() {
                       backgroundColor: colors.surface,
                       borderColor:
                         manualTimeZoneValid || manualSettingsLocked
-                          ? colors.border
+                          ? colors.controlBorder
                           : colors.danger,
                       color: colors.text,
                       opacity: manualSettingsLocked ? 0.72 : 1,

@@ -77,7 +77,7 @@ export function TarvisReportButton({ response, disabled = false }: { response: s
                 </Pressable>)}
               </View>
               <Text style={[styles.label, ink]}>Message to support</Text>
-              <TextInput accessibilityLabel="Message to support. Review and remove anything you do not want to share." multiline editable={!sending} maxLength={REPORT_TEXT_LIMIT} value={text} onChangeText={value => { setText(value); setConsent(false); }} placeholder="What should we look into?" placeholderTextColor={colors.textTertiary} style={[styles.input, ink, { borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.md }]} />
+              <TextInput accessibilityLabel="Message to support. Review and remove anything you do not want to share." multiline editable={!sending} maxLength={REPORT_TEXT_LIMIT} value={text} onChangeText={value => { setText(value); setConsent(false); }} placeholder="What should we look into?" placeholderTextColor={colors.textTertiary} style={[styles.input, ink, { borderColor: colors.controlBorder, backgroundColor: colors.surface, borderRadius: radius.md }]} />
               <Text style={[styles.small, muted]}>{text.length.toLocaleString()} / {REPORT_TEXT_LIMIT.toLocaleString()} characters</Text>
               {!included && response.trim() ? <Pressable disabled={sending} accessibilityRole="button" onPress={() => { setText(previous => `${previous}${previous ? '\n\n' : ''}Response I am reporting:\n${response}`.slice(0, REPORT_TEXT_LIMIT)); setIncluded(true); setConsent(false); }} style={styles.inline}>
                 <Ionicons name="add-circle-outline" size={20} color={colors.primary} />

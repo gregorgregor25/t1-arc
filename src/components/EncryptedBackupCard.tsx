@@ -925,7 +925,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: passphraseError
                       ? colors.danger
-                      : colors.border,
+                      : colors.controlBorder,
                     borderRadius: radius.md,
                     color: colors.text,
                   },

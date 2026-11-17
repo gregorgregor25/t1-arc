@@ -966,7 +966,7 @@ function StepGoalEditor({
             styles.goalInput,
             {
               backgroundColor: colors.surfaceMuted,
-              borderColor: colors.border,
+              borderColor: colors.controlBorder,
               borderRadius: radius.md,
               color: colors.text,
             },

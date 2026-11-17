@@ -33,7 +33,7 @@ export function FoodRecipePortionSheet({ recipe, onAdd, onClose }: {
               <Text style={[styles.body, { color: colors.textSecondary }]}>How much are you having?</Text>
               <Text style={[styles.label, { color: colors.text }]}>Servings</Text>
               <TextInput accessibilityLabel="Recipe servings to add" keyboardType="decimal-pad" value={amount} onChangeText={setAmount}
-                style={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: radius.md }]} />
+                style={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted, borderColor: colors.controlBorder, borderRadius: radius.md }]} />
               <View style={styles.choices}>
                 {[0.5, 1, 2].map(value => (
                   <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${value} recipe servings`} accessibilityState={{ selected: count === value }}
