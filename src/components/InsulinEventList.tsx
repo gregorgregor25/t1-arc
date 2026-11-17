@@ -104,7 +104,6 @@ export function InsulinEventList({
                       <Pressable
                         accessibilityLabel="Edit manual insulin dose"
                         accessibilityRole="button"
-                        hitSlop={8}
                         onPress={() => onEditManualInsulin(delivery)}
                         style={({ pressed }) => [
                           styles.action,
@@ -123,7 +122,6 @@ export function InsulinEventList({
                       <Pressable
                         accessibilityLabel="Delete manual insulin dose"
                         accessibilityRole="button"
-                        hitSlop={8}
                         onPress={() =>
                           Alert.alert(
                             'Delete insulin dose?',
@@ -238,11 +236,13 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 4,
   },
+  // Full-size, separate touch areas: no hit slop, so a tap between Edit and
+  // Delete can never reach the wrong one.
   action: {
-    minWidth: 28,
-    minHeight: 28,
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
