@@ -490,6 +490,7 @@ describe('health backup validation', () => {
       healthGoals: { dailyStepGoal: 8_500 },
       treatmentProfile: null,
       regionalProfile: DEFAULT_REGIONAL_PROFILE,
+      glucoseAlarms: null,
     };
 
     const parsed = validateHealthBackupDocument(backup);
@@ -534,6 +535,7 @@ describe('health backup validation', () => {
       healthGoals: { dailyStepGoal: null },
       treatmentProfile: null,
       regionalProfile: DEFAULT_REGIONAL_PROFILE,
+      glucoseAlarms: null,
     };
 
     expect(() => validateHealthBackupDocument(backup)).toThrow(

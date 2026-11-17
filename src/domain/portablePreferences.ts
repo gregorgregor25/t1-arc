@@ -9,13 +9,19 @@ import {
   GlucoseAlertPreferences,
   validateGlucoseAlertPreferences,
 } from './glucoseAlerts';
+import {
+  DEFAULT_GLUCOSE_ALARM_CONFIGURATION,
+  GLUCOSE_ALARM_SOUND_KEYS,
+  type GlucoseAlarmConfiguration,
+  validateGlucoseAlarmConfiguration,
+} from './glucoseAlarms';
 import { AppThemeMode, isAppThemeMode } from './themePreference';
 import {
   isT1ArcRegionalProfile,
   type T1ArcRegionalProfile,
 } from './regionalProfile';
 
-export const PORTABLE_PREFERENCES_VERSION = 6;
+export const PORTABLE_PREFERENCES_VERSION = 7;
 
 export const PORTABLE_AOD_POSITIONS = [
   'topLeft',
@@ -38,6 +44,21 @@ export type PortableGlucoseAlertSettings = Omit<
   'enabled'
 >;
 
+/**
+ * Native alarm choices. The master switch and the sound switch are never part
+ * of a backup, so a restore always leaves alarms off for the user to review.
+ * Custom sounds are references only (id and name); audio files stay local.
+ */
+export type PortableGlucoseAlarmConfiguration = Omit<GlucoseAlarmConfiguration, 'enabled' | 'audioEnabled'>;
+export interface PortableGlucoseAlarmSettings {
+  configuration: PortableGlucoseAlarmConfiguration;
+  customSounds: { id: string; name: string }[];
+}
+
+export const PORTABLE_GLUCOSE_ALARM_CONFIGURATION_KEYS: readonly (keyof PortableGlucoseAlarmConfiguration)[] =
+  (Object.keys(DEFAULT_GLUCOSE_ALARM_CONFIGURATION) as (keyof GlucoseAlarmConfiguration)[])
+    .filter((key): key is keyof PortableGlucoseAlarmConfiguration => key !== 'enabled' && key !== 'audioEnabled');
+
 export interface PortableTreatmentProfile {
   schemaVersion: 1;
   source: 'manual';
@@ -58,6 +79,7 @@ export const PORTABLE_PREFERENCE_GROUPS = [
   'healthGoals',
   'treatmentProfile',
   'regionalProfile',
+  'glucoseAlarms',
 ] as const;
 
 export type PortablePreferenceGroup =
@@ -89,6 +111,8 @@ export interface PortablePreferences {
   treatmentProfile: PortableTreatmentProfile | null;
   /** Null only when an older backup did not contain regional preferences. */
   regionalProfile: T1ArcRegionalProfile | null;
+  /** Null when this phone has no saved native alarm choices, or in backups before version 7. */
+  glucoseAlarms: PortableGlucoseAlarmSettings | null;
 }
 
 const includedGroupsByPreferences = new WeakMap<
@@ -116,7 +140,38 @@ export function getIncludedPortablePreferenceGroups(
   if (preferences.healthGoals !== null) groups.push('healthGoals');
   if (preferences.treatmentProfile !== null) groups.push('treatmentProfile');
   if (preferences.regionalProfile !== null) groups.push('regionalProfile');
+  if (preferences.glucoseAlarms !== null) groups.push('glucoseAlarms');
   return groups;
+}
+
+function validatePortableGlucoseAlarms(value: unknown): PortableGlucoseAlarmSettings {
+  const invalid = () => new Error('The backup contains invalid glucose alarm settings.');
+  if (!isPlainObject(value) || !hasExactKeys(value, ['configuration', 'customSounds'])) throw invalid();
+  const configuration = value.configuration;
+  if (!isPlainObject(configuration) || !hasExactKeys(configuration, PORTABLE_GLUCOSE_ALARM_CONFIGURATION_KEYS)) throw invalid();
+  const error = validateGlucoseAlarmConfiguration({ ...configuration, enabled: false, audioEnabled: false });
+  if (error) throw new Error(`The backup alarm settings are invalid. ${error}`);
+  const sounds = value.customSounds;
+  if (!Array.isArray(sounds) || sounds.length > 5) throw invalid();
+  const customSounds = sounds.map((sound) => {
+    if (
+      !isPlainObject(sound) ||
+      !hasExactKeys(sound, ['id', 'name']) ||
+      typeof sound.id !== 'string' ||
+      !/^custom:[a-f0-9-]{36}$/.test(sound.id) ||
+      typeof sound.name !== 'string' ||
+      sound.name.length > 160
+    ) {
+      throw invalid();
+    }
+    return { id: sound.id, name: sound.name };
+  });
+  const normalisedConfiguration = Object.fromEntries(
+    PORTABLE_GLUCOSE_ALARM_CONFIGURATION_KEYS.map((key) => [key, configuration[key]]),
+  ) as unknown as PortableGlucoseAlarmConfiguration;
+  // Only references to sounds that a level actually uses are kept.
+  const used = new Set(Object.values(GLUCOSE_ALARM_SOUND_KEYS).map((key) => normalisedConfiguration[key]));
+  return { configuration: normalisedConfiguration, customSounds: customSounds.filter((sound) => used.has(sound.id)) };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -149,7 +204,8 @@ export function validatePortablePreferences(
       value.version !== 3 &&
       value.version !== 4 &&
       value.version !== 5 &&
-      value.version !== 6)
+      value.version !== 6 &&
+      value.version !== 7)
   ) {
     throw new Error('The backup preferences use an unsupported format.');
   }
@@ -189,17 +245,30 @@ export function validatePortablePreferences(
                 'healthGoals',
                 'treatmentProfile',
               ]
-            : [
-                'version',
-                'glucoseAppearance',
-                'glanceableDisplay',
-                'insightReviews',
-                'glucoseAlerts',
-                'themeMode',
-                'healthGoals',
-                'treatmentProfile',
-                'regionalProfile',
-              ];
+            : value.version <= 6
+              ? [
+                  'version',
+                  'glucoseAppearance',
+                  'glanceableDisplay',
+                  'insightReviews',
+                  'glucoseAlerts',
+                  'themeMode',
+                  'healthGoals',
+                  'treatmentProfile',
+                  'regionalProfile',
+                ]
+              : [
+                  'version',
+                  'glucoseAppearance',
+                  'glanceableDisplay',
+                  'insightReviews',
+                  'glucoseAlerts',
+                  'themeMode',
+                  'healthGoals',
+                  'treatmentProfile',
+                  'regionalProfile',
+                  'glucoseAlarms',
+                ];
   if (!hasExactKeys(value, expectedKeys)) {
     throw new Error('The backup preferences use an unsupported format.');
   }
@@ -439,6 +508,11 @@ export function validatePortablePreferences(
     }
   }
 
+  let glucoseAlarms: PortableGlucoseAlarmSettings | null = null;
+  if (value.version >= 7 && value.glucoseAlarms !== null) {
+    glucoseAlarms = validatePortableGlucoseAlarms(value.glucoseAlarms);
+  }
+
   const normalised: PortablePreferences = {
     version: PORTABLE_PREFERENCES_VERSION,
     glucoseAppearance: normalisedAppearance,
@@ -474,6 +548,7 @@ export function validatePortablePreferences(
     healthGoals,
     treatmentProfile,
     regionalProfile,
+    glucoseAlarms,
   };
   const includedGroups: PortablePreferenceGroup[] = inheritedGroups
     ? [...inheritedGroups]
@@ -503,6 +578,9 @@ export function validatePortablePreferences(
   }
   if (!inheritedGroups && sourceVersion >= 5 && regionalProfile !== null) {
     includedGroups.push('regionalProfile');
+  }
+  if (!inheritedGroups && sourceVersion >= 7 && glucoseAlarms !== null) {
+    includedGroups.push('glucoseAlarms');
   }
   includedGroupsByPreferences.set(normalised, Object.freeze(includedGroups));
   return normalised;

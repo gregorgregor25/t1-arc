@@ -932,6 +932,8 @@ export interface HealthBackupMergeResult {
   >;
   preferenceRestore: 'not-included' | 'restored' | 'failed';
   preferenceWarning?: string;
+  /** Plain-language notes about restored preferences, such as a replaced alarm sound. */
+  preferenceNotice?: string;
 }
 
 function emptyCounts() {
@@ -2763,7 +2765,7 @@ export function importPreparedHealthMigration(
 async function restorePreferences(
   manifest: HealthBackupManifest,
 ): Promise<
-  Pick<HealthBackupMergeResult, 'preferenceRestore' | 'preferenceWarning'>
+  Pick<HealthBackupMergeResult, 'preferenceRestore' | 'preferenceWarning' | 'preferenceNotice'>
 > {
   if (!manifest.preferences) {
     return { preferenceRestore: 'not-included' };
@@ -2771,8 +2773,10 @@ async function restorePreferences(
   try {
     const { restorePortablePreferences } =
       await import('@/data/backup/portablePreferences');
-    await restorePortablePreferences(manifest.preferences);
-    return { preferenceRestore: 'restored' };
+    const { notices } = await restorePortablePreferences(manifest.preferences);
+    return notices.length
+      ? { preferenceRestore: 'restored', preferenceNotice: notices.join(' ') }
+      : { preferenceRestore: 'restored' };
   } catch (error) {
     return {
       preferenceRestore: 'failed',
