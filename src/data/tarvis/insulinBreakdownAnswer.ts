@@ -336,8 +336,26 @@ function relevantSources(timeline: TimelineData, kinds: readonly RecordKind[]): 
 
 /** The newest time any relevant source holds records up to; undefined when not known. */
 function recordsThrough(sources: readonly DataSourceStatus[]) {
-  const through = sources.map(({ dataThrough }) => dataThrough).filter((value): value is number => value !== undefined);
+  // A missing or unreadable time (NaN, Infinity) is unknown, never "fresh".
+  const through = sources
+    .map(({ dataThrough }) => dataThrough)
+    .filter((value): value is number => value !== undefined && Number.isFinite(value));
   return through.length ? Math.max(...through) : undefined;
+}
+
+/** Sources whose last record time could not be read. */
+function unknownThroughSentence(sources: readonly DataSourceStatus[]) {
+  const unknown = sources.filter(({ dataThrough }) => dataThrough !== undefined && !Number.isFinite(dataThrough));
+  return unknown.length
+    ? `The last record time for ${sourcesText(unknown.map(({ label }) => label))} could not be read, so recent records may be missing.`
+    : undefined;
+}
+
+/** "no carb entries stored", or "not covered by stored records" when carb records stop before the period. */
+function carbCellText(summary: CarbSummary, window: Pick<RecordPeriodWindow, "range">, carbsThrough: number | undefined) {
+  return !summary.entries && carbsThrough !== undefined && carbsThrough < window.range.start
+    ? "not covered by stored records"
+    : carbText(summary);
 }
 
 /** The time records stop, when that is well before the end of the period (inside it or before it starts). */
@@ -536,14 +554,17 @@ function breakdownNotices(
     );
   }
   // Insulin and carbs can come from different sources that stop at different times.
-  // Carbs are checked on their own only when carb records exist and their sources stop at another time.
-  const separateCarbs = insulinThrough !== carbsThrough && parts.some((part) => part.meals.length);
+  // Carbs are checked on their own when a carb source stops at another time,
+  // even with no carb entries: a stopped carb source is why there are none.
+  const separateCarbs = insulinThrough !== carbsThrough && (carbs.length > 0 || parts.some((part) => part.meals.length));
   const checks = !separateCarbs
     ? [{ subject: "Records", through: insulinThrough, sources: insulinThrough === carbsThrough ? sources : insulin }]
     : [
         { subject: "Insulin records", through: insulinThrough, sources: insulin },
         { subject: "Carb records", through: carbsThrough, sources: carbs },
       ];
+  // An unreadable record time gets its own notice instead of the general "not updated recently".
+  const unreadable = unknownThroughSentence(sources);
   for (const check of checks) {
     let stale = false;
     for (const part of parts) {
@@ -554,11 +575,12 @@ function breakdownNotices(
         if (!coverage.includes(sentence)) coverage.push(sentence);
       }
     }
-    if (!stale && check.through === undefined) {
+    if (!stale && check.through === undefined && !unreadable) {
       const behind = behindSentence(check.sources);
       if (behind && !coverage.includes(behind)) coverage.push(behind);
     }
   }
+  if (unreadable) coverage.push(unreadable);
   if (!insulin.length && parts.every((part) => !part.boluses.length)) coverage.push(noSourceSentence("insulin"));
   const started = storedStartSentence(sources, rangeStart);
   if (started) coverage.push(started);
@@ -658,7 +680,7 @@ export function buildInsulinBreakdownAnswer({
       `• Other boluses delivered, not marked SMB: ${partCount(part, part.other)}`,
       ...(part.sourceMismatch ? [`• Saved daily bolus total: ${unitsText(part.sourceMismatch.source)}`] : []),
       ...(total ? [`• Total delivered: ${total}`] : []),
-      `• Carbs entered: ${carbText(part.carbs)}`,
+      `• Carbs entered: ${carbCellText(part.carbs, part.window, carbsThrough)}`,
     ];
   } else {
     headline = `${capitalise(parts.map((part) => part.window.name).join(" vs "))}`;
@@ -672,7 +694,7 @@ export function buildInsulinBreakdownAnswer({
       ...(parts.some((part) => part.sourceMismatch)
         ? [`• Saved daily bolus total: ${both((part) => (part.sourceMismatch ? unitsText(part.sourceMismatch.source) : "none saved"))}`]
         : []),
-      `• Carbs entered: ${both((part) => carbText(part.carbs))}`,
+      `• Carbs entered: ${both((part) => carbCellText(part.carbs, part.window, carbsThrough))}`,
       `• Basal delivered: ${both((part) => basalText(part.basal))}`,
     ];
   }
@@ -723,7 +745,7 @@ export function buildCarbsPerDayAnswer({
     const summary = summarizeCarbs(dayMeals);
     if (summary.entries) daysWithEntries += 1;
     if (summary.bySource) multiSourceDays += 1;
-    lines.push(`• ${formatShortDate(dateKey)}${offset === 0 ? " (so far)" : ""}: ${carbText(summary)}`);
+    lines.push(`• ${formatShortDate(dateKey)}${offset === 0 ? " (so far)" : ""}: ${carbCellText(summary, { range: dayRange }, through)}`);
   }
   const days = countText(question.days);
   const evidence = evidenceFor([], meals, range);
@@ -735,12 +757,14 @@ export function buildCarbsPerDayAnswer({
       : "No carb entries are stored for these days.",
   ];
   const notices: string[] = [];
+  const unreadable = unknownThroughSentence(sources);
   const stop = recordsStopBefore(window, through);
   if (stop !== undefined) notices.push(staleSentence(window, stop, false, asOf));
-  else if (through === undefined) {
+  else if (through === undefined && !unreadable) {
     const behind = behindSentence(sources);
     if (behind) notices.push(behind);
   }
+  if (unreadable) notices.push(unreadable);
   if (!sources.length && !meals.length) notices.push(noSourceSentence("carb"));
   const started = storedStartSentence(sources, range.start);
   if (started) notices.push(started);

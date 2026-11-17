@@ -171,16 +171,27 @@ const RECORD_POLITE_PHRASES = [
   String.raw`\bwhat(?:\s+is|'s|\s+was|\s+were|\s+are)\s+(?=my\b|the\b)`,
   String.raw`\b(?:please|thanks|thank\s+you|cheers|hi|hello|hey|ok(?:ay)?|tarv[1i]s)\b`,
 ];
-/** Supported periods only; anything else stays as leftover and is rejected. */
+/**
+ * Supported periods only; anything else stays as leftover and is rejected.
+ * "For" is allowed only directly in front of a supported period ("for
+ * today", "for the last 7 days"). Anywhere else it can name what insulin is
+ * for ("insulin for the carbs I entered", "insulin for today's carbs",
+ * "carbs a day for me"), so it is left over and the prompt falls through to
+ * the safety preflight.
+ */
 const RECORD_PERIOD_PHRASES = [
-  String.raw`\b(?:the\s+)?(?:last|past|previous)\s+(?:\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty)\s+days\b`,
+  // "yesterday to today so far", "today with yesterday": a two-day comparison.
+  String.raw`\byesterday\s+(?:to|with|and|vs|versus)\s+(?:so\s+far\s+)?today(?:\s+so\s+far)?\b|\btoday(?:\s+so\s+far)?\s+(?:to|with|and|vs|versus)\s+yesterday\b`,
+  String.raw`\b(?:(?:for|over|in|during)\s+)?(?:the\s+)?(?:last|past|previous)\s+(?:\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty)\s+days\b`,
+  String.raw`\b(?:(?:for|over|in|during)\s+)?(?:the\s+)?(?:past|this|last|previous)\s+week\b(?!')`,
   String.raw`\b(?:the\s+)?(?:past|this|last|previous)\s+week(?:'s)?\b`,
+  String.raw`\bfor\s+(?:so\s+far\s+)?today(?:\s+so\s+far)?\b(?!')|\bfor\s+yesterday\b(?!')`,
   String.raw`\b(?:so\s+far\s+)?today(?:'s)?(?:\s+so\s+far)?\b|\bso\s+far\b`,
   String.raw`\byesterday(?:'s)?\b`,
 ];
 const RECORD_INSULIN_PHRASES = [
   String.raw`\bratio\s+of\s+(?:basal\s+to\s+bolus(?:es)?|bolus(?:es)?\s+to\s+basal|smbs?\s+to\s+(?:entered\s+|other\s+|manual\s+)?bolus(?:es)?)\b`,
-  String.raw`\b(?:basal|bolus(?:es)?)\s*(?:\/|vs|versus|to|and|against)\s*(?:basal|bolus(?:es)?)(?:\s+(?:split|ratio|totals?|breakdown))?\b`,
+  String.raw`\b(?:basal|bolus(?:es)?)\s*(?:\/|vs|versus|to|and)\s*(?:basal|bolus(?:es)?)(?:\s+(?:split|ratio|totals?|breakdown))?\b`,
   String.raw`\bsplit\s+(?:in)?to\b|\bsplit\s+between\b|\bbroken\s+down\b|\bbreak\s*down\b|\bbreakdown\b|\bsplit\b`,
   String.raw`\bsuper\s+micro[\s-]?bolus(?:es)?\b|\bauto[\s-]?bolus(?:es)?\b|\bautomatic(?:ally)?\b|\bsmbs?\b`,
   String.raw`\b(?:meal|manual|other)\s+bolus(?:es)?\b|\bbolus(?:es)?\b|\bbasal(?:\s+insulin)?\b|\binsulin\b`,
@@ -199,11 +210,11 @@ const RECORD_PER_DAY_PHRASES = [
 const RECORD_AMOUNT_PHRASES = [
   String.raw`\bhow\s+(?:many|much)\b|\b(?:the\s+)?(?:number|amount|count)\s+of\b|\btotals?\b|\bcount\b`,
   String.raw`\bin\s+(?:units?|u|grams?|g)\b|\bunits?\s+of\b|\bunits?\b|\bgrams?\b`,
-  String.raw`\bcompared?\s+(?:with|to)\b|\bcompare\b|\bcomparison\b|\bversus\b|\bvs\b|\bagainst\b`,
+  String.raw`\bcompared?\s+(?:with|to)\b|\bcompare\b|\bcomparison\b|\bversus\b|\bvs\b`,
 ];
 /** Words that may be left over: articles, the user's pronouns and past-tense helpers. */
 const RECORD_FUNCTION_WORDS = new Set([
-  "i", "me", "my", "the", "a", "an", "of", "in", "on", "for", "and", "or", "with", "over", "during",
+  "i", "me", "my", "the", "a", "an", "of", "in", "on", "and", "or", "with", "over", "during",
   "across", "were", "was", "is", "are", "did", "have", "had", "has", "get", "got", "receive", "received",
   "there", "each", "all", "both", "aaps", "loop", "pump", "also",
 ]);
@@ -252,8 +263,17 @@ function fullyExplainedBy(text: string, grammar: RegExp) {
   });
 }
 
+/**
+ * Insulin set against carbs or meals ("units of insulin against the carbs I
+ * entered", "insulin vs the carbs", "grams of carbs for each unit") reads as
+ * a ratio or a dose for food, not a record list.
+ */
+const INSULIN_AGAINST_CARBS =
+  /\b(?:insulin|units?|bolus(?:es)?|basal|smbs?|doses?)\b[^.?!;\n]{0,40}?\b(?:vs|versus|against|per|for|to\s+cover|to\s+match)\s+(?:(?:the|my|each|every|a|an|one|1|today's|yesterday's|those|these)\s+)?(?:\w+\s+){0,2}?(?:carbs?|carbohydrates?|grams?|g|meals?|food)\b|\b(?:carbs?|carbohydrates?|grams?|g)\b[^.?!;\n]{0,40}?\b(?:vs|versus|against|per|for)\s+(?:(?:the|my|each|every|a|an|one|1)\s+)?(?:units?|insulin|bolus(?:es)?|doses?)\b/i;
+
 function parseInsulinBreakdown(text: string): InsulinBreakdownQuestion | undefined {
   if (!BREAKDOWN_PART.test(text) || !BREAKDOWN_AMOUNT.test(text) || GLUCOSE_OUTCOME.test(text)) return undefined;
+  if (INSULIN_AGAINST_CARBS.test(text)) return undefined;
   if (!fullyExplainedBy(text, BREAKDOWN_GRAMMAR)) return undefined;
   const periods = recordPeriods(text);
   return periods ? { kind: "insulin-breakdown", periods } : undefined;
@@ -293,7 +313,30 @@ const RECORD_QUESTION_MAX_LENGTH = 1_500;
 
 export function parseRecordQuestion(question: string): RecordQuestion | undefined {
   if (question.length > RECORD_QUESTION_MAX_LENGTH) return undefined;
-  const text = question.replace(/[‘’]/g, "'");
+  const text = question
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, "-")
+    .replace(/…/g, "...");
+  // Only plain ASCII text is answered here. An emoji, arrow, symbol or a
+  // letter from another alphabet ("💉", "↑ basal", "сколько") may carry the
+  // real request, and this grammar cannot read it, so the normal pipeline
+  // and its safety checks decide instead.
+  if (/[^\x20-\x7e\t\n\r]/.test(text)) return undefined;
+  return parseNormalisedRecordQuestion(normaliseRecordWording(text));
+}
+
+/** Spelling and voice-typing variants of the same record words. */
+function normaliseRecordWording(text: string) {
+  return text
+    .replace(/\bsmb's\b/gi, "SMBs")
+    .replace(/\bs\s+m\s+b('?s)?\b/gi, (_match, plural: string | undefined) => (plural ? "SMBs" : "SMB"))
+    .replace(/\bsplit\s+in\s+to\b/gi, "split into")
+    .replace(/\bgrammes?\b/gi, (word: string) => (/s$/i.test(word) ? "grams" : "gram"))
+    .replace(/\b(?:aps|a\s+a\s+p\s+s)\b/gi, "AAPS");
+}
+
+function parseNormalisedRecordQuestion(text: string): RecordQuestion | undefined {
   const iob = parseIobQuestion(text);
   if (iob) return iob;
   const carbsPerDay = parseCarbsPerDay(text);

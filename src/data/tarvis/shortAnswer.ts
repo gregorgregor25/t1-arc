@@ -56,6 +56,8 @@ export interface TarvisShortAnswer {
   urgentLabel?: boolean;
   /** Notes that belong to a safety boundary; shown with it, never collapsed. */
   safetyNotes?: string[];
+  /** Warning list items an AI connection wrote; kept as a list inside the safety box. */
+  safetyItems?: string[];
   /** List answers: every item; the card shows {@link TARVIS_SHORT_LIST_VISIBLE} then "Show all". */
   listItems: string[];
   /** The rest of the answer text, under Details. */
@@ -344,11 +346,18 @@ function pinWarningItems(items: readonly string[]) {
   return { pinned, rest };
 }
 
-/** The always-visible safety box for text an AI connection wrote, if any part needs it. */
-function modelSafety(parts: readonly string[]) {
-  const shown = parts.map((part) => part.trim()).filter(Boolean);
-  if (!shown.length) return {};
-  return { safety: shown.join(" "), ...(shown.some((part) => URGENT_ADVICE.test(part)) ? { urgent: true } : {}) };
+/**
+ * The always-visible safety box for text an AI connection wrote, if any part
+ * needs it. Two or more warning list items stay a list inside the box rather
+ * than being run together into one paragraph.
+ */
+function modelSafety(items: readonly string[], sentences: readonly string[]) {
+  const listed = items.map((item) => item.trim()).filter(Boolean);
+  const prose = sentences.map((sentence) => sentence.trim()).filter(Boolean);
+  if (!listed.length && !prose.length) return {};
+  const urgent = [...listed, ...prose].some((part) => URGENT_ADVICE.test(part)) ? { urgent: true } : {};
+  if (listed.length < 2) return { safety: [...listed, ...prose].join(" "), ...urgent };
+  return { safety: prose.length ? prose.join(" ") : "Keep these points in view:", safetyItems: listed, ...urgent };
 }
 
 export interface BuildTarvisShortAnswerInput extends TarvisAnswerOrigin {
@@ -428,7 +437,7 @@ export function buildTarvisShortAnswer({
       ? "General explanation · no personal records used"
       : ownContext ?? contextLine(evidenceLine, settings, allPeriods),
     ...(meaning ? { meaning } : {}),
-    ...modelSafety([...items.pinned, ...kept.visible]),
+    ...modelSafety(items.pinned, kept.visible),
     listItems: items.rest,
     detailText: kept.rest,
     ...(exactPeriod ? { exactPeriod } : {}),
@@ -476,7 +485,7 @@ export function buildTarvisDirectShortAnswer({
     ...(value ? { value } : { headline: sentences(presentation.summary)[0] ?? presentation.summary }),
     context: contextLine(evidenceLine, settings, value && period ? undefined : allPeriods),
     ...(meaning ? { meaning } : {}),
-    ...modelSafety([...(presentation.safetyNotice ? [presentation.safetyNotice] : []), ...pinnedFindings.pinned]),
+    ...modelSafety(pinnedFindings.pinned, presentation.safetyNotice ? [presentation.safetyNotice] : []),
     listItems: pinnedFindings.rest,
     detailText: [
       ...(value ? [presentation.headline, presentation.summary] : sentences(presentation.summary).slice(1)),

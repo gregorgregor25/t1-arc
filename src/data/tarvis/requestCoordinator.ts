@@ -11,7 +11,11 @@ import {
 } from "./intent";
 import { resolveTarvisEvidenceRangeRequest } from "./evidenceRange";
 import { routeTarvisIntent } from "./onDeviceRouting";
-import { classifyTarvisSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
+import {
+  classifyTarvisFollowUpSafety,
+  classifyTarvisSafety,
+  TARVIS_QUESTION_MAX_LENGTH,
+} from "./safety";
 import { formatTarvisNumber } from "./regionalNumberPresentation";
 import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import {
@@ -284,6 +288,12 @@ export function coordinateTarvisRequest({
   );
   if (safety.kind !== "allow") {
     return { kind: "answer", answer: safety.answer, source: "safety" };
+  }
+  // "yes", "so 6 then", "same again" after a refused dose request, or an
+  // amount proposed after a record answer, is a dose request too.
+  const followUp = classifyTarvisFollowUpSafety(question, conversationHistory);
+  if (followUp.kind !== "allow") {
+    return { kind: "answer", answer: followUp.answer, source: "safety" };
   }
   // Same limit as the composer and the provider client; nothing longer is
   // parsed locally or sent anywhere.

@@ -117,6 +117,8 @@ import {
 } from "@/data/tarvis/conversationStore";
 import { tarvisSettingsPresentation } from "@/data/tarvis/conversationScope";
 import { captureTarvisEntry, createTarvisComposerLifecycle } from '@/data/tarvis/composerLifecycle';
+import { tarvisComposerCounter, tarvisQuestionTooLongMessage } from '@/data/tarvis/composerLimit';
+import { TARVIS_QUESTION_MAX_LENGTH } from '@/data/tarvis/safety';
 import { formatTarvisConversation } from "@/data/tarvis/conversationExport";
 import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacket";
 import { buildTarvisSuggestions, isDefaultContextQuestion, type TarvisEntry } from '@/domain/tarvisEntry';
@@ -2048,6 +2050,12 @@ export function TarvisScreen({
     const prompt = (value ?? question).trim();
     // Provider cooldowns are checked at hosted dispatch so local answers remain available.
     if (!prompt || workingRef.current || settingsWorking || loadingSettings || !conversationLoaded) return;
+    // The composer stops at the limit; a longer question from elsewhere keeps
+    // the draft in the box instead of clearing it.
+    if (prompt.length > TARVIS_QUESTION_MAX_LENGTH) {
+      setError(tarvisQuestionTooLongMessage());
+      return;
+    }
     const scopeLease = conversationScopeLeaseRef.current;
     if (!scopeLease || scopeLease.identity !== conversationScope.identity) {
       return;
@@ -3178,6 +3186,7 @@ export function TarvisScreen({
   const canSendQuestion = Boolean(
     !loadingSettings && conversationLoaded && question.trim() && !working && !settingsWorking,
   );
+  const composerCounter = tarvisComposerCounter(question.length);
   const composerFooter =
     !settingsVisible && !historyVisible ? (
       <View
@@ -3267,6 +3276,7 @@ export function TarvisScreen({
             ref={questionInputRef}
             accessibilityLabel="Question for Tarv1s"
             editable={!working}
+            maxLength={TARVIS_QUESTION_MAX_LENGTH}
             multiline
             onChangeText={(text) => { setComposerQuestion(text); if (entryContext && text !== entryContext.question) onClearEntry?.(); }}
             placeholder="Message Tarv1s"
@@ -3299,6 +3309,14 @@ export function TarvisScreen({
             />
           </Pressable>
         </View>
+        {composerCounter ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.composerCounter, { color: colors.textSecondary }]}
+          >
+            {composerCounter}
+          </Text>
+        ) : null}
         <Text style={[styles.boundary, { color: colors.textTertiary }]}>
           Diabetes, health and nutrition questions.
         </Text>
@@ -4916,6 +4934,13 @@ const styles = StyleSheet.create({
     height: 48,
     alignItems: "center",
     justifyContent: "center",
+  },
+  composerCounter: {
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "right",
+    marginTop: 6,
+    paddingHorizontal: 10,
   },
   boundary: {
     fontSize: 12,

@@ -100,6 +100,12 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
             <Text style={[urgent ? styles.urgentSafetyText : styles.safetyText, { color: colors.text }]}>
               {model.safety}
             </Text>
+            {model.safetyItems?.map((item, index) => (
+              <View key={`${index}:${item.slice(0, 24)}`} style={styles.listItem}>
+                <View style={[styles.bullet, { backgroundColor: colors.warning }]} />
+                <Text style={[styles.safetyText, styles.listText, { color: colors.text }]}>{item}</Text>
+              </View>
+            ))}
             {model.safetyNotes?.map((note, index) => (
               <Text key={`${index}:${note.slice(0, 24)}`} style={[styles.safetyNote, { color: colors.textSecondary }]}>
                 {note}

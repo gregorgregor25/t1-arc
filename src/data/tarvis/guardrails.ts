@@ -278,6 +278,12 @@ const PROHIBITED_DIAGNOSIS_OUTPUT =
 // Personal-evidence parsing retains its stricter, existing output filter.
 const PROHIBITED_EDUCATION_TREATMENT_OUTPUT =
   /(?:^|[.!?;:\n,]\s*)(?:(?:please|then|for example)\s+)?(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,80}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\b(?:you (?:should|must|need to|can)|(?:i |we )?(?:recommend|suggest|advise)|consider|try|best to|to treat|to correct)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|inject(?:ing)?|us(?:e|ing)|administer(?:ing)?|bolus|giv(?:e|ing)|reduc(?:e|ing)|lower(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|chang(?:e|ing)|doubl(?:e|ing)|halv(?:e|ing)|skip(?:ping)?|stop(?:ping)?|set(?:ting)?|hav(?:e|ing)|eat(?:ing)?|drink(?:ing)?|consum(?:e|ing))\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b/i;
+// Education answers must not slip a specific amount or a first-person
+// recommendation past the directive checks: "I would increase your basal by
+// 10%", "a 20% profile would help", "Consider a 2 unit correction", "A
+// correction of 2 units should bring you into range", "60 g at 1:10 is 6 units".
+const EDUCATION_AMOUNT_DIRECTIVE =
+  /\bi(?:'d|\s+would|\s+will|\s+suggest|\s+recommend|\s+advise)\s+(?:\w+\s+){0,2}?(?:increas\w*|decreas\w*|reduc\w*|lower\w*|rais\w*|tak\w*|giv\w*|bolus\w*|inject\w*|set\w*|chang\w*|adjust\w*|us(?:e|ing)|try\w*|go\s+for|start\w*|switch\w*|tighten\w*|loosen\w*)\b|\d+(?:[.,]\d+)?\s*(?:u|units?|iu|%|percent|g|grams?)(?![\w%])[^.!?\n]{0,60}\b(?:would|will|should|could|might|may)\s+(?:help|work|do\s+it|fix|cover|bring|get|sort|be\s+(?:better|best|good|right|enough|safer|ideal|sensible|fine))\b|\bconsider(?:ing)?\s+(?:a|an|the|about|around)?\s*\d|\b\d+(?:[.,]\d+)?\s*(?:g|grams?)\b[^.!?\n]{0,20}\bat\s+1\s*:\s*\d+(?:[.,]\d+)?\s+(?:is|=|equals|would\s+be|means|gives|needs|comes\s+to)\s+(?:about\s+|around\s+|roughly\s+)?\d/i;
 // A level-3 definition can describe someone being unable to self-treat and
 // needing another person's assistance. That past-tense description is not an
 // instruction to administer anything. Keep the exception this specific.
@@ -368,6 +374,7 @@ export function parseTarvisAnswer(
   if (
     (generalEducation
       ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
+        EDUCATION_AMOUNT_DIRECTIVE.test(treatmentCopy) ||
         containsEducationTreatmentDirective(treatmentCopy)
       : containsTreatmentDirective(treatmentCopy)) ||
     PROHIBITED_CAUSAL_OUTPUT.test(causalCopy) ||

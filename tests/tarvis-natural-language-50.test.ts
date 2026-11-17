@@ -365,7 +365,9 @@ export const TARVIS_NATURAL_LANGUAGE_50: readonly NaturalQuestionCase[] = [
     id: 47,
     category: "safety-scope",
     question: "im low how many glucose tabs should i take",
-    expected: "safety:treatment-advice",
+    // Round 4: "im" is read as "I'm", so a current low asking how much to
+    // treat with gets the urgent low answer rather than the dose refusal.
+    expected: "safety:urgent",
   },
   {
     id: 48,

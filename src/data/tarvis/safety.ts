@@ -1,7 +1,15 @@
-import { TarvisAnswer } from "./types";
+import { TarvisAnswer, TarvisConversationTurn } from "./types";
 import { getRuntimeEmergencyCareTerms } from "@/domain/emergencyCare";
 import { formatGlucose } from "@/domain/regionalFormat";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
+import {
+  isDoseFollowUp,
+  maskStoredLookups,
+  normaliseDoseWording,
+  requestsDoseIntent,
+  TREATMENT_REFUSAL_HEADLINE,
+  withoutHistoryOnlySentences,
+} from "./doseIntent";
 
 export type TarvisSafetyDecision =
   | { kind: "allow" }
@@ -1660,21 +1668,32 @@ const QUANTITY_QUESTION =
 const STANDALONE_DOSE_REQUEST =
   /\bcorrect\s+(?:for\s+|a\s+|my\s+|this\s+|that\s+)?\d+(?:[.,]\d+)?\b(?!\s*(?:%|percent|days?|weeks?|times?|readings?|records?|entries|of\b))|\bwhat\s+(?:do|should|shall|can|must)\s+I\s+(?:take|inject|bolus|give\s+myself|dose)\b(?!\s+to\s+(?:see|view|read|check|find|look|open|get|show)\b)|\b(?:number|amount|units?|dose)\s+(?:for\s+me\s+)?to\s+(?:inject|bolus|dose|give\s+myself)\b(?![^.?!\n]*\b(?:yesterday|last|was|were|did)\b)/i;
 
-function requestsTreatmentAdvice(prompt: string) {
+function requestsTreatmentAdvice(fullPrompt: string) {
+  // Stored-value lookups ("What is my basal rate?", "insulin on board") are
+  // masked, and sentences that only ask what already happened are set aside,
+  // before any dose rule runs. The general dose-intent layer runs first; the
+  // older phrase rules below remain as a second net; they read the topic
+  // (insulin, a setting, a low) from the whole prompt, so a request that
+  // follows a history sentence ("... last 7 days. Grams per unit?") keeps
+  // its context.
+  const masked = maskStoredLookups(fullPrompt);
+  const prompt = withoutHistoryOnlySentences(masked);
+  if (!prompt.trim()) return false;
+  if (requestsDoseIntent(prompt, masked)) return true;
   const withoutHistory = withoutHistoricalSettingChanges(prompt);
   if (STANDALONE_DOSE_REQUEST.test(withoutHistory)) return true;
   if (
-    INSULIN_OR_SETTING_CONTEXT.test(prompt) &&
+    INSULIN_OR_SETTING_CONTEXT.test(masked) &&
     (SETTING_OR_DOSE_JUDGEMENT.test(withoutHistory) || requestsDoseOrSettingChange(prompt, withoutHistory))
   ) {
     return true;
   }
   const request =
     UNAMBIGUOUS_TREATMENT_ACTION.test(withoutHistory) ||
-    (DIRECT_TREATMENT_REQUEST.test(withoutHistory) && DOSE_OR_SETTING.test(prompt)) ||
-    (LOW_GLUCOSE_CONTEXT.test(prompt) && DIRECT_LOW_CARB_TREATMENT.test(prompt));
+    (DIRECT_TREATMENT_REQUEST.test(withoutHistory) && DOSE_OR_SETTING.test(masked)) ||
+    (LOW_GLUCOSE_CONTEXT.test(masked) && DIRECT_LOW_CARB_TREATMENT.test(prompt));
   if (!request) return false;
-  if (DOSE_OR_SETTING.test(prompt) && PERSONAL_TREATMENT_CHANGE.test(withoutHistory)) {
+  if (DOSE_OR_SETTING.test(masked) && PERSONAL_TREATMENT_CHANGE.test(withoutHistory)) {
     return true;
   }
   if (FORWARD_LOOKING_TREATMENT.test(prompt)) return true;
@@ -1700,17 +1719,74 @@ const SAFETY_SEVERITY: Record<TarvisSafetyDecision["kind"], number> = {
   allow: 0,
 };
 
+function treatmentAdviceDecision(): TarvisSafetyDecision {
+  return {
+    kind: "treatment-advice",
+    answer: answer(
+      TREATMENT_REFUSAL_HEADLINE,
+      "I can show your delivered insulin, glucose response, meals, activity and recurring patterns, but I can't calculate a dose or recommend changing a basal rate, ratio, target, correction factor or pump setting. Those decisions need your agreed diabetes plan or diabetes team.",
+      [
+        "No AI provider request was made and no treatment calculation was performed.",
+      ],
+    ),
+  };
+}
+
+/** Words that can start urgent wording; used to place windows in an over-long prompt. */
+const URGENT_KEYWORD =
+  /ketone|keto|dka|vomit|throw(?:ing)?\s+up|being\s+sick|unconscious|unresponsive|seizure|fitting|\bfit\b|breath|collaps|faint|passed\s+out|confus|drows|999|112|911|ambulance|a\s*&\s*e|emergency|hypo|\blow\b|glucagon|chest\s+pain|can't\s+wake|cannot\s+wake|won't\s+wake/gi;
+const MAX_URGENT_WINDOWS = 64;
+
+/**
+ * Over-long prompts are refused as too long by the caller, but urgent
+ * wording anywhere in them still gets the urgent answer. One linear keyword
+ * pass places bounded windows around each likely urgent phrase; only an
+ * urgent result is taken from those middle windows.
+ */
+function urgentDecisionInsideLongPrompt(question: string): TarvisSafetyDecision | undefined {
+  const half = Math.floor(TARVIS_QUESTION_MAX_LENGTH / 2);
+  let lastStart = -TARVIS_QUESTION_MAX_LENGTH;
+  let windows = 0;
+  URGENT_KEYWORD.lastIndex = 0;
+  for (let match = URGENT_KEYWORD.exec(question); match; match = URGENT_KEYWORD.exec(question)) {
+    if (match[0].length === 0) URGENT_KEYWORD.lastIndex += 1;
+    const start = Math.max(0, Math.min(match.index - half, question.length - TARVIS_QUESTION_MAX_LENGTH));
+    if (start - lastStart < half) continue;
+    lastStart = start;
+    windows += 1;
+    const decision = classifyBoundedTarvisSafety(question.slice(start, start + TARVIS_QUESTION_MAX_LENGTH));
+    if (decision.kind === "urgent") return decision;
+    if (windows >= MAX_URGENT_WINDOWS) break;
+  }
+  return undefined;
+}
+
 export function classifyTarvisSafety(question: string): TarvisSafetyDecision {
   if (question.length <= TARVIS_QUESTION_MAX_LENGTH) return classifyBoundedTarvisSafety(question);
   // An over-long prompt is refused as too long by the caller. Its opening and
-  // closing windows are still checked, so urgent wording at either end is not
-  // hidden behind a length message.
-  return [
+  // closing windows are checked in full, and urgent wording anywhere in the
+  // middle is checked too, so it is not hidden behind a length message.
+  const edges = [
     question.slice(0, TARVIS_QUESTION_MAX_LENGTH),
     question.slice(-TARVIS_QUESTION_MAX_LENGTH),
   ]
     .map(classifyBoundedTarvisSafety)
     .reduce((worst, next) => (SAFETY_SEVERITY[next.kind] > SAFETY_SEVERITY[worst.kind] ? next : worst));
+  if (edges.kind === "urgent") return edges;
+  return urgentDecisionInsideLongPrompt(question) ?? edges;
+}
+
+/**
+ * A short reply that continues a refused dose request or proposes an amount
+ * after a dose or record topic ("yes", "so 6 then", "same again", "so 2 more
+ * units"). Checked by the coordinator with the conversation history.
+ */
+export function classifyTarvisFollowUpSafety(
+  question: string,
+  history: readonly TarvisConversationTurn[],
+): TarvisSafetyDecision {
+  const refusedBefore = (previous: string) => classifyTarvisSafety(previous).kind === "treatment-advice";
+  return isDoseFollowUp(question, history, refusedBefore) ? treatmentAdviceDecision() : { kind: "allow" };
 }
 
 function classifyBoundedTarvisSafety(question: string): TarvisSafetyDecision {
@@ -1718,7 +1794,7 @@ function classifyBoundedTarvisSafety(question: string): TarvisSafetyDecision {
   const emergencyCare = getRuntimeEmergencyCareTerms();
   const reviewedUkDkaPack = regional.clinicalJurisdiction === "GB";
   const prompt = expandExplicitSamePromptReadingReference(
-    question.trim().normalize("NFKC").replace(/[’‘]/g, "'"),
+    normaliseDoseWording(question.trim().normalize("NFKC").replace(/[’‘]/g, "'")),
   );
   const currentUrgentSymptom = hasCurrentUrgentSymptom(prompt);
   const currentDkaSymptom = hasCurrentDkaSymptom(prompt);
@@ -1812,18 +1888,7 @@ function classifyBoundedTarvisSafety(question: string): TarvisSafetyDecision {
       ),
     };
   }
-  if (requestsTreatmentAdvice(prompt)) {
-    return {
-      kind: "treatment-advice",
-      answer: answer(
-        "I can review the records, but not set treatment",
-        "I can show your delivered insulin, glucose response, meals, activity and recurring patterns, but I can't calculate a dose or recommend changing a basal rate, ratio, target, correction factor or pump setting. Those decisions need your agreed diabetes plan or diabetes team.",
-        [
-          "No AI provider request was made and no treatment calculation was performed.",
-        ],
-      ),
-    };
-  }
+  if (requestsTreatmentAdvice(prompt)) return treatmentAdviceDecision();
   if (DIAGNOSIS_REQUEST.test(prompt)) {
     return {
       kind: "diagnosis",
