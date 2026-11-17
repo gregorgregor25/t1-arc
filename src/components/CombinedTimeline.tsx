@@ -33,6 +33,14 @@ import {
   PumpStateInterval,
   TimelineData,
 } from "@/domain/models";
+import type { TherapyStateInterval } from "@/domain/therapyStates";
+import {
+  notableTherapyStates,
+  THERAPY_STATE_TONE_LABELS,
+  therapyStateLabel,
+  therapyStateTone,
+  type TherapyStateTone,
+} from "@/domain/therapyStatePresentation";
 import {
   buildColouredGlucoseSegments,
   buildGlucoseChartScale,
@@ -86,9 +94,10 @@ const GLUCOSE_TOP = 18;
 const GLUCOSE_BOTTOM = 174;
 const INSULIN_TOP = 214;
 const INSULIN_BOTTOM = 274;
-const ACTIVITY_LANE_Y = 287;
-const PAUSE_LANE_Y = 303;
-const STATE_LANE_HEIGHT = 9;
+const ACTIVITY_LANE_Y = 285;
+const PAUSE_LANE_Y = 298;
+const THERAPY_LANE_Y = 311;
+const STATE_LANE_HEIGHT = 8;
 const PLOT_LEFT = 6;
 const AXIS_WIDTH = 35;
 const MAX_BOLUS_UNITS = 7;
@@ -96,7 +105,7 @@ const GAP_THRESHOLD_MS = DEFAULT_GLUCOSE_GAP_THRESHOLD_MS;
 const DAILY_INSULIN_SUMMARY_THRESHOLD_MS = 14 * 24 * 3_600_000;
 
 export type TimelineLayer =
-  "glucose" | "basal" | "bolus" | "activity" | "pause";
+  "glucose" | "basal" | "bolus" | "activity" | "pause" | "therapy";
 
 export type TimelineLayerVisibility = Record<TimelineLayer, boolean>;
 
@@ -106,6 +115,7 @@ export const DEFAULT_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: true,
   activity: false,
   pause: false,
+  therapy: true,
 };
 
 export const GLUCOSE_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
@@ -114,6 +124,7 @@ export const GLUCOSE_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: false,
   activity: false,
   pause: false,
+  therapy: false,
 };
 
 export const INSULIN_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
@@ -122,6 +133,7 @@ export const INSULIN_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: true,
   activity: false,
   pause: false,
+  therapy: false,
 };
 
 function nearestByTimestamp<T>(
@@ -235,6 +247,7 @@ const LAYER_LABELS: Record<TimelineLayer, string> = {
   bolus: "Bolus",
   activity: "Activity",
   pause: "Pauses",
+  therapy: "AAPS",
 };
 
 const LAYER_ICONS: Record<TimelineLayer, keyof typeof Ionicons.glyphMap> = {
@@ -243,6 +256,7 @@ const LAYER_ICONS: Record<TimelineLayer, keyof typeof Ionicons.glyphMap> = {
   bolus: "flash-outline",
   activity: "walk-outline",
   pause: "pause-outline",
+  therapy: "options-outline",
 };
 
 function TimelineLayerControls({
@@ -305,6 +319,7 @@ function Inspector({
   bolus,
   dailyTotal,
   pumpStates,
+  therapyStates,
   insulinAvailable,
   insulinNotConnected,
   showBasal,
@@ -321,6 +336,7 @@ function Inspector({
   bolus?: BolusDelivery;
   dailyTotal?: InsulinDailyTotal;
   pumpStates: PumpStateInterval[];
+  therapyStates: TherapyStateInterval[];
   insulinAvailable: boolean;
   insulinNotConnected: boolean;
   showBasal: boolean;
@@ -413,7 +429,7 @@ function Inspector({
           Reading recorded at {formatTime(glucose.timestamp)}
         </Text>
       ) : null}
-      {showInsulin || pumpStates.length ? (
+      {showInsulin || pumpStates.length || therapyStates.length ? (
         <View style={[styles.inspectorMeta, { borderTopColor: colors.divider }]}>
           {showInsulin ? (
             <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
@@ -432,6 +448,11 @@ function Inspector({
               {pumpStates.map((state) =>
                 state.kind === "activity-mode" ? "Activity mode" : "Automated pause",
               ).join(" · ")}
+            </Text>
+          ) : null}
+          {therapyStates.length ? (
+            <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
+              {therapyStates.map(therapyStateLabel).join(" · ")}
             </Text>
           ) : null}
         </View>
@@ -586,8 +607,13 @@ export function CombinedTimeline({
   const insulinBottom = INSULIN_BOTTOM * verticalScale;
   const activityLaneY = ACTIVITY_LANE_Y * verticalScale;
   const pauseLaneY = PAUSE_LANE_Y * verticalScale;
+  const therapyLaneY = THERAPY_LANE_Y * verticalScale;
   const stateLaneHeight = Math.max(5, STATE_LANE_HEIGHT * verticalScale);
   const insulinAvailable = hasInsulinDeliveryEvidence(data);
+  const therapyStates = useMemo(
+    () => notableTherapyStates(data.therapyStates),
+    [data.therapyStates],
+  );
   const insulinFidelity = useMemo(
     () => describeInsulinTimelineFidelity(data),
     [data],
@@ -610,6 +636,7 @@ export function CombinedTimeline({
       bolusCount: data.boluses.length,
       dailyTotals: latestDailyTotals,
       pumpStates: data.pumpStates ?? [],
+      therapyStates,
     });
   const visibleLayers: TimelineLayerVisibility = {
     glucose: layers.glucose && availableLayers.glucose,
@@ -617,6 +644,7 @@ export function CombinedTimeline({
     bolus: layers.bolus && availableLayers.bolus,
     activity: layers.activity && availableLayers.activity,
     pause: layers.pause && availableLayers.pause,
+    therapy: layers.therapy && availableLayers.therapy,
   };
   const visibleLayerCount = (Object.keys(layers) as TimelineLayer[]).filter(
     (layer) => availableLayers[layer] && layers[layer],
@@ -795,6 +823,24 @@ export function CombinedTimeline({
             inspectedTimestamp >= state.start &&
             inspectedTimestamp < state.end,
         );
+  const selectedTherapyStates =
+    inspectedTimestamp === undefined || !visibleLayers.therapy
+      ? []
+      : therapyStates.filter(
+          (state) =>
+            inspectedTimestamp >= state.start &&
+            inspectedTimestamp < state.end,
+        );
+  const therapyToneColour: Record<TherapyStateTone, string> = {
+    target: colors.accent,
+    profile: colors.primary,
+    interruption: colors.warning,
+  };
+  const visibleTherapyTones = visibleLayers.therapy
+    ? (Object.keys(THERAPY_STATE_TONE_LABELS) as TherapyStateTone[]).filter(
+        (tone) => therapyStates.some((state) => therapyStateTone(state) === tone),
+      )
+    : [];
   const nearbyContext = (() => {
     if (inspectedTimestamp === undefined) return [];
     const nearby = nearbyTimelineContext(data.context, inspectedTimestamp, 45 * 60_000, 5);
@@ -968,6 +1014,14 @@ export function CombinedTimeline({
                 shape="band"
               />
             ) : null}
+            {visibleTherapyTones.map((tone) => (
+              <LegendKey
+                key={`therapy-${tone}`}
+                color={therapyToneColour[tone]}
+                label={`AAPS: ${THERAPY_STATE_TONE_LABELS[tone].toLowerCase()}`}
+                shape="band"
+              />
+            ))}
           </View>
         ) : null}
 
@@ -976,6 +1030,7 @@ export function CombinedTimeline({
         data.boluses.length === 0 &&
         (data.dailyInsulinTotals?.length ?? 0) === 0 &&
         (data.pumpStates?.length ?? 0) === 0 &&
+        therapyStates.length === 0 &&
         data.context.length === 0 ? (
           <EmptyState
             title="No timeline data"
@@ -984,7 +1039,7 @@ export function CombinedTimeline({
         ) : (
           <>
             <View
-              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses and ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals. Use Inspect timeline for the selected point's values.`}
+              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses, ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals and ${formatRegionalNumber(therapyStates.length, regional.locale, { maximumFractionDigits: 0 })} recorded AAPS settings changes. Use Inspect timeline for the selected point's values.`}
               onLayout={onLayout}
               style={[styles.chart, { height: chartHeight }]}
               {...scrubber.panHandlers}
@@ -1036,6 +1091,40 @@ export function CombinedTimeline({
                           </G>
                         );
                       })}
+                    {visibleLayers.therapy
+                      ? therapyStates.map((state) => {
+                          const startX = Math.max(PLOT_LEFT, x(state.start));
+                          const endX = Math.min(plotRight, x(state.end));
+                          if (endX <= startX) return null;
+                          const colour = therapyToneColour[therapyStateTone(state)];
+                          return (
+                            <Rect
+                              key={state.id}
+                              fill={colour}
+                              fillOpacity={state.endBasis === "open" ? 0.4 : 0.72}
+                              height={stateLaneHeight}
+                              stroke={colour}
+                              strokeOpacity={0.9}
+                              strokeWidth={1}
+                              width={Math.max(2, endX - startX)}
+                              x={startX}
+                              y={therapyLaneY}
+                              rx={stateLaneHeight / 2}
+                            />
+                          );
+                        })
+                      : null}
+                    {visibleLayers.therapy ? (
+                      <SvgText
+                        fill={colors.textTertiary}
+                        fontSize={8}
+                        fontWeight="700"
+                        x={PLOT_LEFT}
+                        y={therapyLaneY - 2}
+                      >
+                        AAPS
+                      </SvgText>
+                    ) : null}
                     {visibleLayers.activity ? (
                       <SvgText
                         fill={colors.textTertiary}
@@ -1474,6 +1563,7 @@ export function CombinedTimeline({
                 bolus={selectedBolus}
                 dailyTotal={selectedDailyTotal}
                 pumpStates={selectedPumpStates}
+                therapyStates={selectedTherapyStates}
                 insulinAvailable={insulinAvailable}
                 insulinNotConnected={insulinFidelity.kind === 'not-connected'}
                 showBasal={visibleLayers.basal}

@@ -1,3 +1,4 @@
+import type { TherapyStateInterval } from './therapyStates';
 import type { SourceCapability } from './sourceCapabilities';
 
 /** The device's IANA zone is the app's local-time basis. */
@@ -151,6 +152,8 @@ export interface TimelineData {
   boluses: BolusDelivery[];
   dailyInsulinTotals?: InsulinDailyTotal[];
   pumpStates?: PumpStateInterval[];
+  /** AAPS temporary targets, profile switches, running modes and suspensions. */
+  therapyStates?: TherapyStateInterval[];
   context: HealthContextEvent[];
   sources: DataSourceStatus[];
 }

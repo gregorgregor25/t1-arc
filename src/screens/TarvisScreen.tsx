@@ -73,6 +73,7 @@ import {
 } from "@/data/tarvis/localPersonalDataAnswer";
 import { coordinateTarvisContextRequest, resolveSelectedContextAsOf } from "@/data/tarvis/contextRequestCoordinator";
 import { loadLocalCompoundAnswer } from "@/data/tarvis/localCompoundAnswer";
+import { loadTherapyStateAnswer } from "@/data/tarvis/therapyStateEvidence";
 import { tarvisEvidencePlanClarificationAnswer } from "@/data/tarvis/evidencePlanner";
 import { loadPlannedGlucoseEpisodeEvidence } from "@/data/tarvis/plannedGlucoseEpisodeEvidence";
 import { loadRetrospectiveEventReview } from "@/data/tarvis/retrospectiveEventReview";
@@ -2411,6 +2412,38 @@ export function TarvisScreen({
             evidenceLookup: {
               packet: evidence?.packet,
               references: new Map(),
+            },
+            nextPendingClarification: undefined,
+            prompt,
+          },
+          activeWriteLease,
+          operation,
+        );
+        return;
+      }
+      if (plan.kind === "therapy-state") {
+        if (!loadTimelineData) {
+          throw new Error("Your local health data is not ready yet.");
+        }
+        const local = await loadTherapyStateAnswer({
+          query: plan.query,
+          range: plan.range,
+          asOf: questionAsOf,
+          loadTimelineData,
+        });
+        operation.assertCurrent();
+        await assertLocalDataWriteLeaseCurrent(activeWriteLease);
+        const localEvidence = compactTarvisEvidence(local.evidence);
+        await appendExchange(
+          {
+            answer: local.answer,
+            answerSource: "local",
+            modelRequestSent: false,
+            modelSharing: "local-only",
+            evidenceLookup: {
+              references: new Map(
+                localEvidence.map((reference) => [reference.id, reference]),
+              ),
             },
             nextPendingClarification: undefined,
             prompt,

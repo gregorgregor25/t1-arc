@@ -25,10 +25,10 @@ const DECORATIVE_FILES = new Set([
 ]);
 
 /**
- * Chart text drawn in SVG may use the micro size. Two timeline lane captions
- * stay at 8 because the lanes are 16dp apart; the layer chips name them.
+ * Chart text drawn in SVG may use the micro size. Three timeline lane captions
+ * stay at 8 because the lanes are 13dp apart; the layer chips name them.
  */
-const SVG_LANE_CAPTION_EXCEPTIONS = 2;
+const SVG_LANE_CAPTION_EXCEPTIONS = 3;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

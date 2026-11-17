@@ -76,6 +76,7 @@ const STRING_FIELDS: Record<string, number> = {
   notes: 240,
   reason: 80,
   profile: 80,
+  originalProfileName: 80,
   units: 8,
   enteredBy: 80,
   pumpType: 40,
@@ -95,6 +96,7 @@ const NUMBER_FIELDS = new Set([
   'targetTop',
   'targetBottom',
   'percentage',
+  'timeshift',
   'pumpId',
 ]);
 
