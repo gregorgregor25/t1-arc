@@ -14,7 +14,7 @@ export const SOURCE_SETUP_GUIDES: Partial<
       "In AAPS, open Config Builder, then Synchronization, and enable External Companion Apps.",
       "Return here and choose Use AAPS as glucose source.",
       "Wait for a new AAPS update, then compare its glucose and time with AAPS. Check IOB and COB below the glucose card on Today.",
-      "Optional: to record boluses, carbs, temporary targets and profile switches, also enable Synchronization, then xDrip+, in AAPS.",
+      "Optional: to record boluses, carbs, temporary targets and profile switches without Nightscout, enable Synchronization, then xDrip+, in AAPS, and turn on \"Also read AAPS's xDrip+ treatment broadcasts on this phone\" in T1 Arc. Android cannot confirm those broadcasts come from AAPS, so they are labelled as not verified.",
       "Optional: for temporary basals and older history, connect your Nightscout site and keep Fill insulin and carb history from my Nightscout site switched on. This uses the internet.",
     ],
     note: "This is a read-only local feed. No notification-access permission is needed, and a Nightscout connection is optional. AAPS IOB and COB are estimates, not delivered doses or meal records. Insulin and carbs are shown as AAPS recorded them; scheduled basal is not included. Glucose always comes from AAPS while it is selected. The existing watch companion receives glucose through T1 Arc; IOB and COB appear on the phone only. If AAPS stops updating, T1 Arc shows stale or missing data until you choose a source yourself.",

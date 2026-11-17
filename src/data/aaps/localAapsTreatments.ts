@@ -12,6 +12,10 @@ import {
 import type { NightscoutTreatment } from '@/data/nightscout/types';
 import type { HealthRecordStore } from '@/data/persistence/HealthRecordStore';
 import { acquireLocalDataWriteLease } from '@/data/privacy/localDataWriteEpoch';
+import {
+  AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
+  AAPS_LOCAL_VERIFIED_SOURCE_FILE,
+} from '@/domain/aapsInsulinProvenance';
 
 import { getAapsLocalSourceStatus } from './localAapsSource';
 import { AAPS_LOCAL_SOURCE_ID } from './types';
@@ -21,12 +25,45 @@ import { AAPS_LOCAL_SOURCE_ID } from './types';
  * temporary targets, profile switches and therapy events to apps on this
  * phone. They use the Nightscout treatment shape, so the Nightscout
  * normalizer applies with on-phone provenance.
+ *
+ * The broadcast needs no permission, and AAPS does not ask Android to share
+ * its identity, so Android usually cannot say who sent it. This route is off
+ * until the user turns it on, and its records say whether the sender was
+ * confirmed. Nightscout copies of the same records take precedence.
  */
+export { AAPS_LOCAL_UNVERIFIED_SOURCE_FILE, AAPS_LOCAL_VERIFIED_SOURCE_FILE };
+
 export const AAPS_LOCAL_TREATMENT_ORIGIN: TreatmentRecordOrigin = {
   sourceId: AAPS_LOCAL_SOURCE_ID,
-  sourceFile: 'AAPS xDrip+ broadcast',
+  sourceFile: AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
   rawRecordKind: 'aaps-local-treatment',
 };
+
+const AAPS_LOCAL_VERIFIED_TREATMENT_ORIGIN: TreatmentRecordOrigin = {
+  ...AAPS_LOCAL_TREATMENT_ORIGIN,
+  sourceFile: AAPS_LOCAL_VERIFIED_SOURCE_FILE,
+};
+
+/** Off unless this native build has the switch and the user turned it on. */
+export async function loadAapsLocalTreatmentRoute(): Promise<boolean> {
+  const status = T1ArcGlucoseDisplay.getAapsTreatmentStatusAsync;
+  if (typeof status !== 'function') return false;
+  return (await status.call(T1ArcGlucoseDisplay)).localRouteEnabled === true;
+}
+
+/**
+ * Saves the opt-in natively, where the receiver checks it before accepting
+ * anything. Turning it off also clears records still waiting in the queue.
+ */
+export async function saveAapsLocalTreatmentRoute(enabled: boolean): Promise<boolean> {
+  const save = T1ArcGlucoseDisplay.setAapsLocalTreatmentsEnabledAsync;
+  if (typeof save !== 'function') {
+    throw new Error('This build cannot read AAPS treatment broadcasts on this phone.');
+  }
+  const lease = await acquireLocalDataWriteLease();
+  const status = await save.call(T1ArcGlucoseDisplay, enabled, lease.epoch);
+  return status.localRouteEnabled === true;
+}
 
 const DRAIN_BATCH_SIZE = 200;
 const MAX_DRAIN_PASSES = 10;
@@ -99,7 +136,10 @@ export function normalizeAapsLocalTreatments(
   pending: readonly AapsLocalTreatment[],
   importedAt: number,
 ): NormalizedNightscoutTreatments & { rejected: number } {
-  const latest = new Map<string, { receivedAt: number; treatment: NightscoutTreatment }>();
+  const latest = new Map<
+    string,
+    { receivedAt: number; senderVerified: boolean; treatment: NightscoutTreatment }
+  >();
   let rejected = 0;
   for (const item of pending) {
     const treatment = aapsLocalTreatmentToNightscout(item);
@@ -110,18 +150,45 @@ export function normalizeAapsLocalTreatments(
     const key = treatment.identifier as string;
     const previous = latest.get(key);
     if (!previous || item.receivedAt >= previous.receivedAt) {
-      latest.set(key, { receivedAt: item.receivedAt, treatment });
+      latest.set(key, {
+        receivedAt: item.receivedAt,
+        senderVerified: item.senderVerified === true,
+        treatment,
+      });
     }
   }
-  const treatments = [...latest.values()]
-    .sort(
-      (left, right) =>
-        left.receivedAt - right.receivedAt ||
-        String(left.treatment.identifier).localeCompare(String(right.treatment.identifier)),
-    )
-    .map((item) => item.treatment);
+  const ordered = [...latest.values()].sort(
+    (left, right) =>
+      left.receivedAt - right.receivedAt ||
+      String(left.treatment.identifier).localeCompare(String(right.treatment.identifier)),
+  );
+  const part = (verified: boolean) =>
+    normalizeNightscoutTreatments(
+      ordered.filter((item) => item.senderVerified === verified).map((item) => item.treatment),
+      [],
+      importedAt,
+      verified ? AAPS_LOCAL_VERIFIED_TREATMENT_ORIGIN : AAPS_LOCAL_TREATMENT_ORIGIN,
+    );
+  const unverified = part(false);
+  const verified = part(true);
+  const bounds = (pick: (value: NormalizedNightscoutTreatments) => number | undefined) =>
+    [pick(unverified), pick(verified)].filter((value): value is number => value !== undefined);
+  const starts = bounds((value) => value.dataStart);
+  const ends = bounds((value) => value.dataThrough);
   return {
-    ...normalizeNightscoutTreatments(treatments, [], importedAt, AAPS_LOCAL_TREATMENT_ORIGIN),
+    basal: [...unverified.basal, ...verified.basal],
+    boluses: [...unverified.boluses, ...verified.boluses].sort(
+      (left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id),
+    ),
+    context: [...unverified.context, ...verified.context].sort(
+      (left, right) => left.start - right.start || left.id.localeCompare(right.id),
+    ),
+    rawRecords: [...unverified.rawRecords, ...verified.rawRecords],
+    skipped: unverified.skipped + verified.skipped,
+    withdrawn: unverified.withdrawn + verified.withdrawn,
+    revisedRecordIds: [...unverified.revisedRecordIds, ...verified.revisedRecordIds],
+    dataStart: starts.length ? Math.min(...starts) : undefined,
+    dataThrough: ends.length ? Math.max(...ends) : undefined,
     rejected,
   };
 }
@@ -132,6 +199,9 @@ async function drainOnce(store: HealthRecordStore, clock: () => number) {
   if (typeof peek !== 'function' || typeof acknowledge !== 'function') return 0;
   const status = await getAapsLocalSourceStatus();
   if (!status.supported || status.selectedSourceId !== AAPS_LOCAL_SOURCE_ID) return 0;
+  // Native code already refuses broadcasts and empties the queue while the
+  // switch is off; this keeps the JS side from importing anything either.
+  if (!(await loadAapsLocalTreatmentRoute())) return 0;
   const lease = await acquireLocalDataWriteLease();
   if (status.writeEpoch !== lease.epoch) return 0;
   const pending = (await peek.call(T1ArcGlucoseDisplay, DRAIN_BATCH_SIZE)).filter(

@@ -30,28 +30,34 @@ import org.json.JSONObject
  * back to AAPS and cannot control the pump.
  */
 internal const val AAPS_TREATMENT_ACTION = "info.nightscout.client.NEW_FOOD"
-private const val AAPS_TREATMENT_SENDER = "info.nightscout.androidaps"
 private const val TREATMENT_STORE_NAME = "t1arc_glucose_display"
 private const val TREATMENT_EPOCH_KEY = "glucose_publication_epoch_v1"
 private const val TREATMENT_QUEUE_KEY = "aaps_treatment_queue_encrypted_v1"
 private const val TREATMENT_QUEUE_IV_KEY = "aaps_treatment_queue_iv_v1"
 private const val TREATMENT_QUEUE_ALIAS = "t1arc.aaps-treatments.queue.v1"
 private const val TREATMENT_OVERFLOW_KEY = "aaps_treatment_queue_overflow_v1"
+/** The user's opt-in to this unverified route. Absent means off. */
+private const val TREATMENT_LOCAL_ROUTE_KEY = "aaps_treatment_local_route_enabled_v1"
 private const val MAX_TREATMENT_QUEUE_SIZE = 5_000
 
-/** One accepted AAPS treatment. Field values are String, Double, Long or Boolean only. */
+/**
+ * One accepted AAPS treatment. Field values are String, Double, Long or Boolean only.
+ * [senderVerified] is true only when Android named the sender and it was AAPS.
+ */
 internal data class AapsLocalTreatment(
   val id: String,
   val receivedAt: Long,
   val writeEpoch: Long,
   val selectionGeneration: Long,
   val fields: Map<String, Any>,
+  val senderVerified: Boolean = false,
 ) {
   fun asMap(): Map<String, Any> = mapOf(
     "id" to id,
     "receivedAt" to receivedAt.toDouble(),
     "writeEpoch" to writeEpoch.toDouble(),
     "selectionGeneration" to selectionGeneration.toDouble(),
+    "senderVerified" to senderVerified,
     "treatment" to fields.mapValues { (_, value) -> if (value is Long) value.toDouble() else value },
   )
 
@@ -60,6 +66,7 @@ internal data class AapsLocalTreatment(
     .put("receivedAt", receivedAt)
     .put("writeEpoch", writeEpoch)
     .put("selectionGeneration", selectionGeneration)
+    .put("senderVerified", senderVerified)
     .put("treatment", JSONObject().also { json -> fields.forEach { (key, value) -> json.put(key, value) } })
 
   companion object {
@@ -72,7 +79,9 @@ internal data class AapsLocalTreatment(
       // Stored rows pass the same checks again, so a damaged row is dropped.
       val fields = AapsTreatmentPolicy.sanitizeRow(jsonFields(value.getJSONObject("treatment")), receivedAt)
         ?: return null
-      AapsLocalTreatment(id, receivedAt, epoch, generation, fields)
+      // Rows queued before this field existed were never verified.
+      AapsLocalTreatment(id, receivedAt, epoch, generation, fields,
+        senderVerified = value.optBoolean("senderVerified", false))
     }.getOrNull()
   }
 }
@@ -130,11 +139,14 @@ internal object AapsTreatmentPolicy {
     receivedAt: Long,
     epoch: Long,
     generation: Long,
+    senderVerified: Boolean = false,
     newId: () -> String = { UUID.randomUUID().toString() },
   ): List<AapsLocalTreatment> {
     if (receivedAt <= 0L || epoch < 0L || generation < 0L) return emptyList()
     return rows.take(MAX_RECORDS_PER_BROADCAST).mapNotNull { row ->
-      sanitizeRow(row, receivedAt)?.let { AapsLocalTreatment(newId(), receivedAt, epoch, generation, it) }
+      sanitizeRow(row, receivedAt)?.let {
+        AapsLocalTreatment(newId(), receivedAt, epoch, generation, it, senderVerified)
+      }
     }
   }
 
@@ -246,9 +258,25 @@ internal object AapsTreatmentStore {
   private fun current(context: Context, generation: Long) =
     AapsLocalStore.selectedSource(context) == AAPS_SOURCE_ID && AapsLocalStore.generation(context) == generation
 
+  /** Off unless the user turned on the on-phone treatment route. */
+  fun localRouteEnabled(context: Context): Boolean =
+    preferences(context).getBoolean(TREATMENT_LOCAL_ROUTE_KEY, false)
+
+  /** Turning the route off also discards records still waiting in the queue. */
+  fun setLocalRouteEnabled(context: Context, enabled: Boolean) = synchronized(lock) {
+    val editor = preferences(context).edit()
+    if (enabled) {
+      editor.putBoolean(TREATMENT_LOCAL_ROUTE_KEY, true)
+    } else {
+      editor.remove(TREATMENT_LOCAL_ROUTE_KEY)
+        .remove(TREATMENT_QUEUE_KEY).remove(TREATMENT_QUEUE_IV_KEY).remove(TREATMENT_OVERFLOW_KEY)
+    }
+    check(editor.commit()) { "The AAPS treatment choice could not be saved." }
+  }
+
   fun append(context: Context, treatments: List<AapsLocalTreatment>, epoch: Long, generation: Long): Boolean =
     synchronized(lock) {
-      if (treatments.isEmpty() || !current(context, generation)) return false
+      if (treatments.isEmpty() || !current(context, generation) || !localRouteEnabled(context)) return false
       if (treatments.any { it.writeEpoch != epoch || it.selectionGeneration != generation }) return false
       // Rows from an earlier selection or privacy epoch are never kept.
       val kept = queue(context).filter { it.writeEpoch == epoch && it.selectionGeneration == generation }
@@ -259,7 +287,7 @@ internal object AapsTreatmentStore {
     }
 
   fun peek(context: Context, limit: Int, epoch: Long): List<AapsLocalTreatment> = synchronized(lock) {
-    if (AapsLocalStore.selectedSource(context) != AAPS_SOURCE_ID) return emptyList()
+    if (AapsLocalStore.selectedSource(context) != AAPS_SOURCE_ID || !localRouteEnabled(context)) return emptyList()
     val generation = AapsLocalStore.generation(context)
     queue(context).filter { it.selectionGeneration == generation && it.writeEpoch == epoch }
       .take(limit.coerceIn(0, MAX_TREATMENT_QUEUE_SIZE))
@@ -277,6 +305,7 @@ internal object AapsTreatmentStore {
     "supported" to true,
     "bufferedCount" to peek(context, MAX_TREATMENT_QUEUE_SIZE, epoch).size,
     "droppedCount" to preferences(context).getLong(TREATMENT_OVERFLOW_KEY, 0L).toDouble(),
+    "localRouteEnabled" to localRouteEnabled(context),
   )
 
   /** A different glucose source was chosen; queued AAPS treatments are no longer wanted. */
@@ -285,9 +314,10 @@ internal object AapsTreatmentStore {
       .remove(TREATMENT_OVERFLOW_KEY).commit()) { "Queued AAPS treatments could not be cleared." }
   }
 
-  /** Called in the same commit that advances the privacy epoch. */
+  /** Called in the same commit that advances the privacy epoch. Erase also turns the route off. */
   fun clearForErase(editor: SharedPreferences.Editor) {
     editor.remove(TREATMENT_QUEUE_KEY).remove(TREATMENT_QUEUE_IV_KEY).remove(TREATMENT_OVERFLOW_KEY)
+      .remove(TREATMENT_LOCAL_ROUTE_KEY)
   }
 }
 
@@ -297,19 +327,27 @@ class T1ArcAapsTreatmentReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent?) {
     if (intent?.action != AAPS_TREATMENT_ACTION) return
     if (AapsLocalStore.selectedSource(context) != AAPS_SOURCE_ID) return
+    // Off by default: the receiver needs no permission and AAPS offers no
+    // authenticated local channel, so the user must opt in.
+    val routeEnabled = AapsTreatmentStore.localRouteEnabled(context)
+    if (!routeEnabled) return
     val capturedGeneration = AapsLocalStore.generation(context)
     val capturedEpoch = context.getSharedPreferences(TREATMENT_STORE_NAME, Context.MODE_PRIVATE)
       .getLong(TREATMENT_EPOCH_KEY, 0L)
-    // Other apps use this action too. Android 14+ names the sender, so only
-    // AAPS is accepted there; older versions cannot tell, so every field is
-    // checked and nothing received is ever used for control.
-    if (Build.VERSION.SDK_INT >= 34) {
-      val uid = sentFromUid
-      if (uid >= 0) {
-        val packages = context.packageManager.getPackagesForUid(uid) ?: emptyArray()
-        if (AAPS_TREATMENT_SENDER !in packages) return
+    // Other apps use this action too. When Android names the sender (Android
+    // 14+, and only if the sender shares its identity), anything other than
+    // AAPS is rejected. Otherwise origin cannot be proven: records are kept
+    // as unverified, every field is checked, and nothing is used for control.
+    val uid = if (Build.VERSION.SDK_INT >= 34) sentFromUid else -1
+    val senderPackages: List<String>? =
+      if (AapsTreatmentSenderPolicy.senderIdentityAvailable(Build.VERSION.SDK_INT, uid)) {
+        context.packageManager.getPackagesForUid(uid)?.toList() ?: emptyList()
+      } else {
+        null
       }
-    }
+    val decision = AapsTreatmentSenderPolicy.decide(senderPackages, routeEnabled)
+    if (decision == AapsTreatmentSenderDecision.REJECT) return
+    val senderVerified = decision == AapsTreatmentSenderDecision.ACCEPT_VERIFIED
     val payload = intent.getStringExtra("treatments") ?: return
     if (!AapsTreatmentPolicy.acceptsPayloadLength(payload.length)) return
     val pending = goAsync()
@@ -322,7 +360,8 @@ class T1ArcAapsTreatmentReceiver : BroadcastReceiver() {
           val generation = AapsLocalStore.generation(context)
           if (AapsStatusPolicy.acceptsCaptured(capturedEpoch, capturedGeneration,
               epoch, generation, AapsLocalStore.selectedSource(context))) {
-            val treatments = AapsTreatmentPolicy.sanitize(maps, System.currentTimeMillis(), epoch, generation)
+            val treatments = AapsTreatmentPolicy.sanitize(maps, System.currentTimeMillis(), epoch, generation,
+              senderVerified = senderVerified)
             AapsTreatmentStore.append(context, treatments, epoch, generation)
           }
         }

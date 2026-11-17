@@ -46,7 +46,7 @@ describe('one meal recorded by several sources', () => {
     [['nightscout', 'local', 'glooko'], 'glooko:meal:1'],
     [['glooko', 'local'], 'glooko:meal:1'],
     [['glooko', 'nightscout'], 'glooko:meal:1'],
-    [['local', 'nightscout'], 'aaps-local:meal:1'],
+    [['local', 'nightscout'], 'nightscout:meal:1'],
     [['glooko'], 'glooko:meal:1'],
     [['local'], 'aaps-local:meal:1'],
     [['nightscout'], 'nightscout:meal:1'],
@@ -134,7 +134,7 @@ describe('one meal recorded by several sources', () => {
 });
 
 describe('AAPS notes and large ranges', () => {
-  it('counts an AAPS temporary target received both ways once, but keeps a Glooko note', () => {
+  it('counts an AAPS temporary target received both ways once, keeping Nightscout, and keeps a Glooko note', () => {
     const note = (id: string, sourceId: string): HealthContextEvent => ({
       id,
       kind: 'note',
@@ -152,7 +152,7 @@ describe('AAPS notes and large ranges', () => {
           note('glooko:note:1', 'glooko-export'),
         ]),
       ),
-    ).toEqual(['aaps-local:note:1', 'glooko:note:1']);
+    ).toEqual(['nightscout:note:1', 'glooko:note:1']);
   });
 
   it('reconciles 90 days of five-minute records from two sources quickly', () => {

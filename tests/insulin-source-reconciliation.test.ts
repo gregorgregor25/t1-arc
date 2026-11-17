@@ -54,13 +54,26 @@ describe('cross-source insulin reconciliation', () => {
     ]);
   });
 
-  it('prefers the AAPS copy received on the phone over the Nightscout copy of the same bolus', () => {
+  it('prefers the Nightscout copy over the unverified copy received on this phone', () => {
+    const at = Date.parse('2026-11-10T12:00:00Z');
+    const result = reconcileBolusSources([
+      bolus('aaps-local:bolus:x', 'aaps-local', at, 0.3),
+      bolus('nightscout:bolus:x', 'nightscout', at, 0.3),
+    ]);
+    expect(result.boluses.map((record) => record.sourceId)).toEqual(['nightscout']);
+  });
+
+  it('keeps an on-phone record that Nightscout does not have yet, filling the gap', () => {
     const at = Date.parse('2026-11-10T12:00:00Z');
     const result = reconcileBolusSources([
       bolus('nightscout:bolus:x', 'nightscout', at, 0.3),
       bolus('aaps-local:bolus:x', 'aaps-local', at, 0.3),
+      bolus('aaps-local:bolus:y', 'aaps-local', at + 4 * minute, 0.2),
     ]);
-    expect(result.boluses.map((record) => record.sourceId)).toEqual(['aaps-local']);
+    expect(result.boluses.map((record) => record.id)).toEqual([
+      'nightscout:bolus:x',
+      'aaps-local:bolus:y',
+    ]);
   });
 
   it('never hides manual doses or unrelated sources, and matches each record at most once', () => {
@@ -136,7 +149,7 @@ describe('one delivery recorded by several sources', () => {
     [['nightscout', 'local', 'glooko'], 'glooko:1'],
     [['glooko', 'local'], 'glooko:1'],
     [['glooko', 'nightscout'], 'glooko:1'],
-    [['local', 'nightscout'], 'aaps-local:bolus:1'],
+    [['local', 'nightscout'], 'nightscout:bolus:1'],
     [['glooko'], 'glooko:1'],
     [['local'], 'aaps-local:bolus:1'],
     [['nightscout'], 'nightscout:bolus:1'],
@@ -253,6 +266,6 @@ describe('one delivery recorded by several sources', () => {
       sources.local,
       sources.nightscout,
     ]);
-    expect(ids(result.boluses)).toEqual(['manual:1', 'manual:2', 'aaps-local:bolus:1']);
+    expect(ids(result.boluses)).toEqual(['manual:1', 'manual:2', 'nightscout:bolus:1']);
   });
 });

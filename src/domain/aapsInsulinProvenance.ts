@@ -1,5 +1,14 @@
 import type { BasalDelivery, BolusDelivery, TimeRange } from './models';
 
+/**
+ * Provenance labels for AAPS treatments received on this phone. Android
+ * usually cannot confirm the sender of AAPS's broadcast; the confirmed label
+ * is used only when it did and the sender was AAPS.
+ */
+export const AAPS_LOCAL_UNVERIFIED_SOURCE_FILE = 'Received on this phone; sender not verified';
+export const AAPS_LOCAL_VERIFIED_SOURCE_FILE =
+  'Received on this phone from AAPS; sender confirmed by Android';
+
 /** Insulin records AAPS made, received on this phone or read from Nightscout. */
 export const AAPS_INSULIN_SOURCE_IDS = ['aaps-local', 'nightscout'] as const;
 
@@ -54,12 +63,19 @@ export function describeAapsInsulinProvenance(
   const basal = input.basal.filter(
     (record) => isAapsSource(record.sourceId) && overlaps(record, input.range),
   );
-  const sources = new Set([...boluses, ...basal].map((record) => record.sourceId));
+  const records = [...boluses, ...basal];
+  const sources = new Set(records.map((record) => record.sourceId));
+  const local = records.filter((record) => record.sourceId === 'aaps-local');
+  const localLabel = local.every(
+    (record) => record.sourceFile === AAPS_LOCAL_VERIFIED_SOURCE_FILE,
+  )
+    ? 'on this phone'
+    : 'on this phone (sender not verified)';
   const sourceLabel =
-    sources.has('aaps-local') && sources.has('nightscout')
-      ? 'AAPS records on this phone and via Nightscout'
-      : sources.has('aaps-local')
-        ? 'AAPS records on this phone'
+    local.length > 0 && sources.has('nightscout')
+      ? `AAPS records via Nightscout and ${localLabel}`
+      : local.length > 0
+        ? `AAPS records ${localLabel}`
         : sources.has('nightscout')
           ? 'AAPS records via Nightscout'
           : undefined;
@@ -76,7 +92,7 @@ export function describeAapsInsulinProvenance(
       ? 'No AAPS insulin records for today yet'
       : input.nightscoutFill === 'off'
         ? 'Nightscout insulin history is switched off for AAPS'
-        : 'No AAPS insulin records yet; turn on xDrip+ sync in AAPS or connect Nightscout';
+        : 'No AAPS insulin records yet; connect Nightscout, or turn on the on-phone AAPS broadcast option';
   return {
     sourceLabel,
     dataThrough,

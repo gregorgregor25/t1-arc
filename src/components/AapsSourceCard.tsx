@@ -11,6 +11,10 @@ import {
   enableAapsLocalSource,
   getAapsLocalSourceStatus,
 } from '@/data/aaps/localAapsSource';
+import {
+  loadAapsLocalTreatmentRoute,
+  saveAapsLocalTreatmentRoute,
+} from '@/data/aaps/localAapsTreatments';
 import { loadNightscoutConnection } from '@/data/nightscout/secureStore';
 import { formatTime, relativeAge } from '@/domain/time';
 import { useDataContext } from '@/providers/DataProvider';
@@ -47,16 +51,22 @@ export function AapsSourceCard({
   const [fillEnabled, setFillEnabled] = useState(DEFAULT_AAPS_NIGHTSCOUT_TREATMENT_FILL);
   const [fillWorking, setFillWorking] = useState(false);
   const [fillError, setFillError] = useState<string>();
+  // The on-phone treatment route is off until the user turns it on.
+  const [localRouteEnabled, setLocalRouteEnabled] = useState(false);
+  const [localRouteWorking, setLocalRouteWorking] = useState(false);
+  const [localRouteError, setLocalRouteError] = useState<string>();
 
   useEffect(() => {
     let active = true;
     void Promise.all([
       loadNightscoutConnection().catch(() => undefined),
       loadAapsNightscoutTreatmentFill().catch(() => undefined),
-    ]).then(([connection, preference]) => {
+      loadAapsLocalTreatmentRoute().catch(() => false),
+    ]).then(([connection, preference, localRoute]) => {
       if (!active) return;
       setNightscoutHost(connection ? siteHost(connection.baseUrl) : null);
       setFillEnabled(preference?.enabled ?? DEFAULT_AAPS_NIGHTSCOUT_TREATMENT_FILL);
+      setLocalRouteEnabled(localRoute);
     });
     return () => {
       active = false;
@@ -75,6 +85,20 @@ export function AapsSourceCard({
       setFillError('The Nightscout history choice could not be saved. Try again.');
     } finally {
       setFillWorking(false);
+    }
+  }
+
+  async function changeLocalRoute(enabled: boolean) {
+    if (localRouteWorking) return;
+    setLocalRouteWorking(true);
+    setLocalRouteError(undefined);
+    try {
+      setLocalRouteEnabled(await saveAapsLocalTreatmentRoute(enabled));
+      await onDataChanged?.();
+    } catch {
+      setLocalRouteError('The on-phone AAPS treatment choice could not be saved. Try again.');
+    } finally {
+      setLocalRouteWorking(false);
     }
   }
 
@@ -214,6 +238,38 @@ export function AapsSourceCard({
           ) : null}
         </View>
       ) : null}
+      {selected ? (
+        <View style={[styles.fill, { borderColor: colors.border }]}>
+          <View style={styles.fillRow}>
+            <View style={styles.fillCopy}>
+              <Text style={[styles.fillTitle, { color: colors.text }]}>
+                Also read AAPS&apos;s xDrip+ treatment broadcasts on this phone
+              </Text>
+              <Text style={[styles.body, { color: colors.textSecondary }]}>
+                Android cannot confirm that these messages come from AAPS, so another app on this phone could send look-alike records. Records received this way are labelled &quot;sender not verified&quot;. Your Nightscout site is the checked route: when both have the same record, T1 Arc uses the Nightscout copy.
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Also read AAPS's xDrip+ treatment broadcasts on this phone"
+              accessibilityHint="Android cannot confirm these messages come from AAPS"
+              accessibilityState={{ disabled: localRouteWorking }}
+              disabled={localRouteWorking}
+              onValueChange={(value) => void changeLocalRoute(value)}
+              thumbColor={localRouteEnabled ? colors.primary : colors.textTertiary}
+              trackColor={{ false: colors.border, true: `${colors.primary}66` }}
+              value={localRouteEnabled}
+            />
+          </View>
+          <Text style={[styles.body, { color: colors.textSecondary }]}>
+            {localRouteEnabled
+              ? 'On · records from the broadcast are kept with the label "sender not verified"'
+              : 'Off · treatment broadcasts on this phone are ignored'}
+          </Text>
+          {localRouteError ? (
+            <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{localRouteError}</Text>
+          ) : null}
+        </View>
+      ) : null}
       {error ? <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{error}</Text> : null}
       {(status?.droppedCount ?? 0) > 0 ? (
         <Text accessibilityRole="alert" style={[styles.body, { color: colors.warning }]}>
@@ -245,7 +301,7 @@ export function AapsSourceCard({
         </Text>
       ) : null}
       <Text style={[styles.note, { color: colors.textSecondary }]}>
-        In AAPS, enable Config Builder → Synchronization → External Companion Apps for glucose, IOB and COB. To also record boluses, carbs, temporary targets and profile switches on this phone, enable Synchronization → xDrip+. T1 Arc only reads what AAPS shares; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
+        In AAPS, enable Config Builder → Synchronization → External Companion Apps for glucose, IOB and COB. To also record boluses, carbs, temporary targets and profile switches without Nightscout, enable Synchronization → xDrip+ and turn on the on-phone broadcast option above. T1 Arc only reads what AAPS shares; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
       </Text>
     </SectionCard>
   );

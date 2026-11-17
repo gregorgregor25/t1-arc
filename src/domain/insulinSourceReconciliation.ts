@@ -2,18 +2,21 @@ import type { BasalDelivery, BolusDelivery, HealthContextEvent } from './models'
 
 /**
  * Several connected sources can describe the same pump delivery: an old Glooko
- * export, AAPS on this phone and the Nightscout site AAPS uploads to. Totals
- * must count each delivery once. Higher-precedence copies are kept; lower ones
- * are hidden at read time only, so every stored source record stays
- * inspectable with its own provenance.
+ * export, the Nightscout site AAPS uploads to and AAPS's broadcast on this
+ * phone. Totals must count each delivery once. Higher-precedence copies are
+ * kept; lower ones are hidden at read time only, so every stored source
+ * record stays inspectable with its own provenance.
  *
- * Precedence: pump export (Glooko) > AAPS on this phone > Nightscout.
- * Manual entries and unknown sources are never hidden here.
+ * Precedence: pump export (Glooko) > Nightscout > AAPS on this phone.
+ * Nightscout is read with the user's own token. Android usually cannot
+ * confirm who sent an on-phone AAPS broadcast, so those records only fill
+ * gaps Nightscout has not covered yet, such as the minutes before its next
+ * fetch. Manual entries and unknown sources are never hidden here.
  */
 export const INSULIN_SOURCE_PRECEDENCE: readonly string[] = [
   'glooko-export',
-  'aaps-local',
   'nightscout',
+  'aaps-local',
 ];
 
 /** Same delivery recorded by two systems: AAPS copies share a timestamp; exports may round to the minute. */

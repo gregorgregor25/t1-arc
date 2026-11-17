@@ -13,7 +13,11 @@ import { NightscoutTreatmentImporter } from '@/data/nightscout/NightscoutTreatme
 import type { NightscoutTreatment } from '@/data/nightscout/types';
 import { MemoryGlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore';
 import { MemoryHealthRecordStore } from '@/data/persistence/HealthRecordStore';
-import { describeAapsInsulinProvenance } from '@/domain/aapsInsulinProvenance';
+import {
+  AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
+  AAPS_LOCAL_VERIFIED_SOURCE_FILE,
+  describeAapsInsulinProvenance,
+} from '@/domain/aapsInsulinProvenance';
 import { reconcileBolusSources } from '@/domain/insulinSourceReconciliation';
 import type { BasalDelivery, BolusDelivery } from '@/domain/models';
 import { dayRange } from '@/domain/time';
@@ -235,6 +239,34 @@ describe('Today insulin provenance while AAPS supplies glucose', () => {
         range,
       }),
     ).toBeUndefined();
+  });
+
+  it('names on-phone records as unverified unless Android confirmed the sender', () => {
+    const range = dayRange('2026-11-10', Date.parse('2026-11-10T18:00:00Z'));
+    const at = range.start + 60 * minute;
+    const label = (boluses: BolusDelivery[]) =>
+      describeAapsInsulinProvenance({
+        selectedSourceId: 'aaps-local',
+        nightscoutFill: 'on',
+        basal: [],
+        boluses,
+        range,
+      })?.sourceLabel;
+    const local = (id: string, sourceFile?: string): BolusDelivery => ({
+      ...bolus(id, 'aaps-local', at, 1),
+      ...(sourceFile ? { sourceFile } : {}),
+    });
+    expect(label([local('a', AAPS_LOCAL_UNVERIFIED_SOURCE_FILE)])).toBe(
+      'AAPS records on this phone (sender not verified)',
+    );
+    // Records stored before the label existed are unverified as well.
+    expect(label([local('a', 'AAPS xDrip+ broadcast')])).toBe(
+      'AAPS records on this phone (sender not verified)',
+    );
+    expect(label([local('a', AAPS_LOCAL_VERIFIED_SOURCE_FILE)])).toBe('AAPS records on this phone');
+    expect(
+      label([bolus('n', 'nightscout', at, 2), local('a', AAPS_LOCAL_UNVERIFIED_SOURCE_FILE)]),
+    ).toBe('AAPS records via Nightscout and on this phone (sender not verified)');
   });
 
   it('labels Nightscout records, gives the latest record time and flags missing scheduled basal', () => {
