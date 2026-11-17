@@ -99,6 +99,24 @@ target.
   - "time below 3", "time above 250 mg/dL", "time very low" or "time above
     range" lead with that share.
 
-  A bare number above 30 is read as mg/dL. Tarv1s compares readings with the
-  exact level in your question, so a reading stored as exactly 70 mg/dL counts
-  as below "3.9" in a Tarv1s answer but in range on the History card.
+  A bare number above 30 is read as mg/dL. Tarv1s uses the same boundary
+  rule as the History card (see below), so a reading stored as exactly
+  70 mg/dL is in range in both and is not counted as below "3.9".
+
+### One boundary rule for every level
+
+History, Insights and Tarv1s compare a reading with a glucose level in the
+same way (`glucoseMeetsThreshold` in `src/domain/glucoseRanges.ts`):
+
+- A reading recorded as either published form of a consensus boundary
+  (54/3.0, 70/3.9, 140/7.8, 180/10.0 or 250/13.9 mg/dL / mmol/L) counts as
+  exactly at that boundary. So 70 mg/dL is not "below 3.9", 180 mg/dL is not
+  "above 10" and 10.0 mmol/L is not "above 180 mg/dL".
+- Any other level, such as your own range or "time below 4.5", is compared
+  exactly after conversion to mmol/L (mg/dL ÷ 18.016). A reading of 4.5 mmol/L
+  is not below 4.5; 4.5 mmol/L (81.07 mg/dL) is not below 81 mg/dL.
+
+Tarv1s answers saved before this rule record their older metric version and
+are still checked with the exact comparison they were calculated with, so
+they stay valid. Episode counts ("how many lows") follow the episode
+definition used by Insights, which is unchanged.

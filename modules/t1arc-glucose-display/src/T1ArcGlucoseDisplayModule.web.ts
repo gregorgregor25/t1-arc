@@ -57,7 +57,10 @@ export default {
     return false;
   },
   async getAapsTreatmentStatusAsync() {
-    return { supported: false, bufferedCount: 0, droppedCount: 0 };
+    return { supported: false, bufferedCount: 0, droppedCount: 0, localRouteEnabled: false };
+  },
+  async setAapsLocalTreatmentsEnabledAsync() {
+    return { supported: false, bufferedCount: 0, droppedCount: 0, localRouteEnabled: false };
   },
   async peekAapsTreatmentsAsync() {
     return [];

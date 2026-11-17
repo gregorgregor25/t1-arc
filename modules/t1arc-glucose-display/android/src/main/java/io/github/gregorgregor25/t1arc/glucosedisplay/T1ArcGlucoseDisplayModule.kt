@@ -4049,6 +4049,14 @@ class T1ArcGlucoseDisplayModule : Module() {
       }
     }
 
+    AsyncFunction("setAapsLocalTreatmentsEnabledAsync") Coroutine { enabled: Boolean, writeEpoch: Double ->
+      val context = requireNotNull(appContext.reactContext)
+      T1ArcGlucosePublicationGate.mutateForEpoch(context, writeEpoch) { epoch ->
+        AapsTreatmentStore.setLocalRouteEnabled(context, enabled)
+        AapsTreatmentStore.status(context, epoch)
+      }
+    }
+
     AsyncFunction("peekAapsTreatmentsAsync") Coroutine { limit: Int ->
       val context = requireNotNull(appContext.reactContext)
       T1ArcGlucosePublicationGate.observeCurrent(context) { epoch ->

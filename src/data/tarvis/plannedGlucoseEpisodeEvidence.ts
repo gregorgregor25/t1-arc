@@ -22,6 +22,7 @@ import { isManualKetoneEvent } from "@/data/manualContext";
 import { contextNoteDisplayTitle } from "@/domain/contextNotes";
 import { sensorWarmupEvidence } from './sensorWarmupEvidence';
 import { formatGlucose, formatWeight } from "@/domain/regionalFormat";
+import { glucoseMeetsThreshold } from "@/domain/glucoseRanges";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import {
   formatTarvisFixedNumber,
@@ -311,7 +312,7 @@ function selectEpisode(
     eventKind === "high" ? TARGET_HIGH_MMOL_L : TARGET_LOW_MMOL_L;
   const crossings = canonicalReadingsAtEachTimestamp(readings).filter(
     ({ mmolL }) =>
-      eventKind === "high" ? mmolL > threshold : mmolL < threshold,
+      glucoseMeetsThreshold(mmolL, eventKind === "high" ? "gt" : "lt", threshold),
   );
   const isolated = [...crossings].sort((left, right) => {
     const extreme =

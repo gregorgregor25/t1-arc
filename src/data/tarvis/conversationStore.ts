@@ -9,6 +9,7 @@ import {
 } from "@/data/tarvis/evidenceLine";
 import {
   type GlucoseAnswerBundleV2,
+  glucoseAnswerThresholdMatcher,
   isGlucoseAnswerBundleV2,
   parseGlucoseAnswerBundleV2,
 } from "@/data/tarvis/glucoseAnswerBundleV2";
@@ -670,12 +671,10 @@ function distributionForWindow(
   const lower = bundle.thresholds.find(({ role }) => role === "range_lower");
   const upper = bundle.thresholds.find(({ role }) => role === "range_upper");
   if (!window || !lower || !upper) return null;
-  const matches = (value: number, threshold: typeof lower) => {
-    if (threshold.operator === "gt") return value > threshold.value;
-    if (threshold.operator === "gte") return value >= threshold.value;
-    if (threshold.operator === "lt") return value < threshold.value;
-    return value <= threshold.value;
-  };
+  // Same versioned rule as the saved claim, so older answers stay valid.
+  const matches = glucoseAnswerThresholdMatcher(
+    bundle.algorithms.metricVersions.find(({ metric }) => metric === "glucose.time_in_range")?.version,
+  );
   const durations = { below: 0, within: 0, above: 0 };
   let observed = 0;
   window.observationIntervals.forEach((interval) => {

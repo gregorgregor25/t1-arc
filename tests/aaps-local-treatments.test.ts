@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AapsLocalTreatment } from '../modules/t1arc-glucose-display';
 import {
+  AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
+  AAPS_LOCAL_VERIFIED_SOURCE_FILE,
   drainAapsLocalTreatments,
+  loadAapsLocalTreatmentRoute,
   normalizeAapsLocalTreatments,
+  saveAapsLocalTreatmentRoute,
 } from '@/data/aaps/localAapsTreatments';
 import { MemoryHealthRecordStore } from '@/data/persistence/HealthRecordStore';
 import {
@@ -16,12 +20,16 @@ const mocks = vi.hoisted(() => ({
   status: vi.fn(),
   peek: vi.fn(),
   ack: vi.fn(),
+  treatmentStatus: vi.fn(),
+  setRoute: vi.fn(),
 }));
 
 vi.mock('../modules/t1arc-glucose-display', () => ({
   default: {
     peekAapsTreatmentsAsync: mocks.peek,
     acknowledgeAapsTreatmentsAsync: mocks.ack,
+    getAapsTreatmentStatusAsync: mocks.treatmentStatus,
+    setAapsLocalTreatmentsEnabledAsync: mocks.setRoute,
   },
 }));
 vi.mock('@/data/aaps/localAapsSource', () => ({
@@ -81,6 +89,13 @@ beforeEach(() => {
   });
   mocks.peek.mockReset();
   mocks.ack.mockReset().mockResolvedValue(true);
+  mocks.treatmentStatus.mockReset().mockResolvedValue({
+    supported: true,
+    bufferedCount: 0,
+    droppedCount: 0,
+    localRouteEnabled: true,
+  });
+  mocks.setRoute.mockReset();
 });
 
 describe('AAPS treatments received on this phone', () => {
@@ -105,7 +120,8 @@ describe('AAPS treatments received on this phone', () => {
       expect.objectContaining({
         id: `aaps-local:bolus:bolus-${T0}`,
         sourceId: 'aaps-local',
-        sourceFile: 'AAPS xDrip+ broadcast',
+        // Rows without a sender result are treated as unverified.
+        sourceFile: AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
         deliveryType: 'SMB',
         units: 0.3,
       }),
@@ -185,7 +201,7 @@ describe('draining the native AAPS treatment queue', () => {
 });
 
 describe('the same AAPS record on this phone and in Nightscout', () => {
-  it('counts the bolus and the carbs once, keeping the on-phone copy', () => {
+  it('counts the bolus and the carbs once, keeping the Nightscout copy over the unverified one', () => {
     const local = normalizeAapsLocalTreatments(
       [
         queued(smb),
@@ -207,12 +223,81 @@ describe('the same AAPS record on this phone and in Nightscout', () => {
     const manualMeal: HealthContextEvent = { ...nightscoutMeal, id: 'manual:1', sourceId: 'manual-context', origin: 'manual' };
     expect(
       reconcileContextSources([...local.context, nightscoutMeal, laterMeal, manualMeal]).map((event) => event.id),
-    ).toEqual([`aaps-local:meal:carbs-${T0}`, 'nightscout:meal:later', 'manual:1']);
+    ).toEqual(['nightscout:meal:abc', 'nightscout:meal:later', 'manual:1']);
     expect(
       reconcileBolusSources([
         ...local.boluses,
         { id: 'nightscout:bolus:abc', sourceId: 'nightscout', timestamp: T0, units: 0.3 },
       ]).boluses.map((record) => record.sourceId),
-    ).toEqual(['aaps-local']);
+    ).toEqual(['nightscout']);
+  });
+});
+
+describe('the opt-in, unverified on-phone route', () => {
+  it('labels records whose sender Android could not confirm, and those it confirmed', () => {
+    const normalized = normalizeAapsLocalTreatments(
+      [
+        queued(smb, { senderVerified: false }),
+        queued({ ...smb, identifier: `bolus-${T0 + minute}`, date: T0 + minute }, { senderVerified: true }),
+        queued(
+          { identifier: `carbs-${T0}`, eventType: 'Meal Bolus', date: T0, carbs: 20 },
+          { senderVerified: false },
+        ),
+      ],
+      T0 + 2 * minute,
+    );
+    expect(AAPS_LOCAL_UNVERIFIED_SOURCE_FILE).toBe('Received on this phone; sender not verified');
+    expect(
+      normalized.boluses.map(({ id, sourceFile }) => [id, sourceFile]),
+    ).toEqual([
+      [`aaps-local:bolus:bolus-${T0}`, AAPS_LOCAL_UNVERIFIED_SOURCE_FILE],
+      [`aaps-local:bolus:bolus-${T0 + minute}`, AAPS_LOCAL_VERIFIED_SOURCE_FILE],
+    ]);
+    expect(normalized.context.map((event) => event.sourceFile)).toEqual([
+      AAPS_LOCAL_UNVERIFIED_SOURCE_FILE,
+    ]);
+    expect(normalized.rawRecords).toHaveLength(3);
+    expect(normalized.dataStart).toBe(T0);
+    expect(normalized.dataThrough).toBe(T0 + minute);
+  });
+
+  it('a later unverified copy of a record replaces an earlier verified one, and is labelled unverified', () => {
+    const normalized = normalizeAapsLocalTreatments(
+      [queued(smb, { senderVerified: true }), queued({ ...smb, insulin: 0.4 }, { senderVerified: false })],
+      T0 + minute,
+    );
+    expect(normalized.boluses).toEqual([
+      expect.objectContaining({ units: 0.4, sourceFile: AAPS_LOCAL_UNVERIFIED_SOURCE_FILE }),
+    ]);
+  });
+
+  it('does not drain the queue while the switch is off, or on a build without it', async () => {
+    const store = new MemoryHealthRecordStore();
+    mocks.peek.mockResolvedValue([queued(smb)]);
+    mocks.treatmentStatus.mockResolvedValueOnce({
+      supported: true,
+      bufferedCount: 1,
+      droppedCount: 0,
+      localRouteEnabled: false,
+    });
+    expect(await drainAapsLocalTreatments(store)).toBe(0);
+    mocks.treatmentStatus.mockResolvedValueOnce({ supported: true, bufferedCount: 1, droppedCount: 0 });
+    expect(await drainAapsLocalTreatments(store)).toBe(0);
+    expect(mocks.peek).not.toHaveBeenCalled();
+    expect(mocks.ack).not.toHaveBeenCalled();
+  });
+
+  it('is off unless the native status says it is on, and saves the choice in the current epoch', async () => {
+    mocks.treatmentStatus.mockResolvedValueOnce({ supported: true, bufferedCount: 0, droppedCount: 0 });
+    expect(await loadAapsLocalTreatmentRoute()).toBe(false);
+    expect(await loadAapsLocalTreatmentRoute()).toBe(true);
+    mocks.setRoute.mockResolvedValueOnce({
+      supported: true,
+      bufferedCount: 0,
+      droppedCount: 0,
+      localRouteEnabled: true,
+    });
+    expect(await saveAapsLocalTreatmentRoute(true)).toBe(true);
+    expect(mocks.setRoute).toHaveBeenCalledWith(true, 5);
   });
 });

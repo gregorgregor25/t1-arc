@@ -290,8 +290,11 @@ example:
 
 The record identity is its kind and time (for example `bolus-1700000000000`),
 because the broadcast has no AAPS database ID. Records are stored with
-`aaps-local` provenance and file label `AAPS xDrip+ broadcast`, and counted in
-preference to a Nightscout copy of the same record.
+`aaps-local` provenance and file label `Received on this phone; sender not verified`
+(or `Received on this phone from AAPS; sender confirmed by Android` when Android
+named AAPS as the sender). The route is off until the user opts in on the AAPS
+card. A Nightscout copy of the same record is counted in preference, so on-phone
+records only fill gaps Nightscout has not covered yet.
 
 ## Glooko history: on-device sync, fallback import, and exact input needed
 

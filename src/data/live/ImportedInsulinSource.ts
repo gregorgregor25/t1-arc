@@ -120,8 +120,8 @@ export class ImportedInsulinSource implements InsulinSource {
             : undefined;
     const importedDetail = latestAapsImport
       ? remoteDetail
-        ? `${remoteDetail} plus AAPS records on this phone`
-        : 'AAPS insulin and carb records on this phone'
+        ? `${remoteDetail} plus AAPS records received on this phone (sender not verified)`
+        : 'AAPS insulin and carb records received on this phone (sender not verified)'
       : remoteDetail;
     return {
       id: this.sourceId,

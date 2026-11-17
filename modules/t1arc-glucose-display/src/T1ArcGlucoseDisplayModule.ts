@@ -38,6 +38,8 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<{
   getAapsTreatmentStatusAsync?(): Promise<AapsTreatmentStatus>;
   peekAapsTreatmentsAsync?(limit: number): Promise<AapsLocalTreatment[]>;
   acknowledgeAapsTreatmentsAsync?(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
+  /** Absent from native builds made before the opt-in switch. Turning it off clears the queue. */
+  setAapsLocalTreatmentsEnabledAsync?(enabled: boolean, writeEpoch: number): Promise<AapsTreatmentStatus>;
   updateSelectedGlucoseForWriteEpochAsync(
     writeEpoch: number,
     selectionGeneration: number,

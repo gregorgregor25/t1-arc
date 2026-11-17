@@ -170,6 +170,11 @@ export interface AapsLocalTreatment {
   receivedAt: number;
   writeEpoch: number;
   selectionGeneration: number;
+  /**
+   * True only when Android named the sender and it was AAPS. Android usually
+   * cannot name it, so most records are unverified. Absent means unverified.
+   */
+  senderVerified?: boolean;
   treatment: Record<string, AapsLocalTreatmentValue>;
 }
 
@@ -190,6 +195,11 @@ export interface AapsTreatmentStatus {
   supported: boolean;
   bufferedCount: number;
   droppedCount: number;
+  /**
+   * The user's opt-in to read AAPS's xDrip+ treatment broadcasts on this
+   * phone. Off by default; absent on builds without the switch means off.
+   */
+  localRouteEnabled?: boolean;
 }
 
 export interface AapsLocalStatus {

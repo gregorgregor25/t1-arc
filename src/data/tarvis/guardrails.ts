@@ -6,13 +6,12 @@ export const MAX_TARVIS_REQUESTS_PER_DAY = 30;
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 const MAX_EVIDENCE_REFERENCES = 5;
-// Personal-evidence answers may describe recorded events in the past tense
-// ("you logged 30 g carbs at 13:00", "AAPS delivered 0.4 U as an SMB"). The
-// filter below therefore looks for the grammatical forms that give treatment
-// instructions: imperatives at the start of a clause, advice/modal phrasing,
-// recommendation wording, passive "should be lowered" forms and dose
-// amounts presented as a need. It never allows a dose, a treatment directive
-// or a pump-setting recommendation through.
+// Personal-evidence answers are checked one sentence at a time, in two layers.
+// The patterns below catch common instruction shapes anywhere in a sentence.
+// Then every sentence about insulin, carbohydrate, boluses, basal, pump
+// settings, targets or ratios is rejected unless it reads as a description of
+// a recorded event ("You logged 30 g carbs at 13:00", "AAPS recorded a 0.4 U
+// SMB at 08:12"). When a sentence cannot be classified, it is rejected.
 const TREATMENT_VERB =
   "take|inject|use|administer|bolus|pre-?bolus|correct|give|reduce|lower|raise|increase|decrease|adjust|change|double|halve|skip|stop|suspend|set|have|eat|drink|consume|add|cut|switch|top up|treat";
 const TREATMENT_GERUND =
@@ -55,13 +54,122 @@ const TREATMENT_DIRECTIVE_PATTERNS: readonly RegExp[] = [
   /\b(?:you|it)(?:'d|’d|\s+would|\s+will)?\s+(?:need|needs|require|requires)\s+(?:about\s+|around\s+|roughly\s+|approximately\s+|another\s+|an extra\s+|extra\s+|more\s+|less\s+|up to\s+)?\d/i,
 ];
 
+// The conservative filter in place before descriptive records were allowed
+// (commit b165e1d). Any sentence it matches must also pass the recorded-event
+// test below.
+const PROHIBITED_TREATMENT_OUTPUT =
+  /\b(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\bconsider\s+(?:taking|injecting|using|reducing|lowering|increasing|decreasing|adjusting|changing|skipping|stopping)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?)\b|\b(?:you (?:should|must|need to)|i (?:recommend|suggest|advise))\b[\s\S]{0,80}\b(?:take|inject|bolus|correct|change|adjust|increase|decrease|raise|lower|double|halve|skip|stop|set)\b[\s\S]{0,50}\b(?:insulin|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|glucose tablets?)\b/i;
+const NUMBER_WORD =
+  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half|a couple of|a few|several";
+// Glucose-range wording is not a treatment topic.
+const RANGE_WORDING = /\b(?:target|glucose|standard|tight|personal)\s+ranges?\b|\btime in range\b/gi;
+const TREATMENT_TOPIC = new RegExp(
+  "\\b(?:insulin|units?|u|doses?|dosing|bolus\\w*|basal|smbs?|super micro ?bolus\\w*|temp(?:orary)? (?:basal|target)s?|carbs?|carbohydrates?|grams?|g|ratios?|icr|isf|sensitivity|factors?|targets?|profiles?|juice|glucose tablets?|dextrose|glucagon|correct\\w*|pump|sugar|snacks?)\\b|\\d\\s*(?:u|g)\\b",
+  "i",
+);
+const AMOUNT = new RegExp(`\\d|\\b(?:${NUMBER_WORD})\\b`, "i");
+// Verbs that are a treatment action in themselves, whatever the sentence is about.
+const INHERENT_TREATMENT_ACTION =
+  /\b(?:inject|pre-?bolus|administer|eat|drink|consume|swallow|sip|chew|correct with|top up|give yourself|treat (?:the|a|your|it|this|that|any) (?:low|hypo|high))\b/i;
+// Base-form treatment verbs: an instruction ("take", "lower") or a present-tense
+// habit, never a record. Past forms such as "took", "logged" or "set by AAPS"
+// are handled by the masks below.
+const BASE_TREATMENT_VERB =
+  /\b(?:take|inject|administer|give|bolus|pre-?bolus|correct|eat|drink|consume|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|resume|cancel|cut|switch|top up|treat|use|cover|enter|log|start|apply|put|go|split|spread|delay|move|extend|avoid|leave|hold|run|do|make|get|grab|pop|dial|programme|program|press|deliver|send|bump|drop|tweak|boost|limit|bring|keep|aim|wait)\b/i;
+const TREATMENT_GERUND_FORM =
+  /\b(?:taking|injecting|administering|giving|bolusing|pre-?bolusing|correcting|eating|drinking|consuming|having|adding|increasing|decreasing|raising|lowering|reducing|changing|adjusting|setting|doubling|halving|skipping|stopping|suspending|cutting|switching|topping|treating|using|covering|splitting|delaying|extending|dialling|dialing|bumping|tweaking|boosting|limiting)\b/i;
+// Modal, advice, recommendation, timing and judgement wording.
+const DIRECTIVE_MARKER =
+  /\b(?:should|shouldn't|must|mustn't|need|needs|needed|ought|have to|has to|had to|had better|could|couldn't|can|can't|cannot|may|might|would|wouldn't|will|won't|shall|let's|lets|recommend\w*|suggest|suggests|suggestion|advis\w*|advice|consider\w*|try|trying|want|wants|worth|best|better|ideal\w*|optimal|appropriate|right|proper|help|helps|helpful|go ahead|make sure|remember|forget|plan|time to|important|wise|sensible|prefer\w*|please|required|require|requires|necessary|essential|option|alternative|approach|strategy|idea|next time|in future|in the future|going forward|from now on|tonight|tomorrow|next (?:meal|bolus|dose|time|breakfast|lunch|dinner|snack|correction)|before (?:your|the) next|instead|if you|when you|now|right away|straight away|immediately|enough|too|off|wrong|incorrect|insufficient|excessive|aggressive|don't|do not|just|simply|is to|are to|to be)\b|'(?:ll|d)\b/i;
+// A recorded event: a past-tense verb, a record noun or "there was/were".
+const RECORD_MARKER =
+  /\b(?:was|were|had|been|took|ate|gave|ran|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are))\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b|\b\w{3,}ed\b/i;
+const NOUN_MODIFIER =
+  "(?:meal|correction|extended|combo|combination|dual|square|wave|manual|automatic|automated|small|large|big|single|first|second|third|last|previous|recorded|logged|earlier|later|overnight|basal|insulin|carb|sharp|steep|gradual|slight|total|\\d+(?:[.,]\\d+)?\\s*(?:u|g|units?|%)?)";
+const NOUN_VERB =
+  "bolus|pre-?bolus|increase|decrease|change|drop|raise|rise|cut|switch|start|stop|log|run|use|set|dose|split|delay|hold";
+// Descriptive uses of words that are otherwise treatment verbs. Each mask is
+// narrow; anything it does not cover stays visible to the checks above.
+const DESCRIPTIVE_MASKS: readonly RegExp[] = [
+  new RegExp(`\\b(?:a|an|the|this|that|these|those|each|every|no|any|your|its|their|his|her|our|my)\\s+(?:${NOUN_MODIFIER}\\s+){0,2}(?:${NOUN_VERB})\\b`, "gi"),
+  /\b\d+(?:[.,]\d+)?\s*(?:u|units?)\s+(?:bolus|smb)\w*/gi,
+  /\bbolus\s+(?:records?|entries|entry|wizard|calculator|history|data|events?|amounts?|totals?|count|timing|times?|of|was|were|is|are|from|by)\b/gi,
+  /\b(?:increase|decrease|change|drop|rise|raise|cut|switch|start|stop)\s+(?:of|in)\b/gi,
+  /\b(?:was|were|is|are|been|slightly|much|even|bit|somewhat|generally|than|and|or)\s+(?:lower|higher)\b/gi,
+  /\b(?:lower|higher)\s+(?:readings?|values?|glucose|levels?|than|range|end|limit|threshold|bound|overnight)\b/gi,
+  /\b(?:wizard|calculator|aaps|loop|pump|system|algorithm)\s+suggested\b/gi,
+  /\b(?:aaps|loop|pump|it|system|algorithm|automation)\s+(?:set|cut|ran)\b/gi,
+  /\b(?:was|were|been|being)\s+(?:set|cut|put|run|stopped|started)\b/gi,
+  /\b(?:you|we|they|records|which|that|these|those)\s+(?:have|had)\b(?!\s+to\b)/gi,
+  /\b(?:profile|pump)\s+(?:switch|suspend|stop|start)\w*/gi,
+  /\binsulin\s+use\b/gi,
+  /\b(?:records?|data|readings?|entries|logs?|export|report|sensor|chart|coverage)\s+(?:may|might|can|cannot|can't|could|won't|wouldn't)\s+(?:not\s+)?(?:include|show|cover|contain|reflect|miss|capture|list|prove|establish|identify|confirm|tell|explain|be (?:incomplete|missing|partial|delayed|duplicated|approximate|estimated|complete|available))\b/gi,
+];
+
+const IMPERATIVE_START =
+  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial)\b/i;
+const BACK_REFERENCE =
+  /\b(?:the same|same again|same amount|again|repeat\w*|that amount|that much|as much|as before|like last time|like before)\b/i;
+
+function maskDescriptiveForms(sentence: string) {
+  return DESCRIPTIVE_MASKS.reduce((text, mask) => text.replace(mask, " "), sentence);
+}
+
+function splitSentences(text: string) {
+  return text
+    // Semicolons stay inside a sentence so "...; do the same" keeps its topic.
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function isRecordedEventDescription(sentence: string, masked: string) {
+  if (DIRECTIVE_MARKER.test(masked)) return false;
+  if (BASE_TREATMENT_VERB.test(masked) || TREATMENT_GERUND_FORM.test(masked)) return false;
+  if (AMOUNT.test(sentence) && !RECORD_MARKER.test(sentence)) return false;
+  return true;
+}
+
+function sentenceIsTreatmentDirective(sentence: string) {
+  if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(sentence))) return true;
+  const masked = maskDescriptiveForms(sentence);
+  if (INHERENT_TREATMENT_ACTION.test(masked)) return true;
+  const topical = sentence.replace(RANGE_WORDING, " ");
+  if (!TREATMENT_TOPIC.test(topical) && !PROHIBITED_TREATMENT_OUTPUT.test(topical)) {
+    // A sentence with no treatment word can still give the instruction by
+    // pointing back at an earlier one: "Do the same tonight."
+    return IMPERATIVE_START.test(masked) || BACK_REFERENCE.test(masked);
+  }
+  return !isRecordedEventDescription(sentence, masked);
+}
+
+/**
+ * Education answers explain physiology in the present tense ("activity can
+ * increase insulin sensitivity"), so the recorded-event test does not apply.
+ * They still get the instruction patterns and the imperative and
+ * back-reference checks, sentence by sentence.
+ */
+function containsEducationTreatmentDirective(text: string) {
+  const normalised = text.replace(/[‘’]/g, "'");
+  if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised))) return true;
+  return splitSentences(normalised).some((sentence) => {
+    const masked = maskDescriptiveForms(sentence);
+    return IMPERATIVE_START.test(masked) || /\bgo ahead and\b/i.test(masked);
+  });
+}
+
 /**
  * True when text instructs or recommends a treatment action, a dose or a
- * pump-setting change. Past-tense descriptions of recorded events are not
- * directives and are not matched.
+ * pump-setting change, or when a sentence about treatment cannot be shown to
+ * describe a recorded event. Only past-tense or plainly descriptive
+ * statements about recorded events pass.
  */
 export function containsTreatmentDirective(text: string) {
-  return TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(text));
+  const normalised = text.replace(/[‘’]/g, "'");
+  return (
+    TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised)) ||
+    splitSentences(normalised).some(sentenceIsTreatmentDirective)
+  );
 }
 const PROHIBITED_CAUSAL_OUTPUT =
   /\b(?:definitely|certainly|clearly)\b[\s\S]{0,50}\b(?:caused|cause|because|due to)\b|\b(?:caused (?:your|the)|was caused by|was the cause of your|is the reason your|explains why your|led to (?:your|the)|triggered (?:your|the)|(?:your|the) (?:meal|walk|exercise|workout|insulin|bolus) explains? (?:your|the))\b/i;
@@ -168,7 +276,8 @@ export function parseTarvisAnswer(
     : visibleCopy;
   if (
     (generalEducation
-      ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy)
+      ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
+        containsEducationTreatmentDirective(treatmentCopy)
       : containsTreatmentDirective(treatmentCopy)) ||
     PROHIBITED_CAUSAL_OUTPUT.test(causalCopy) ||
     PROHIBITED_DIAGNOSIS_OUTPUT.test(visibleCopy)
