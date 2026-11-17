@@ -82,6 +82,42 @@ export function inclusiveUpperBoundMmolL(mmolL: number) {
   return bound + BOUNDARY_EPSILON_MMOL_L;
 }
 
+/**
+ * Version of the boundary rule in {@link glucoseMeetsThreshold}. Saved Tarv1s
+ * answers record it so answers saved under the earlier exact comparison can
+ * still be checked with that comparison.
+ */
+export const GLUCOSE_THRESHOLD_BOUNDARY_RULE = 'dual-unit-boundaries-v1';
+
+export type GlucoseThresholdOperator = 'lt' | 'lte' | 'gt' | 'gte';
+
+/**
+ * The one boundary rule for comparing a reading with a glucose level, used by
+ * History, Insights and Tarv1s alike.
+ *
+ * A reading recorded as either published form of a consensus boundary
+ * (54/3.0, 70/3.9, 140/7.8, 180/10.0, 250/13.9) counts as exactly at that
+ * boundary, so 70 mg/dL is not "below 3.9" and 180 mg/dL is not "above 10".
+ * Any other level, such as a personal range or "time below 4.5", is compared
+ * exactly after conversion to mmol/L.
+ */
+export function glucoseMeetsThreshold(
+  mmolL: number,
+  operator: GlucoseThresholdOperator,
+  thresholdMmolL: number,
+): boolean {
+  switch (operator) {
+    case 'gte':
+      return mmolL >= inclusiveLowerBoundMmolL(thresholdMmolL);
+    case 'lt':
+      return mmolL < inclusiveLowerBoundMmolL(thresholdMmolL);
+    case 'lte':
+      return mmolL <= inclusiveUpperBoundMmolL(thresholdMmolL);
+    case 'gt':
+      return mmolL > inclusiveUpperBoundMmolL(thresholdMmolL);
+  }
+}
+
 export type GlucoseTargetRangeKind = 'standard' | 'tight' | 'personal';
 
 export interface GlucoseTargetRange {

@@ -3,6 +3,10 @@ import {
   formatRegionalFixedNumber,
   formatRegionalNumber,
 } from './regionalFormat';
+import {
+  GLUCOSE_THRESHOLD_BOUNDARY_RULE,
+  glucoseMeetsThreshold,
+} from './glucoseRanges';
 import { getCachedDateTimeFormat } from './intlFormatterCache';
 import { getRuntimeRegionalDefaults } from './regionalProfileRuntime';
 import { isIanaTimeZone } from './regionalProfile';
@@ -136,6 +140,11 @@ export interface EvidenceRangeDistributionVisualization
   lowerBoundMmolL: number;
   metric: 'glucose.time_in_range';
   upperBoundMmolL: number;
+  /**
+   * Present on charts calculated with the shared History boundary rule.
+   * Charts saved before it existed used an exact comparison and omit it.
+   */
+  boundaryRule?: typeof GLUCOSE_THRESHOLD_BOUNDARY_RULE;
 }
 
 export interface EvidenceEventTimelineVisualization
@@ -781,6 +790,7 @@ function distributionFromPersistedPoints(
   gapThresholdMilliseconds: number,
   lowerBoundMmolL: number,
   upperBoundMmolL: number,
+  sharedBoundaryRule: boolean,
 ): EvidenceQueryDistribution | null {
   if (!points.length) return null;
   const byTimestamp = new Map<number, { count: number; total: number }>();
@@ -811,8 +821,14 @@ function distributionFromPersistedPoints(
     );
     const duration = Math.max(0, end - sample.timestamp);
     observed += duration;
-    if (sample.mmolL < lowerBoundMmolL) durations.below += duration;
-    else if (sample.mmolL > upperBoundMmolL) durations.above += duration;
+    const below = sharedBoundaryRule
+      ? !glucoseMeetsThreshold(sample.mmolL, 'gte', lowerBoundMmolL)
+      : sample.mmolL < lowerBoundMmolL;
+    const above = sharedBoundaryRule
+      ? glucoseMeetsThreshold(sample.mmolL, 'gt', upperBoundMmolL)
+      : sample.mmolL > upperBoundMmolL;
+    if (below) durations.below += duration;
+    else if (above) durations.above += duration;
     else durations.within += duration;
   });
   if (!observed) return null;
@@ -909,7 +925,9 @@ export function isEvidenceQueryVisualizationReference(
       value.lowerBoundMmolL <= 0 ||
       value.upperBoundMmolL <= value.lowerBoundMmolL ||
       value.lowerBoundMmolL !== value.targetRange.minimum ||
-      value.upperBoundMmolL !== value.targetRange.maximum)
+      value.upperBoundMmolL !== value.targetRange.maximum ||
+      (value.boundaryRule !== undefined &&
+        value.boundaryRule !== GLUCOSE_THRESHOLD_BOUNDARY_RULE))
   ) {
     return false;
   }
@@ -1059,6 +1077,7 @@ export function isEvidenceQueryVisualizationReference(
             value.gapThresholdMilliseconds as number,
             value.lowerBoundMmolL as number,
             value.upperBoundMmolL as number,
+            value.boundaryRule === GLUCOSE_THRESHOLD_BOUNDARY_RULE,
           )
         : null;
     const distributionValid =

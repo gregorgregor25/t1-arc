@@ -486,6 +486,24 @@ describe("Tarv1s retrospective event review", () => {
     );
   });
 
+  it("uses the History boundary rule, so a 70 mg/dL reading is not below 3.9", () => {
+    const review = (lowest: number) => buildRetrospectiveEventReview({
+      question: "Why did my sugars go low during my walk last night?",
+      timeline: timeline({
+        context: [walk],
+        glucose: [
+          reading("start", -2, 5.6),
+          reading("during", 15, 4.4),
+          reading("lowest", 25, lowest),
+          reading("after", 45, 4.6),
+        ],
+      }),
+    });
+    // 70 mg/dL stored as 70 / 18.016 = 3.885 mmol/L; History counts it in range.
+    expect(review(70 / 18.016).answer.answer).toContain("No recorded glucose value fell below 3.9");
+    expect(review(69 / 18.016).answer.answer).toContain("first recorded value below 3.9");
+  });
+
   it("uses supplied summary macros without inventing foods", () => {
     const result = buildRetrospectiveEventReview({
       question: "Why did my sugars go low during my walk last night?",

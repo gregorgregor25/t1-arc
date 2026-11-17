@@ -50,6 +50,7 @@ import {
 import type { RetrospectiveIobLoader } from "./retrospectiveIobLoader";
 import { requestedTarvisPeriodDays } from "./scope";
 import { formatGlucose } from "@/domain/regionalFormat";
+import { glucoseMeetsThreshold } from "@/domain/glucoseRanges";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { formatStrengthWorkoutSet } from "@/domain/strengthWorkoutPresentation";
 import {
@@ -797,15 +798,18 @@ function describeGlucose(
       reading.timestamp >= outcomeRange.start &&
       reading.timestamp <= outcomeRange.end,
   );
-  const lows = relevant.filter((reading) => reading.mmolL < TARGET_LOW_MMOL_L);
+  // Same boundary rule as History: 70 mg/dL is not below 3.9 mmol/L.
+  const lows = relevant.filter((reading) =>
+    glucoseMeetsThreshold(reading.mmolL, "lt", TARGET_LOW_MMOL_L),
+  );
   const lowAtOrBeforeStart =
     nearStart &&
     nearStart.timestamp <= activity.start &&
-    nearStart.mmolL < TARGET_LOW_MMOL_L
+    glucoseMeetsThreshold(nearStart.mmolL, "lt", TARGET_LOW_MMOL_L)
       ? nearStart
       : undefined;
   const highs = relevant.filter(
-    (reading) => reading.mmolL > TARGET_HIGH_MMOL_L,
+    (reading) => glucoseMeetsThreshold(reading.mmolL, "gt", TARGET_HIGH_MMOL_L),
   );
   const firstLow = lows[0];
   const lowest = minReading(lows);

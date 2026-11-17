@@ -44,6 +44,10 @@ import {
 } from "@/domain/models";
 import { toDateKey, zonedDateTimeToTimestamp } from "@/domain/time";
 import {
+  GLUCOSE_THRESHOLD_BOUNDARY_RULE,
+  glucoseMeetsThreshold,
+} from "@/domain/glucoseRanges";
+import {
   isEvidenceQueryVisualizationReference,
   type EvidenceQueryEvent,
   type EvidenceQueryVisualizationReference,
@@ -190,7 +194,7 @@ const SAMPLE_STATISTIC_METRICS = new Set<SupportedMetric>([
 function metricAlgorithmVersion(metric: SupportedMetric) {
   if (metric === "glucose.mean") return GLUCOSE_MEAN_METRIC_VERSION;
   if (metric === "glucose.time_in_range") {
-    return "duration-forward-cap-12m-v1";
+    return `duration-forward-cap-12m-v1:${GLUCOSE_THRESHOLD_BOUNDARY_RULE}`;
   }
   if (metric.endsWith("_episodes")) {
     return GLUCOSE_EPISODE_DEFINITION_VERSION;
@@ -199,7 +203,7 @@ function metricAlgorithmVersion(metric: SupportedMetric) {
     return `${GLUCOSE_STATISTICS_VERSION}:${GMI_FORMULA_VERSION}:unique-timestamp-rounded-2dp`;
   }
   if (metric.endsWith("_readings")) {
-    return `${GLUCOSE_STATISTICS_VERSION}:threshold-count-unique-timestamp-v1`;
+    return `${GLUCOSE_STATISTICS_VERSION}:threshold-count-unique-timestamp-v1:${GLUCOSE_THRESHOLD_BOUNDARY_RULE}`;
   }
   return `${GLUCOSE_STATISTICS_VERSION}:${metric.split(".").at(-1)}-unique-timestamp-rounded-2dp`;
 }
@@ -440,17 +444,9 @@ function thresholdFor(
   return threshold ?? unsupported(`Missing ${role} threshold.`);
 }
 
+/** The shared History/Insights boundary rule; see glucoseMeetsThreshold. */
 function matchesThreshold(value: number, threshold: NormalizedThreshold) {
-  switch (threshold.operator) {
-    case "lt":
-      return value < threshold.value;
-    case "lte":
-      return value <= threshold.value;
-    case "gt":
-      return value > threshold.value;
-    case "gte":
-      return value >= threshold.value;
-  }
+  return glucoseMeetsThreshold(value, threshold.operator, threshold.value);
 }
 
 function observationIntervals(
@@ -548,10 +544,7 @@ function calculateRange(
         matchesThreshold(interval.mmolL, upper)
       ) {
         within += duration;
-      } else if (
-        interval.mmolL < lower.value ||
-        (interval.mmolL === lower.value && lower.operator === "gt")
-      ) {
+      } else if (!matchesThreshold(interval.mmolL, lower)) {
         below += duration;
       } else {
         above += duration;
@@ -892,6 +885,7 @@ function queryVisualizationFor(
         "Only readings from the requested time are counted; missing sensor time is left out.",
       lowerBoundMmolL: targetRange.minimum,
       upperBoundMmolL: targetRange.maximum,
+      boundaryRule: GLUCOSE_THRESHOLD_BOUNDARY_RULE,
     };
   }
   const eventMetric = selectedEventMetric;
