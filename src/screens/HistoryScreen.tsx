@@ -32,6 +32,17 @@ import { GlucoseRangeStatisticsCard } from "@/components/GlucoseRangeStatisticsC
 import { HistoryShareCard } from "@/components/HistoryShareCard";
 import { HistoryRecordsSection } from "@/components/history/HistoryRecordsSection";
 import { HISTORY_GMI_EXPLANATION, presentHistoryGmi } from "@/components/history/historyGmi";
+import {
+  DEFAULT_HISTORY_RECORD_FILTER,
+  type HistoryRecordFilter,
+} from "@/components/history/historyRecordFilters";
+import {
+  type PendingTimelineAdd,
+  type TimelineActionMessage,
+  timelineAddRecordIds,
+  timelineSavedConfirmation,
+  visibleTimelineActionError,
+} from "@/components/history/historyTimelineActions";
 import { PageSheet } from "@/components/history/PageSheet";
 import { InsulinEventList } from "@/components/InsulinEventList";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -100,6 +111,10 @@ interface PopulatedHistoryContentProps {
   onAddFromTimeline(timestamp: number, kind: "meal" | "note"): void;
   onEditFromTimeline(event: HealthContextEvent): void;
   timelineActionError?: string;
+  /** Polite confirmation after a meal or note added from the timeline is saved. */
+  timelineSavedMessage?: string;
+  recordFilter: HistoryRecordFilter;
+  onRecordFilterChange(filter: HistoryRecordFilter): void;
   onLayersChange(layers: TimelineLayerVisibility): void;
   onSelectDay(date: DateKey): void;
   selectedDate: DateKey;
@@ -125,6 +140,9 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   onAddFromTimeline,
   onEditFromTimeline,
   timelineActionError,
+  timelineSavedMessage,
+  recordFilter,
+  onRecordFilterChange,
   onLayersChange,
   onSelectDay,
   selectedDate,
@@ -136,7 +154,7 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   onCompare,
 }: PopulatedHistoryContentProps) {
   const { settings: appearance } = useGlucoseAppearance();
-  const { colors } = useAppTheme();
+  const { colors, type } = useAppTheme();
   const { now } = useDataContext();
   const { defaults: regional } = useRegionalProfile();
   const dataStamps = useMemo(
@@ -202,14 +220,14 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
         moreStatistics={
           <View accessible accessibilityLabel={gmi.accessibilityLabel} style={[styles.gmi, { borderTopColor: colors.divider }]}>
             <View style={styles.gmiRow}>
-              <Text style={[styles.gmiLabel, { color: colors.text }]}>GMI for this period</Text>
-              <Text style={[styles.gmiValue, { color: colors.text }]}>{gmi.value}</Text>
+              <Text style={[styles.gmiLabel, { color: colors.text, fontSize: type.footnote }]}>GMI for this period</Text>
+              <Text style={[styles.gmiValue, { color: colors.text, fontSize: type.bodyLarge }]}>{gmi.value}</Text>
             </View>
-            <Text style={[styles.stampText, { color: colors.textSecondary }]}>{gmi.coverage}</Text>
+            <Text style={[styles.gmiNote, { color: colors.textSecondary, fontSize: type.footnote }]}>{gmi.coverage}</Text>
             {gmi.limitedNotice ? (
-              <Text style={[styles.stampText, { color: colors.warning }]}>{gmi.limitedNotice}</Text>
+              <Text style={[styles.gmiNote, { color: colors.warning, fontSize: type.footnote }]}>{gmi.limitedNotice}</Text>
             ) : null}
-            <Text style={[styles.stampText, { color: colors.textSecondary }]}>{HISTORY_GMI_EXPLANATION}</Text>
+            <Text style={[styles.gmiNote, { color: colors.textSecondary, fontSize: type.footnote }]}>{HISTORY_GMI_EXPLANATION}</Text>
           </View>
         }
         onCompare={onCompare}
@@ -234,6 +252,22 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
           {timelineActionError}
         </Text>
       ) : null}
+      <View accessibilityLiveRegion="polite">
+        {timelineSavedMessage && !timelineActionError ? (
+          <View style={styles.savedRow}>
+            <Ionicons
+              accessibilityElementsHidden
+              color={colors.accent}
+              importantForAccessibility="no-hide-descendants"
+              name="checkmark-circle-outline"
+              size={18}
+            />
+            <Text style={[styles.savedText, { color: colors.textSecondary, fontSize: type.callout }]}>
+              {timelineSavedMessage}
+            </Text>
+          </View>
+        ) : null}
+      </View>
       {dataStamps.length ? (
         <View accessibilityLabel="Records may be incomplete" style={styles.stamps}>
           {dataStamps.map((stamp) => (
@@ -286,6 +320,8 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
           />
         }
         contextCount={contextEvents.length}
+        filter={recordFilter}
+        onFilterChange={onRecordFilterChange}
         insulin={
           <InsulinEventList
             boluses={data.boluses}
@@ -356,10 +392,12 @@ export function HistoryScreen() {
     useState<BolusDelivery>();
   const [selectedFoodLogToEdit, setSelectedFoodLogToEdit] = useState<FoodLog>();
   const [shareVisible, setShareVisible] = useState(false);
+  const [recordFilter, setRecordFilter] = useState<HistoryRecordFilter>(DEFAULT_HISTORY_RECORD_FILTER);
   const [logTimestamp, setLogTimestamp] = useState(now);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
-  const [timelineActionError, setTimelineActionError] = useState<string>();
+  const [timelineAction, setTimelineAction] = useState<TimelineActionMessage>();
+  const [pendingTimelineAdd, setPendingTimelineAdd] = useState<PendingTimelineAdd>();
   const days = RANGE_DAYS[rangeChoice];
   const range = useMemo(
     () => activeSelection ? { start: activeSelection.start, end: activeSelection.end } : multiDayRange(selectedDate, days, now),
@@ -401,6 +439,20 @@ export function HistoryScreen() {
     timeline.data.context.length === 0,
   );
   const canShare = Boolean(timeline.data && !timelineIsEmpty && !timeline.error);
+  // Close the share sheet when there is nothing to share any more, so it does
+  // not reopen by itself when records come back.
+  if (shareVisible && !canShare) setShareVisible(false);
+  // The timeline callbacks read these through a ref so the memoised timeline
+  // keeps stable props while food logs and records load.
+  const latest = useRef({ foodHistory, rangeSelectionKey, context: timeline.data?.context });
+  useEffect(() => {
+    latest.current = { foodHistory, rangeSelectionKey, context: timeline.data?.context };
+  });
+  const timelineActionError = visibleTimelineActionError(timelineAction, rangeSelectionKey, foodHistory.loading);
+  const timelineSavedMessage = useMemo(
+    () => timelineSavedConfirmation(pendingTimelineAdd, rangeSelectionKey, timeline.data?.context),
+    [pendingTimelineAdd, rangeSelectionKey, timeline.data?.context],
+  );
   const historyMenuActions = useMemo(
     () => [
       ...(canShare
@@ -413,7 +465,12 @@ export function HistoryScreen() {
     [canShare, compareLabel, comparison, openComparison],
   );
   const addFromTimeline = useCallback((timestamp: number, kind: "meal" | "note") => {
-    setTimelineActionError(undefined);
+    setTimelineAction(undefined);
+    const { context, rangeSelectionKey: rangeKey } = latest.current;
+    const sourceIds = kind === "meal" ? [FOOD_LOG_SOURCE_ID, MANUAL_CONTEXT_SOURCE_ID] : [MANUAL_CONTEXT_SOURCE_ID];
+    setPendingTimelineAdd(
+      context ? { kind, rangeKey, sourceIds, knownIds: timelineAddRecordIds(context, kind, sourceIds) } : undefined,
+    );
     setSelectedContextToEdit(undefined);
     setSelectedInsulinToEdit(undefined);
     setSelectedFoodLogToEdit(undefined);
@@ -422,27 +479,31 @@ export function HistoryScreen() {
     else setContextLaunchRequest((value) => value + 1);
   }, []);
   const editFromTimeline = useCallback((event: HealthContextEvent) => {
-    setTimelineActionError(undefined);
+    setTimelineAction(undefined);
+    setPendingTimelineAdd(undefined);
     if (event.origin !== "manual") return;
+    const { foodHistory: food, rangeSelectionKey: rangeKey } = latest.current;
+    const report = (message: string, whileFoodLoading = false) =>
+      setTimelineAction({ message, rangeKey, whileFoodLoading });
     if (event.sourceId === FOOD_LOG_SOURCE_ID && event.kind === "meal") {
-      if (foodHistory.loading) {
-        setTimelineActionError("Meal details are still loading. Try again in a moment.");
+      if (food.loading) {
+        report("Meal details are still loading. Try again in a moment.", true);
         return;
       }
-      if (foodHistory.error) {
-        setTimelineActionError("Meal details could not be loaded just now. Try again in a moment.");
+      if (food.error) {
+        report("Meal details could not be loaded just now. Try again in a moment.");
         return;
       }
-      const log = foodHistory.logs.find((item) => item.contextEventId === event.id);
+      const log = food.logs.find((item) => item.contextEventId === event.id);
       if (!log) {
-        setTimelineActionError("This meal could not be opened for editing.");
+        report("This meal could not be opened for editing.");
         return;
       }
       setSelectedFoodLogToEdit(log);
     } else if (event.sourceId === MANUAL_CONTEXT_SOURCE_ID) {
       setSelectedContextToEdit(event);
     }
-  }, [foodHistory.error, foodHistory.loading, foodHistory.logs]);
+  }, []);
   const pumpStatesOutsideRange = Boolean(
     pumpStateCoverage &&
     (pumpStateCoverage.end <= range.start ||
@@ -494,6 +555,12 @@ export function HistoryScreen() {
       ? "Today so far"
       : "Selected day"
     : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`;
+
+  const periodDates = activeSelection
+    ? historySelectionLabel(activeSelection, regional.locale, regional.timeZone)
+    : days === 1
+      ? formatDate(selectedDate, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+      : `${formatDate(addDays(selectedDate, 1 - days), { day: "numeric", month: "short" })} – ${formatDate(selectedDate, { day: "numeric", month: "short", year: "numeric" })}`;
 
   function chooseDate(date: DateKey) {
     setExplicitSelection(undefined);
@@ -650,6 +717,9 @@ export function HistoryScreen() {
             onAddFromTimeline={addFromTimeline}
             onEditFromTimeline={editFromTimeline}
             timelineActionError={timelineActionError}
+            timelineSavedMessage={timelineSavedMessage}
+            recordFilter={recordFilter}
+            onRecordFilterChange={setRecordFilter}
             onLayersChange={setTimelineLayers}
             onSelectDay={selectDailySummaryDate}
             selectedDate={selectedDate}
@@ -662,11 +732,11 @@ export function HistoryScreen() {
         <PageSheet
           closeLabel="Close share options"
           onClose={() => setShareVisible(false)}
-          subtitle={activeSelection ? 'Selected period' : periodCaption}
+          subtitle={periodDates}
           title="Share or export"
           visible={shareVisible}
         >
-          <HistoryShareCard data={timeline.data} />
+          <HistoryShareCard data={timeline.data} showHeading={false} />
         </PageSheet>
       ) : null}
       <ManualContextCard
@@ -732,6 +802,9 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, lineHeight: 21 },
   gmi: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 8, paddingTop: 8, gap: 4 },
   gmiRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
-  gmiLabel: { flex: 1, minWidth: 120, fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  gmiValue: { fontSize: 16, lineHeight: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  gmiLabel: { flex: 1, minWidth: 120, lineHeight: 18, fontWeight: '600' },
+  gmiValue: { lineHeight: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  gmiNote: { lineHeight: 19 },
+  savedRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  savedText: { flex: 1, lineHeight: 20 },
 });

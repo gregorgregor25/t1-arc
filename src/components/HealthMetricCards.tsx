@@ -2,6 +2,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   LayoutChangeEvent,
   Modal,
   Pressable,
@@ -2624,22 +2626,34 @@ export function HealthMetricCards({
     setEditMenuVisible(false);
     setEditingMetrics(true);
   };
+  const showAllFromEditSheet = () => {
+    void display.save({ hiddenHealthMetrics: [] }).then((saved) => {
+      if (!saved) return;
+      setEditMenuVisible(false);
+      AccessibilityInfo.announceForAccessibility("All health sections are shown.");
+    });
+  };
+  // Same rule as before the redesign: the header and Edit appear when there
+  // is something to show or something hidden to bring back.
+  const showEditHeader = availableDefinitions.length > 0 || hiddenCount > 0;
 
   return (
     <>
-      <View style={styles.prioritiesHeader}>
-        <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>{priorities.length ? "Your priorities" : "Health records"}</Text>
-        <Pressable
-          accessibilityHint="Choose which health sections to show, show hidden sections or set your daily step goal"
-          accessibilityLabel="Edit Health view"
-          accessibilityRole="button"
-          onPress={() => setEditMenuVisible(true)}
-          style={({ pressed }) => [styles.preferencesAction, { opacity: pressed ? 0.6 : 1 }]}
-        >
-          <Ionicons accessibilityElementsHidden name="options-outline" size={18} color={colors.primary} />
-          <Text style={[styles.preferencesText, styles.editLabel, { color: colors.primary }]}>Edit</Text>
-        </Pressable>
-      </View>
+      {showEditHeader ? (
+        <View style={styles.prioritiesHeader}>
+          <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>{priorities.length ? "Your priorities" : "Health records"}</Text>
+          <Pressable
+            accessibilityHint="Choose which health sections to show, show hidden sections or set your daily step goal"
+            accessibilityLabel="Edit Health view"
+            accessibilityRole="button"
+            onPress={() => setEditMenuVisible(true)}
+            style={({ pressed }) => [styles.preferencesAction, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Ionicons accessibilityElementsHidden name="options-outline" size={18} color={colors.primary} />
+            <Text style={[styles.preferencesText, styles.editLabel, { color: colors.primary }]}>Edit</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {display.error && !editingMetrics ? <Pressable accessibilityRole="button" accessibilityLabel="Retry display choices" onPress={() => void display.retry()} style={styles.preferencesAction}>
         <Text style={[styles.preferencesText, { color: colors.warning }]}>{display.error} Tap to retry.</Text>
       </Pressable> : null}
@@ -2697,13 +2711,26 @@ export function HealthMetricCards({
           />
           {hiddenCount > 0 ? (
             <ListRow
+              accessibilityLabel={display.saving ? "Show all sections. Working, please wait." : undefined}
               disabled={display.saving}
-              onPress={() => void display.save({ hiddenHealthMetrics: [] })}
+              onPress={showAllFromEditSheet}
               showChevron={false}
               title="Show all sections"
+              trailing={display.saving ? (
+                <ActivityIndicator
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  importantForAccessibility="no-hide-descendants"
+                />
+              ) : undefined}
             />
           ) : null}
         </ListGroup>
+        {display.error ? (
+          <Text accessibilityLiveRegion="polite" style={[styles.preferencesText, { color: colors.warning }]}>
+            {display.error} Please try again.
+          </Text>
+        ) : null}
         <Text style={[styles.preferencesText, { color: colors.textSecondary }]}>
           The four large cards follow the priorities you chose for Today at a glance, skipping measures with no records.
         </Text>

@@ -3,13 +3,15 @@ import type { ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useAppTheme } from '@/theme/theme';
 import { PREFERRED_TOUCH_TARGET } from '@/theme/tokens';
 
 /**
  * A full-screen sheet with a heading, a close button and scrolling content.
  * Android back closes it. Used for the History share options and the Health
- * edit options, so rarely used controls stay one tap away.
+ * edit options, so rarely used controls stay one tap away. It opens without
+ * the slide animation when the phone is set to reduce motion.
  */
 export function PageSheet({
   children,
@@ -28,8 +30,9 @@ export function PageSheet({
   visible: boolean;
 }) {
   const { colors, type } = useAppTheme();
+  const reducedMotion = useReducedMotion();
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen" visible={visible}>
+    <Modal animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose} presentationStyle="fullScreen" visible={visible}>
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerCopy}>

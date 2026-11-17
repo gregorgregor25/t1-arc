@@ -51,6 +51,7 @@ import {
   glucoseRangeForValue,
 } from "@/domain/glucoseAppearance";
 import { DateKey, dayRange, formatTime, toDateKey } from "@/domain/time";
+import { timelineAddActionLabel } from "@/components/history/historyTimelineActions";
 import {
   formatGlucose,
   formatRegionalFixedNumber,
@@ -152,6 +153,19 @@ function nearestByTimestamp<T>(
   });
   return { item: nearest, distance: nearestDistance };
 }
+
+const addLabelFormat = {
+  time: formatTime,
+  day: (timestamp: number) => {
+    const regional = getRuntimeRegionalDefaults();
+    return getCachedDateTimeFormat(regional.locale, {
+      timeZone: regional.timeZone,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(timestamp);
+  },
+};
 
 function chartTick(timestamp: number, rangeDuration: number) {
   const regional = getRuntimeRegionalDefaults();
@@ -326,6 +340,7 @@ function Inspector({
   showBolus,
   showGlucose,
   contextEvents,
+  range,
   onClose,
   onAddContext,
   onEditContext,
@@ -343,6 +358,8 @@ function Inspector({
   showBolus: boolean;
   showGlucose: boolean;
   contextEvents: HealthContextEvent[];
+  /** The chart's period; the spoken add labels include the date when it covers more than a day. */
+  range: { start: number; end: number };
   onClose(): void;
   onAddContext?(timestamp: number, kind: "meal" | "note"): void;
   onEditContext?(event: HealthContextEvent): void;
@@ -524,7 +541,7 @@ function Inspector({
       {onAddContext ? (
         <View style={styles.contextActions}>
           <Pressable
-            accessibilityLabel={`Add meal at ${formatTime(timestamp)}`}
+            accessibilityLabel={timelineAddActionLabel("meal", timestamp, range, addLabelFormat)}
             accessibilityRole="button"
             onPress={() => onAddContext(timestamp, "meal")}
             style={({ pressed }) => [
@@ -537,7 +554,7 @@ function Inspector({
             <Text style={[styles.contextActionText, { color: colors.onPrimary }]}>Add meal</Text>
           </Pressable>
           <Pressable
-            accessibilityLabel={`Add note at ${formatTime(timestamp)}`}
+            accessibilityLabel={timelineAddActionLabel("note", timestamp, range, addLabelFormat)}
             accessibilityRole="button"
             onPress={() => onAddContext(timestamp, "note")}
             style={({ pressed }) => [
@@ -1570,6 +1587,7 @@ export function CombinedTimeline({
                 showBolus={visibleLayers.bolus}
                 showGlucose={visibleLayers.glucose}
                 contextEvents={nearbyContext}
+                range={data.range}
                 onClose={() => {
                   setSelection(undefined);
                   setSelectedMealIds([]);
