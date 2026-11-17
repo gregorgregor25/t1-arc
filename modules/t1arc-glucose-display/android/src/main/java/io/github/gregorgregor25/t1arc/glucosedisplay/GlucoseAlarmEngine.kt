@@ -94,6 +94,8 @@ private object GlucoseAlarmStore {
   }
 }
 
+private fun JSONObject.optLongOrNull(key: String): Long? = if (!has(key) || isNull(key)) null else getLong(key)
+
 private fun JSONObject.bridgeMap(): Map<String, Any?> = keys().asSequence().associateWith { key ->
   when (val value = get(key)) {
     JSONObject.NULL -> null
@@ -230,7 +232,8 @@ internal object T1ArcGlucoseAlarmEngine {
           e.optBoolean("acknowledged"),
           if (e.isNull("snoozeUntilElapsed")) null else e.getLong("snoozeUntilElapsed"),
           if (e.isNull("snoozeUntilWall")) null else e.getLong("snoozeUntilWall"), e.getInt("bootCount"),
-          if (!e.has("excursionStartedAt") || e.isNull("excursionStartedAt")) null else e.getLong("excursionStartedAt"))
+          e.optLongOrNull("excursionStartedAt"),
+          GlucoseAlarmKind.parse(e.optString("heldHighKind", "")), e.optLongOrNull("heldHighStartedAt"))
       }.getOrNull() }
       loaded = true
     }
@@ -249,7 +252,9 @@ internal object T1ArcGlucoseAlarmEngine {
       .put("createdAt", current.createdAt).put("lastNotifiedElapsed", current.lastNotifiedElapsed ?: JSONObject.NULL)
       .put("acknowledged", current.acknowledged).put("snoozeUntilElapsed", current.snoozeUntilElapsed ?: JSONObject.NULL)
       .put("snoozeUntilWall", current.snoozeUntilWall ?: JSONObject.NULL).put("bootCount", current.bootCount)
-      .put("excursionStartedAt", current.excursionStartedAt ?: JSONObject.NULL))
+      .put("excursionStartedAt", current.excursionStartedAt ?: JSONObject.NULL)
+      .put("heldHighKind", current.heldHighKind?.wire ?: JSONObject.NULL)
+      .put("heldHighStartedAt", current.heldHighStartedAt ?: JSONObject.NULL))
     GlucoseAlarmStore.write(context, data)
   }
 
@@ -393,11 +398,14 @@ internal object T1ArcGlucoseAlarmEngine {
     if (!decision.keepPrevious || old == null) {
       if (!previewActive) stopPlaybackLocked(context)
       episode = GlucoseAlarmEpisode(UUID.randomUUID().toString(), decision.kind, identity, now, bootCount = boot(context),
-        excursionStartedAt = decision.excursionStartedAt)
+        excursionStartedAt = decision.excursionStartedAt, heldHighKind = decision.heldHighKind,
+        heldHighStartedAt = decision.heldHighStartedAt)
       persist(context)
-    } else if (old.kind != decision.kind || old.excursionStartedAt != decision.excursionStartedAt) {
+    } else if (old.kind != decision.kind || old.excursionStartedAt != decision.excursionStartedAt ||
+      old.heldHighKind != decision.heldHighKind || old.heldHighStartedAt != decision.heldHighStartedAt) {
       // Urgent low easing into low keeps its episode, controls and timers.
-      episode = old.copy(kind = decision.kind, excursionStartedAt = decision.excursionStartedAt)
+      episode = old.copy(kind = decision.kind, excursionStartedAt = decision.excursionStartedAt,
+        heldHighKind = decision.heldHighKind, heldHighStartedAt = decision.heldHighStartedAt)
       persist(context)
     }
     val current = requireNotNull(episode)
@@ -406,8 +414,8 @@ internal object T1ArcGlucoseAlarmEngine {
       // Still inside the chosen "stays high for" delay: no notification, no sound.
       if (!previewActive) stopPlaybackLocked(context)
       cancelNotification(context)
-      val pendingElapsed = decision.pendingUntilWall?.let { elapsed + (it - now).coerceAtLeast(0L) }
-      schedule(context, listOfNotNull(elapsed + 60_000L, pendingElapsed).minOrNull())
+      // An expired deadline is never rescheduled for "now"; that would loop.
+      schedule(context, GlucoseAlarmPolicy.pendingCheckElapsed(decision.pendingUntilWall, now, elapsed))
       return
     }
     if (decision.missing && current.kind != GlucoseAlarmKind.STALE && !previewActive) stopPlaybackLocked(context)

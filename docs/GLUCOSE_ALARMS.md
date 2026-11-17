@@ -77,6 +77,14 @@ counts when glucose rises into very high. While waiting there is no notification
 and no sound. Missing readings cannot confirm a waiting high. Urgent low, low and
 missing-reading alerts are never delayed.
 
+If readings stop while a high is waiting, the missing-reading alert (when it is
+on) sounds as usual; the waiting high never hides it. The waiting high is kept
+separately, unconfirmed. When readings return and glucose is still above the
+level, the time since the first high reading counts, so the high alert sounds
+straight away if the chosen time has already passed. A reading back in range
+ends it. Once the waiting time has passed without readings, T1 Arc checks again
+at its normal one-minute cadence rather than repeatedly.
+
 ### Pause after a logged hypo treatment
 
 When a new **Treating a hypo** entry is saved, ordinary low alerts pause for the
