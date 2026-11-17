@@ -9,7 +9,6 @@ import {
 } from "react-native";
 
 import type { AapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
-import { formatTime } from "@/domain/time";
 import { DailyHealthMetrics } from "@/domain/dailyHealthMetrics";
 import {
   GlucoseStats,
@@ -193,6 +192,7 @@ export function TodayGlanceCard({
   insulin,
   insulinAvailable,
   insulinProvenance,
+  insulinThrough,
   events,
   range,
   onOpenInsulin,
@@ -205,6 +205,8 @@ export function TodayGlanceCard({
   insulinAvailable: boolean;
   /** Present only while AAPS on this phone supplies glucose. */
   insulinProvenance?: AapsInsulinProvenance;
+  /** "Insulin records through 13:00", only while synced insulin lags. */
+  insulinThrough?: string;
   events: HealthContextEvent[];
   range: TimeRange;
   onOpenInsulin?(): void;
@@ -290,9 +292,7 @@ export function TodayGlanceCard({
       detail: [
         `${formatRegionalFixedNumber(insulin.basalUnits, regional.locale, 1)} basal · ${formatRegionalFixedNumber(insulin.bolusUnits, regional.locale, 1)} bolus`,
         insulinProvenance?.sourceLabel,
-        insulinProvenance?.dataThrough !== undefined
-          ? `data through ${formatTime(insulinProvenance.dataThrough)}`
-          : undefined,
+        insulinThrough,
         insulinProvenance?.scheduledBasalMissing
           ? "scheduled basal not included"
           : undefined,

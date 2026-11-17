@@ -52,7 +52,7 @@ export type RootTabParamList = {
   Cycle: undefined;
   Feedback: undefined;
   Insights: { comparison?: InsightComparisonRequest; entry?: TarvisEntry; settings?: boolean } | undefined;
-  Sources: { focused?: boolean; source?: SourceJump } | undefined;
+  Sources: { focused?: boolean; source?: SourceJump; panel?: "source-health" } | undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();

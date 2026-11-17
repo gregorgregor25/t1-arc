@@ -44,6 +44,8 @@ import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
 import type { HealthContextEvent } from "@/domain/models";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import { useDataContext } from "@/providers/DataProvider";
+import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
+import { laggingDataStamps } from "@/domain/dataThrough";
 
 type TodayRange = "4h" | "8h" | "12h" | "24h";
 const RANGE_HOURS: Record<TodayRange, number> = {
@@ -59,6 +61,7 @@ export function TodayScreen() {
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
   const { dataMode, deleteManualContext, now, ownerIdentity, refreshData, repository, revision, sourceError, syncing, today } =
     useDataContext();
+  const { defaults: regional } = useRegionalProfile();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("4h");
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
@@ -215,6 +218,14 @@ export function TodayScreen() {
         range: dayRange(today, now),
       })
     : undefined;
+  const insulinThrough = todayTimeline.data
+    ? laggingDataStamps(
+        { ...todayTimeline.data, range: dayRange(today, now) },
+        now,
+        regional,
+        ["insulin"],
+      )[0]?.text
+    : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
 
@@ -262,6 +273,7 @@ export function TodayScreen() {
           insulin={insulinSummary?.stats}
           insulinAvailable={Boolean(todayTimeline.data && hasInsulinDeliveryEvidence(todayTimeline.data))}
           insulinProvenance={insulinProvenance}
+          insulinThrough={insulinThrough}
           range={dayRange(today, now)}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {
