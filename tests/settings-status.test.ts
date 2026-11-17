@@ -110,7 +110,7 @@ describe("Settings home: alarms line", () => {
         veryHighEnabled: false,
         staleEnabled: true,
       },
-      { readinessIssues: [] },
+      { readinessIssues: [], configured: true },
     );
     expect(summary).toMatchObject({
       tone: "ok",
@@ -123,7 +123,7 @@ describe("Settings home: alarms line", () => {
   it("says when alarms are on without sound", () => {
     const summary = alarmSummary(
       { ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, enabled: true, audioEnabled: false },
-      { readinessIssues: [] },
+      { readinessIssues: [], configured: true },
     );
     expect(summary.title).toBe("Alarms on, without sound");
   });
@@ -131,7 +131,7 @@ describe("Settings home: alarms line", () => {
   it("shows the first readiness problem instead of a reassuring line", () => {
     const summary = alarmSummary(
       { ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, enabled: true },
-      { readinessIssues: ["Notifications are blocked.", "Second issue"] },
+      { readinessIssues: ["Notifications are blocked.", "Second issue"], configured: true },
     );
     expect(summary).toMatchObject({
       tone: "attention",
@@ -174,5 +174,27 @@ describe("Settings home: backup line", () => {
       detail: "Last backup 9 days ago",
       due: true,
     });
+  });
+});
+
+describe("Settings home: review follow-ups", () => {
+  it("does not call imported history a working live connection", () => {
+    const summary = glucoseSourceSummary({
+      readingTimestamp: NOW - 2 * 60 * 1000,
+      sources: [live({ isLive: false, origin: "imported" } as Partial<DataSourceStatus>)],
+      now: NOW,
+    });
+    expect(summary.tone).toBe("attention");
+    expect(summary.statusLabel).toBe("No live connection");
+    expect(summary.detail).not.toContain("Working");
+  });
+
+  it("makes no sound claim for earlier alert choices that are not saved as alarms yet", () => {
+    const summary = alarmSummary(
+      { ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, enabled: true, audioEnabled: false },
+      { readinessIssues: [], configured: false },
+    );
+    expect(summary).toMatchObject({ tone: "attention", statusLabel: "Not saved yet" });
+    expect(summary.title).not.toContain("without sound");
   });
 });

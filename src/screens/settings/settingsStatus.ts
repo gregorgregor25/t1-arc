@@ -61,6 +61,17 @@ export function glucoseSourceSummary({
       sourceLabel,
     };
   }
+  if (!live.isLive && !live.errorCode) {
+    // Readings here came from imported history, not a live connection.
+    return {
+      tone: "attention",
+      title,
+      detail: age ? `No live connection · imported history, ${age}` : "No live connection",
+      statusLabel: "No live connection",
+      page,
+      sourceLabel,
+    };
+  }
   if (live.errorCode || live.freshness === "stale" || live.freshness === "missing") {
     return {
       tone: "attention",
@@ -109,10 +120,20 @@ function capitalise(text: string) {
 /** Saved alarm choices in one line. Reads saved settings only. */
 export function alarmSummary(
   configuration: GlucoseAlarmConfiguration | undefined,
-  status: Pick<GlucoseAlarmStatus, "readinessIssues"> | undefined,
+  status: Pick<GlucoseAlarmStatus, "readinessIssues" | "configured"> | undefined,
 ): SettingsStatusSummary {
   if (!configuration) {
     return { tone: "off", title: "Alarms", detail: "Checking saved alarm choices…", statusLabel: "Checking" };
+  }
+  if (status && !status.configured) {
+    // Earlier alert choices have not been saved as alarms yet. They are only
+    // an editing starting point here, so make no claim about sound.
+    return {
+      tone: "attention",
+      title: "Alarms need a check",
+      detail: "Open Alarms to review and save your alert choices",
+      statusLabel: "Not saved yet",
+    };
   }
   if (!configuration.enabled) {
     return {

@@ -1,6 +1,14 @@
 import { Alert } from '@/components/appAlert';
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -58,6 +66,18 @@ type TestState =
 
 type LibreCredentialLoadState = "loading" | "ready" | "unavailable";
 
+/**
+ * Unsaved LibreLinkUp sign-in typed on this page, kept in memory by the
+ * Settings screen so it survives moving between Settings pages (as it did
+ * before the redesign). Never written to storage; cleared once the sign-in is
+ * verified and saved, removed, or when Settings closes.
+ */
+export interface LibreDraftRetention {
+  read(): LibreLinkUpCredentials | undefined;
+  write(draft: LibreLinkUpCredentials | undefined): void;
+}
+export const LibreDraftRetentionContext = createContext<LibreDraftRetention | null>(null);
+
 function emptyLibreDraft(
   topLevelDomain: LibreLinkUpCredentials["topLevelDomain"] = "io",
 ): LibreLinkUpCredentials {
@@ -79,6 +99,7 @@ function maskEmail(value: string) {
 export function LibreSettingsPage() {
   const { colors, radius } = useAppTheme();
   const { activateLibreSnapshot, setDataMode } = useDataContext();
+  const draftRetention = useContext(LibreDraftRetentionContext);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -134,9 +155,11 @@ export function LibreSettingsPage() {
   const updateLibreDraft = useCallback(
     (update: Partial<LibreLinkUpCredentials>) => {
       if (libreVerificationBusy.current) return;
-      replaceLibreDraft({ ...libreDraft.current, ...update });
+      const next = { ...libreDraft.current, ...update };
+      draftRetention?.write(next);
+      replaceLibreDraft(next);
     },
-    [replaceLibreDraft],
+    [replaceLibreDraft, draftRetention],
   );
 
   const loadSavedLibreCredentials = useCallback(async () => {
@@ -145,17 +168,19 @@ export function LibreSettingsPage() {
     try {
       const credentials = await loadLibreLinkUpCredentials();
       if (request !== libreCredentialRequest.current) return;
-      const draft = credentials ?? emptyLibreDraft(regionalDefaults.libreTopLevelDomain);
+      const unsaved = draftRetention?.read();
+      const draft =
+        unsaved ?? credentials ?? emptyLibreDraft(regionalDefaults.libreTopLevelDomain);
       replaceLibreDraft(draft);
       setSavedCredentials(credentials);
       setSaved(credentials !== undefined);
-      setEditing(credentials === undefined);
+      setEditing(unsaved !== undefined || credentials === undefined);
       setLibreCredentialLoadState("ready");
     } catch {
       if (request !== libreCredentialRequest.current) return;
       setLibreCredentialLoadState("unavailable");
     }
-  }, [regionalDefaults.libreTopLevelDomain, replaceLibreDraft]);
+  }, [regionalDefaults.libreTopLevelDomain, replaceLibreDraft, draftRetention]);
 
   useEffect(() => {
     libreScreenMounted.current = true;
@@ -258,6 +283,7 @@ export function LibreSettingsPage() {
       if (outcome.kind === "error") throw outcome.error;
 
       const snapshot = outcome.value;
+      draftRetention?.write(undefined);
       setSavedCredentials(credentials);
       setSaved(true);
       setEditing(false);
@@ -293,6 +319,7 @@ export function LibreSettingsPage() {
             void (async () => {
               await disableGlucoseDisplay().catch(() => undefined);
               await disconnectLibreLinkUpConnection();
+              draftRetention?.write(undefined);
               replaceLibreDraft(emptyLibreDraft(regionalDefaults.libreTopLevelDomain));
               setSavedCredentials(undefined);
               setSaved(false);
@@ -696,6 +723,7 @@ export function LibreSettingsPage() {
                       disabled={verificationBusy}
                       onPress={() => {
                         if (!savedCredentials) return;
+                        draftRetention?.write(undefined);
                         replaceLibreDraft(savedCredentials);
                         setEditing(false);
                       }}

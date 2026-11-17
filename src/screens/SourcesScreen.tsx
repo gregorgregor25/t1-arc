@@ -29,6 +29,11 @@ import { useDataContext } from "@/providers/DataProvider";
 import { OnboardingScreen } from "@/screens/OnboardingScreen";
 import { SettingsHome } from "@/screens/settings/SettingsHome";
 import {
+  LibreDraftRetentionContext,
+  type LibreDraftRetention,
+} from "@/screens/settings/LibreSettingsPage";
+import type { LibreLinkUpCredentials } from "@/data/libreLinkUp/types";
+import {
   alarmKindFromPanel,
   SettingsPageContent,
   type SettingsScreenTarget,
@@ -53,6 +58,16 @@ export function SourcesScreen({
   const { colors, radius } = useAppTheme();
   const { refreshData, reloadSources, syncing } = useDataContext();
   const scrollViewRef = useRef<ScrollView | null>(null);
+  // Unsaved LibreLinkUp sign-in, kept only while Settings stays open.
+  const [libreDraftRetention] = useState<LibreDraftRetention>(() => {
+    let draft: LibreLinkUpCredentials | undefined;
+    return {
+      read: () => draft,
+      write: (next) => {
+        draft = next;
+      },
+    };
+  });
   // Earlier links named the combined "Display and alerts" page; it now opens
   // "Phone, widget and car", which holds the same display controls.
   const activePage = resolveSettingsRequest(
@@ -250,6 +265,7 @@ export function SourcesScreen({
           )}
         </View>
       ) : (
+        <LibreDraftRetentionContext.Provider value={libreDraftRetention}>
         <SettingsPageContent
           expanded={expandedSetting}
           key={activePage}
@@ -260,6 +276,7 @@ export function SourcesScreen({
           setExpanded={setExpandedSetting}
           toggle={toggleSetting}
         />
+        </LibreDraftRetentionContext.Provider>
       )}
     </AppScreen>
   );
