@@ -94,6 +94,9 @@ vi.mock("@/data/hevy/repository", () => ({
 vi.mock("@/data/insights/insightReviewPreferences", () => ({
   clearInsightReviewPreferences: mocks.cleanup,
 }));
+vi.mock("@/data/todayCardPreferences", () => ({
+  clearTodayCardPreferences: mocks.cleanup,
+}));
 vi.mock("@/data/backup/backupStatus", () => ({
   clearBackupStatus: mocks.cleanup,
 }));

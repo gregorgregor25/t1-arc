@@ -29,6 +29,8 @@ import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
 import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
 import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
+import { DeviceAgeChips } from '@/components/DeviceAgeChips';
+import { OvernightSummaryCard } from '@/components/OvernightSummaryCard';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
 import { FOOD_LOG_SOURCE_ID } from "@/data/food/foodLogRepository";
@@ -295,12 +297,14 @@ export function TodayScreen() {
           />
         )}
         <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
+        <DeviceAgeChips />
         <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
             <ErrorCard message={latest.error ?? sourceError!} />
           </View>
         ) : null}
+        <OvernightSummaryCard />
 
         <TodayGlanceCard
           events={todayTimeline.data?.context ?? []}
