@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { settleHeadlessPromise } from '@/data/glucoseDisplay/headlessTaskSettlement';
+import { forgetPublishedOnBoardEstimate } from '@/data/glucoseDisplay/onBoardEstimatePublication';
 import {
   glucoseDisplayAlreadyPublished,
   runGlucoseDisplayForegroundSync,
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   updateReading: vi.fn(),
   updateHistory: vi.fn(),
   updatePrivate: vi.fn(),
+  updateOnBoard: vi.fn(),
+  loadNightscoutOnBoard: vi.fn(),
   refreshConfiguredSources: vi.fn(),
   reconcileAlerts: vi.fn(),
   initializeStore: vi.fn(),
@@ -58,7 +61,12 @@ vi.mock('../modules/t1arc-glucose-display', () => ({
     updateHistoryAsync: mocks.updateHistory,
     updatePrivateGlucoseForWriteEpochAsync: mocks.updatePrivate,
     updateSelectedGlucoseForWriteEpochAsync: mocks.updatePrivate,
+    updateOnBoardEstimateForWriteEpochAsync: mocks.updateOnBoard,
   },
+}));
+
+vi.mock('@/data/nightscout/iobCobStore', () => ({
+  loadDisplayableNightscoutIobCobSnapshot: mocks.loadNightscoutOnBoard,
 }));
 
 vi.mock('@/data/privacy/localDataWriteEpoch', () => ({
@@ -126,6 +134,9 @@ describe('glucose display Headless JS settlement', () => {
     mocks.updateReading.mockReset().mockResolvedValue(undefined);
     mocks.updateHistory.mockReset().mockResolvedValue(true);
     mocks.updatePrivate.mockReset().mockResolvedValue(true);
+    mocks.updateOnBoard.mockReset().mockResolvedValue(true);
+    mocks.loadNightscoutOnBoard.mockReset().mockResolvedValue(undefined);
+    forgetPublishedOnBoardEstimate();
     mocks.refreshConfiguredSources.mockReset().mockResolvedValue([]);
     mocks.reconcileAlerts.mockReset().mockResolvedValue(undefined);
     mocks.initializeStore.mockReset().mockResolvedValue(undefined);
@@ -343,6 +354,67 @@ describe('glucose display Headless JS settlement', () => {
     expect(snapshot.widgetHistory).toHaveLength(241);
     expect(snapshot.widgetHistory[0].timestampMs).toBe(end - 4 * 3_600_000);
     expect(snapshot.widgetHistory.at(-1).timestampMs).toBe(end);
+  });
+
+  describe('insulin and carbs on board beside published glucose', () => {
+    const end = 1_800_000_000_000;
+    function latest(sourceId: string) {
+      const row = {
+        id: `${sourceId}-latest`, sourceId, timestamp: end, receivedAt: end,
+        mmolL: 6.7, trend: 'flat' as const, quality: 'measured' as const,
+      };
+      mocks.getDisplayStatus.mockResolvedValue({ supported: true });
+      mocks.getLatestReading.mockResolvedValue(row);
+      mocks.getReadings.mockResolvedValue([row]);
+      mocks.transactionLatest = row;
+      mocks.transactionHistory = [row];
+    }
+
+    it('sends the Nightscout estimate after Nightscout glucose', async () => {
+      latest('nightscout');
+      mocks.loadNightscoutOnBoard.mockResolvedValue({
+        iobUnits: -0.4, cobGrams: 0, timestamp: end - 60_000,
+      });
+      await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+      expect(mocks.updatePrivate).toHaveBeenCalledTimes(1);
+      expect(mocks.updateOnBoard).toHaveBeenCalledWith(7, 0, {
+        provenance: 'nightscout', iobUnits: -0.4, cobGrams: 0, receivedAt: end - 60_000,
+      });
+      expect(mocks.updatePrivate.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.updateOnBoard.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('clears a Nightscout estimate beside other glucose or when it cannot be read', async () => {
+      latest('t1arc-librelinkup');
+      await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+      expect(mocks.loadNightscoutOnBoard).not.toHaveBeenCalled();
+      expect(mocks.updateOnBoard).toHaveBeenLastCalledWith(7, 0, null);
+
+      forgetPublishedOnBoardEstimate();
+      latest('nightscout');
+      mocks.loadNightscoutOnBoard.mockRejectedValue(new Error('secure store unavailable'));
+      await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+      expect(mocks.updateOnBoard).toHaveBeenLastCalledWith(7, 0, null);
+    });
+
+    it('leaves AAPS estimates to the native receiver', async () => {
+      latest('aaps-local');
+      mocks.getAapsStatus.mockResolvedValue({
+        supported: true, selectedSourceId: 'aaps-local', selectionGeneration: 3,
+        writeEpoch: 7, bufferedCount: 0,
+      });
+      await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+      expect(mocks.updateOnBoard).not.toHaveBeenCalled();
+    });
+
+    it('does not send an estimate when glucose publication was superseded', async () => {
+      latest('nightscout');
+      mocks.loadNightscoutOnBoard.mockResolvedValue({ iobUnits: 1, timestamp: end });
+      mocks.updatePrivate.mockResolvedValue(false);
+      await updateGlucoseDisplayFromHistoryWithLease({ epoch: 7 });
+      expect(mocks.updateOnBoard).not.toHaveBeenCalled();
+    });
   });
 
   it('reprepares instead of publishing an older row after the DB advances', async () => {

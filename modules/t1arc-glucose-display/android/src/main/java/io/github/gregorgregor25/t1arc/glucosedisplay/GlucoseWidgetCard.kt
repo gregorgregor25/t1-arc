@@ -16,6 +16,7 @@ internal data class WidgetCardImage(val bitmap: Bitmap, val description: String,
  * Bitmap pixels are bounded independently of device density and launcher resize options.
  */
 internal object GlucoseWidgetCard {
+  private const val ON_BOARD_ROW_HEIGHT = 22f
   private val assets = mutableMapOf<String, JSONObject>()
   @Synchronized private fun asset(context: Context, name: String): JSONObject =
     assets.getOrPut(name) { JSONObject(context.assets.open(name).bufferedReader().use { it.readText() }) }
@@ -80,13 +81,18 @@ internal object GlucoseWidgetCard {
     paint.color = color("surfaceBorder"); paint.style = Paint.Style.STROKE; paint.strokeWidth = .5f
     canvas.drawRoundRect(RectF(.25f,.25f,width-.25f,height-.25f),s("radius"),s("radius"),paint)
     paint.style = Paint.Style.FILL
+    val onBoard = T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.WIDGET, now)
+    if (GlucoseWidgetLayoutPolicy.variant(width, height) == WidgetVariant.COMPACT) {
+      return drawCompact(context, canvas, bitmap, width, height, snapshot, now, onBoard, dark) { color(it) }
+    }
     // Constrained hosts scale the entire card instead of dropping its graph or labels.
     val actualFreshness = snapshot?.let { DisplayFreshnessPolicy.resolve(it.timestampMs,now,it.sourceHasError) }
     val fontScale = context.resources.configuration.fontScale.coerceIn(1f,1.3f)
     val wrappedDetails = snapshot?.trendOrigin == "calculated" && actualFreshness != DisplayFreshness.STALE && (snapshot.trend != "flat" || fontScale > 1f)
     val neededHeight = s("minHeight") + (fontScale - 1f) * 110f +
       (if (snapshot?.sourceIsLive == true && actualFreshness != DisplayFreshness.CURRENT) 85f else 0f) +
-      (if (wrappedDetails) 45f else 0f)
+      (if (wrappedDetails) 45f else 0f) +
+      (if (onBoard != null) ON_BOARD_ROW_HEIGHT * fontScale else 0f)
     val scale = min(1f, min(width / 340f, height / neededHeight))
     canvas.scale(scale,scale)
     val w = width / scale; val h = height / scale
@@ -177,7 +183,14 @@ internal object GlucoseWidgetCard {
       else "Waiting for a newer reading. Open Settings to check the source connection."
     // Reserve bottom lines for the same source warning as Today when delayed/stale.
     val warningHeight=if(warning!=null) { setup(12f,color("textSecondary")); StaticLayout.Builder.obtain(warning,0,warning.length,tp,(w-pad*2).toInt()).setIncludePad(false).build().height+12f } else 0f
-    val footerTop=max(traceTop+s("traceHeight")+12,h-pad-s("rangeHeight")*font-warningHeight-(if(wrappedDetails) 45f else 0f))
+    // Insulin and carbs on board sit in their own row between the trace and the footer.
+    val onBoardRow=if(onBoard!=null) ON_BOARD_ROW_HEIGHT*font else 0f
+    val footerTop=max(traceTop+s("traceHeight")+12+onBoardRow,h-pad-s("rangeHeight")*font-warningHeight-(if(wrappedDetails) 45f else 0f))
+    if(onBoard!=null) {
+      setup(12f,color("textSecondary"))
+      val onBoardSize=min(12f,12f*(w-pad*2)/max(1f,tp.measureText(onBoard.compact)))
+      text(onBoard.compact,pad,footerTop-onBoardRow,onBoardSize,17f,if(onBoard.stale) color("warning") else color("textSecondary"))
+    }
     val footerText=if(stale) "Stale · last known reading" else direction
     val symbol=if(stale) "⊙" else if(snapshot.trend=="flat") "−" else if(snapshot.trend=="unknown") "?" else if(snapshot.trend.contains("Down") || snapshot.trend=="down") "↘" else "↗"
     text(symbol,pad,footerTop+5,18f,20f,tone)
@@ -212,7 +225,151 @@ internal object GlucoseWidgetCard {
       }
     }
     if(warning!=null) paragraph(warning,rowTop+s("rangeHeight")*font+12)
-    val description=if(stale) "Last known glucose $value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}, shown struck through because it is stale. Updated $age." else "Current glucose $value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}, $direction. ${fresh.label}, updated $age."
+    val description=(if(stale) "Last known glucose $value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}, shown struck through because it is stale. Updated $age." else "Current glucose $value ${T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)}, $direction. ${fresh.label}, updated $age.") +
+      (onBoard?.let { " ${it.spoken}" } ?: "")
     return WidgetCardImage(bitmap,description,details)
+  }
+
+  /**
+   * Small resized widgets: value, arrow and age, with insulin and carbs on
+   * board when they fit. Stale values stay struck through, as on Today.
+   */
+  private fun drawCompact(context: Context, canvas: Canvas, bitmap: Bitmap, width: Float, height: Float,
+    snapshot: GlucoseDisplaySnapshot?, now: Long, onBoard: OnBoardText?, dark: Boolean,
+    color: (String) -> Int): WidgetCardImage {
+    val font = context.resources.configuration.fontScale.coerceIn(1f, 1.3f)
+    val locale = T1ArcGlucoseDisplayState.displayLocale(context)
+    val tp = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    fun setup(size: Float, tint: Int, bold: Boolean) {
+      tp.textSize = size; tp.color = tint; tp.letterSpacing = 0f
+      tp.typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
+    }
+    fun measure(value: String, size: Float, bold: Boolean): Float { setup(size, 0, bold); return tp.measureText(value) }
+    fun lineHeight(size: Float): Float { setup(size, 0, false); return tp.fontMetrics.let { it.descent - it.ascent } }
+    /** The largest size up to [max] at which [value] fits [available], or null below [min]. */
+    fun fit(value: String, max: Float, min: Float, available: Float, bold: Boolean): Float? {
+      val natural = measure(value, max, bold)
+      val size = if (natural <= available) max else max * available / natural
+      return size.takeIf { it >= min }
+    }
+    fun draw(value: String, x: Float, top: Float, size: Float, tint: Int, bold: Boolean): Float {
+      setup(size, tint, bold)
+      canvas.drawText(value, x, top - tp.fontMetrics.ascent, tp)
+      return tp.measureText(value)
+    }
+    val pad = (min(width, height) * 0.12f).coerceIn(6f, 14f)
+    val innerW = width - pad * 2
+    val innerH = height - pad * 2
+    if (snapshot == null) {
+      val message = "No reading"
+      val size = fit(message, min(22f * font, innerH * 0.6f), 6f, innerW, true) ?: 6f
+      val messageWidth = measure(message, size, true)
+      draw(message, (width - messageWidth) / 2, (height - lineHeight(size)) / 2, size, color("text"), true)
+      return WidgetCardImage(bitmap, "Current glucose is unavailable. Choose glucose source.", null)
+    }
+    val fresh = DisplayFreshnessPolicy.resolve(snapshot.timestampMs, now, snapshot.sourceHasError)
+    val stale = fresh == DisplayFreshness.STALE
+    val appearance = T1ArcGlucoseDisplayState.appearance(context)
+    val tone = Color.parseColor(asset(context, "glucose-colors.json")
+      .getJSONObject(appearance.tokenFor(snapshot.mmolL, fresh)).getString(if (dark) "dark" else "light"))
+    val trends = asset(context, "glucose-trends.json")
+    val trend = trends.optJSONObject(snapshot.trend) ?: trends.getJSONObject("unknown")
+    val arrow = trend.getString("arrow")
+    val direction = trend.getString("label").replaceFirstChar { it.titlecase(locale) } +
+      if (snapshot.trendOrigin == "calculated") " (calculated)" else ""
+    val value = T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL)
+    val age = age(snapshot.timestampMs, now, locale)
+    val status = when (fresh) {
+      DisplayFreshness.STALE -> "Last known · $age"
+      DisplayFreshness.DELAYED -> "Delayed · $age"
+      else -> age
+    }
+    val statusTint = when (fresh) {
+      DisplayFreshness.STALE -> color("danger")
+      DisplayFreshness.DELAYED -> color("warning")
+      else -> color("textSecondary")
+    }
+    val boardTint = if (onBoard?.stale == true) color("warning") else color("textSecondary")
+    val arrowRatio = 0.6f
+    fun valueWidth(size: Float) = measure(value, size, true) + size * 0.12f + measure(arrow, size * arrowRatio, true)
+    fun drawValue(x: Float, top: Float, size: Float) {
+      val valueW = draw(value, x, top, size, tone, true)
+      val arrowSize = size * arrowRatio
+      val arrowX = x + valueW + size * 0.12f
+      val arrowTop = top + (lineHeight(size) - lineHeight(arrowSize)) / 2
+      val arrowW = draw(arrow, arrowX, arrowTop, arrowSize, tone, true)
+      if (stale) {
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = tone; strokeWidth = max(1.5f, size / 22f) }
+        val middle = top + lineHeight(size) * 0.55f
+        canvas.drawLine(x, middle, x + valueW, middle, line)
+        val arrowMiddle = arrowTop + lineHeight(arrowSize) * 0.55f
+        canvas.drawLine(arrowX, arrowMiddle, arrowX + arrowW, arrowMiddle, line)
+      }
+    }
+    val plan = GlucoseWidgetLayoutPolicy.compactPlan(width, height, onBoard != null)
+    var shownBoard: String? = if (plan.showOnBoard) onBoard?.compact else null
+    if (plan.row) {
+      val statusSize = min(13f * font, innerH * 0.34f)
+      val boardSize = min(12f * font, innerH * 0.3f)
+      val gap = 10f
+      val maxValue = min(innerH * 0.8f, 46f)
+      fun valueSizeFor(rightWidth: Float): Float {
+        val available = innerW - gap - rightWidth
+        return min(maxValue, maxValue * available / max(1f, valueWidth(maxValue)))
+      }
+      val boardWidth = shownBoard?.let { measure(it, boardSize, false) } ?: 0f
+      var rightWidth = max(measure(status, statusSize, false), boardWidth)
+      var valueSize = valueSizeFor(rightWidth)
+      if (shownBoard != null && valueSize < 18f) {
+        shownBoard = null
+        rightWidth = measure(status, statusSize, false)
+        valueSize = valueSizeFor(rightWidth)
+      }
+      if (valueSize >= 14f) {
+        drawValue(pad, (height - lineHeight(valueSize)) / 2, valueSize)
+        val rowBoard = shownBoard
+        val blockHeight = lineHeight(statusSize) + (if (rowBoard != null) 2f + lineHeight(boardSize) else 0f)
+        var top = (height - blockHeight) / 2
+        draw(status, width - pad - measure(status, statusSize, false), top, statusSize, statusTint, false)
+        if (rowBoard != null) {
+          top += lineHeight(statusSize) + 2f
+          draw(rowBoard, width - pad - measure(rowBoard, boardSize, false), top, boardSize, boardTint, false)
+        }
+        return WidgetCardImage(bitmap, compactDescription(context, value, direction, fresh, age, stale,
+          if (rowBoard != null) onBoard?.spoken else null), null)
+      }
+      shownBoard = if (plan.showOnBoard) onBoard?.compact else null
+    }
+    // Stacked: value and arrow, then age, then insulin and carbs on board.
+    val preferredStatus = min(12f * font, innerH * 0.18f).coerceAtLeast(7f)
+    val statusText = if (fit(status, preferredStatus, 6f, innerW, false) != null) status else age
+    val statusSize = fit(statusText, preferredStatus, 6f, innerW, false) ?: 6f
+    val stackBoard = shownBoard
+    val boardSize = if (stackBoard == null) null
+      else fit(stackBoard, min(11f * font, innerH * 0.15f).coerceAtLeast(7f), 7f, innerW, false)
+    val board = if (boardSize != null) stackBoard else null
+    val linesHeight = lineHeight(statusSize) + 2f +
+      (if (board != null && boardSize != null) lineHeight(boardSize) + 2f else 0f)
+    val heightForValue = (innerH - linesHeight).coerceAtLeast(10f)
+    val maxValue = min(heightForValue / 1.17f, 60f)
+    val valueSize = min(maxValue, maxValue * innerW / max(1f, valueWidth(maxValue))).coerceAtLeast(8f)
+    var top = (height - (lineHeight(valueSize) + linesHeight)) / 2
+    drawValue((width - valueWidth(valueSize)) / 2, top, valueSize)
+    top += lineHeight(valueSize) + 2f
+    draw(statusText, (width - measure(statusText, statusSize, false)) / 2, top, statusSize, statusTint, false)
+    if (board != null && boardSize != null) {
+      top += lineHeight(statusSize) + 2f
+      draw(board, (width - measure(board, boardSize, false)) / 2, top, boardSize, boardTint, false)
+    }
+    return WidgetCardImage(bitmap, compactDescription(context, value, direction, fresh, age, stale,
+      if (board != null) onBoard?.spoken else null), null)
+  }
+
+  private fun compactDescription(context: Context, value: String, direction: String, fresh: DisplayFreshness,
+    age: String, stale: Boolean, onBoardSpoken: String?): String {
+    val unit = T1ArcGlucoseDisplayState.displayGlucoseSpokenUnit(context)
+    val glucose = if (stale) "Last known glucose $value $unit, shown struck through because it is stale. Updated $age."
+      else "Current glucose $value $unit, $direction. ${fresh.label}, updated $age."
+    return glucose + (onBoardSpoken?.let { " $it" } ?: "")
   }
 }

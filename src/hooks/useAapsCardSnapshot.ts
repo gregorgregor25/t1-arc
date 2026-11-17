@@ -5,6 +5,7 @@ import { loadAapsCardSnapshot, type AapsCardSnapshot } from '@/data/aaps/aapsCar
 import { getAapsLocalSourceStatus, getLatestAapsContext } from '@/data/aaps/localAapsSource';
 import { AAPS_LOCAL_SOURCE_ID } from '@/data/aaps/types';
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
+import { startForegroundInterval } from './foregroundInterval';
 
 type SnapshotState = AapsCardSnapshot | { kind: 'loading' | 'unavailable' };
 
@@ -36,15 +37,14 @@ export function useAapsCardSnapshot(enabled: boolean, owner: object | undefined,
     if (!enabled) return;
     let active = true;
     void Promise.resolve().then(() => { if (active) void refresh(); });
-    const interval = setInterval(() => void refresh(), 30_000);
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') void refresh();
+    // Paused in the background; refreshed straight away on return.
+    const stop = startForegroundInterval(() => void refresh(), 30_000, AppState, {
+      runOnResume: true,
     });
     return () => {
       active = false;
       generation.current += 1;
-      clearInterval(interval);
-      subscription.remove();
+      stop();
     };
   }, [enabled, refresh, revision]);
 

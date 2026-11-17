@@ -18,6 +18,7 @@ import {
   GlucoseDisplayStatus,
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
+  OnBoardEstimatePublication,
   WearCompanionStatus,
   WatchFaceDeviceStatus,
   WatchFaceId,
@@ -58,6 +59,17 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<{
   setAodPositionAsync(position: AodPosition): Promise<GlucoseDisplayStatus>;
   setAodSizeAsync(size: AodSize): Promise<GlucoseDisplayStatus>;
   setAndroidAutoEnabledAsync(enabled: boolean): Promise<GlucoseDisplayStatus>;
+  /** Absent from builds without insulin and carbs on board on glance surfaces. */
+  setOnBoardEstimatesVisibleAsync?(visible: boolean): Promise<GlucoseDisplayStatus>;
+  /**
+   * Stores or clears the Nightscout estimate shown beside Nightscout glucose.
+   * Resolves false when the epoch, selection or source no longer match.
+   */
+  updateOnBoardEstimateForWriteEpochAsync?(
+    writeEpoch: number,
+    selectionGeneration: number,
+    estimate: OnBoardEstimatePublication | null,
+  ): Promise<boolean>;
   setRegionalDisplayPreferencesAsync(
     glucoseUnit: 'mmolL' | 'mgDl',
     localeTag: string,

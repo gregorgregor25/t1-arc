@@ -14,6 +14,7 @@ import {
 import { loadNightscoutConnection } from '@/data/nightscout/secureStore';
 import { formatTime, relativeAge } from '@/domain/time';
 import { useDataContext } from '@/providers/DataProvider';
+import { startForegroundInterval } from '@/hooks/foregroundInterval';
 import { useAppTheme } from '@/theme/theme';
 
 import { SectionCard } from './SectionCard';
@@ -94,14 +95,13 @@ export function AapsSourceCard({
 
   useEffect(() => {
     void Promise.resolve().then(refreshStatus);
-    const interval = setInterval(() => void refreshStatus(), 30_000);
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshStatus();
+    // Paused in the background; refreshed straight away on return.
+    const stop = startForegroundInterval(() => void refreshStatus(), 30_000, AppState, {
+      runOnResume: true,
     });
     return () => {
       refreshGeneration.current += 1;
-      clearInterval(interval);
-      subscription.remove();
+      stop();
     };
   }, [refreshStatus, revision]);
 

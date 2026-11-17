@@ -348,6 +348,9 @@ class T1ArcAapsStatusReceiver : BroadcastReceiver() {
           accepted = true
           glucoseChanged = AapsStatusPolicy.glucoseChanged(lastAapsGlucose, reading)
           AapsGlucoseIdentity.of(reading)?.let { lastAapsGlucose = it }
+          // Stored before any glucose publication so it renders with it; an
+          // IOB/COB-only change appears at the next one-minute re-age.
+          T1ArcOnBoardEstimateState.updateFromAaps(context, reading)
           if (reading.glucoseMgdl != null && reading.glucoseTimestamp != null) {
             publishAapsLocalReading(context, epoch, reading)
           }

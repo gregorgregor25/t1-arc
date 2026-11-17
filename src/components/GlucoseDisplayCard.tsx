@@ -19,6 +19,7 @@ import T1ArcGlucoseDisplay, {
   GlucoseDisplayStatus,
 } from '../../modules/t1arc-glucose-display';
 import { updateGlucoseDisplayFromHistory } from '@/data/glucoseDisplay/glucoseDisplayCoordinator';
+import { onBoardEstimatesSupported } from '@/data/glucoseDisplay/onBoardEstimatePublication';
 import { relativeAge } from '@/domain/time';
 import { formatGlucose } from '@/domain/regionalFormat';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
@@ -217,7 +218,7 @@ export function GlucoseDisplayCard({
     }
     Alert.alert(
       'Show glucose before unlock?',
-      'Your glucose value, direction and freshness may be visible to anyone who can see your lock screen. Android privacy settings still have final control.',
+      'Your glucose value, direction and freshness, and any insulin and carbs on board shown beside it, may be visible to anyone who can see your lock screen. Android privacy settings still have final control.',
       [
         { text: 'Keep private', style: 'cancel' },
         {
@@ -300,6 +301,30 @@ export function GlucoseDisplayCard({
         error instanceof Error
           ? error.message
           : 'The always-on display size could not be changed.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setOnBoardEstimatesVisible(visible: boolean) {
+    if (busy || !T1ArcGlucoseDisplay.setOnBoardEstimatesVisibleAsync) return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      setStatus(
+        await T1ArcGlucoseDisplay.setOnBoardEstimatesVisibleAsync(visible),
+      );
+      setMessage(
+        visible
+          ? 'Insulin and carbs on board will appear beside glucose when AAPS or Nightscout reports them.'
+          : 'The notification and widget now show glucose only.',
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The insulin and carbs on board setting could not be changed.',
       );
     } finally {
       setBusy(false);
@@ -404,6 +429,20 @@ export function GlucoseDisplayCard({
 
       <SettingRow
         detail={
+          !onBoardEstimatesSupported(status)
+            ? 'Not available in this version'
+            : status?.onBoardEstimatesVisible
+              ? 'IOB and COB from AAPS or Nightscout on the notification and widget, with their own age'
+              : 'Off · the notification and widget show glucose only'
+        }
+        disabled={busy || !onBoardEstimatesSupported(status)}
+        label="Show insulin and carbs on board"
+        onValueChange={(value) => void setOnBoardEstimatesVisible(value)}
+        value={status?.onBoardEstimatesVisible === true}
+      />
+
+      <SettingRow
+        detail={
           status?.androidAutoEnabled
             ? status.androidAutoProjected
               ? 'Connected · available in the car’s media and notification surfaces'
@@ -419,7 +458,7 @@ export function GlucoseDisplayCard({
       {enabled ? (
         <>
           <SettingRow
-            detail="Turn off to hide the number until your Pixel is unlocked"
+            detail="Turn off to hide glucose, IOB and COB until your Pixel is unlocked"
             disabled={busy}
             label="Show value on lock screen"
             onValueChange={requestLockScreenVisible}

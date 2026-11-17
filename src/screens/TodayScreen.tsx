@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
+import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
 import { CurrentGlucoseCard } from "@/components/CurrentGlucoseCard";
@@ -25,6 +26,8 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
 import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
 import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
+import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
+import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
@@ -63,6 +66,7 @@ export function TodayScreen() {
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
+  const [bedsideVisible, setBedsideVisible] = useState(false);
   const [logLauncherVisible, setLogLauncherVisible] = useState(false);
   const [initialContextKind, setInitialContextKind] =
     useState<ManualContextKind>("meal");
@@ -117,9 +121,15 @@ export function TodayScreen() {
     id: 'aaps-local', label: 'Glucose', detail: 'AndroidAPS local',
     freshness: 'missing' as const, origin: 'live' as const, isLive: true,
   } : glucoseSource;
+  // Nightscout users see the same combined card when their looping system
+  // reports IOB or COB through Nightscout, labelled with that provenance.
+  const nightscoutEstimates = useNightscoutCardEstimates(
+    dataMode === 'live' && !aapsSelected && latest.reading?.sourceId === NIGHTSCOUT_SOURCE_ID,
+    revision,
+  );
   const aapsEstimates = aapsSelected ? { context: aaps.context }
     : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
-      ? { unavailable: aaps.kind === 'unavailable' } : undefined;
+      ? { unavailable: aaps.kind === 'unavailable' } : nightscoutEstimates;
   const trendAssessment = useMemo(
     () =>
       assessGlucoseTrend(cardReading, aapsSelected ? aaps.history : selectedTimeline.data?.glucose ?? []),
@@ -215,6 +225,15 @@ export function TodayScreen() {
         range: dayRange(today, now),
       })
     : undefined;
+  const todayMenuActions = useMemo(
+    () => [{
+      label: 'Bedside view',
+      detail: 'Large glucose, arrow and age on a dim black screen',
+      icon: 'moon-outline' as const,
+      onPress: () => setBedsideVisible(true),
+    }],
+    [],
+  );
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
 
@@ -225,8 +244,15 @@ export function TodayScreen() {
         quietHeader
         refreshing={syncing}
         onRefresh={() => void refreshData()}
-        trailing={<AppMenuButton />}
+        trailing={<AppMenuButton screenActions={todayMenuActions} />}
       >
+        <BedsideGlucoseView
+          visible={bedsideVisible}
+          onClose={() => setBedsideVisible(false)}
+          reading={cardReading}
+          trend={trendAssessment.direction}
+          now={now}
+        />
         {latest.loading && !latest.reading ? (
           <LoadingCard label="Loading saved glucose…" />
         ) : (
