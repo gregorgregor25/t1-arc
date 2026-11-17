@@ -117,7 +117,11 @@ import {
 } from "@/data/tarvis/conversationStore";
 import { tarvisSettingsPresentation } from "@/data/tarvis/conversationScope";
 import { captureTarvisEntry, createTarvisComposerLifecycle } from '@/data/tarvis/composerLifecycle';
-import { tarvisComposerCounter, tarvisQuestionTooLongMessage } from '@/data/tarvis/composerLimit';
+import {
+  tarvisComposerCounter,
+  tarvisComposerHoldsTooLongQuestion,
+  tarvisQuestionTooLongMessage,
+} from '@/data/tarvis/composerLimit';
 import { TARVIS_QUESTION_MAX_LENGTH } from '@/data/tarvis/safety';
 import { formatTarvisConversation } from "@/data/tarvis/conversationExport";
 import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacket";
@@ -2051,8 +2055,9 @@ export function TarvisScreen({
     // Provider cooldowns are checked at hosted dispatch so local answers remain available.
     if (!prompt || workingRef.current || settingsWorking || loadingSettings || !conversationLoaded) return;
     // The composer stops at the limit; a longer question from elsewhere keeps
-    // the draft in the box instead of clearing it.
-    if (prompt.length > TARVIS_QUESTION_MAX_LENGTH) {
+    // the draft in the box instead of clearing it, unless it holds urgent
+    // wording, which always gets the urgent answer.
+    if (tarvisComposerHoldsTooLongQuestion(prompt)) {
       setError(tarvisQuestionTooLongMessage());
       return;
     }

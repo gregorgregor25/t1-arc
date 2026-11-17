@@ -43,7 +43,7 @@ import {
   reviewedKnowledgeFallback,
 } from "./reviewedKnowledgeAnswerGuardrail";
 import {
-  parseTarvisGeneralEducationAnswer,
+  parseTarvisGeneralEducationAnswerOrBoundary,
   TARVIS_GENERAL_EDUCATION_PROMPT,
   tarvisGeneralEducationTextConfig,
 } from "./generalEducation";
@@ -559,7 +559,7 @@ export async function askTarvis(
           )
         : undefined;
     const educationResult = responseMode === "general-education"
-      ? parseTarvisGeneralEducationAnswer(outputText)
+      ? parseTarvisGeneralEducationAnswerOrBoundary(outputText)
       : undefined;
     const evidenceSelectionResult = selectedPacket && !isTarvisRetrospectiveEvidencePacket(selectedPacket)
       ? parseTarvisEvidenceSelectionResult(outputText, selectedPacket)

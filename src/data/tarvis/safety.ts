@@ -10,6 +10,8 @@ import {
   TREATMENT_REFUSAL_HEADLINE,
   withoutHistoryOnlySentences,
 } from "./doseIntent";
+import { safetyTextReadings } from "./textNormalise";
+import { parseRecordQuestion } from "./recordQuestions";
 
 export type TarvisSafetyDecision =
   | { kind: "allow" }
@@ -1629,7 +1631,7 @@ const DOSE_OR_SETTING_REQUEST = new RegExp(
     String.raw`\b(?:is\s+(?:that|this|it|mine)\s+normal|what(?:'s|\s+is)\s+normal|normal\s+for\s+(?:me|someone|people))\b`,
     String.raw`\b(?:new|switch\w*|go(?:ing)?\s+(?:to|for)|change\w*|try|use|run|set)\b[^.?!]{0,25}\b\d{2,3}\s*(?:%|percent)|\b\d{1,3}\s*(?:%|percent)\s+(?:stronger|weaker|more|less|higher|lower|up|down)\b|\bprofile\s+(?:at|to)\s+\d`,
     String.raw`\bcorrect\s+(?:for\s+)?(?:(?:a|my|this|that)\s+)?(?:\d|high\b|hyper)|\bfor\s+dos(?:ing|e)\s+purposes\b|\bdose\s+me\b|\bcalculate\s+(?:(?:my|the)\s+)?(?:dinner|lunch|breakfast|tea|meal|dose|bolus|insulin|units?|correction|basal)\b`,
-    String.raw`\bsame\s+again\b`,
+    String.raw`\bsame\s+again\b(?!\s+(?:but\s+)?for\s+(?:yesterday|last|the\s+(?:day|week|last|previous|past)|(?:mon|tues|wednes|thurs|fri|satur|sun)day))`,
   ].join("|"),
   "i",
 );
@@ -1734,7 +1736,7 @@ function treatmentAdviceDecision(): TarvisSafetyDecision {
 
 /** Words that can start urgent wording; used to place windows in an over-long prompt. */
 const URGENT_KEYWORD =
-  /ketone|keto|dka|vomit|throw(?:ing)?\s+up|being\s+sick|unconscious|unresponsive|seizure|fitting|\bfit\b|breath|collaps|faint|passed\s+out|confus|drows|999|112|911|ambulance|a\s*&\s*e|emergency|hypo|\blow\b|glucagon|chest\s+pain|can't\s+wake|cannot\s+wake|won't\s+wake/gi;
+  /ketone|keto|dka|vomit|throw(?:ing)?\s+up|being\s+sick|unconscious|unresponsive|seizure|fitting|\bfit\b|breath|collaps|faint|passed\s+out|confus|drows|999|112|911|ambulance|a\s*&\s*e|emergency|hypo|\blow\b|glucagon|chest\s+pain|can't\s+wake|cannot\s+wake|won't\s+wake|shak|trembl|sweat|blood\s+sugar|glucose|\bbg\b|mmol|\bi'?m\s+\d|\bi\s+am\s+\d|\b[0-3][.,]\d\b/gi;
 const MAX_URGENT_WINDOWS = 64;
 
 /**
@@ -1786,16 +1788,25 @@ export function classifyTarvisFollowUpSafety(
   history: readonly TarvisConversationTurn[],
 ): TarvisSafetyDecision {
   const refusedBefore = (previous: string) => classifyTarvisSafety(previous).kind === "treatment-advice";
-  return isDoseFollowUp(question, history, refusedBefore) ? treatmentAdviceDecision() : { kind: "allow" };
+  const isRecordQuestion = (text: string) => parseRecordQuestion(text) !== undefined;
+  return isDoseFollowUp(question, history, refusedBefore, isRecordQuestion)
+    ? treatmentAdviceDecision()
+    : { kind: "allow" };
 }
 
 function classifyBoundedTarvisSafety(question: string): TarvisSafetyDecision {
+  // A zero-width character can hide inside a word ("un\u200bits") or stand
+  // between two words ("today\u200bmore basal"): both readings are checked.
+  return safetyTextReadings(question)
+    .map(classifyNormalisedTarvisSafety)
+    .reduce((worst, next) => (SAFETY_SEVERITY[next.kind] > SAFETY_SEVERITY[worst.kind] ? next : worst));
+}
+
+function classifyNormalisedTarvisSafety(normalised: string): TarvisSafetyDecision {
   const regional = getRuntimeRegionalDefaults();
   const emergencyCare = getRuntimeEmergencyCareTerms();
   const reviewedUkDkaPack = regional.clinicalJurisdiction === "GB";
-  const prompt = expandExplicitSamePromptReadingReference(
-    normaliseDoseWording(question.trim().normalize("NFKC").replace(/[’‘]/g, "'")),
-  );
+  const prompt = expandExplicitSamePromptReadingReference(normaliseDoseWording(normalised));
   const currentUrgentSymptom = hasCurrentUrgentSymptom(prompt);
   const currentDkaSymptom = hasCurrentDkaSymptom(prompt);
   const currentKetoneDanger = hasCurrentKetoneDanger(prompt);

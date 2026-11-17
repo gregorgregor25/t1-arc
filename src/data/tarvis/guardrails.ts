@@ -1,4 +1,6 @@
 import { evidenceIds } from "./evidencePacket";
+import { personalReplyGivesTreatment } from "./replyGuard";
+import { normaliseSafetyText } from "./textNormalise";
 import { TarvisAnswer, TarvisModelEvidencePacket, TarvisUsage } from "./types";
 
 export const MAX_TARVIS_REQUESTS_PER_HOUR = 10;
@@ -161,6 +163,10 @@ function isRecordedEventDescription(sentence: string, masked: string) {
 // Judgement words that present a treatment as called for.
 const TREATMENT_JUDGEMENT =
   /\b(?:indicated|warranted|justified|called for|advised|advisable|recommended|needed|required|necessary|appropriate|in order|prudent|sensible|safest|makes sense|do well|time for|helpful|please|is to be|are to be|is best|are best|the (?:next|right|best|safest|sensible|obvious) (?:step|choice|course|option|move)|would (?:resolve|bring|fix|treat|suit|sort)|suits? (?:you|your))\b|\b(?:should|must|needs? to|ought to|has to|have to)\s+(?:remain|stay|be kept|continue)\b/i;
+// "Changes to ratios are best agreed with your diabetes team" hands the
+// decision to the team; it is not a judgement that a change is called for.
+const TEAM_DECISION =
+  /\b(?:is|are)\s+best\s+(?:agreed|discussed|decided|made|reviewed|planned|left)\s+(?:with|by|to)\s+(?:your|the|a)\s+(?:diabetes|healthcare|health\s+care|care|clinical|medical)\s+team\b/gi;
 // "Your basal needs a small reduction", "Your ratio would benefit from".
 const YOUR_TREATMENT_NEEDS =
   /\byour\s+(?:basal(?:\s+rates?)?|ratios?|bolus(?:es)?|insulin|doses?|pump|targets?|profiles?|corrections?|carbs?|isf|icr|factors?|temp(?:orary)?\s+(?:basal|target)s?)\b[^.;!?]{0,60}\b(?:needs?|should|must|ought|has to|have to|would benefit|will need|requires?)\b/i;
@@ -192,11 +198,12 @@ function startsAsInstruction(masked: string) {
 /** Instruction shapes checked in both personal and education answers. */
 function clauseGivesInstruction(clause: string, masked: string) {
   const unmasked = clause.replace(INSULIN_NEEDS_NOUN, " ");
+  const judged = /\d/.test(clause) ? clause : clause.replace(TEAM_DECISION, " ");
   return (
     startsAsInstruction(masked) ||
     /\bgo ahead and\b/i.test(masked) ||
     STRONG_BACK_REFERENCE.test(masked) ||
-    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(clause)) ||
+    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(judged)) ||
     YOUR_TREATMENT_NEEDS.test(unmasked) ||
     QUANTITY_OUTCOME.test(unmasked) ||
     GLUCOSE_GOAL.test(clause) ||
@@ -242,7 +249,7 @@ function sentenceIsTreatmentDirective(sentence: string) {
  * back-reference checks, sentence by sentence.
  */
 function containsEducationTreatmentDirective(text: string) {
-  const normalised = text.replace(/[‘’]/g, "'");
+  const normalised = normaliseSafetyText(text);
   if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised))) return true;
   return splitSentences(normalised)
     .flatMap((sentence) => [sentence, ...sentence.split(CLAUSE_BOUNDARY)])
@@ -256,10 +263,11 @@ function containsEducationTreatmentDirective(text: string) {
  * statements about recorded events pass.
  */
 export function containsTreatmentDirective(text: string) {
-  const normalised = text.replace(/[‘’]/g, "'");
+  const normalised = normaliseSafetyText(text);
   return (
     TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised)) ||
-    splitSentences(normalised).some(sentenceIsTreatmentDirective)
+    splitSentences(normalised).some(sentenceIsTreatmentDirective) ||
+    personalReplyGivesTreatment(text)
   );
 }
 const PROHIBITED_CAUSAL_OUTPUT =

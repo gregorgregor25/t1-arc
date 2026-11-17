@@ -1,4 +1,6 @@
 import { parseTarvisAnswer } from "./guardrails";
+import { educationReplyGivesTreatment } from "./replyGuard";
+import { normaliseSafetyText } from "./textNormalise";
 import type { TarvisAnswer } from "./types";
 import { TARVIS_VOICE_GUIDANCE } from "./voice";
 
@@ -58,6 +60,12 @@ export function tarvisGeneralEducationTextConfig() {
 
 const PERSONAL_RECORD_CLAIM =
   /\b(?:your|the user's)\s+(?:recorded\s+)?(?:data|records?|readings?|results?|history|logs?)\s+(?:show|suggest|indicate|confirm|prove|reveal)|\b(?:i|we)\s+(?:checked|reviewed|analysed|analyzed|looked at)\s+your\b|\byou\s+(?:have|may have|might have|probably have|are suffering from|are developing)\s+(?:a\s+)?(?:condition|disease|infection|disorder|deficiency|depression|hypertension|cancer)\b/i;
+/**
+ * Defines what a ratio measures without giving one: "how many grams of
+ * carbohydrate one unit of insulin covers". Masked before the dose check only.
+ */
+const UNIT_DEFINITION =
+  /\b(?:one|a|each|every|per)\s+unit\s+of\s+(?:rapid[\s-]acting\s+|fast[\s-]acting\s+|bolus\s+)?insulin\s+(?:covers|lowers|reduces|drops|brings|will\s+cover|will\s+lower|is\s+expected\s+to)\b|\b(?:grams?|g|mmol\/l|mg\/dl)\s+(?:per|for\s+(?:each|every))\s+unit\b/gi;
 const DOSING_OR_MEDICATION_INSTRUCTION =
   /\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half)\s*(?:units?\b|iu\b|u\b)|\b(?:dose|bolus|correction)\s*=|\b(?:you should|you must|you need to|i recommend|i suggest|i advise)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|start(?:ing)?|stop(?:ping)?|inject(?:ing)?|administer(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|switch(?:ing)?)\b/i;
 
@@ -111,6 +119,42 @@ function claimsGlucoseMeasureEstablishesClinicalSeverity(copy: string) {
   });
 }
 
+const SAFETY_BOUNDARY_ERRORS = [
+  "Tarv1s returned an explanation outside its safety boundary. Please try again.",
+  "TARV1S returned an answer outside its safe evidence boundary. Please try again.",
+];
+
+/** The standard boundary answer shown in place of a refused or withheld explanation. */
+function treatmentBoundaryResult(): { answer: TarvisAnswer; acceptedHostedAnswer: boolean } {
+  return {
+    acceptedHostedAnswer: false,
+    answer: {
+      headline: "I can explain, but not recommend treatment",
+      responseKind: "safety-boundary",
+      answer: "I can help you understand health concepts and your recorded patterns, but I can't diagnose, recommend treatment or provide doses or pump-setting changes. Please discuss individual medical decisions with your healthcare team.",
+      confidence: "high",
+      evidenceIds: [],
+      limitations: [],
+    },
+  };
+}
+
+/**
+ * As parseTarvisGeneralEducationAnswer, but a hosted explanation withheld by
+ * the safety checks becomes the calm standard boundary answer instead of an
+ * error. Unreadable or malformed replies still throw.
+ */
+export function parseTarvisGeneralEducationAnswerOrBoundary(text: string) {
+  try {
+    return parseTarvisGeneralEducationAnswer(text);
+  } catch (error) {
+    if (error instanceof Error && SAFETY_BOUNDARY_ERRORS.includes(error.message)) {
+      return treatmentBoundaryResult();
+    }
+    throw error;
+  }
+}
+
 /** General explanations never enter the personal-evidence rendering path. */
 export function parseTarvisGeneralEducationAnswer(text: string): {
   answer: TarvisAnswer;
@@ -152,15 +196,12 @@ export function parseTarvisGeneralEducationAnswer(text: string): {
     };
   }
   if (parsed.kind === "boundary" || parsed.kind === "off-topic") {
-    const boundary = parsed.kind === "boundary";
-    return {
+    return parsed.kind === "boundary" ? treatmentBoundaryResult() : {
       acceptedHostedAnswer: false,
       answer: {
-        headline: boundary ? "I can explain, but not recommend treatment" : "That is outside Tarv1s's scope",
+        headline: "That is outside Tarv1s's scope",
         responseKind: "safety-boundary",
-        answer: boundary
-          ? "I can help you understand health concepts and your recorded patterns, but I can't diagnose, recommend treatment or provide doses or pump-setting changes. Please discuss individual medical decisions with your healthcare team."
-          : "I can help with Type 1 diabetes, health, nutrition, exercise and sleep, but not unrelated requests.",
+        answer: "I can help with Type 1 diabetes, health, nutrition, exercise and sleep, but not unrelated requests.",
         confidence: "high",
         evidenceIds: [],
         limitations: [],
@@ -170,11 +211,16 @@ export function parseTarvisGeneralEducationAnswer(text: string): {
   if (parsed.kind !== "explanation") {
     throw new Error("Tarv1s returned an unknown answer type. Please try again.");
   }
-  const copy = [parsed.headline, parsed.answer, ...parsed.limitations].join("\n");
+  const copy = normaliseSafetyText([parsed.headline, parsed.answer, ...parsed.limitations].join("\n"));
   if (
     PERSONAL_RECORD_CLAIM.test(copy) ||
-    DOSING_OR_MEDICATION_INSTRUCTION.test(copy) ||
-    claimsGlucoseMeasureEstablishesClinicalSeverity(copy)
+    DOSING_OR_MEDICATION_INSTRUCTION.test(copy.replace(UNIT_DEFINITION, " ")) ||
+    claimsGlucoseMeasureEstablishesClinicalSeverity(copy) ||
+    educationReplyGivesTreatment({
+      headline: parsed.headline,
+      answer: parsed.answer,
+      limitations: parsed.limitations as string[],
+    })
   ) {
     throw new Error("Tarv1s returned an explanation outside its safety boundary. Please try again.");
   }

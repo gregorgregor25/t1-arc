@@ -1,5 +1,5 @@
 import { formatTarvisNumber } from "./regionalNumberPresentation";
-import { TARVIS_QUESTION_MAX_LENGTH } from "./safety";
+import { classifyTarvisSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
 
 /** The composer shows a character count from this length onward. */
 export const TARVIS_COMPOSER_COUNTER_FROM = 1_200;
@@ -19,4 +19,14 @@ export function tarvisComposerCounter(length: number): string | undefined {
 /** Shown, with the draft kept, when a question over the limit reaches send some other way. */
 export function tarvisQuestionTooLongMessage() {
   return `Please keep the question under ${formatTarvisNumber(TARVIS_QUESTION_MAX_LENGTH)} characters. Your text is still in the box.`;
+}
+
+/**
+ * True when the composer should keep an over-long question in the box with
+ * the length message instead of sending it. Urgent wording anywhere in the
+ * text always wins: such a question goes on to the urgent answer, which is
+ * shown on the phone without reading records or calling a provider.
+ */
+export function tarvisComposerHoldsTooLongQuestion(prompt: string) {
+  return prompt.length > TARVIS_QUESTION_MAX_LENGTH && classifyTarvisSafety(prompt).kind !== "urgent";
 }
