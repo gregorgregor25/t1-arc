@@ -16,7 +16,7 @@ function note(overrides: Partial<ContextNoteEvent>): ContextNoteEvent {
 }
 
 const sensorStart = (start: number) => note({ start, title: 'New sensor', category: 'sensor', sensorStarted: true });
-const siteChange = (start: number) => note({ start, title: 'Site change', category: 'pump', observation: { kind: 'site-change', device: 'pump', location: { side: 'left', label: 'Abdomen' } } as ContextNoteEvent['observation'] });
+const siteChange = (start: number) => note({ start, title: 'Site change', category: 'pump', observation: { kind: 'site-change', device: 'pump', location: { side: 'front', label: 'Abdomen' } } });
 const imported = (start: number, title: string, category: ContextNoteEvent['category']) =>
   note({ start, title, category, origin: 'imported', sourceId: 'nightscout' });
 

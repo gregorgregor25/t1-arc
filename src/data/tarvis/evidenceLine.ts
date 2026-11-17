@@ -103,15 +103,16 @@ function fromPresentation(presentation: TarvisEvidencePresentation): TarvisEvide
 }
 
 function fromPacket(packet: TarvisEvidencePacket, question: string): TarvisEvidenceLineData | undefined {
-  const { comparison } = packet;
-  if (!finiteRange(comparison.currentRange)) return undefined;
+  // Defensive: stored or retrospective packets may not carry a comparison.
+  const comparison = packet.comparison as TarvisEvidencePacket["comparison"] | undefined;
+  if (!comparison?.current || !finiteRange(comparison.currentRange)) return undefined;
   const windows: TarvisEvidenceLineWindow[] = [{
     start: comparison.currentRange.start,
     end: comparison.currentRange.end,
     records: comparison.current.glucoseReadings ?? 0,
     coveragePercent: comparison.current.coveragePercent ?? null,
   }];
-  if (!comparison.currentOnly && comparison.previousRange && finiteRange(comparison.previousRange)) {
+  if (!comparison.currentOnly && comparison.previous && comparison.previousRange && finiteRange(comparison.previousRange)) {
     windows.push({
       start: comparison.previousRange.start,
       end: comparison.previousRange.end,
