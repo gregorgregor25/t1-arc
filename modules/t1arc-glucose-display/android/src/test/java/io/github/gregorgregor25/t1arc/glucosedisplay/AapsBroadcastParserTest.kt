@@ -20,7 +20,7 @@ class AapsBroadcastParserTest {
 
   @Test fun exactDevBuildFieldsPreserveUnitsTimestampTrendAndSignedContext() {
     val result = parse(glucose + mapOf(
-      "deltaMgdl" to 3.0, "avgDeltaMgdl" to 2.5,
+      "deltaMgdl" to 6.0, "avgDeltaMgdl" to 2.5,
       "iob" to -0.25, "bolusIob" to 0.1, "basalIob" to -0.35,
       "cob" to 0.0, "futureCarbs" to 4.0,
     ))!!
@@ -44,6 +44,31 @@ class AapsBroadcastParserTest {
       assertEquals(wire, result.rawTrend)
       assertEquals(direction, result.trend)
     }
+  }
+
+  @Test fun noneArrowUsesTheAapsScreenCalculationFromDelta() {
+    val none = glucose + ("slopeArrow" to "NONE")
+    assertEquals("flat", parse(none + ("deltaMgdl" to 0.0))!!.trend)
+    assertEquals("NONE", parse(none + ("deltaMgdl" to 0.0))!!.rawTrend)
+    assertEquals("slightUp", parse(none + ("deltaMgdl" to 7.0))!!.trend)
+    assertEquals("down", parse(none + ("deltaMgdl" to -12.0))!!.trend)
+    assertNull(parse(mapOf("iob" to 0.5, "deltaMgdl" to 7.0))!!.trend)
+  }
+
+  @Test fun aapsScreenThresholdsMatchTrendCalculatorBoundaries() {
+    val cases = listOf(-17.5 to "doubleDown", -17.4 to "down", -10.0 to "down",
+      -9.9 to "slightDown", -5.0 to "slightDown", -4.9 to "flat", 5.0 to "flat",
+      5.1 to "slightUp", 10.0 to "slightUp", 10.1 to "up", 17.5 to "up",
+      17.6 to "doubleUp", 200.0 to "doubleUp")
+    for ((delta, direction) in cases) {
+      assertEquals("delta $delta", direction, AapsBroadcastParser.directionFromAapsDelta(delta))
+    }
+  }
+
+  @Test fun deltaWinsOverAStaleBroadcastArrowLikeTheAapsScreen() {
+    val result = parse(glucose + mapOf("slopeArrow" to "SingleUp", "deltaMgdl" to -6.0))!!
+    assertEquals("slightDown", result.trend)
+    assertEquals("SingleUp", result.rawTrend)
   }
 
   @Test fun missingAndUnknownTrendsDoNotInventAnArrow() {

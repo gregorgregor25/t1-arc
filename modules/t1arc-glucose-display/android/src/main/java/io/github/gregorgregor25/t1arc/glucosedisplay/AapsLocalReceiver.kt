@@ -116,6 +116,28 @@ internal object AapsBroadcastParser {
     "TripleUp" to "tripleUp",
   )
 
+  /**
+   * AAPS 4.0 draws its own arrow from the change between the two latest
+   * 5-minute glucose buckets (TrendCalculatorImpl.calculateDirection), while
+   * its status broadcast sends the stored CGM arrow, often "NONE". With 5-minute
+   * buckets the broadcast deltaMgdl is that same change, so these thresholds
+   * (mg/dL per minute) reproduce the arrow AAPS shows.
+   */
+  internal fun directionFromAapsDelta(deltaMgdlPerFiveMinutes: Double): String? {
+    val slopeByMinute = deltaMgdlPerFiveMinutes / 5.0
+    return when {
+      !slopeByMinute.isFinite() -> null
+      slopeByMinute <= -3.5 -> "doubleDown"
+      slopeByMinute <= -2.0 -> "down"
+      slopeByMinute <= -1.0 -> "slightDown"
+      slopeByMinute <= 1.0 -> "flat"
+      slopeByMinute <= 2.0 -> "slightUp"
+      slopeByMinute <= 3.5 -> "up"
+      slopeByMinute <= 40.0 -> "doubleUp"
+      else -> null
+    }
+  }
+
   private val fields = listOf(
     "glucoseMgdl", "glucoseTimeStamp", "slopeArrow", "deltaMgdl", "avgDeltaMgdl",
     "iob", "bolusIob", "basalIob", "cob", "futureCarbs", "units",
@@ -139,7 +161,9 @@ internal object AapsBroadcastParser {
     val validGlucose = if (glucose != null && time != null) glucose else null
     val validTime = if (validGlucose != null) time else null
     val rawTrend = if (validGlucose != null) (extras["slopeArrow"] as? String)?.take(40) else null
-    val trend = trendLabels[rawTrend]
+    val delta = number("deltaMgdl")?.takeIf { it in -200.0..200.0 }
+    // Match the arrow on the AAPS screen; the broadcast arrow is only a fallback.
+    val trend = if (validGlucose != null) delta?.let(::directionFromAapsDelta) ?: trendLabels[rawTrend] else null
     val iob = number("iob")?.takeIf { it in -100.0..100.0 }
     val bolus = number("bolusIob")?.takeIf { it in -100.0..100.0 }
     val basal = number("basalIob")?.takeIf { it in -100.0..100.0 }
@@ -152,7 +176,7 @@ internal object AapsBroadcastParser {
       writeEpoch = epoch, selectionGeneration = generation,
       glucoseMgdl = validGlucose, glucoseTimestamp = validTime, trend = trend,
       rawTrend = rawTrend,
-      deltaMgdl = number("deltaMgdl")?.takeIf { it in -200.0..200.0 },
+      deltaMgdl = delta,
       avgDeltaMgdl = number("avgDeltaMgdl")?.takeIf { it in -200.0..200.0 },
       iobUnits = iob, bolusIobUnits = bolus, basalIobUnits = basal,
       cobGrams = cob, futureCarbsGrams = future,
