@@ -65,7 +65,7 @@ describe("manual Glooko file interpretation boundary", () => {
         timeZone: "not/a-zone",
         dateOrder: "day-first",
       }),
-    ).toThrow(/valid IANA timezone/i);
+    ).toThrow(/does not recognise that time zone/i);
   });
 
   it("keeps a New York file preview on New York time after the runtime profile moves to Tokyo", async () => {

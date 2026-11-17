@@ -154,7 +154,7 @@ function displaySourceLabel(sourceId: string) {
     return 'Nightscout';
   }
   if (sourceId === XDRIP_SOURCE_ID) {
-    return 'xDrip-compatible endpoint';
+    return 'xDrip or compatible app';
   }
   if (sourceId === DEXCOM_SHARE_SOURCE_ID) {
     return 'Dexcom Share';
@@ -321,7 +321,7 @@ async function prepareGlucoseDisplayPublication(
 ): Promise<PreparedGlucoseDisplayPublication> {
   const display = await T1ArcGlucoseDisplay.getStatusAsync();
   // The native snapshot also feeds Wear OS. Watch sync must not depend on
-  // whether the phone notification or Pixel always-on overlay is enabled.
+  // whether the phone notification or always-on overlay is enabled.
   if (!display.supported) return { kind: 'unsupported' };
 
   const store = new SqliteGlucoseHistoryStore();

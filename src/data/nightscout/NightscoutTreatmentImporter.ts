@@ -18,6 +18,7 @@ import { getZonedDateTimeParts } from '@/domain/time';
 
 import { NightscoutConnection, NightscoutError, NightscoutTreatment } from './types';
 import { nightscoutRequestHeaders } from './auth';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const MAX_TREATMENTS = 5_000;
 /** Eight full pages is about 40,000 treatments: roughly two months of AAPS SMB records. */
@@ -716,7 +717,7 @@ export class NightscoutTreatmentImporter {
     if (!response.ok) {
       throw new NightscoutError(
         'network',
-        `Nightscout treatment data returned HTTP ${response.status}.`,
+        `Treatments could not be read from Nightscout. Glucose is not affected. ${serviceStatusMessage('Your Nightscout site', response.status)}`,
       );
     }
     try {

@@ -194,7 +194,7 @@ export function TodayScreen() {
         return;
       }
       if (foodHistory.error) {
-        setTimelineActionError(`Meal details are unavailable. ${foodHistory.error}`);
+        setTimelineActionError("Meal details could not be loaded just now. Try again in a moment.");
         return;
       }
       const log = foodHistory.logs.find((item) => item.contextEventId === event.id);
@@ -287,7 +287,20 @@ export function TodayScreen() {
         <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
-            <ErrorCard message={latest.error ?? sourceError!} />
+            {latest.error ? (
+              <ErrorCard
+                details={latest.error}
+                message="Your saved readings are still here. Pull down to refresh, or tap Try again."
+                onRetry={() => void refreshData()}
+                title="Current glucose could not be refreshed"
+              />
+            ) : (
+              <ErrorCard
+                message={sourceError!}
+                onRetry={() => void refreshData()}
+                title="A data connection needs attention"
+              />
+            )}
           </View>
         ) : null}
 
@@ -320,7 +333,12 @@ export function TodayScreen() {
         <GmiCard />
         <View style={styles.timeline}>
           {selectedTimeline.error ? (
-            <ErrorCard message={selectedTimeline.error} />
+            <ErrorCard
+              details={selectedTimeline.error}
+              message="Your records are safe on this phone. Tap Try again, or pull down to refresh."
+              onRetry={selectedTimeline.reload}
+              title="The timeline could not be loaded"
+            />
           ) : selectedTimeline.loading || !selectedTimeline.data ? (
             <LoadingCard label="Loading timeline…" />
           ) : (
@@ -348,12 +366,17 @@ export function TodayScreen() {
             </View>
           )}
         </View>
-        {timelineActionError ? <ErrorCard message={timelineActionError} /> : null}
+        {timelineActionError ? (
+          <ErrorCard message={timelineActionError} title="That entry could not be opened" />
+        ) : null}
 
         {todayTimeline.error ? (
           <View style={styles.ketones}>
             <ErrorCard
-              message={`Saved ketone readings are temporarily unavailable. ${todayTimeline.error}`}
+              details={todayTimeline.error}
+              message="Your ketone readings are still saved. Try again in a moment."
+              onRetry={todayTimeline.reload}
+              title="Saved ketone readings could not be loaded"
             />
           </View>
         ) : todayTimeline.loading && !todayTimeline.data ? (

@@ -1108,9 +1108,12 @@ function sourceRecordRows(
 }
 
 function sourceRecordLabel(kind: string) {
+  // Mode summaries, daily modes and settings snapshots come only from the
+  // Omnipod pages of a Glooko PDF report, so they keep the Omnipod name.
+  // Timed pump states also come from Nightscout and other pumps.
   if (kind === "pump-mode-summary") return "Omnipod operating modes";
   if (kind === "pump-mode-daily") return "Daily Omnipod operating modes";
-  if (kind === "pump-state-interval") return "Timed Omnipod pump state";
+  if (kind === "pump-state-interval") return "Timed pump state";
   if (kind === "pump-settings") return "Omnipod settings snapshot";
   return kind.replace(/[-_]+/g, " ");
 }

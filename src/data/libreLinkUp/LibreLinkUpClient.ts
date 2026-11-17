@@ -16,6 +16,7 @@ import {
   LibreLinkUpSession,
   LibreLinkUpSnapshot,
 } from './types';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 type HashFunction = (value: string) => Promise<string>;
 type SessionListener = (session: LibreLinkUpSession) => Promise<void> | void;
@@ -251,14 +252,9 @@ export class LibreLinkUpClient {
       );
     }
     if (status === 4) {
-      const step =
-        isRecord(envelope.data) && isRecord(envelope.data.step)
-          ? envelope.data.step
-          : undefined;
-      const type = step && typeof step.type === 'string' ? step.type : 'account';
       return new LibreLinkUpError(
         'action-required',
-        `LibreLinkUp requires a ${type} step in the official account flow. T1 Arc will not accept legal terms automatically.`,
+        'LibreLinkUp needs you to finish a step in the LibreLinkUp app first, such as accepting updated terms. Open the LibreLinkUp app, complete it, then try again. T1 Arc never accepts terms for you.',
         status,
       );
     }
@@ -303,7 +299,7 @@ export class LibreLinkUpClient {
       throw new LibreLinkUpError(
         'network',
         error instanceof Error && error.name === 'AbortError'
-          ? 'LibreLinkUp request timed out.'
+          ? 'LibreLinkUp took too long to respond. T1 Arc will try again shortly.'
           : 'Unable to reach LibreLinkUp. Check your internet connection and try again.',
       );
     } finally {
@@ -347,12 +343,12 @@ export class LibreLinkUpClient {
       if (!response.ok) {
         throw new LibreLinkUpError(
           'network',
-          `LibreLinkUp request failed with HTTP ${response.status}.`,
+          serviceStatusMessage('LibreLinkUp', response.status),
         );
       }
       throw new LibreLinkUpError(
         'unsupported-api',
-        'LibreLinkUp returned an unreadable or encrypted response. The legacy direct interface may no longer be available.',
+        'LibreLinkUp sent a reply T1 Arc cannot read. LibreLinkUp may have changed how its follower service works. Please report this in Help and support.',
       );
     }
 
@@ -379,7 +375,7 @@ export class LibreLinkUpClient {
     if (!response.ok) {
       throw new LibreLinkUpError(
         'network',
-        `LibreLinkUp request failed with HTTP ${response.status}.`,
+        serviceStatusMessage('LibreLinkUp', response.status),
       );
     }
     // Abbott can return a regional-routing instruction on data requests too,
@@ -447,7 +443,7 @@ export class LibreLinkUpClient {
     if (!isRecord(envelope.data)) {
       throw new LibreLinkUpError(
         'invalid-response',
-        'LibreLinkUp login did not return account data.',
+        'LibreLinkUp signed in but did not send your account details. Try again in a few minutes.',
       );
     }
     if (envelope.data.redirect === true) {
@@ -463,7 +459,7 @@ export class LibreLinkUpClient {
       if (redirectCount >= 2) {
         throw new LibreLinkUpError(
           'invalid-response',
-          'LibreLinkUp returned too many account region redirects.',
+          'LibreLinkUp could not route this connection to its regional server. Check your VPN or network and try again.',
         );
       }
       this.session.region = envelope.data.region;
@@ -485,7 +481,7 @@ export class LibreLinkUpClient {
     ) {
       throw new LibreLinkUpError(
         'unsupported-api',
-        'LibreLinkUp did not return the legacy authentication ticket. Its v5 interface may be active for this account.',
+        'LibreLinkUp signed in but did not complete the connection. LibreLinkUp may have changed how its follower service works for this account. Please report this in Help and support.',
       );
     }
     this.session.userId = user.id;
@@ -541,12 +537,12 @@ export class LibreLinkUpClient {
     if (patients.length > 1) {
       throw new LibreLinkUpError(
         'patient-selection-required',
-        'More than one LibreLinkUp connection is available; a patient must be selected.',
+        'This LibreLinkUp account follows more than one person. Choose who to follow in LibreLinkUp settings.',
       );
     }
     throw new LibreLinkUpError(
       'invalid-response',
-      'No accepted LibreLinkUp connection was found.',
+      'This follower account is not following anyone yet. Accept the invitation in the LibreLinkUp app, then try again.',
     );
   }
 
@@ -567,7 +563,7 @@ export class LibreLinkUpClient {
     if (!isRecord(graphEnvelope.data)) {
       throw new LibreLinkUpError(
         'invalid-response',
-        'LibreLinkUp graph data is missing.',
+        'LibreLinkUp did not send recent glucose history. Try again in a few minutes.',
       );
     }
     const readings: GlucoseReading[] = [];
@@ -607,7 +603,7 @@ export class LibreLinkUpClient {
     if (deduplicated.length === 0) {
       throw new LibreLinkUpError(
         'invalid-response',
-        'LibreLinkUp returned no usable glucose readings.',
+        'LibreLinkUp did not send any glucose readings T1 Arc can use. Check that the sensor is sharing in the Libre app.',
       );
     }
     return {

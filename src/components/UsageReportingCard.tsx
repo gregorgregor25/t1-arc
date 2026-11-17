@@ -6,7 +6,11 @@ import { getUsageConsentAsync, setUsageConsentAsync } from '@/data/usageReportin
 import { USAGE_REPORTING_COPY } from '@/domain/usageReportingCopy';
 import { useAppTheme } from '@/theme/theme';
 
-/** Settings > Privacy off switch for anonymous usage counts. There is no prompt. */
+/**
+ * Switch for anonymous usage counts, shown in Settings > Backup and privacy and
+ * in the tour's setup step. It always shows the choice stored on this phone, so
+ * existing users keep their choice and new users can decide before they start.
+ */
 export function UsageReportingCard() {
   const { colors } = useAppTheme();
   const [enabled, setEnabled] = useState(true);

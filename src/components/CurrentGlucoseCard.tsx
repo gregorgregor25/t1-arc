@@ -348,7 +348,7 @@ export function CurrentGlucoseCard({
           </Text>
           {!source?.isLive && onChooseSource ? (
             <Pressable
-              accessibilityHint="Opens the list of supported glucose sources."
+              accessibilityHint="Opens Settings, where data connections are listed first."
               accessibilityRole="button"
               onPress={onChooseSource}
               style={({ pressed }) => [
@@ -373,7 +373,7 @@ export function CurrentGlucoseCard({
                   { color: chooseSourceContent },
                 ]}
               >
-                Choose glucose source
+                Connect a source
               </Text>
               <Ionicons
                 accessibilityElementsHidden

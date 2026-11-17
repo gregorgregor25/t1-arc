@@ -141,7 +141,7 @@ export function DexcomClarityImportCard() {
       setState({
         kind: "error",
         message:
-          "Enter a valid IANA time zone, such as Europe/London, America/New_York or Asia/Tokyo.",
+          "T1 Arc does not recognise that time zone. Use the form Region/City, for example Europe/London, America/New_York or Asia/Tokyo.",
       });
       return;
     }
@@ -436,7 +436,7 @@ export function DexcomClarityImportCard() {
           EXPORT TIME ZONE
         </Text>
         <TextInput
-          accessibilityHint="Enter the IANA time zone used by dates and times in this Dexcom Clarity export."
+          accessibilityHint="Enter the time zone used by dates and times in this Dexcom Clarity export, for example Europe/London."
           accessibilityLabel="Dexcom Clarity export time zone"
           accessibilityState={{ disabled: settingsLocked }}
           autoCapitalize="none"

@@ -53,7 +53,7 @@ catalogue is included. Counts and source editions are recorded in the
 | Area | Current capability | Verification boundary |
 | --- | --- | --- |
 | Regional display | Country, locale, IANA timezone, glucose/measurement units and provider region are separate preferences | Automated conversion, calendar and DST tests; English interface |
-| Storage and restore | Canonical values, source provenance, encrypted additive restore; current backup format 21 | Older formats remain readable; credentials and permissions are not portable; see [backup contracts](INTEGRATION_CONTRACTS.md#portable-backup-boundary) |
+| Storage and restore | Canonical values, source provenance, encrypted additive restore; current backup format 23 | Older formats remain readable; credentials and permissions are not portable; see [backup contracts](INTEGRATION_CONTRACTS.md#portable-backup-boundary) |
 | LibreLinkUp | Direct follower connection, regional redirects and secure sessions | Real UK account on Pixel; other accounts/regions not equivalently checked |
 | Glooko | EU/US consumer export retrieval, manual files and delayed history | Real EU account; US route experimental; undocumented consumer interface can change |
 | Dexcom | Share US, International and Japan routes; separate Clarity CSV history | Contract-tested; no real-account verification claimed |

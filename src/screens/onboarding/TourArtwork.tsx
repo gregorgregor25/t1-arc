@@ -83,6 +83,8 @@ function artworkAccessibilityLabel(step: OnboardingTourStepId) {
       return "Example Tarv1s answer comparing glucose timing, a walk, lunch, active insulin and activity mode, with a link to supporting records.";
     case "control":
       return "Example private phone connected to optional glucose, health and workout sources.";
+    case "setup":
+      return "Setup choices for glucose unit, alerts and anonymous usage counts.";
   }
 }
 

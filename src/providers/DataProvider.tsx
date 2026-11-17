@@ -1381,7 +1381,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(
-          "The xDrip endpoint connected, but it did not return a glucose reading.",
+          "T1 Arc reached xDrip, but xDrip has no glucose reading to share yet.",
         );
       }
       const readings = await source.getReadings({

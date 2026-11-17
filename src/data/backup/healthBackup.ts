@@ -876,13 +876,13 @@ export interface HealthBackupManifest {
 
 function validatedBackupTimeZone(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) {
-    throw new Error('The backup does not contain a valid IANA time zone.');
+    throw new Error('This backup has a missing or unrecognised time zone, so T1 Arc cannot restore it safely.');
   }
   try {
     getCachedDateTimeFormat('en', { timeZone: value }).format(0);
     return value;
   } catch {
-    throw new Error('The backup does not contain a valid IANA time zone.');
+    throw new Error('This backup has a missing or unrecognised time zone, so T1 Arc cannot restore it safely.');
   }
 }
 

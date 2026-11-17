@@ -24,6 +24,7 @@ import { AapsSourceCard } from "@/components/AapsSourceCard";
 import { AppInfoCard } from "@/components/AppInfoCard";
 import { SupportReportCard } from "@/components/SupportReportCard";
 import { FeatureEntry } from '@/components/FeatureEntry';
+import { GlucoseAppearanceSettingsScreen } from "@/components/GlucoseAppearanceSettings";
 import { PrivacyPolicyLink } from "@/components/PrivacyPolicyLink";
 import { AutomationStatusCard } from "@/components/AutomationStatusCard";
 import { DexcomClarityImportCard } from "@/components/DexcomClarityImportCard";
@@ -84,14 +85,22 @@ import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useLatestData } from "@/hooks/useTimeline";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import {
+  NOT_TESTED_WITH_REAL_ACCOUNT_LABEL,
+  SOURCE_CHOOSER_ANSWERS,
   SOURCE_MENU_ITEMS,
   SOURCE_MENU_SECTIONS,
   SourceJump,
+  type SourceMenuSectionId,
+  type SourceSettingsPanel,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
   sourceSettingsRouteParams,
 } from "@/navigation/sourceNavigation";
 import { SOURCE_SETUP_GUIDES } from "@/navigation/sourceSetupGuides";
+import {
+  searchSettings,
+  type SettingsSearchEntry,
+} from "@/navigation/settingsSearch";
 import { useDataContext } from "@/providers/DataProvider";
 import {
   beginLibreVerification,
@@ -129,7 +138,7 @@ function maskEmail(value: string) {
 export function SourcesScreen({
   route,
 }: {
-  route?: { params?: { focused?: boolean; source?: SourceJump; panel?: "source-health" } };
+  route?: { params?: { focused?: boolean; source?: SourceJump; panel?: SourceSettingsPanel } };
 }) {
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const { colors, radius } = useAppTheme();
@@ -182,7 +191,10 @@ export function SourcesScreen({
   const requestedSource = sourceJumpFromRoute(route?.params?.source);
   const activeSource = requestedSource;
   const [expandedSetting, setExpandedSetting] = useState<string>();
+  const pendingExpandedSetting = useRef<string | undefined>(undefined);
   const [tourOpen, setTourOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchResults = useMemo(() => searchSettings(searchQuery), [searchQuery]);
 
   useEffect(() => observeRegionalProfile(setRegionalProfile), []);
 
@@ -209,8 +221,9 @@ export function SourcesScreen({
   useEffect(() => {
     // Route changes are navigation commands. Collapse any previously expanded
     // card before showing the requested source so stale controls cannot linger.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpandedSetting(undefined);
+    // A Settings search result may name the one panel it should open instead.
+    setExpandedSetting(pendingExpandedSetting.current);
+    pendingExpandedSetting.current = undefined;
     if (requestedSource !== "libre") {
       activeLibreVerificationAbort.current?.abort();
       invalidateLibreVerification(
@@ -223,11 +236,15 @@ export function SourcesScreen({
 
   const requestedPanel = route?.params?.panel;
   useEffect(() => {
-    if (requestedPanel !== "source-health") return;
-    // A one-off request from a "data unavailable" state: open the panel once,
-    // then clear the request so it does not reopen on later visits.
+    if (!requestedPanel) return;
+    // A one-off request (from a "data unavailable" state or the tour): open the
+    // panel once, then clear the request so it does not reopen on later visits.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpandedSetting("overview-source-health");
+    setExpandedSetting(
+      requestedPanel === "display-alerts"
+        ? "display-alerts"
+        : "overview-source-health",
+    );
     navigation.setParams({ panel: undefined });
   }, [navigation, requestedPanel]);
 
@@ -432,6 +449,27 @@ export function SourcesScreen({
     });
   }
 
+  function openSearchResult(entry: SettingsSearchEntry) {
+    const target = entry.target;
+    setSearchQuery("");
+    if (target.kind === "screen") {
+      if (target.screen === "Tour") setTourOpen(true);
+      else if (target.screen === "TarvisSettings") {
+        navigation.navigate('Insights', { settings: true });
+      } else navigation.navigate(target.screen);
+      return;
+    }
+    if (target.kind === "overview") {
+      setExpandedSetting(target.expand);
+      return;
+    }
+    pendingExpandedSetting.current = target.expand;
+    navigation.setParams(sourceSettingsRouteParams(target.source));
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    });
+  }
+
   const showSourceOverview = useCallback(() => {
     setExpandedSetting(undefined);
     navigation.setParams(sourceSettingsRouteParams());
@@ -457,7 +495,13 @@ export function SourcesScreen({
     return (
       <OnboardingScreen
         mode="replay"
-        onComplete={() => setTourOpen(false)}
+        onComplete={(destination) => {
+          setTourOpen(false);
+          if (destination === "Alerts") {
+            pendingExpandedSetting.current = "display-alerts";
+            navigation.setParams(sourceSettingsRouteParams("display"));
+          }
+        }}
         onRequestClose={() => setTourOpen(false)}
       />
     );
@@ -502,55 +546,103 @@ export function SourcesScreen({
           onBack={showSourceOverview}
           source={activeSource}
         />
+      ) : null}
+      {!activeSource ? (
+        <SettingsSearchBox onChange={setSearchQuery} value={searchQuery} />
+      ) : null}
+      {!activeSource && searchQuery.trim() ? (
+        <SettingsSearchResults
+          onSelect={openSearchResult}
+          results={searchResults}
+        />
       ) : !activeSource ? (
         <View style={styles.overviewSections}>
-          <FeatureEntry title="Share feedback" detail="Help shape T1 Arc and manage your weekly reminder" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} />
-          <FeatureEntry title="Cycle tracking" detail="Periods, symptoms and cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
-          <SectionCard style={styles.disclosureShell}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Open Tarv1s settings"
-              accessibilityHint="Manage your AI provider connection and privacy"
-              onPress={() => navigation.navigate('Insights', { settings: true })}
-              style={({ pressed }) => [styles.tourReplayButton, { opacity: pressed ? 0.68 : 1 }]}
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Data connections" />
+            <SettingsDisclosure
+              detail="Answer one question to find the right connection."
+              expanded={expandedSetting === "overview-source-chooser"}
+              icon="help-circle-outline"
+              onToggle={() => toggleSetting("overview-source-chooser")}
+              title="Which source do I need?"
             >
-              <Ionicons accessibilityElementsHidden name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
-              <View style={styles.tourReplayCopy}>
-                <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>Tarv1s</Text>
-                <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>AI provider connection and privacy</Text>
-              </View>
-              <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
-            </Pressable>
-          </SectionCard>
-          <SettingsDisclosure
-            detail="When each connection last updated, its newest records and any gaps."
-            expanded={expandedSetting === "overview-source-health"}
-            icon="pulse-outline"
-            onToggle={() => toggleSetting("overview-source-health")}
-            title="Source health"
-          >
-            <SourceHealthCard />
-          </SettingsDisclosure>
-          <SourceJumpGrid active={activeSource} onSelect={showSource} />
-          <SettingsDisclosure
-            detail="Add the insulin-to-carb ratios already agreed in your care plan."
-            expanded={expandedSetting === "overview-diabetes-profile"}
-            icon="person-circle-outline"
-            onToggle={() => toggleSetting("overview-diabetes-profile")}
-            title="Diabetes profile"
-          >
-            <TarvisTreatmentProfileCard />
-          </SettingsDisclosure>
-          <TourReplayCard onPress={() => setTourOpen(true)} />
-          <SettingsDisclosure
-            detail="Runs quietly in the background. Open only if something needs attention."
-            expanded={expandedSetting === "overview-automation"}
-            icon="sync-outline"
-            onToggle={() => toggleSetting("overview-automation")}
-            title="Automatic updates"
-          >
-            <AutomationStatusCard />
-          </SettingsDisclosure>
+              <SourceChooser onSelect={showSource} />
+            </SettingsDisclosure>
+            <SourceJumpGrid
+              active={activeSource}
+              onSelect={showSource}
+              sectionIds={["glucose", "health"]}
+            />
+            <SettingsDisclosure
+              detail="When each connection last updated, its newest records and any gaps."
+              expanded={expandedSetting === "overview-source-health"}
+              icon="pulse-outline"
+              onToggle={() => toggleSetting("overview-source-health")}
+              title="Source health"
+            >
+              <SourceHealthCard />
+            </SettingsDisclosure>
+          </View>
+          <SourceJumpGrid
+            active={activeSource}
+            onSelect={showSource}
+            sectionIds={["display"]}
+          />
+          <View style={styles.overviewGroup}>
+            <SourceJumpGrid
+              active={activeSource}
+              onSelect={showSource}
+              sectionIds={["data"]}
+            />
+            <SettingsDisclosure
+              detail="Runs quietly in the background. Open only if something needs attention."
+              expanded={expandedSetting === "overview-automation"}
+              icon="sync-outline"
+              onToggle={() => toggleSetting("overview-automation")}
+              title="Automatic updates"
+            >
+              <AutomationStatusCard />
+            </SettingsDisclosure>
+          </View>
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Assistant" />
+            <SectionCard style={styles.disclosureShell}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open Tarv1s settings"
+                accessibilityHint="Manage your AI provider connection and privacy"
+                onPress={() => navigation.navigate('Insights', { settings: true })}
+                style={({ pressed }) => [styles.tourReplayButton, { opacity: pressed ? 0.68 : 1 }]}
+              >
+                <Ionicons accessibilityElementsHidden name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
+                <View style={styles.tourReplayCopy}>
+                  <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>Tarv1s</Text>
+                  <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>AI provider connection and privacy</Text>
+                </View>
+                <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+            </SectionCard>
+            <SettingsDisclosure
+              detail="Add the insulin-to-carb ratios already agreed in your care plan."
+              expanded={expandedSetting === "overview-diabetes-profile"}
+              icon="person-circle-outline"
+              onToggle={() => toggleSetting("overview-diabetes-profile")}
+              title="Diabetes profile"
+            >
+              <TarvisTreatmentProfileCard />
+            </SettingsDisclosure>
+          </View>
+          <View style={styles.overviewGroup}>
+            <SettingsGroupTitle title="Feedback and more" />
+            <FeatureEntry title="Share feedback" detail="Help shape T1 Arc and manage your weekly reminder" icon="chatbubble-outline" onPress={() => navigation.navigate('Feedback')} />
+            <FeatureEntry title="Cycle tracking" detail="Periods, symptoms and cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
+            <TourReplayCard onPress={() => setTourOpen(true)} />
+          </View>
+          <SourceJumpGrid
+            active={activeSource}
+            onSelect={showSource}
+            sectionIds={["help", "advanced"]}
+          />
         </View>
       ) : null}
 
@@ -1082,7 +1174,11 @@ export function SourcesScreen({
 
       {activeSource === "region" ? (
         <View style={styles.settingsSections}>
-          <RegionalSettingsCard showHeading={false} />
+          <RegionalSettingsCard
+            moreOptionsOpen={expandedSetting === "region-more"}
+            onToggleMoreOptions={() => toggleSetting("region-more")}
+            showHeading={false}
+          />
         </View>
       ) : null}
 
@@ -1137,6 +1233,16 @@ export function SourcesScreen({
 
       {activeSource === "display" ? (
         <View style={styles.settingsSections}>
+          <FeatureEntry
+            title="Glucose ranges"
+            detail="Your target range, low and high levels, and their colours"
+            icon="options-outline"
+            onPress={() => setExpandedSetting("display-ranges")}
+          />
+          <GlucoseAppearanceSettingsScreen
+            onClose={() => setExpandedSetting(undefined)}
+            visible={expandedSetting === "display-ranges"}
+          />
           <SettingsDisclosure
             detail="Follow your phone, or choose a light or dark app theme."
             expanded={expandedSetting === "display-theme"}
@@ -1153,7 +1259,10 @@ export function SourcesScreen({
             onToggle={() => toggleSetting("display-phone")}
             title="Phone and lock screen"
           >
-            <GlucoseDisplayCard connected={glucoseSourceReady} />
+            <GlucoseDisplayCard
+              connected={glucoseSourceReady}
+              onOpenAdvanced={() => showSource("advanced")}
+            />
           </SettingsDisclosure>
           <SettingsDisclosure
             detail="Set the alerts that deserve your attention."
@@ -1222,17 +1331,6 @@ export function SourcesScreen({
         <View style={styles.settingsSections}>
           <SectionCard><PrivacyPolicyLink /></SectionCard>
           <SectionCard><UsageReportingCard /></SectionCard>
-          {__DEV__ ? (
-            <SettingsDisclosure
-              detail="Only for a protected migration bundle from an earlier T1 Arc test installation."
-              expanded={expandedSetting === "privacy-migration"}
-              icon="swap-horizontal-outline"
-              onToggle={() => toggleSetting("privacy-migration")}
-              title="Earlier test-app migration"
-            >
-              <MaintainerMigrationCard onDataChanged={showChangedPersonalData} />
-            </SettingsDisclosure>
-          ) : null}
           <SettingsDisclosure
             detail="Keep a protected copy of your data that you control."
             expanded={expandedSetting === "privacy-backup"}
@@ -1262,7 +1360,155 @@ export function SourcesScreen({
           </SettingsDisclosure>
         </View>
       ) : null}
+      {activeSource === "advanced" ? (
+        <View style={styles.settingsSections}>
+          <SectionCard>
+            <Text style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}>
+              These features are still being tested. They may change, or may
+              not work on every phone. Your records do not depend on them.
+            </Text>
+          </SectionCard>
+          <GlucoseDisplayCard
+            connected={glucoseSourceReady}
+            variant="advanced"
+          />
+          {__DEV__ ? (
+            <SettingsDisclosure
+              detail="Only for a protected migration bundle from an earlier T1 Arc test installation."
+              expanded={expandedSetting === "advanced-migration"}
+              icon="swap-horizontal-outline"
+              onToggle={() => toggleSetting("advanced-migration")}
+              title="Earlier test-app migration"
+            >
+              <MaintainerMigrationCard onDataChanged={showChangedPersonalData} />
+            </SettingsDisclosure>
+          ) : null}
+        </View>
+      ) : null}
     </AppScreen>
+  );
+}
+
+function SettingsSearchBox({
+  onChange,
+  value,
+}: {
+  onChange(value: string): void;
+  value: string;
+}) {
+  const { colors, radius } = useAppTheme();
+  return (
+    <View
+      style={[
+        styles.searchBox,
+        {
+          backgroundColor: colors.surfaceMuted,
+          borderColor: colors.border,
+          borderRadius: radius.md,
+        },
+      ]}
+    >
+      <Ionicons
+        accessibilityElementsHidden
+        color={colors.textTertiary}
+        name="search-outline"
+        size={19}
+      />
+      <TextInput
+        accessibilityHint="Shows matching settings as you type"
+        accessibilityLabel="Search settings"
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={onChange}
+        placeholder="Search settings, for example alerts or backup"
+        placeholderTextColor={colors.textTertiary}
+        returnKeyType="search"
+        style={[styles.searchInput, { color: colors.text }]}
+        value={value}
+      />
+      {value ? (
+        <Pressable
+          accessibilityLabel="Clear search"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onChange("")}
+          style={({ pressed }) => [
+            styles.searchClear,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textSecondary}
+            name="close-circle"
+            size={20}
+          />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function SettingsSearchResults({
+  onSelect,
+  results,
+}: {
+  onSelect(entry: SettingsSearchEntry): void;
+  results: readonly SettingsSearchEntry[];
+}) {
+  const { colors, radius } = useAppTheme();
+  if (!results.length) {
+    return (
+      <SectionCard accessibilityLabel="No matching settings. Try a shorter word, such as alerts, backup, units or Libre.">
+        <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+          No matching settings
+        </Text>
+        <Text
+          style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+        >
+          Try a shorter word, such as alerts, backup, units or Libre.
+        </Text>
+      </SectionCard>
+    );
+  }
+  return (
+    <View accessibilityLiveRegion="polite" style={styles.sourceJumpGrid}>
+      {results.map((entry) => (
+        <Pressable
+          accessibilityHint={`Opens ${entry.label} in ${entry.location}`}
+          accessibilityLabel={`${entry.label}. ${entry.detail}`}
+          accessibilityRole="button"
+          key={entry.id}
+          onPress={() => onSelect(entry)}
+          style={({ pressed }) => [
+            styles.sourceJump,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.md,
+              opacity: pressed ? 0.68 : 1,
+            },
+          ]}
+        >
+          <View style={styles.sourceJumpCopy}>
+            <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+              {entry.label}
+            </Text>
+            <Text
+              style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+            >
+              {entry.location} · {entry.detail}
+            </Text>
+          </View>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textTertiary}
+            name="chevron-forward"
+            size={16}
+          />
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -1270,12 +1516,9 @@ function TourReplayCard({ onPress }: { onPress(): void }) {
   const { colors, radius } = useAppTheme();
   return (
     <View>
-      <Text style={[styles.sourceGroupTitle, { color: colors.textSecondary }]}>
-        Help & learning
-      </Text>
       <SectionCard style={styles.tourReplayShell}>
         <Pressable
-          accessibilityHint="Opens a five-step visual guide to the app."
+          accessibilityHint="Opens a short visual guide to the app."
           accessibilityRole="button"
           onPress={onPress}
           style={({ pressed }) => [
@@ -1438,21 +1681,95 @@ function SourceDetailHeader({
         </Text>
         {guide ? <SourceSetupGuide key={source} {...guide} /> : null}
       </View>
+      {"notTestedWithRealAccount" in item && item.notTestedWithRealAccount ? (
+        <Text style={[styles.untestedNotice, { color: colors.textSecondary }]}>
+          {NOT_TESTED_WITH_REAL_ACCOUNT_LABEL}. It is built to the
+          provider’s published behaviour and checked with automated tests.
+          Please report any problems in Help and support.
+        </Text>
+      ) : null}
     </View>
+  );
+}
+
+function SettingsGroupTitle({ title }: { title: string }) {
+  const { colors } = useAppTheme();
+  return (
+    <Text
+      accessibilityRole="header"
+      style={[styles.overviewGroupTitle, { color: colors.text }]}
+    >
+      {title}
+    </Text>
+  );
+}
+
+function SourceChooser({ onSelect }: { onSelect(source: SourceJump): void }) {
+  const { colors, radius } = useAppTheme();
+  return (
+    <SectionCard>
+      {SOURCE_CHOOSER_ANSWERS.map((item, index) => {
+        const label = SOURCE_MENU_ITEMS.find(
+          (candidate) => candidate.source === item.source,
+        )?.label;
+        return (
+          <View
+            key={item.source}
+            style={[
+              styles.chooserRow,
+              index > 0 && {
+                borderTopColor: colors.divider,
+                borderTopWidth: StyleSheet.hairlineWidth,
+              },
+            ]}
+          >
+            <Text style={[styles.sourceJumpLabel, { color: colors.text }]}>
+              {item.question}
+            </Text>
+            <Text
+              style={[styles.sourceJumpDetail, { color: colors.textSecondary }]}
+            >
+              {item.answer}
+            </Text>
+            <Pressable
+              accessibilityHint={`Opens ${label} settings`}
+              accessibilityRole="button"
+              onPress={() => onSelect(item.source)}
+              style={({ pressed }) => [
+                styles.chooserButton,
+                {
+                  borderColor: colors.primary,
+                  borderRadius: radius.pill,
+                  opacity: pressed ? 0.68 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.chooserButtonText, { color: colors.primary }]}>
+                Open {label}
+              </Text>
+            </Pressable>
+          </View>
+        );
+      })}
+    </SectionCard>
   );
 }
 
 function SourceJumpGrid({
   active,
   onSelect,
+  sectionIds,
 }: {
   active?: SourceJump;
   onSelect(source: SourceJump): void;
+  sectionIds: readonly SourceMenuSectionId[];
 }) {
   const { colors, radius } = useAppTheme();
   return (
     <View style={styles.sourceJumpSections}>
-      {SOURCE_MENU_SECTIONS.map((section) => (
+      {SOURCE_MENU_SECTIONS.filter((section) =>
+        sectionIds.includes(section.id),
+      ).map((section) => (
         <View key={section.id}>
           <Text
             style={[styles.sourceGroupTitle, { color: colors.textSecondary }]}
@@ -1516,6 +1833,17 @@ function SourceJumpGrid({
                     >
                       {item.detail}
                     </Text>
+                    {item.notTestedWithRealAccount ? (
+                      <Text
+                        style={[
+                          styles.sourceJumpDetail,
+                          styles.untestedLabel,
+                          { color: colors.warning },
+                        ]}
+                      >
+                        {NOT_TESTED_WITH_REAL_ACCOUNT_LABEL}
+                      </Text>
+                    ) : null}
                   </View>
                   <Ionicons
                     accessibilityElementsHidden
@@ -1543,6 +1871,62 @@ const styles = StyleSheet.create({
   },
   overviewSections: {
     gap: 22,
+  },
+  untestedLabel: {
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  untestedNotice: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  overviewGroup: {
+    gap: 10,
+  },
+  overviewGroupTitle: {
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "800",
+  },
+  chooserRow: {
+    paddingVertical: 12,
+    gap: 4,
+  },
+  chooserButton: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    marginTop: 6,
+    justifyContent: "center",
+  },
+  chooserButtonText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  searchBox: {
+    minHeight: 50,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 12,
+    paddingRight: 6,
+    marginTop: 4,
+    marginBottom: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 48,
+    fontSize: 15,
+  },
+  searchClear: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   body: {
     fontSize: 13,

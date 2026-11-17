@@ -168,8 +168,10 @@ review the [provider-specific requirements](docs/TARV1S_BYOK.md#choose-a-provide
 This is the one network flow that is on without the user choosing it. It sends
 no health data, and it is the only message T1 Arc sends to the maintainer by
 default. It lets the maintainer see roughly how many people use each version.
-There is no prompt; it can be turned off at any time in **Settings → Privacy →
-Share anonymous usage counts**.
+The last step of the first-run tour shows the switch, already on, so a new
+user can turn it off before starting; there is no separate prompt. Existing
+users keep the choice already stored on their phone. It can be turned off at
+any time in **Settings → Backup and privacy → Share anonymous usage counts**.
 
 - **Daily message.** At most once per local calendar day, on the first app open
   that day: `{"schema":1,"kind":"day","appVersion":"1.7.20"}`.

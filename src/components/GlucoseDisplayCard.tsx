@@ -53,6 +53,13 @@ const AOD_SIZES: { label: string; value: AodSize }[] = [
 
 interface GlucoseDisplayCardProps {
   connected: boolean;
+  /**
+   * "standard" holds the everyday notification and lock-screen settings.
+   * "advanced" holds the experimental always-on overlay and Android Auto.
+   */
+  variant?: 'standard' | 'advanced';
+  /** Standard variant only: opens the Advanced and experimental page. */
+  onOpenAdvanced?(): void;
 }
 
 function statusTone(
@@ -68,7 +75,10 @@ function statusTone(
 
 export function GlucoseDisplayCard({
   connected,
+  onOpenAdvanced,
+  variant = 'standard',
 }: GlucoseDisplayCardProps) {
+  const advanced = variant === 'advanced';
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
   const [status, setStatus] = useState<GlucoseDisplayStatus>();
@@ -145,7 +155,7 @@ export function GlucoseDisplayCard({
     if (enabled && !connected) {
       Alert.alert(
         'Connect personal glucose first',
-        'Save and verify your LibreLinkUp follower connection before enabling glucose at a glance.',
+        'Connect and test a glucose source in Settings before turning on glucose at a glance.',
       );
       return;
     }
@@ -386,7 +396,7 @@ export function GlucoseDisplayCard({
         <View style={styles.headerCopy}>
           <View style={styles.titleRow}>
             <Text style={[styles.title, { color: colors.text }]}>
-              Glucose at a glance
+              {advanced ? 'Experimental glucose displays' : 'Glucose at a glance'}
             </Text>
             <View
               style={[
@@ -400,15 +410,25 @@ export function GlucoseDisplayCard({
               <Text style={[styles.badgeText, { color: tone }]}>{badge}</Text>
             </View>
           </View>
-          <Text style={[styles.body, { color: colors.textSecondary }]}>
-            A prominent ongoing notification shows personal glucose, direction
-            and age without sound or vibration. While enabled, T1 Arc checks
-            LibreLinkUp more frequently when a new reading is expected,
-            including when the app is closed.
-          </Text>
+          {advanced ? (
+            <Text style={[styles.body, { color: colors.textSecondary }]}>
+              These extra places to see glucose are still being tested. They
+              may not work on every phone or car. The always-on display uses
+              the glucose notification, so turn that on first.
+            </Text>
+          ) : (
+            <Text style={[styles.body, { color: colors.textSecondary }]}>
+              A prominent ongoing notification shows personal glucose, direction
+              and age without sound or vibration. While enabled, T1 Arc checks
+              for new readings more often when one is expected, including when
+              the app is closed.
+            </Text>
+          )}
         </View>
       </View>
 
+      {!advanced ? (
+      <>
       <SettingRow
         detail={
           connected
@@ -419,7 +439,7 @@ export function GlucoseDisplayCard({
                     : status.freshness
                 }`
               : 'Status bar and notification shade'
-            : 'Connect LibreLinkUp first'
+            : 'Connect a glucose source first'
         }
         disabled={busy || !status?.supported}
         label="Keep glucose visible"
@@ -440,7 +460,10 @@ export function GlucoseDisplayCard({
         onValueChange={(value) => void setOnBoardEstimatesVisible(value)}
         value={status?.onBoardEstimatesVisible === true}
       />
+      </>
+      ) : null}
 
+      {advanced ? (
       <SettingRow
         detail={
           status?.androidAutoEnabled
@@ -454,20 +477,31 @@ export function GlucoseDisplayCard({
         onValueChange={(value) => void setAndroidAutoEnabled(value)}
         value={Boolean(status?.androidAutoEnabled)}
       />
+      ) : null}
 
-      {enabled ? (
+      {enabled && !advanced ? (
+        <SettingRow
+          detail="Turn off to hide glucose, IOB and COB until your phone is unlocked"
+          disabled={busy}
+          label="Show value on lock screen"
+          onValueChange={requestLockScreenVisible}
+          value={Boolean(status?.lockScreenVisible)}
+        />
+      ) : null}
+
+      {advanced && !enabled ? (
+        <Text style={[styles.footnote, { color: colors.textSecondary }]}>
+          To use the always-on display, first turn on Keep glucose visible in
+          Display and alerts, under Phone and lock screen.
+        </Text>
+      ) : null}
+
+      {enabled && advanced ? (
         <>
-          <SettingRow
-            detail="Turn off to hide glucose, IOB and COB until your Pixel is unlocked"
-            disabled={busy}
-            label="Show value on lock screen"
-            onValueChange={requestLockScreenVisible}
-            value={Boolean(status?.lockScreenVisible)}
-          />
           <SettingRow
             detail={
               aodReady
-                ? 'Ready to appear after your Pixel enters always-on mode'
+                ? 'Ready to appear when your phone shows its always-on screen'
                 : status?.aodDesired
                   ? 'Enable the T1 Arc service, not its shortcut button'
                   : 'Optional value and direction on the locked dark screen'
@@ -489,6 +523,26 @@ export function GlucoseDisplayCard({
         </>
       ) : null}
 
+      {!advanced && onOpenAdvanced ? (
+        <Pressable
+          accessibilityHint="Opens the Advanced and experimental page"
+          accessibilityRole="button"
+          onPress={onOpenAdvanced}
+          style={({ pressed }) => [styles.advancedLink, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[styles.advancedLinkText, { color: colors.primary }]}>
+            Always-on display and Android Auto are in Advanced and experimental
+          </Text>
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.primary}
+            name="chevron-forward"
+            size={17}
+          />
+        </Pressable>
+      ) : null}
+
+      {!advanced ? (
       <Pressable
         accessibilityRole="button"
         onPress={() => setAppearanceVisible(true)}
@@ -530,8 +584,9 @@ export function GlucoseDisplayCard({
           size={19}
         />
       </Pressable>
+      ) : null}
 
-      {permissionDenied || (enabled && !status?.notificationsAllowed) ? (
+      {!advanced && (permissionDenied || (enabled && !status?.notificationsAllowed)) ? (
         <Pressable
           accessibilityRole="button"
           onPress={() =>
@@ -559,7 +614,7 @@ export function GlucoseDisplayCard({
         </Pressable>
       ) : null}
 
-      {status?.aodDesired && !status.aodServiceEnabled ? (
+      {advanced && status?.aodDesired && !status.aodServiceEnabled ? (
         <View
           accessibilityLiveRegion="polite"
           style={[
@@ -651,7 +706,7 @@ export function GlucoseDisplayCard({
         </View>
       ) : null}
 
-      {aodReady ? (
+      {advanced && aodReady ? (
         <View
           style={[
             styles.aodReadyPanel,
@@ -681,7 +736,7 @@ export function GlucoseDisplayCard({
               {status?.aodLastError
                 ? `Last display error: ${status.aodLastError}`
                 : status?.aodLastEvent ??
-                  'Lock your Pixel to test the low-power display.'}
+                  'Lock your phone to test the always-on display.'}
             </Text>
           </View>
         </View>
@@ -710,10 +765,12 @@ export function GlucoseDisplayCard({
         what is visible. Data age is always shown; stale glucose is never
         presented as current.
       </Text>
-      <GlucoseAppearanceSettingsScreen
-        onClose={() => setAppearanceVisible(false)}
-        visible={appearanceVisible}
-      />
+      {!advanced ? (
+        <GlucoseAppearanceSettingsScreen
+          onClose={() => setAppearanceVisible(false)}
+          visible={appearanceVisible}
+        />
+      ) : null}
     </SectionCard>
   );
 }
@@ -901,6 +958,19 @@ function SettingRow({
 }
 
 const styles = StyleSheet.create({
+  advancedLink: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  advancedLinkText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
   header: {
     flexDirection: 'row',
     gap: 12,

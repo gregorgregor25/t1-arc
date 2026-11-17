@@ -4,6 +4,7 @@ import {
   DefaultTheme,
   LinkingOptions,
   NavigationContainer,
+  useNavigationContainerRef,
 } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useEffect, useState } from "react";
@@ -40,7 +41,7 @@ import { useAppTheme } from "@/theme/theme";
 
 import { APP_LINK_PREFIXES, isSafeNavigationLink } from "./appLinks";
 import { resolveAppEntry } from "./appEntry";
-import type { SourceJump } from "./sourceNavigation";
+import type { SourceJump, SourceSettingsPanel } from "./sourceNavigation";
 import type { TarvisEntry } from '@/domain/tarvisEntry';
 import type { HistoryRangeSelection } from '@/domain/historySelection';
 import type { InsightComparisonRequest } from '@/domain/insightRanges';
@@ -52,7 +53,7 @@ export type RootTabParamList = {
   Cycle: undefined;
   Feedback: undefined;
   Insights: { comparison?: InsightComparisonRequest; entry?: TarvisEntry; settings?: boolean } | undefined;
-  Sources: { focused?: boolean; source?: SourceJump; panel?: "source-health" } | undefined;
+  Sources: { focused?: boolean; source?: SourceJump; panel?: SourceSettingsPanel } | undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -105,6 +106,8 @@ export function AppNavigator() {
   );
   const [clearingTourState, setClearingTourState] = useState(false);
   const [initialTab, setInitialTab] = useState<keyof RootTabParamList>("Today");
+  const [openAlertSettings, setOpenAlertSettings] = useState(false);
+  const navigationRef = useNavigationContainerRef<RootTabParamList>();
   const base = dark ? DarkTheme : DefaultTheme;
   const navigationTheme = {
     ...base,
@@ -256,7 +259,8 @@ export function AppNavigator() {
     return (
       <OnboardingScreen
         onComplete={(destination = "Today") => {
-          setInitialTab(destination);
+          setInitialTab(destination === "Alerts" ? "Today" : destination);
+          setOpenAlertSettings(destination === "Alerts");
           setEntry("app");
         }}
       />
@@ -264,7 +268,24 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer linking={linking} theme={navigationTheme} fallback={<AppStartupScreen />}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linking}
+      theme={navigationTheme}
+      fallback={<AppStartupScreen />}
+      onReady={() => {
+        if (!openAlertSettings) return;
+        // The tour's "Open alert settings" is a one-off request. Navigating
+        // once (rather than using initialParams) keeps later Settings visits
+        // from reopening the alerts panel.
+        setOpenAlertSettings(false);
+        navigationRef.navigate("Sources", {
+          focused: true,
+          source: "display",
+          panel: "display-alerts",
+        });
+      }}
+    >
       <Tab.Navigator
         backBehavior="history"
         initialRouteName={initialTab}

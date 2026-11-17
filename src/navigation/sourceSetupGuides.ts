@@ -10,7 +10,7 @@ export const SOURCE_SETUP_GUIDES: Partial<
     intro:
       "Read glucose and AAPS-calculated IOB and COB from AndroidAPS on this phone, including when the internet is unavailable.",
     steps: [
-      "Keep Juggluco sending glucose to AAPS through its existing xDrip broadcast setup.",
+      "Keep your glucose app (for example Juggluco or xDrip+) sending readings to AAPS as it does now.",
       "In AAPS, open Config Builder, then Synchronization, and enable External Companion Apps.",
       "Return here and choose Use AAPS as glucose source.",
       "Wait for a new AAPS update, then compare its glucose and time with AAPS. Check IOB and COB below the glucose card on Today.",
@@ -58,11 +58,11 @@ export const SOURCE_SETUP_GUIDES: Partial<
   nightscout: {
     title: "Nightscout",
     intro:
-      "Connect to the read-only glucose endpoint for your own Nightscout site.",
+      "Read glucose, and optionally treatments, from your own Nightscout site. T1 Arc only reads; it never changes your site.",
     steps: [
       "Enter the full Nightscout site address, including https://.",
-      "For a protected site, add either a read-only access token or the legacy API secret. Public sites can leave both blank.",
-      "Turn on IOB and COB only if your Nightscout pebble endpoint provides those values.",
+      "For a protected site, add a read-only access token (recommended) or your site’s API secret. Public sites can leave both blank.",
+      "Turn on IOB and COB only if your looping app sends insulin and carbs on board to Nightscout.",
       "Test the connection, then optionally choose how far back T1 Arc should build encrypted history.",
     ],
     note: "T1 Arc uses read requests only and never changes your Nightscout site. Rechecking the same site keeps its copied history; after a different site is verified, it replaces this source’s copied glucose, treatments and history progress.",

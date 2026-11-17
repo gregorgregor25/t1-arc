@@ -23,6 +23,7 @@ import {
   MedtrumErrorCode,
   MedtrumPatient,
 } from './types';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const APP_TAG = 'v=1.2.70(112);n=eyfo;p=android';
@@ -237,7 +238,7 @@ export class MedtrumGlucoseSource implements GlucoseSource {
             : 'network',
           response.status === 401 || response.status === 403
             ? 'Medtrum rejected the follower account details.'
-            : `Medtrum returned HTTP ${response.status}.`,
+            : serviceStatusMessage('Medtrum', response.status),
         );
       }
       return { payload, response };

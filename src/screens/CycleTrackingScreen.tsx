@@ -169,7 +169,7 @@ export function CycleTrackingScreen() {
   return <AppScreen title="Cycle tracking" trailing={<Pressable accessibilityRole="button" accessibilityLabel="Back to health" onPress={() => navigation.navigate('Health')} style={styles.back}><Ionicons name="close" size={25} color={colors.textSecondary} /></Pressable>}>
     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your history, at a glance</Text>
     {loading ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading cycle history" style={styles.loading} /> : null}
-    {error ? <ErrorCard message={error} /> : null}
+    {error ? <ErrorCard message={error} title="Cycle tracking could not finish that" /> : null}
     {!loading ? <>
       <Pressable accessibilityRole="button" onPress={startLog} style={[styles.primaryButton, { backgroundColor: colors.primary, borderRadius: radius.md }]}><Text style={[styles.primaryText, { color: colors.onPrimary }]}>Log period</Text></Pressable>
       <SectionCard style={styles.section}>

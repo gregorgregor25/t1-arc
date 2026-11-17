@@ -7,7 +7,7 @@ export function snapshotGlookoImportRegionalSettings(
 ): GlookoImportRegionalSettings {
   const timeZone = settings.timeZone.trim();
   if (!isIanaTimeZone(timeZone)) {
-    throw new Error("Enter a valid IANA timezone, such as Europe/London.");
+    throw new Error("T1 Arc does not recognise that time zone. Use the form Region/City, for example Europe/London.");
   }
   if (
     settings.dateOrder !== "day-first" &&

@@ -149,6 +149,12 @@ field: T1 Arc keeps it in Android secure storage and sends only Nightscout's
 SHA-1 `api-secret` header on read requests. Do not use an admin token, and do
 not grant T1 Arc write access.
 
+Connection rules: the site address must use HTTPS and must not contain a
+username or password. A `?token=` value pasted in the address is taken as the
+access token (an explicitly entered token wins), and the rest of the query is
+removed before the address is saved. A saved token or secret is never sent to
+a different address.
+
 T1 Arc makes an HTTPS read request shaped like:
 
 ```text
@@ -189,6 +195,27 @@ the stored mg/dL SGV to mmol/L, retains the source and timestamp in its stable
 normalised record, ignores malformed entries, and rejects a non-array response
 or a response where every entry is unusable. No write endpoint is called.
 
+Limits: one entries response may hold at most 5,000 entries and about 5 MB
+(5,000 × 1,024 bytes); a larger response is rejected rather than truncated.
+Readings dated before 1 January 2000, or more than five minutes after the
+phone's clock, are dropped. Each request times out after 15 seconds.
+
+### Nightscout IOB and COB (read-only)
+
+When **Read IOB and COB** is on (the default for a new connection), T1 Arc also
+reads the Pebble summary with the same credentials:
+
+```text
+GET /pebble?token=<readable-token>
+```
+
+Only the insulin-on-board and carbs-on-board values and their time are kept, in
+Android secure storage under `t1arc.nightscout.iob-cob.v1`, not in the health
+database. A snapshot must be no more than 12 minutes old when read, and it is
+shown for at most 60 minutes, always with its own age. A failure here does not
+affect glucose. These values are the looping system's estimates, not delivered
+doses or meal records.
+
 ### Nightscout treatments and profile (read-only)
 
 T1 Arc also reads treatments and the profile with the same readable token or
@@ -201,11 +228,17 @@ GET /api/v1/profile.json?token=<readable-token>
 
 The regular refresh reads the last two days; the older-history backfill reads
 the same 14-day blocks as glucose. Nightscout returns newest treatments first
-and stops at `count`, so a full page continues with
-`find[created_at][$lte]=<oldest created_at returned>`, de-duplicates the
-boundary record, and stops with an error after 8 pages rather than leaving a
-silent gap. A profile failure is recorded as a warning and does not block
+and stops at `count` (at most 5,000 per page), so a full page continues with
+`find[created_at][$lte]=<oldest created_at returned>` and de-duplicates the
+boundary record. Paging stops with an error, rather than leaving a silent gap,
+after 8 full pages, or earlier when a full page adds no new records or has no
+`created_at` to continue from. A treatment or profile failure is recorded as a
+warning and does not block glucose; a profile failure does not block
 treatments.
+
+The profile is stored only as raw `nightscout-profile` evidence records (the
+response may be a JSON object or an array). It is not used to calculate
+insulin, and programmed basal is never counted as delivered insulin.
 
 Treatments become bolus, carb, temporary basal and dated note records with
 `nightscout` provenance. Records marked `isValid: false` are kept as raw
@@ -216,6 +249,13 @@ extended parts, unless it is emulated as a temporary basal. A temporary basal
 ends at the next one or at a zero-duration cancel, and AAPS's
 `durationInMilliseconds` is preferred over minutes. Programmed profile basal
 is kept as evidence, not as delivered insulin.
+
+Other treatments become dated notes: `Profile Switch`, `Temporary Target` and
+`Override` keep their details, and `Site Change`, `Insulin Change`,
+`Pump Battery Change`, `Sensor Change` and `Sensor Start` become pump or sensor
+notes. A pump suspend followed by a resume, and exercise or activity entries
+with a duration of up to 24 hours, are also kept as timed pump-state evidence
+records.
 
 When AAPS on the phone is the selected glucose source, Nightscout supplies
 treatments only, and only while the AAPS card's fill switch is on. The
@@ -614,15 +654,19 @@ for imported meter-check context so display units can change safely. Version
 17 adds sensor-change notes and their glucose-source binding; version 18 adds
 the recorded sensor model and expected warm-up duration. Version 19 preserves
 personal observations, including manually entered laboratory provenance. Version
-20 adds saved food, meal and recipe photos. Current version 21 adds allowlisted,
+20 adds saved food, meal and recipe photos. Version 21 adds allowlisted,
 one-way glucose-source account/patient identity digests to the encrypted manifest.
 An empty-store restore installs those identities as disconnected ownership, never
 as credentials or active sessions. Verified same-account reconnection retains
 history; a different account still triggers the existing privacy boundary. An
 additive restore cannot replace destination ownership. Older backups have no such
 proof: reconnect the original services before the final additive merge.
-Older backups do not invent events, observations or photos. Versions 1–20 remain
-readable through the same `.t1arc` picker. Active conversation recovery requires
+Version 22 adds cycle-tracking periods and days. Current version 23 adds AAPS
+status observations: the glucose, IOB and COB updates received from AAPS on
+the phone, each with its own time.
+Older backups do not invent events, observations, photos or cycle entries.
+Plain backups from versions 1–22, and framed container backups (`T1ARCCN1`)
+from versions 5–22, remain readable through the same `.t1arc` picker. Active conversation recovery requires
 matching authenticated ownership. Glooko's installation-specific fingerprint
 cannot be matched across reinstalls; earlier conversations are available in an
 explicit read-only archive and are never included in new replies. This is not an

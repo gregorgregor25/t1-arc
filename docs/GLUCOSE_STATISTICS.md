@@ -13,7 +13,7 @@ Every figure names the range it uses.
 | --- | --- | --- | --- |
 | Standard range | 3.9–10.0 | 70–180 | International consensus on time in range |
 | Tight range | 3.9–7.8 | 70–140 | Consensus tight range |
-| Your range | your choice | your choice | **Phone and lock screen > Glucose ranges and colours**, the **In range** band (Target starts / Target ends) |
+| Your range | your choice | your choice | **Display and alerts > Glucose ranges**, the **In range** band (Target starts / Target ends) |
 
 "Time in range" without a name always means the standard range. Your range
 only appears where it is labelled **Your range**. Changing it does not change
