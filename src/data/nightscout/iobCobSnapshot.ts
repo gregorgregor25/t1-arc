@@ -2,6 +2,11 @@ import { NightscoutIobCobSnapshot } from './types';
 import { parseExternalAbsoluteTimestamp } from '@/domain/externalTimestamp';
 
 export const NIGHTSCOUT_IOB_COB_MAX_AGE_MS = 12 * 60_000;
+/**
+ * Glance surfaces keep a reported estimate, with its own age, for up to an
+ * hour after Nightscout reported it. Older estimates are not shown.
+ */
+export const NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS = 60 * 60_000;
 const EARLIEST_PLAUSIBLE_TIMESTAMP = Date.UTC(2000, 0, 1);
 
 function finiteSnapshotNumber(value: unknown) {
@@ -35,6 +40,7 @@ function payloadTimestamp(source: Record<string, unknown> | undefined) {
 export function isFreshNightscoutIobCobSnapshot(
   snapshot: NightscoutIobCobSnapshot,
   now = Date.now(),
+  maxAgeMs = NIGHTSCOUT_IOB_COB_MAX_AGE_MS,
 ) {
   const validIob =
     snapshot.iobUnits === undefined ||
@@ -52,7 +58,7 @@ export function isFreshNightscoutIobCobSnapshot(
     Number.isFinite(snapshot.timestamp) &&
     snapshot.timestamp >= EARLIEST_PLAUSIBLE_TIMESTAMP &&
     snapshot.timestamp <= now + 60_000 &&
-    now - snapshot.timestamp <= NIGHTSCOUT_IOB_COB_MAX_AGE_MS
+    now - snapshot.timestamp <= maxAgeMs
   );
 }
 

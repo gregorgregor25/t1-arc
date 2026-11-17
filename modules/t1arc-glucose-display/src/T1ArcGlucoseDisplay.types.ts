@@ -65,6 +65,11 @@ export interface GlucoseDisplayStatus {
   aodOverlayVisible: boolean;
   androidAutoEnabled: boolean;
   androidAutoProjected: boolean;
+  /**
+   * Whether insulin and carbs on board appear beside glucose on the
+   * notification and widget. Absent from builds without the setting.
+   */
+  onBoardEstimatesVisible?: boolean;
   aodLastEvent?: string;
   aodLastError?: string;
   latestMmolL?: number;
@@ -166,6 +171,19 @@ export interface AapsLocalTreatment {
   writeEpoch: number;
   selectionGeneration: number;
   treatment: Record<string, AapsLocalTreatmentValue>;
+}
+
+/**
+ * Insulin and carbs on board reported through Nightscout, for the glance
+ * surfaces. AAPS estimates are written natively and never sent this way.
+ * A missing value is omitted, never sent as zero.
+ */
+export interface OnBoardEstimatePublication {
+  provenance: 'nightscout';
+  iobUnits?: number;
+  cobGrams?: number;
+  /** When the looping system reported the estimate, in epoch ms. */
+  receivedAt: number;
 }
 
 export interface AapsTreatmentStatus {

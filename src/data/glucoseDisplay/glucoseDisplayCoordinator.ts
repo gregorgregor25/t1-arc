@@ -3,6 +3,7 @@ import { CompositeGlucoseSource } from '@/data/live/CompositeGlucoseSource';
 import { AAPS_HISTORICAL_SOURCE_ID, AAPS_LOCAL_SOURCE_ID, AAPS_RESTORED_SOURCE_ID } from '@/data/aaps/types';
 import T1ArcGlucoseDisplay, {
   type GlucoseDisplayStatus,
+  type OnBoardEstimatePublication,
 } from '../../../modules/t1arc-glucose-display';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -27,6 +28,11 @@ import {
   GLUCOSE_DISPLAY_HEADLESS_DEADLINE_MS,
   settleHeadlessPromise,
 } from './headlessTaskSettlement';
+import {
+  forgetPublishedOnBoardEstimate,
+  nightscoutOnBoardPublication,
+  publishOnBoardEstimate,
+} from './onBoardEstimatePublication';
 import {
   acquireLocalDataWriteLease,
   type LocalDataWriteLease,
@@ -204,6 +210,7 @@ type PreparedGlucoseDisplayPublication =
       reading: GlucoseReading;
       trend: GlucoseReading['trend'];
       latestIdentity: string;
+      onBoard?: OnBoardEstimatePublication | null;
     }
   | {
       kind: 'reading';
@@ -220,6 +227,7 @@ type PreparedGlucoseDisplayPublication =
       history: { mmolL: number; timestampMs: number }[];
       latestIdentity: string;
       historyIdentity: string;
+      onBoard?: OnBoardEstimatePublication | null;
     };
 
 interface PublicationIdentityRow {
@@ -281,6 +289,31 @@ function publicationHistoryIdentity(readings: readonly GlucoseReading[]) {
   return JSON.stringify(readings.map(publicationReadingIdentity));
 }
 
+/**
+ * Insulin and carbs on board for the glance surfaces. AAPS writes its own
+ * estimate natively, so nothing is sent for it. Nightscout glucose carries
+ * the saved Nightscout estimate; any other reading clears a Nightscout one.
+ * A failed read clears rather than leaving an old value beside new glucose.
+ */
+async function prepareOnBoardEstimate(
+  reading: GlucoseReading,
+  selectedSourceId: string | undefined,
+  lease: LocalDataWriteLease | undefined,
+): Promise<OnBoardEstimatePublication | null | undefined> {
+  if (selectedSourceId === AAPS_LOCAL_SOURCE_ID) return undefined;
+  if (reading.sourceId !== NIGHTSCOUT_SOURCE_ID) return null;
+  try {
+    const { loadDisplayableNightscoutIobCobSnapshot } = await import(
+      '@/data/nightscout/iobCobStore'
+    );
+    return nightscoutOnBoardPublication(
+      await loadDisplayableNightscoutIobCobSnapshot(Date.now(), lease),
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Performs potentially long reads and trend calculation before taking a writer lock. */
 async function prepareGlucoseDisplayPublication(
   options: UpdateGlucoseDisplayOptions = {},
@@ -325,6 +358,7 @@ async function prepareGlucoseDisplayPublication(
       reading,
       trend: displayTrendOrReadingTrend(display.latestTrend, reading.trend),
       latestIdentity: publicationReadingIdentity(reading),
+      onBoard: await prepareOnBoardEstimate(reading, selectedSourceId, lease),
     };
   }
   const syncState = await store.getSyncState(reading.sourceId);
@@ -365,6 +399,7 @@ async function prepareGlucoseDisplayPublication(
       })),
     latestIdentity: publicationReadingIdentity(reading),
     historyIdentity: publicationHistoryIdentity(historyReadings),
+    onBoard: await prepareOnBoardEstimate(reading, selectedSourceId, lease),
   };
 }
 
@@ -443,10 +478,17 @@ async function commitPreparedGlucoseDisplayPublication(
         'No personal glucose reading',
       );
     }
+    // Clearing native glucose also clears its insulin and carbs on board.
+    if (published) forgetPublishedOnBoardEstimate();
     if (published) await reconcileGlucoseAlerts(undefined).catch(() => undefined);
     return published;
   }
   if (prepared.kind === 'unchanged') {
+    if (prepared.onBoard !== undefined) {
+      await publishOnBoardEstimate(
+        T1ArcGlucoseDisplay, lease.epoch, prepared.selectionGeneration, prepared.onBoard,
+      );
+    }
     await reconcileGlucoseAlerts(prepared.reading, prepared.trend).catch(
       () => undefined,
     );
@@ -472,6 +514,11 @@ async function commitPreparedGlucoseDisplayPublication(
         lease.epoch, prepared.selectionGeneration, snapshot, prepared.history,
         'No personal glucose reading',
       );
+  if (historyUpdated && prepared.onBoard !== undefined) {
+    await publishOnBoardEstimate(
+      T1ArcGlucoseDisplay, lease.epoch, prepared.selectionGeneration, prepared.onBoard,
+    );
+  }
   if (historyUpdated || prepared.selectedSourceId === undefined) {
     await reconcileGlucoseAlerts(
       prepared.reading,
