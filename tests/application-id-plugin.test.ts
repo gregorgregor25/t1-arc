@@ -8,9 +8,19 @@ const require = createRequire(import.meta.url);
 const { injectT1ArcReleaseSigning } = require(
   path.join(process.cwd(), 'plugins', 'with-t1arc-release-signing.js'),
 ) as { injectT1ArcReleaseSigning: (contents: string) => string };
-const { injectT1ArcApplicationId } = require(
+interface ManifestElement {
+  $?: Record<string, string>;
+  activity?: ManifestElement[];
+}
+interface Manifest {
+  manifest: { application?: ManifestElement[] };
+}
+const { applyT1ArcAppLabel, injectT1ArcApplicationId } = require(
   path.join(process.cwd(), 'plugins', 'with-t1arc-application-id.js'),
-) as { injectT1ArcApplicationId: (contents: string) => string };
+) as {
+  applyT1ArcAppLabel: (manifest: Manifest) => Manifest;
+  injectT1ArcApplicationId: (contents: string) => string;
+};
 
 const generatedAppGradle = `apply plugin: "com.android.application"
 apply plugin: "com.facebook.react"
@@ -57,6 +67,53 @@ describe('T1 Arc Android application identity policy', () => {
     expect(result).toContain(
       'resValue "string", "t1arc_application_id", t1ArcVariantApplicationId(t1ArcPhoneApplicationId, "release")',
     );
+  });
+
+  it('labels development and private-test installs "T1 Arc Dev"', () => {
+    const result = injectT1ArcApplicationId(
+      injectT1ArcReleaseSigning(generatedAppGradle),
+    );
+    expect(result).toContain(
+      'manifestPlaceholders["t1ArcAppLabel"] = t1ArcVariantAppLabel("debug")',
+    );
+    expect(result).toContain(
+      'manifestPlaceholders["t1ArcAppLabel"] = t1ArcVariantAppLabel("release")',
+    );
+
+    const policy = readFileSync(
+      path.join(process.cwd(), 'scripts', 'gradle', 't1arc-application-id.gradle'),
+      'utf8',
+    );
+    expect(policy).toContain("productionAppLabel = 'T1 Arc'");
+    expect(policy).toContain("developmentAppLabel = 'T1 Arc Dev'");
+    const labelPolicy = policy.slice(policy.indexOf('ext.t1ArcVariantAppLabel'));
+    expect(labelPolicy).toMatch(/case 'debug':\s*return developmentAppLabel/);
+    expect(labelPolicy).toMatch(
+      /releaseApplicationIdSuffix == null\s*\? productionAppLabel\s*: developmentAppLabel/,
+    );
+
+    const manifest = applyT1ArcAppLabel({
+      manifest: {
+        application: [
+          {
+            $: { 'android:name': '.MainApplication', 'android:label': '@string/app_name' },
+            activity: [
+              { $: { 'android:name': '.MainActivity', 'android:label': '@string/app_name' } },
+              { $: { 'android:name': '.OtherActivity', 'android:label': '@string/other' } },
+              { $: { 'android:name': '.Unlabelled' } },
+            ],
+          },
+        ],
+      },
+    });
+    const application = manifest.manifest.application![0]!;
+    expect(application.$!['android:label']).toBe('${t1ArcAppLabel}');
+    expect(application.activity!.map((activity) => activity.$!['android:label'])).toEqual([
+      '${t1ArcAppLabel}',
+      '@string/other',
+      undefined,
+    ]);
+    expect(applyT1ArcAppLabel(manifest)).toEqual(manifest);
   });
 
   it('is idempotent across repeated Expo prebuilds', () => {
