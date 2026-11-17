@@ -241,7 +241,6 @@ internal class AodOverlayLifecyclePolicy {
       snapshotAvailable
 }
 private const val MAX_WEAR_HISTORY_POINTS = 144
-private const val WEAR_HISTORY_WINDOW_MS = 6 * 60 * 60_000L
 
 private val AOD_POSITIONS =
   setOf(
@@ -1827,25 +1826,6 @@ private fun applyPrivateGlucosePublication(
       Tasks.await(historyTask, wearWaitSeconds, TimeUnit.SECONDS)
     }.isSuccess
   return currentPublished && historyPublished
-}
-
-/**
- * Extends the watch history last published from the database by the new
- * reading, over the same six-hour window the JS sync uses. When the sync then
- * publishes that window, the payload is identical and the watch history is
- * not sent a second time. The four-hour widget history is only a fallback
- * while nothing has been published since the process started.
- */
-internal fun aapsWearHistory(
-  published: List<GlucoseHistoryPoint>,
-  widgetHistory: List<GlucoseHistoryPoint>,
-  mmolL: Double,
-  timestampMs: Long,
-): List<GlucoseHistoryPoint> {
-  if (published.isEmpty()) return widgetHistory
-  val start = timestampMs - WEAR_HISTORY_WINDOW_MS
-  return published.filter { it.timestampMs in start until timestampMs } +
-    GlucoseHistoryPoint(mmolL, timestampMs)
 }
 
 /** Called inside the same native epoch gate as source changes and privacy erase. */
