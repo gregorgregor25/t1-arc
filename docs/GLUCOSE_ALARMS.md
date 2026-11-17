@@ -45,12 +45,26 @@ Everything new is quiet until the user turns it on:
 | Only alert if high lasts | Straight away (0 minutes) |
 | Pause low alerts after a logged hypo treatment | 15 minutes |
 
-Older saved choices (configuration version 1) are upgraded on read. The master
-switch and the sound switch are never changed. Urgent low follows the existing
-low switch: it is on when low alerts were on, at 3.0 mmol/L, or 0.2 mmol/L
-below a low threshold that is already at or under 3.0 mmol/L. If that would be
-below 2.0 mmol/L, urgent low stays off. Urgent low uses the low sound, the high
-delay is 0 and the hypo pause is 15 minutes. The upgrade never turns sound on.
+These defaults apply to a new install, and to older in-app alerts that were
+never turned on. Urgent low is preconfigured there, but nothing sounds until
+**Allow T1 Arc alerts** is on and the choices are saved.
+
+Older saved choices (configuration version 1, or older in-app alerts that were
+on) are upgraded on read without changing how existing alarms behave. The
+master switch, the sound switch and the repeat choice are never changed.
+Urgent low stays **off**, with the low sound, the high delay is 0 and there is
+no hypo pause (0 minutes). The upgrade never turns sound on.
+
+Alert settings then show a one-time card, **Add an urgent low alert at
+3.0 mmol/L (54 mg/dL)** (or 0.2 mmol/L below a low threshold already at or
+under 3.0 mmol/L). It explains that urgent low cannot be quietened by the night
+schedule, reminds at least every 30 minutes even if reminders are set to
+“Never”, and can be snoozed for up to 30 minutes. Only the user's tap adds it,
+and only to the form: it starts once the choices are saved. **Not now**
+dismisses the card for good; saving with urgent low on also dismisses it. No
+card is shown if no level of at least 2.0 mmol/L fits below the low level. The
+card's state is stored on the phone under
+`t1arc.glucose-alarms.urgent-low-offer.v1` and holds no glucose values.
 
 ### Urgent low
 
@@ -64,7 +78,14 @@ over low and must be below the low level when both are on. It:
 - is never paused by a logged hypo treatment;
 - is never delayed.
 
-A reading that falls from low into urgent low sounds a new alert straight away.
+A reading that falls from low into urgent low sounds a new alert straight away,
+unless the low was snoozed by the user. Then the snooze carries over, but never
+for more than 30 minutes from when the user snoozed: a 15-minute snooze set
+5 minutes ago holds urgent low for 10 more minutes; a 1-hour snooze set
+10 minutes ago holds it for 20. A snooze set 30 or more minutes ago does not
+carry, so urgent low sounds at once. The automatic pause after a logged hypo
+treatment never carries, and nor does a snooze from before a restart, from
+another glucose source or from a high alert.
 A reading that rises from urgent low back into low continues the same episode,
 so it does not sound a second time.
 
@@ -120,7 +141,9 @@ deciding whether to sound.
 
 **Silence this alert** acknowledges the current episode. It does not claim
 glucose has recovered. The chosen repeat interval controls further reminders
-while the excursion continues. Closing the controls alone does not silence it.
+while the excursion continues, except that urgent low reminds at least every
+30 minutes even if reminders are set to “Never” or a longer interval. The
+active-alert controls say which applies. Closing the controls alone does not silence it.
 Actual alarm playback is bounded to a 60-second burst; previews are separately
 bounded and cannot replace a playing alarm.
 

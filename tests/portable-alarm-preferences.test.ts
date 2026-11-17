@@ -157,8 +157,8 @@ describe('portable preferences with a configured native alarm owner', () => {
     mocks.getNative.mockResolvedValue(v1);
     const result = await capturePortablePreferences();
     expect(result.glucoseAlarms?.configuration).toMatchObject({
-      schemaVersion: 2, urgentLowEnabled: true, urgentLowThresholdMmolL: 3, urgentLowSound: CUSTOM,
-      highPersistMinutes: 0, hypoTreatmentSnoozeMinutes: 15,
+      schemaVersion: 2, urgentLowEnabled: false, urgentLowThresholdMmolL: 3, urgentLowSound: CUSTOM,
+      highPersistMinutes: 0, hypoTreatmentSnoozeMinutes: 0,
     });
   });
 

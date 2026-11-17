@@ -7,7 +7,7 @@ import {
   acknowledgeGlucoseAlarm, cancelGlucoseAlarmSnooze, getGlucoseAlarmStatus, snoozeGlucoseAlarm,
 } from '@/data/glucoseAlerts/glucoseAlarms';
 import {
-  customClockSnoozeUntil, glucoseAlarmSnoozeOptions, glucoseAlarmSnoozeUntil,
+  customClockSnoozeUntil, glucoseAlarmSilenceExplanation, glucoseAlarmSnoozeOptions, glucoseAlarmSnoozeUntil,
   type GlucoseAlarmKind, type GlucoseAlarmStatus,
 } from '@/domain/glucoseAlarms';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
@@ -150,7 +150,7 @@ export function GlucoseAlarmHost() {
                 {status.activeKind === 'urgentLow' ? <Text style={[styles.small, { color: colors.textSecondary }]}>Urgent low can be snoozed for up to {maxSnoozeMinutes} minutes.</Text> : null}
                 {snoozed ? <AlarmAction label="Cancel snooze" disabled={busy} onPress={() => void perform(() => cancelGlucoseAlarmSnooze(episodeId), false)} /> : null}
                 <AlarmAction label="Silence this alert" primary disabled={busy} onPress={() => void perform(() => acknowledgeGlucoseAlarm(episodeId))} />
-                <Text style={[styles.small, { color: colors.textSecondary }]}>Silencing is not a recovery. If the alert remains unresolved, your repeat setting controls reminders. A new urgent low, low or very high alert is separate.</Text>
+                <Text style={[styles.small, { color: colors.textSecondary }]}>{glucoseAlarmSilenceExplanation(status.activeKind)}</Text>
               </>}
               {message ? <Text accessibilityLiveRegion="polite" style={[styles.body, { color: colors.danger }]}>{message}</Text> : null}
               <AlarmAction label="Close controls" disabled={busy} onPress={dismiss} />

@@ -132,28 +132,11 @@ internal data class NativeGlucoseAlarmConfiguration(val json: JSONObject) {
       GlucoseAlarmKind.VERY_HIGH -> "veryHighSound"; GlucoseAlarmKind.STALE -> "staleSound"
     }
 
-    /**
-     * Version 1 choices (saved before urgent low, the high delay and the hypo
-     * pause existed) are upgraded in memory with quiet defaults. The master
-     * switch and the sound switch are never changed by this upgrade.
-     */
-    private fun upgradeVersion1(fields: Map<String, Any?>): Map<String, Any?> {
-      val low = (fields["lowThresholdMmolL"] as? Number)?.toDouble() ?: return fields
-      val (urgentEnabled, urgentThreshold) = GlucoseAlarmPolicy.migratedUrgentLow(fields["lowEnabled"] == true, low)
-      return fields + mapOf(
-        "schemaVersion" to 2.0,
-        "urgentLowEnabled" to urgentEnabled,
-        "urgentLowThresholdMmolL" to urgentThreshold,
-        "urgentLowSound" to fields["lowSound"],
-        "highPersistMinutes" to 0.0,
-        "hypoTreatmentSnoozeMinutes" to GlucoseAlarmPolicy.DEFAULT_HYPO_TREATMENT_SNOOZE_MINUTES.toDouble(),
-      )
-    }
-
     fun parse(input: Map<String, Any?>): NativeGlucoseAlarmConfiguration {
       val version = (input["schemaVersion"] as? Number)?.toDouble()
       require(version == 1.0 || version == 2.0) { "Alarm configuration version is unsupported." }
-      val fields = if (version == 1.0) upgradeVersion1(input) else input
+      // Upgraded in memory only; existing alarms keep behaving exactly as before.
+      val fields = if (version == 1.0) GlucoseAlarmPolicy.upgradeVersion1(input) else input
       val booleans = listOf("enabled", "audioEnabled", "urgentLowEnabled", "lowEnabled", "highEnabled", "veryHighEnabled", "staleEnabled", "nightEnabled")
       require(booleans.all { fields[it] is Boolean }) { "Every glucose alarm switch must be on or off." }
       val numbers = listOf("schemaVersion", "urgentLowThresholdMmolL", "lowThresholdMmolL", "highThresholdMmolL", "repeatMinutes",
@@ -233,7 +216,8 @@ internal object T1ArcGlucoseAlarmEngine {
           if (e.isNull("snoozeUntilElapsed")) null else e.getLong("snoozeUntilElapsed"),
           if (e.isNull("snoozeUntilWall")) null else e.getLong("snoozeUntilWall"), e.getInt("bootCount"),
           e.optLongOrNull("excursionStartedAt"),
-          GlucoseAlarmKind.parse(e.optString("heldHighKind", "")), e.optLongOrNull("heldHighStartedAt"))
+          GlucoseAlarmKind.parse(e.optString("heldHighKind", "")), e.optLongOrNull("heldHighStartedAt"),
+          e.optLongOrNull("snoozedAtElapsed"))
       }.getOrNull() }
       loaded = true
     }
@@ -254,7 +238,8 @@ internal object T1ArcGlucoseAlarmEngine {
       .put("snoozeUntilWall", current.snoozeUntilWall ?: JSONObject.NULL).put("bootCount", current.bootCount)
       .put("excursionStartedAt", current.excursionStartedAt ?: JSONObject.NULL)
       .put("heldHighKind", current.heldHighKind?.wire ?: JSONObject.NULL)
-      .put("heldHighStartedAt", current.heldHighStartedAt ?: JSONObject.NULL))
+      .put("heldHighStartedAt", current.heldHighStartedAt ?: JSONObject.NULL)
+      .put("snoozedAtElapsed", current.snoozedAtElapsed ?: JSONObject.NULL))
     GlucoseAlarmStore.write(context, data)
   }
 
@@ -305,7 +290,15 @@ internal object T1ArcGlucoseAlarmEngine {
     return state
   }
 
-  fun getConfiguration(context: Context): Map<String, Any?>? = synchronized(lock) { configuration(context)?.json?.bridgeMap() }
+  /**
+   * The saved choices. `upgradedFromVersion` tells settings that these choices
+   * predate urgent low, so it can offer urgent low once instead of adding it.
+   */
+  fun getConfiguration(context: Context): Map<String, Any?>? = synchronized(lock) {
+    val fields = configuration(context)?.json?.bridgeMap() ?: return@synchronized null
+    val storedVersion = load(context).optJSONObject("configuration")?.optDouble("schemaVersion")
+    if (storedVersion == 1.0) fields + ("upgradedFromVersion" to 1) else fields
+  }
 
   fun save(context: Context, fields: Map<String, Any?>, visible: Boolean): Map<String, Any?> {
     val next = NativeGlucoseAlarmConfiguration.parse(fields)
@@ -399,7 +392,10 @@ internal object T1ArcGlucoseAlarmEngine {
       if (!previewActive) stopPlaybackLocked(context)
       episode = GlucoseAlarmEpisode(UUID.randomUUID().toString(), decision.kind, identity, now, bootCount = boot(context),
         excursionStartedAt = decision.excursionStartedAt, heldHighKind = decision.heldHighKind,
-        heldHighStartedAt = decision.heldHighStartedAt)
+        heldHighStartedAt = decision.heldHighStartedAt,
+        // A snoozed low deepening into urgent low keeps its (capped) snooze.
+        snoozeUntilElapsed = decision.carriedSnoozeUntilElapsed, snoozeUntilWall = decision.carriedSnoozeUntilWall,
+        snoozedAtElapsed = decision.carriedSnoozedAtElapsed)
       persist(context)
     } else if (old.kind != decision.kind || old.excursionStartedAt != decision.excursionStartedAt ||
       old.heldHighKind != decision.heldHighKind || old.heldHighStartedAt != decision.heldHighStartedAt) {
@@ -433,7 +429,7 @@ internal object T1ArcGlucoseAlarmEngine {
     }
     if (decision.shouldNotify && canDeliver) {
       episode = current.copy(lastNotifiedElapsed = elapsed, acknowledged = false, snoozeUntilElapsed = null,
-        snoozeUntilWall = null, bootCount = boot(context))
+        snoozeUntilWall = null, snoozedAtElapsed = null, bootCount = boot(context))
       persist(context)
       if (wantsAudio) startPlaybackLocked(context, playableSound(context, config.sound(current.kind)), config.volume,
         config.rampSeconds, current.id, false)
@@ -488,7 +484,8 @@ internal object T1ArcGlucoseAlarmEngine {
       val old = currentEpisode(context, id)
       val elapsed = SystemClock.elapsedRealtime()
       val untilElapsed = GlucoseAlarmPolicy.snoozeUntil(System.currentTimeMillis(), elapsed, until.toLong(), old.kind)
-      episode = old.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = until.toLong(), bootCount = boot(context))
+      episode = old.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = until.toLong(), snoozedAtElapsed = elapsed,
+        bootCount = boot(context))
       persist(context)
       stopPlaybackLocked(context)
       notificationFingerprint = null
@@ -501,7 +498,7 @@ internal object T1ArcGlucoseAlarmEngine {
   fun cancelSnooze(context: Context, id: String): Map<String, Any?> {
     synchronized(lock) {
       val old = currentEpisode(context, id)
-      episode = old.copy(snoozeUntilElapsed = 0L, snoozeUntilWall = null)
+      episode = old.copy(snoozeUntilElapsed = 0L, snoozeUntilWall = null, snoozedAtElapsed = null)
       persist(context)
     }
     reconcile(context)
@@ -558,7 +555,9 @@ internal object T1ArcGlucoseAlarmEngine {
         if (current?.kind == GlucoseAlarmKind.LOW && (current.snoozeUntilElapsed ?: 0L) < untilElapsed) {
           // An already sounding low is snoozed to the same end, so it is checked
           // again (and can sound again) when the pause ends.
-          episode = current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, bootCount = boot(context))
+          // This automatic pause is not a user snooze: it never carries into urgent low.
+          episode = current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, snoozedAtElapsed = null,
+            bootCount = boot(context))
           if (activePlaybackEpisode == current.id) stopPlaybackLocked(context)
         }
         persist(context)
