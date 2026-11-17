@@ -319,11 +319,16 @@ internal object GlucoseAlarmPolicy {
    * The low episode after the automatic pause that follows a logged hypo
    * treatment. The alert is held until [untilElapsed]; a user snooze already
    * running keeps its own start and end, so it still carries into urgent low
-   * exactly as the user chose it.
+   * exactly as the user chose it. Snooze times are on the elapsed clock, which
+   * restarts with the phone, so a snooze from an earlier boot is dropped.
    */
-  fun episodeAfterHypoPause(current: GlucoseAlarmEpisode, untilElapsed: Long, untilWall: Long, bootCount: Int) =
-    current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, bootCount = bootCount,
-      userSnoozeUntilElapsed = current.snoozedAtElapsed?.let { current.userSnoozeUntilElapsed ?: current.snoozeUntilElapsed })
+  fun episodeAfterHypoPause(current: GlucoseAlarmEpisode, untilElapsed: Long, untilWall: Long, bootCount: Int): GlucoseAlarmEpisode {
+    val sameBoot = current.bootCount == bootCount
+    return current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, bootCount = bootCount,
+      snoozedAtElapsed = current.snoozedAtElapsed?.takeIf { sameBoot },
+      userSnoozeUntilElapsed = current.snoozedAtElapsed?.takeIf { sameBoot }
+        ?.let { current.userSnoozeUntilElapsed ?: current.snoozeUntilElapsed })
+  }
 
   fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long, kind: GlucoseAlarmKind = GlucoseAlarmKind.LOW): Long {
     val duration = untilWall - wallNow

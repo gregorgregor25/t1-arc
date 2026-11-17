@@ -136,6 +136,16 @@ class GlucoseAlarmUpgradeAndSnoozeCarryTest {
       lowPause = elapsed + 20 * minute).shouldNotify)
   }
 
+  @Test fun `a hypo-treatment pause after a reboot drops the snooze from the earlier boot`() {
+    // The low episode and its snooze come from boot 1; the pause is applied on boot 2.
+    val oldBoot = snoozedLow(snoozedAgo = 2 * minute, length = 10 * minute).copy(bootCount = 1)
+    val paused = GlucoseAlarmPolicy.episodeAfterHypoPause(oldBoot, elapsed + 20 * minute, now + 20 * minute, 2)
+    assertEquals(2, paused.bootCount)
+    assertNull(paused.snoozedAtElapsed); assertNull(paused.userSnoozeUntilElapsed)
+    val urgent = evaluate(2.8, paused, monotonic = elapsed + minute, wall = now + minute, lowPause = elapsed + 20 * minute)
+    assertTrue(urgent.shouldNotify); assertNull(urgent.carriedSnoozeUntilElapsed)
+  }
+
   @Test fun `a hypo-treatment pause without a user snooze is still not carried`() {
     val sounded = GlucoseAlarmEpisode("low", GlucoseAlarmKind.LOW, source, now - 5 * minute,
       lastNotifiedElapsed = elapsed - minute, bootCount = 2)
