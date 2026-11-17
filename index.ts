@@ -1,3 +1,5 @@
+// Must stay first: installs the app typeface before any screen renders.
+import './src/theme/registerAppTypeface';
 import { registerRootComponent } from 'expo';
 import { AppRegistry } from 'react-native';
 

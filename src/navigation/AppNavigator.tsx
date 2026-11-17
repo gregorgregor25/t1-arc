@@ -38,6 +38,7 @@ import { CycleTrackingScreen } from '@/screens/CycleTrackingScreen';
 import { FeedbackScreen } from '@/screens/FeedbackScreen';
 import { initializeCommunityReminderAsync } from '@/data/feedback/communityReminder';
 import { useAppTheme } from "@/theme/theme";
+import { appNavigationFonts } from "@/theme/typography";
 
 import { APP_LINK_PREFIXES, isSafeNavigationLink } from "./appLinks";
 import { resolveAppEntry } from "./appEntry";
@@ -120,6 +121,8 @@ export function AppNavigator() {
       border: colors.border,
       notification: colors.warning,
     },
+    // Tab labels use these explicit families; keep them on the app font.
+    fonts: appNavigationFonts,
   };
 
   useEffect(() => {
