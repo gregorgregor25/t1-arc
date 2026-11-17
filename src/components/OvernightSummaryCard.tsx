@@ -91,11 +91,11 @@ export function OvernightSummaryCard() {
 }
 
 const styles = StyleSheet.create({
-  card: { gap: 6, marginBottom: 16 },
+  card: { gap: 6, marginTop: 16 },
   heading: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 4 },
   copy: { flex: 1, gap: 2 },
-  title: { fontSize: 15, fontWeight: "800" },
-  period: { fontSize: 12 },
+  title: { fontSize: 17, lineHeight: 22, fontWeight: "800" },
+  period: { fontSize: 13, lineHeight: 18 },
   dismiss: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   line: { fontSize: 13, lineHeight: 19 },
   footer: { fontSize: 12, lineHeight: 17, marginTop: 4 },

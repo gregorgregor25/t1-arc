@@ -104,7 +104,7 @@ export function DeviceAgeChips() {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   chip: { minHeight: 36, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, borderWidth: StyleSheet.hairlineWidth },
   label: { fontSize: 13, fontWeight: "700" },
 });

@@ -166,7 +166,7 @@ export function CycleTrackingScreen() {
   }
 
   const cellBorder = colors.surfaceBorder;
-  return <AppScreen title="Cycle tracking" trailing={<Pressable accessibilityRole="button" accessibilityLabel="Back to health" onPress={() => navigation.navigate('Health')} style={styles.back}><Ionicons name="close" size={25} color={colors.textSecondary} /></Pressable>}>
+  return <AppScreen title="Cycle tracking" tabBarHidden trailing={<Pressable accessibilityRole="button" accessibilityLabel="Back to health" onPress={() => navigation.navigate('Health')} style={styles.back}><Ionicons name="close" size={25} color={colors.textSecondary} /></Pressable>}>
     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your history, at a glance</Text>
     {loading ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading cycle history" style={styles.loading} /> : null}
     {error ? <ErrorCard message={error} title="Cycle tracking could not finish that" /> : null}

@@ -511,6 +511,7 @@ export function SourcesScreen({
     <AppScreen
       title="Settings"
       fixedHeader
+      tabBarHidden
       refreshing={syncing}
       onRefresh={() => void refreshData()}
       scrollViewRef={scrollViewRef}

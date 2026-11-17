@@ -164,6 +164,7 @@ import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { tarvisPersonalTargetProfile } from "@/data/tarvis/intent/rangeFocus";
 import { useAppTheme } from "@/theme/theme";
+import { useSystemBarInsets } from "@/hooks/useSystemBarInsets";
 import {
   acquireLocalDataWriteLease,
   assertLocalDataWriteLeaseCurrent,
@@ -1050,6 +1051,7 @@ function TarvisConfirmationDialog({
   working: boolean;
 }) {
   const { colors, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const newConversation = confirmation === "new-conversation";
   const deletingConversation = confirmation === "delete-conversation";
   const title = deletingConversation
@@ -1082,7 +1084,7 @@ function TarvisConfirmationDialog({
       transparent
       visible={Boolean(confirmation)}
     >
-      <View style={styles.confirmationFrame}>
+      <View style={[styles.confirmationFrame, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Pressable
           accessibilityLabel="Cancel"
           accessibilityRole="button"
@@ -1366,6 +1368,7 @@ export function TarvisScreen({
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const evidence = useMemo(() => report ? buildTarvisEvidencePacket(report) : undefined, [report]);
   const { settings: glucoseAppearance } = useGlucoseAppearance();
   const personalTargetProfile = useMemo(
@@ -4387,7 +4390,7 @@ export function TarvisScreen({
         transparent
         visible={chatGptPlanInfoVisible}
       >
-        <View style={styles.confirmationFrame}>
+        <View style={[styles.confirmationFrame, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View accessibilityViewIsModal style={[styles.confirmationCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.surfaceBorder, borderRadius: radius.lg }]}>
             <View style={[styles.confirmationIcon, { backgroundColor: `${colors.primary}18`, borderRadius: radius.pill }]}>
               <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.primary} />

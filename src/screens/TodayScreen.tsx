@@ -52,6 +52,10 @@ import type { RootTabParamList } from "@/navigation/AppNavigator";
 import { useDataContext } from "@/providers/DataProvider";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { laggingDataStamps } from "@/domain/dataThrough";
+import {
+  FLOATING_BUTTON_CLEARANCE,
+  FLOATING_BUTTON_MARGIN,
+} from "@/theme/tokens";
 
 type TodayRange = "4h" | "8h" | "12h" | "24h";
 const RANGE_HOURS: Record<TodayRange, number> = {
@@ -266,6 +270,7 @@ export function TodayScreen() {
       <AppScreen
         title="Today"
         quietHeader
+        bottomClearance={FLOATING_BUTTON_CLEARANCE}
         refreshing={syncing}
         onRefresh={() => void refreshData()}
         trailing={<AppMenuButton screenActions={todayMenuActions} />}
@@ -461,7 +466,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   floatingButton: {
-    right: 18,
-    bottom: 18,
+    right: FLOATING_BUTTON_MARGIN,
+    bottom: FLOATING_BUTTON_MARGIN,
   },
 });

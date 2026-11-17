@@ -46,6 +46,7 @@ import { AapsEstimateSummary } from './AapsEstimateSummary';
 import type { AapsEstimateInput } from './aapsEstimatePresentation';
 import { SurfaceSheen } from './SurfaceSheen';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
+import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 import {
   glucoseTraceGeometry,
   TRACE_HEIGHT,
@@ -159,6 +160,7 @@ export function CurrentGlucoseCard({
   aapsEstimates?: AapsEstimateInput;
 }) {
   const { colors, dark, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const { fontScale } = useWindowDimensions();
   const { settings: appearance } = useGlucoseAppearance();
   const { defaults: regional } = useRegionalProfile();
@@ -445,7 +447,16 @@ export function CurrentGlucoseCard({
         transparent
         visible={trendDetailsVisible}
       >
-        <View style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}>
+        <View
+          style={[
+            styles.modalBackdrop,
+            {
+              backgroundColor: colors.overlay,
+              paddingTop: 20 + insets.top,
+              paddingBottom: 20 + insets.bottom,
+            },
+          ]}
+        >
           <View
             accessibilityViewIsModal
             style={[

@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   card: { gap: 12, marginBottom: 16 },
   heading: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   headingCopy: { flex: 1, gap: 3 },
-  title: { fontSize: 16, fontWeight: "800" },
+  title: { fontSize: 17, lineHeight: 22, fontWeight: "800" },
   detail: { fontSize: 13, lineHeight: 19 },
   button: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 14 },
   buttonText: { fontSize: 14, fontWeight: "700" },

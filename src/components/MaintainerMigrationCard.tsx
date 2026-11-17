@@ -32,6 +32,7 @@ import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { formatDate, formatTime, toDateKey } from "@/domain/time";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useAppTheme } from "@/theme/theme";
+import { useSystemBarInsets } from "@/hooks/useSystemBarInsets";
 
 interface Props {
   onDataChanged?(): Promise<void> | void;
@@ -145,6 +146,7 @@ export function describeMaintainerMigrationImport(
 
 export function MaintainerMigrationCard({ onDataChanged }: Props) {
   const { colors, radius, setMode } = useAppTheme();
+  const insets = useSystemBarInsets();
   const { reload: reloadGlucoseAppearance } = useGlucoseAppearance();
   const [busy, setBusy] = useState<BusyState>("idle");
   const [workingLabel, setWorkingLabel] = useState("");
@@ -578,7 +580,10 @@ export function MaintainerMigrationCard({ onDataChanged }: Props) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalRoot}
+          style={[
+            styles.modalRoot,
+            { paddingTop: 20 + insets.top, paddingBottom: 20 + insets.bottom },
+          ]}
         >
           <Pressable
             accessibilityLabel="Close migration passphrase"
