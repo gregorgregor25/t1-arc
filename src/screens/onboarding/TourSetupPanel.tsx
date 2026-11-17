@@ -35,7 +35,7 @@ export function TourSetupPanel({
       await save({ ...profile, glucoseUnit });
     } catch {
       setUnitError(
-        "T1 Arc could not save the glucose unit. You can choose it later in Settings, under Region and services.",
+        "T1 Arc could not save the glucose unit. You can choose it later in Settings, under Units and region.",
       );
     } finally {
       setSavingUnit(false);

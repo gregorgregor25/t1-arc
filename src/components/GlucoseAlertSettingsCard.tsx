@@ -22,6 +22,7 @@ import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
 import { useAppTheme } from '@/theme/theme';
 
 import { AlarmAction, AlarmChoices } from './GlucoseAlarmControls';
+import { ListRow } from './ui';
 import { SectionCard } from './SectionCard';
 import { pickerTimeForWallClock, regionalClockUses24Hours } from './zonedDateTimePicker';
 
@@ -43,8 +44,23 @@ const KIND_DETAIL: Record<GlucoseAlarmKind, string> = {
 };
 const minutesLabel = (minutes: number) => minutes === 0 ? 'Off' : `${minutes} min`;
 
-export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) {
+export interface GlucoseAlertSettingsCardProps {
+  connected: boolean;
+  /** The alert whose editor is open. Leave unset to show the list of alerts. */
+  openKind?: GlucoseAlarmKind;
+  /**
+   * Opens one alert's editor, or returns to the list with `undefined`. When
+   * omitted the card keeps this choice itself. Either way the unsaved choices
+   * stay in this card until Save, so moving between editors loses nothing.
+   */
+  onOpenKind?(kind: GlucoseAlarmKind | undefined): void;
+}
+
+export function GlucoseAlertSettingsCard({ connected, openKind: controlledOpenKind, onOpenKind }: GlucoseAlertSettingsCardProps) {
   const { colors, radius } = useAppTheme();
+  const [ownOpenKind, setOwnOpenKind] = useState<GlucoseAlarmKind>();
+  const openKind = onOpenKind ? controlledOpenKind : ownOpenKind;
+  const showKind = onOpenKind ?? setOwnOpenKind;
   const { defaults: regional } = useRegionalProfile();
   const [configuration, setConfiguration] = useState<GlucoseAlarmConfiguration>();
   const [status, setStatus] = useState<GlucoseAlarmStatus>();
@@ -133,6 +149,15 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       subscription.remove(); void stopPreview();
     };
   }, [refresh, refreshStatus, stopPreview]);
+
+  // Leaving an alert's editor (including with Android Back) ends any preview
+  // that editor started. Stopping never starts a sound.
+  const shownKind = useRef(openKind);
+  useEffect(() => {
+    if (shownKind.current === openKind) return;
+    shownKind.current = openKind;
+    void stopPreview();
+  }, [openKind, stopPreview]);
 
   function edit(change: Partial<GlucoseAlarmConfiguration>) {
     dirty.current = true;
@@ -280,59 +305,75 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
           </AlarmChoices>
         </View>;
       })() : null}
-      <SettingSwitch label="Allow T1 Arc alerts" detail="Uses the selected glucose source on this phone." value={configuration.enabled} disabled={busy} onChange={enabled => edit({ enabled })} />
-      <SettingSwitch label="Allow alarm sounds" detail="Uses Android’s alarm audio, including while the ringer is on vibrate. Saving can sound an alert if glucose is already outside your levels." value={configuration.audioEnabled} disabled={busy || !configuration.enabled} onChange={audioEnabled => edit({ audioEnabled })} />
-      {KINDS.map(item => (
-        <View key={item.kind} style={[styles.section, { borderColor: colors.border }]}>
-          <SettingSwitch label={item.label} detail={item.kind === 'high' && configuration.nightEnabled ? 'Shown silently during your night schedule.' : KIND_DETAIL[item.kind]} value={configuration[item.enabled]} disabled={busy} onChange={enabled => edit({ [item.enabled]: enabled })} />
-          {item.kind !== 'stale' ? <View style={styles.inputRow}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Threshold</Text>
-            <TextInput accessibilityLabel={`${item.label} threshold in ${glucoseUnitLabel(regional.glucoseUnit)}`} keyboardType="decimal-pad" editable={!busy} placeholder={item.kind === 'veryHigh' ? 'Choose' : undefined} placeholderTextColor={colors.textTertiary} value={thresholds[item.kind]} onChangeText={value => { dirty.current = true; setThresholds(current => ({ ...current, [item.kind]: value })); }} style={[styles.input, { color: colors.text, borderColor: colors.controlBorder, backgroundColor: colors.background, borderRadius: radius.sm }]} />
-            <Text style={[styles.unit, { color: colors.textSecondary }]}>{glucoseUnitLabel(regional.glucoseUnit)}</Text>
-          </View> : null}
-          <Text style={[styles.label, { color: colors.textSecondary }]}>Sound · {soundName(configuration[item.sound])}</Text>
-          <AlarmChoices>
-            <AlarmAction label="Steady pulse" selected={configuration[item.sound] === 'pulse'} disabled={busy} onPress={() => edit({ [item.sound]: 'pulse' })} />
-            <AlarmAction label="Two notes" selected={configuration[item.sound] === 'notes'} disabled={busy} onPress={() => edit({ [item.sound]: 'notes' })} />
-            <AlarmAction label="Choose audio file" disabled={busy} onPress={() => void chooseCustomSound(item.sound)} />
-            {status?.customSounds.map(sound => <AlarmAction key={sound.id} label={sound.name} selected={configuration[item.sound] === sound.id} disabled={busy} onPress={() => edit({ [item.sound]: sound.id })} />)}
-          </AlarmChoices>
-          <Text style={[styles.foot, { color: colors.textSecondary }]}>Preview uses this phone’s alarm volume. Check that level before pressing Play.</Text>
-          <AlarmChoices>
-            <AlarmAction label={`Play ${item.label.toLowerCase()} sound`} disabled={busy || !!previewing} onPress={() => void play(configuration[item.sound])} />
-            <AlarmAction label="Stop preview" onPress={() => void stopPreview()} />
-          </AlarmChoices>
+      {openKind === undefined ? <>
+        <SettingSwitch label="Allow T1 Arc alerts" detail="Uses the selected glucose source on this phone." value={configuration.enabled} disabled={busy} onChange={enabled => edit({ enabled })} />
+        <SettingSwitch label="Allow alarm sounds" detail="Uses Android’s alarm audio, including while the ringer is on vibrate. Saving can sound an alert if glucose is already outside your levels." value={configuration.audioEnabled} disabled={busy || !configuration.enabled} onChange={audioEnabled => edit({ audioEnabled })} />
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>Your alerts</Text>
+          <View>
+            {KINDS.map(item => {
+              const level = item.kind === 'stale' ? undefined : thresholds[item.kind].trim();
+              const levelText = item.kind === 'stale' ? undefined : level ? `${level} ${glucoseUnitLabel(regional.glucoseUnit)}` : 'level not set';
+              return <ListRow key={item.kind} title={levelText ? `${item.label} · ${levelText}` : item.label} detail={`${soundName(configuration[item.sound])}${item.kind === 'high' && configuration.nightEnabled ? ' · silent during the night schedule' : ''}`} value={configuration[item.enabled] ? 'On' : 'Off'} accessibilityHint={`Opens the ${item.label.toLowerCase()} alert to change its level, sound or play a preview`} onPress={() => showKind(item.kind)} />;
+            })}
+          </View>
+          <Text style={[styles.foot, { color: colors.textSecondary }]}>Tap an alert to change its level, sound, or play a preview.</Text>
         </View>
-      ))}
-      <View style={[styles.section, { borderColor: colors.border }]}>
-        <Text style={[styles.heading, { color: colors.text }]}>Sound preview</Text>
-        <Text style={[styles.body, { color: colors.textSecondary }]}>Play is the only way to start a preview. Each sample stops after six seconds. Phone alarm volume also applies.</Text>
-        <AlarmAction label={previewing ? 'Stop preview' : 'Stop preview · not playing'} onPress={() => void stopPreview()} />
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Sound level</Text>
-        <AlarmChoices>{[0.15, 0.35, 0.6, 1].map(volume => <AlarmAction key={volume} label={`${Math.round(volume * 100)}%`} selected={configuration.volume === volume} disabled={busy} onPress={() => { void stopPreview(); edit({ volume }); }} />)}</AlarmChoices>
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Rise to chosen level</Text>
-        <AlarmChoices>{[0, 3, 5, 10].map(rampSeconds => <AlarmAction key={rampSeconds} label={rampSeconds === 0 ? 'Immediately' : `${rampSeconds} sec`} selected={configuration.rampSeconds === rampSeconds} disabled={busy} onPress={() => edit({ rampSeconds })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>The built-in sounds have not been validated for waking people. Check the actual sound and volume on your own phone.</Text>
-      </View>
-      <View style={[styles.section, { borderColor: colors.border }]}>
-        <Text style={[styles.heading, { color: colors.text }]}>Only alert if high lasts</Text>
-        <AlarmChoices>{GLUCOSE_ALARM_HIGH_PERSIST_MINUTES.map(highPersistMinutes => <AlarmAction key={highPersistMinutes} label={highPersistMinutes === 0 ? 'Straight away' : `${highPersistMinutes} min`} selected={configuration.highPersistMinutes === highPersistMinutes} disabled={busy} onPress={() => edit({ highPersistMinutes })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>High and very high alerts wait until glucose has stayed above the level for this long. Urgent low, low and missing-reading alerts are never delayed.</Text>
-      </View>
-      <View style={[styles.section, { borderColor: colors.border }]}>
-        <Text style={[styles.heading, { color: colors.text }]}>Pause low alerts after a logged hypo treatment</Text>
-        <AlarmChoices>{GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES.map(hypoTreatmentSnoozeMinutes => <AlarmAction key={hypoTreatmentSnoozeMinutes} label={minutesLabel(hypoTreatmentSnoozeMinutes)} selected={configuration.hypoTreatmentSnoozeMinutes === hypoTreatmentSnoozeMinutes} disabled={busy} onPress={() => edit({ hypoTreatmentSnoozeMinutes })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>When you log “Treating a hypo”, ordinary low alerts pause for this long, counted from the treatment time. Urgent low alerts still sound.</Text>
-      </View>
-      <View style={[styles.section, { borderColor: colors.border }]}>
-        <SettingSwitch label="Night schedule" detail="Urgent low, low, very high and missing-reading alerts keep their chosen sounds. Ordinary high is silent, with no notification vibration. Times follow this phone’s clock." value={configuration.nightEnabled} disabled={busy} onChange={nightEnabled => edit({ nightEnabled })} />
-        <AlarmChoices><AlarmAction label={`From ${clock(configuration.nightStartMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightStartMinutes')} /><AlarmAction label={`Until ${clock(configuration.nightEndMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightEndMinutes')} /></AlarmChoices>
-      </View>
-      <View style={[styles.section, { borderColor: colors.border }]}>
-        <Text style={[styles.heading, { color: colors.text }]}>Repeat while unresolved</Text>
-        <AlarmChoices>{REPEAT_MINUTES.map(repeatMinutes => <AlarmAction key={repeatMinutes} label={repeatMinutes === 0 ? 'Never' : repeatMinutes >= 60 ? `${repeatMinutes / 60} ${repeatMinutes === 60 ? 'hour' : 'hours'}` : `${repeatMinutes} min`} selected={configuration.repeatMinutes === repeatMinutes} disabled={busy} onPress={() => edit({ repeatMinutes })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose. Urgent low can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts, even if reminders are set to Never or a longer interval. If a snoozed low becomes urgent low, the snooze continues for at most {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes from when you snoozed.</Text>
-      </View>
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <SettingSwitch label="Night schedule" detail="Urgent low, low, very high and missing-reading alerts keep their chosen sounds. Ordinary high is silent, with no notification vibration. Times follow this phone’s clock." value={configuration.nightEnabled} disabled={busy} onChange={nightEnabled => edit({ nightEnabled })} />
+          <AlarmChoices><AlarmAction label={`From ${clock(configuration.nightStartMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightStartMinutes')} /><AlarmAction label={`Until ${clock(configuration.nightEndMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightEndMinutes')} /></AlarmChoices>
+        </View>
+        <Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.textTertiary }]}>Sound and timing, for all alerts</Text>
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.heading, { color: colors.text }]}>Sound preview</Text>
+          <Text style={[styles.body, { color: colors.textSecondary }]}>Play is the only way to start a preview. Each sample stops after six seconds. Phone alarm volume also applies.</Text>
+          <AlarmAction label={previewing ? 'Stop preview' : 'Stop preview · not playing'} onPress={() => void stopPreview()} />
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Sound level</Text>
+          <AlarmChoices>{[0.15, 0.35, 0.6, 1].map(volume => <AlarmAction key={volume} label={`${Math.round(volume * 100)}%`} selected={configuration.volume === volume} disabled={busy} onPress={() => { void stopPreview(); edit({ volume }); }} />)}</AlarmChoices>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>Rise to chosen level</Text>
+          <AlarmChoices>{[0, 3, 5, 10].map(rampSeconds => <AlarmAction key={rampSeconds} label={rampSeconds === 0 ? 'Immediately' : `${rampSeconds} sec`} selected={configuration.rampSeconds === rampSeconds} disabled={busy} onPress={() => edit({ rampSeconds })} />)}</AlarmChoices>
+          <Text style={[styles.foot, { color: colors.textSecondary }]}>The built-in sounds have not been validated for waking people. Check the actual sound and volume on your own phone.</Text>
+        </View>
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.heading, { color: colors.text }]}>Only alert if high lasts</Text>
+          <AlarmChoices>{GLUCOSE_ALARM_HIGH_PERSIST_MINUTES.map(highPersistMinutes => <AlarmAction key={highPersistMinutes} label={highPersistMinutes === 0 ? 'Straight away' : `${highPersistMinutes} min`} selected={configuration.highPersistMinutes === highPersistMinutes} disabled={busy} onPress={() => edit({ highPersistMinutes })} />)}</AlarmChoices>
+          <Text style={[styles.foot, { color: colors.textSecondary }]}>High and very high alerts wait until glucose has stayed above the level for this long. Urgent low, low and missing-reading alerts are never delayed.</Text>
+        </View>
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.heading, { color: colors.text }]}>Pause low alerts after a logged hypo treatment</Text>
+          <AlarmChoices>{GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES.map(hypoTreatmentSnoozeMinutes => <AlarmAction key={hypoTreatmentSnoozeMinutes} label={minutesLabel(hypoTreatmentSnoozeMinutes)} selected={configuration.hypoTreatmentSnoozeMinutes === hypoTreatmentSnoozeMinutes} disabled={busy} onPress={() => edit({ hypoTreatmentSnoozeMinutes })} />)}</AlarmChoices>
+          <Text style={[styles.foot, { color: colors.textSecondary }]}>When you log “Treating a hypo”, ordinary low alerts pause for this long, counted from the treatment time. Urgent low alerts still sound.</Text>
+        </View>
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.heading, { color: colors.text }]}>Repeat while unresolved</Text>
+          <AlarmChoices>{REPEAT_MINUTES.map(repeatMinutes => <AlarmAction key={repeatMinutes} label={repeatMinutes === 0 ? 'Never' : repeatMinutes >= 60 ? `${repeatMinutes / 60} ${repeatMinutes === 60 ? 'hour' : 'hours'}` : `${repeatMinutes} min`} selected={configuration.repeatMinutes === repeatMinutes} disabled={busy} onPress={() => edit({ repeatMinutes })} />)}</AlarmChoices>
+          <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose. Urgent low can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts, even if reminders are set to Never or a longer interval. If a snoozed low becomes urgent low, the snooze continues for at most {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes from when you snoozed.</Text>
+        </View>
+      </> : <>
+        <AlarmAction label="Back to all alarms" onPress={() => showKind(undefined)} />
+        {KINDS.filter(item => item.kind === openKind).map(item => (
+          <View key={item.kind} style={[styles.section, { borderColor: colors.border }]}>
+            <SettingSwitch label={item.label} detail={item.kind === 'high' && configuration.nightEnabled ? 'Shown silently during your night schedule.' : KIND_DETAIL[item.kind]} value={configuration[item.enabled]} disabled={busy} onChange={enabled => edit({ [item.enabled]: enabled })} />
+            {item.kind !== 'stale' ? <View style={styles.inputRow}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Threshold</Text>
+              <TextInput accessibilityLabel={`${item.label} threshold in ${glucoseUnitLabel(regional.glucoseUnit)}`} keyboardType="decimal-pad" editable={!busy} placeholder={item.kind === 'veryHigh' ? 'Choose' : undefined} placeholderTextColor={colors.textTertiary} value={thresholds[item.kind]} onChangeText={value => { dirty.current = true; setThresholds(current => ({ ...current, [item.kind]: value })); }} style={[styles.input, { color: colors.text, borderColor: colors.controlBorder, backgroundColor: colors.background, borderRadius: radius.sm }]} />
+              <Text style={[styles.unit, { color: colors.textSecondary }]}>{glucoseUnitLabel(regional.glucoseUnit)}</Text>
+            </View> : null}
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Sound · {soundName(configuration[item.sound])}</Text>
+            <AlarmChoices>
+              <AlarmAction label="Steady pulse" selected={configuration[item.sound] === 'pulse'} disabled={busy} onPress={() => edit({ [item.sound]: 'pulse' })} />
+              <AlarmAction label="Two notes" selected={configuration[item.sound] === 'notes'} disabled={busy} onPress={() => edit({ [item.sound]: 'notes' })} />
+              <AlarmAction label="Choose audio file" disabled={busy} onPress={() => void chooseCustomSound(item.sound)} />
+              {status?.customSounds.map(sound => <AlarmAction key={sound.id} label={sound.name} selected={configuration[item.sound] === sound.id} disabled={busy} onPress={() => edit({ [item.sound]: sound.id })} />)}
+            </AlarmChoices>
+            <Text style={[styles.foot, { color: colors.textSecondary }]}>Preview uses this phone’s alarm volume. Check that level before pressing Play.</Text>
+            <AlarmChoices>
+              <AlarmAction label={`Play ${item.label.toLowerCase()} sound`} disabled={busy || !!previewing} onPress={() => void play(configuration[item.sound])} />
+              <AlarmAction label="Stop preview" onPress={() => void stopPreview()} />
+            </AlarmChoices>
+          </View>
+        ))}
+      </>}
       {status?.audioArmed ? <Text style={[styles.body, { color: colors.textSecondary }]}>Alarm sounds are armed with your saved choices.</Text> : null}
       {status?.readinessIssues.map(issue => <Text key={issue} style={[styles.body, { color: colors.warning }]}>{issue}</Text>)}
       {message ? <Text accessibilityLiveRegion="polite" style={[styles.body, { color: message.error ? colors.danger : colors.accent }]}>{message.text}</Text> : null}
@@ -353,6 +394,6 @@ function SettingSwitch({ label, detail, value, disabled, onChange }: { label: st
 const styles = StyleSheet.create({
   card: { gap: 16 }, header: { flexDirection: 'row', alignItems: 'flex-start', gap: 13 }, copy: { flex: 1 }, icon: { width: 45, height: 45, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 19, lineHeight: 25, fontWeight: '800' }, heading: { fontSize: 16, lineHeight: 22, fontWeight: '800' }, body: { fontSize: 13, lineHeight: 20 }, foot: { fontSize: 12, lineHeight: 18 }, label: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  section: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 16, gap: 10 }, offer: { borderWidth: 1, padding: 14, gap: 10 }, settingRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  section: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 16, gap: 10 }, groupLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 8 }, offer: { borderWidth: 1, padding: 14, gap: 10 }, settingRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 14 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }, input: { minHeight: 44, minWidth: 86, paddingHorizontal: 10, paddingVertical: 7, fontSize: 16, lineHeight: 22, borderWidth: 1, textAlign: 'center', fontVariant: ['tabular-nums'] }, unit: { fontSize: 12, lineHeight: 18 },
 });

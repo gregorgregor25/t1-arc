@@ -67,7 +67,7 @@ describe('safe support diagnostic contract', () => {
     expect(form).toContain('unencrypted text file');
     expect(form).toContain('active.current');
     expect(form).toContain('Do not include passwords or API keys');
-    expect(readFileSync('src/screens/SourcesScreen.tsx', 'utf8')).toContain('<SupportReportCard');
+    expect(readFileSync('src/screens/settings/SettingsPages.tsx', 'utf8')).toContain('<SupportReportCard');
     expect(readFileSync('src/data/privacy/localDataVault.ts', 'utf8')).toContain("DELETE FROM app_metadata WHERE key = 'support-diagnostics-v1'");
     const store = readFileSync('src/data/support/diagnosticStore.ts', 'utf8');
     expect(store).toContain('withLocalDataWriteLeaseTransaction');

@@ -22,7 +22,7 @@ describe("Settings search", () => {
   });
 
   it("finds settings by everyday words, case-insensitively", () => {
-    expect(searchSettings("ALARM")[0]?.id).toBe("panel:alerts");
+    expect(searchSettings("ALARM")[0]?.id).toBe("page:alarms");
     expect(searchSettings("target range")[0]?.id).toBe("panel:glucose-ranges");
     expect(searchSettings("mg/dl").map((entry) => entry.id)).toContain("panel:glucose-unit");
     expect(searchSettings("restore").map((entry) => entry.id)).toContain("panel:backup");
@@ -34,7 +34,29 @@ describe("Settings search", () => {
   it("requires every typed word and ranks label matches first", () => {
     expect(searchSettings("backup zebra")).toEqual([]);
     const results = searchSettings("dexcom");
-    expect(results[0]?.label).toBe("Dexcom");
+    expect(results[0]?.label).toBe("Dexcom Share");
+  });
+
+  it("opens each alarm's own editor", () => {
+    expect(searchSettings("urgent low")[0]?.target).toEqual({
+      kind: "source",
+      source: "alarms",
+      expand: "alarm-urgentLow",
+    });
+    for (const kind of ["urgentLow", "low", "high", "veryHigh", "stale"]) {
+      const entry = SETTINGS_SEARCH_ENTRIES.find((candidate) => candidate.id === `alarm:${kind}`);
+      expect(entry?.target).toEqual({ kind: "source", source: "alarms", expand: `alarm-${kind}` });
+    }
+  });
+
+  it("finds settings that moved in the redesign at their new place", () => {
+    const target = (id: string) => SETTINGS_SEARCH_ENTRIES.find((entry) => entry.id === id)?.target;
+    expect(target("panel:glucose-unit")).toMatchObject({ source: "region" });
+    expect(target("panel:glucose-ranges")).toMatchObject({ source: "appearance", expand: "appearance-ranges" });
+    expect(target("panel:food-totals")).toMatchObject({ source: "healthdata" });
+    expect(target("panel:weekly-review")).toMatchObject({ source: "notifications", expand: "notifications-review" });
+    expect(target("panel:dexcom-history")).toMatchObject({ source: "dexcom", expand: "dexcom-history" });
+    expect(searchSettings("nightscout history").map((entry) => entry.id)).toContain("panel:nightscout-history");
   });
 
   it("gives every entry a unique id, a location and plain detail", () => {

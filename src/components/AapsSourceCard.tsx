@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
@@ -34,9 +35,12 @@ function siteHost(baseUrl: string) {
 }
 
 export function AapsSourceCard({
+  foodTotals,
   onDataChanged,
   onOpenNightscout,
 }: {
+  /** "Count carbs from" choice, shown while AAPS is the selected source. */
+  foodTotals?: ReactNode;
   onDataChanged?: () => Promise<void> | void;
   onOpenNightscout?: () => void;
 }) {
@@ -55,6 +59,7 @@ export function AapsSourceCard({
   const [localRouteEnabled, setLocalRouteEnabled] = useState(false);
   const [localRouteWorking, setLocalRouteWorking] = useState(false);
   const [localRouteError, setLocalRouteError] = useState<string>();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -238,43 +243,61 @@ export function AapsSourceCard({
           ) : null}
         </View>
       ) : null}
-      {selected ? (
-        <View style={[styles.fill, { borderColor: colors.border }]}>
-          <View style={styles.fillRow}>
-            <View style={styles.fillCopy}>
-              <Text style={[styles.fillTitle, { color: colors.text }]}>
-                Also read AAPS&apos;s xDrip+ treatment broadcasts on this phone
-              </Text>
-              <Text style={[styles.body, { color: colors.textSecondary }]}>
-                Android cannot confirm that these messages come from AAPS, so another app on this phone could send look-alike records. Records received this way are labelled &quot;sender not verified&quot;. Your Nightscout site is the checked route: when both have the same record, T1 Arc uses the Nightscout copy.
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel="Also read AAPS's xDrip+ treatment broadcasts on this phone"
-              accessibilityHint="Android cannot confirm these messages come from AAPS"
-              accessibilityState={{ disabled: localRouteWorking }}
-              disabled={localRouteWorking}
-              onValueChange={(value) => void changeLocalRoute(value)}
-              thumbColor={localRouteEnabled ? colors.primary : colors.textTertiary}
-              trackColor={{ false: colors.border, true: `${colors.primary}66` }}
-              value={localRouteEnabled}
-            />
-          </View>
-          <Text style={[styles.body, { color: colors.textSecondary }]}>
-            {localRouteEnabled
-              ? 'On · records from the broadcast are kept with the label "sender not verified"'
-              : 'Off · treatment broadcasts on this phone are ignored'}
-          </Text>
-          {localRouteError ? (
-            <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{localRouteError}</Text>
-          ) : null}
-        </View>
-      ) : null}
+      {selected && foodTotals ? <View style={styles.foodTotals}>{foodTotals}</View> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{error}</Text> : null}
       {(status?.droppedCount ?? 0) > 0 ? (
         <Text accessibilityRole="alert" style={[styles.body, { color: colors.warning }]}>
           Some older AAPS updates exceeded the local buffer while history syncing was unavailable. History may contain gaps.
         </Text>
+      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: moreOpen }}
+        accessibilityHint={moreOpen ? 'Hides more AAPS options' : 'Shows the treatment broadcast option and how to connect AAPS'}
+        onPress={() => setMoreOpen((open) => !open)}
+        style={({ pressed }) => [styles.moreButton, { borderColor: colors.border, opacity: pressed ? 0.72 : 1 }]}
+      >
+        <Text style={[styles.fillTitle, { color: colors.primary }]}>More options</Text>
+        <Ionicons accessibilityElementsHidden color={colors.primary} name={moreOpen ? 'chevron-up' : 'chevron-down'} size={18} />
+      </Pressable>
+      {moreOpen ? (
+        <View>
+          {selected ? (
+            <View style={[styles.fill, { borderColor: colors.border }]}>
+              <View style={styles.fillRow}>
+                <View style={styles.fillCopy}>
+                  <Text style={[styles.fillTitle, { color: colors.text }]}>
+                    Also read AAPS&apos;s xDrip+ treatment broadcasts on this phone
+                  </Text>
+                  <Text style={[styles.body, { color: colors.textSecondary }]}>
+                    Android cannot confirm that these messages come from AAPS, so another app on this phone could send look-alike records. Records received this way are labelled &quot;sender not verified&quot;. Your Nightscout site is the checked route: when both have the same record, T1 Arc uses the Nightscout copy.
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityLabel="Also read AAPS's xDrip+ treatment broadcasts on this phone"
+                  accessibilityHint="Android cannot confirm these messages come from AAPS"
+                  accessibilityState={{ disabled: localRouteWorking }}
+                  disabled={localRouteWorking}
+                  onValueChange={(value) => void changeLocalRoute(value)}
+                  thumbColor={localRouteEnabled ? colors.primary : colors.textTertiary}
+                  trackColor={{ false: colors.border, true: `${colors.primary}66` }}
+                  value={localRouteEnabled}
+                />
+              </View>
+              <Text style={[styles.body, { color: colors.textSecondary }]}>
+                {localRouteEnabled
+                  ? 'On · records from the broadcast are kept with the label "sender not verified"'
+                  : 'Off · treatment broadcasts on this phone are ignored'}
+              </Text>
+              {localRouteError ? (
+                <Text accessibilityRole="alert" style={[styles.body, { color: colors.danger }]}>{localRouteError}</Text>
+              ) : null}
+            </View>
+          ) : null}
+          <Text style={[styles.note, { color: colors.textSecondary }]}>
+            In AAPS, enable Config Builder → Synchronization → External Companion Apps for glucose, IOB and COB. To also record boluses, carbs, temporary targets and profile switches without Nightscout, enable Synchronization → xDrip+ and turn on the on-phone broadcast option above. T1 Arc only reads what AAPS shares; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
+          </Text>
+        </View>
       ) : null}
       <Pressable
         accessibilityRole="button"
@@ -300,9 +323,6 @@ export function AapsSourceCard({
           This build does not include the AAPS local receiver.
         </Text>
       ) : null}
-      <Text style={[styles.note, { color: colors.textSecondary }]}>
-        In AAPS, enable Config Builder → Synchronization → External Companion Apps for glucose, IOB and COB. To also record boluses, carbs, temporary targets and profile switches without Nightscout, enable Synchronization → xDrip+ and turn on the on-phone broadcast option above. T1 Arc only reads what AAPS shares; it cannot control the pump. If AAPS stops updating, T1 Arc will not switch sources automatically. The existing watch receives glucose; IOB and COB stay on the phone.
-      </Text>
     </SectionCard>
   );
 }
@@ -322,4 +342,6 @@ const styles = StyleSheet.create({
   fillTitle: { fontSize: 15, fontWeight: '700', lineHeight: 21 },
   linkButton: { alignItems: 'center', alignSelf: 'flex-start', borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
   linkText: { fontSize: 15, fontWeight: '700' },
+  foodTotals: { marginTop: 16 },
+  moreButton: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, minHeight: 48, paddingTop: 4 },
 });

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('public privacy policy entry points', () => {
-  it.each(['src/components/AppInfoCard.tsx', 'src/screens/SourcesScreen.tsx', 'src/components/TarvisReportButton.tsx'])('is accessible from %s', path => {
+  it.each(['src/components/AppInfoCard.tsx', 'src/screens/settings/SettingsPages.tsx', 'src/components/TarvisReportButton.tsx'])('is accessible from %s', path => {
     expect(readFileSync(path, 'utf8')).toContain('<PrivacyPolicyLink />');
   });
   it('opens the same HTTPS policy and handles a missing browser without failing the screen', () => {

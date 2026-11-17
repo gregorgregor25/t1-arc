@@ -15,8 +15,8 @@ describe('usage reporting disclosure', () => {
   });
 
   it('is shown as a switch in Settings > Privacy and in the tour setup step, with no separate prompt', () => {
-    const sources = readFileSync('src/screens/SourcesScreen.tsx', 'utf8');
-    const privacy = sources.slice(sources.indexOf('activeSource === "privacy"'));
+    const sources = readFileSync('src/screens/settings/SettingsPages.tsx', 'utf8');
+    const privacy = sources.slice(sources.indexOf('function BackupPrivacyPage'));
     expect(privacy).toContain('<UsageReportingCard />');
     // New users see the same switch, showing the stored choice, in the tour.
     const tour = readFileSync('src/screens/onboarding/TourSetupPanel.tsx', 'utf8');

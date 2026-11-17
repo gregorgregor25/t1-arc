@@ -3,8 +3,8 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const source = ts.createSourceFile(
-  'SourcesScreen.tsx',
-  readFileSync('src/screens/SourcesScreen.tsx', 'utf8'),
+  'SettingsPages.tsx',
+  readFileSync('src/screens/settings/SettingsPages.tsx', 'utf8'),
   ts.ScriptTarget.Latest,
   true,
   ts.ScriptKind.TSX,
