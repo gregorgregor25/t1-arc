@@ -26,6 +26,7 @@ import {
 import { AppScreen } from "@/components/AppScreen";
 import { SectionCard } from "@/components/SectionCard";
 import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
+import { TarvisPeriodSummaryCard } from "@/components/TarvisPeriodSummaryCard";
 import { TarvisWorkspaceSwitcher } from "@/components/TarvisWorkspaceSwitcher";
 import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
@@ -3297,7 +3298,7 @@ export function TarvisScreen({
           </View>
         ) : null}
         <Text style={[styles.boundary, { color: colors.textSecondary }]}>
-          {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Local answers available. Connect an AI provider in settings for broader questions."}
+          {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Exact questions and period summaries work on this phone. Connect an AI provider in settings for broader questions."}
         </Text>
         {provider === "chatgpt" && hasApiKey ? (
           <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", paddingVertical: 5 }}>
@@ -3404,6 +3405,17 @@ export function TarvisScreen({
       </Pressable>
     </View>
   ) : null;
+
+  // Key-free period summaries are the first thing a person sees until an AI
+  // provider is connected. They are calculated on this phone from templates.
+  const periodSummaryCard = liveData && loadTimelineData ? (
+    <TarvisPeriodSummaryCard
+      disabled={working}
+      loadTimelineData={loadTimelineData}
+      now={selectionAsOf ?? asOf}
+    />
+  ) : null;
+  const periodSummaryFirst = !loadingSettings && !hasApiKey;
 
   return (
     <KeyboardAvoidingView
@@ -3828,6 +3840,7 @@ export function TarvisScreen({
                 </Text>
               </SectionCard>
             ) : null}
+            {!conversationVisible && periodSummaryFirst ? periodSummaryCard : null}
             {!conversationVisible ? (
               <View style={styles.introHero}>
                 <TarvisOrb
@@ -3916,6 +3929,8 @@ export function TarvisScreen({
                 ))}
               </View>
             ) : null}
+
+            {!conversationVisible && !periodSummaryFirst ? periodSummaryCard : null}
 
             {!conversationVisible && recentThreads.length ? (
               <View style={styles.recentSection}>
