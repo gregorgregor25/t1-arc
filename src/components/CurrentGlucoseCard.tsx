@@ -46,6 +46,7 @@ import { AapsEstimateSummary } from './AapsEstimateSummary';
 import type { AapsEstimateInput } from './aapsEstimatePresentation';
 import { SurfaceSheen } from './SurfaceSheen';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
+import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 import {
   glucoseTraceGeometry,
   TRACE_HEIGHT,
@@ -159,6 +160,7 @@ export function CurrentGlucoseCard({
   aapsEstimates?: AapsEstimateInput;
 }) {
   const { colors, dark, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const { fontScale } = useWindowDimensions();
   const { settings: appearance } = useGlucoseAppearance();
   const { defaults: regional } = useRegionalProfile();
@@ -445,7 +447,16 @@ export function CurrentGlucoseCard({
         transparent
         visible={trendDetailsVisible}
       >
-        <View style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}>
+        <View
+          style={[
+            styles.modalBackdrop,
+            {
+              backgroundColor: colors.overlay,
+              paddingTop: 20 + insets.top,
+              paddingBottom: 20 + insets.bottom,
+            },
+          ]}
+        >
           <View
             accessibilityViewIsModal
             style={[
@@ -595,8 +606,8 @@ const styles = StyleSheet.create({
     top: 0,
     right: 2,
     paddingLeft: 7,
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
@@ -702,8 +713,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   rangeText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
   },
   missing: {
@@ -757,8 +768,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -801,8 +812,8 @@ const styles = StyleSheet.create({
   },
   sourceEvidence: {
     marginTop: 10,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   modalButton: {
     minHeight: 48,

@@ -164,6 +164,7 @@ import { useAndroidBack } from "@/hooks/useAndroidBack";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { tarvisPersonalTargetProfile } from "@/data/tarvis/intent/rangeFocus";
 import { useAppTheme } from "@/theme/theme";
+import { useSystemBarInsets } from "@/hooks/useSystemBarInsets";
 import {
   acquireLocalDataWriteLease,
   assertLocalDataWriteLeaseCurrent,
@@ -1050,6 +1051,7 @@ function TarvisConfirmationDialog({
   working: boolean;
 }) {
   const { colors, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const newConversation = confirmation === "new-conversation";
   const deletingConversation = confirmation === "delete-conversation";
   const title = deletingConversation
@@ -1082,7 +1084,7 @@ function TarvisConfirmationDialog({
       transparent
       visible={Boolean(confirmation)}
     >
-      <View style={styles.confirmationFrame}>
+      <View style={[styles.confirmationFrame, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Pressable
           accessibilityLabel="Cancel"
           accessibilityRole="button"
@@ -1366,6 +1368,7 @@ export function TarvisScreen({
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
+  const insets = useSystemBarInsets();
   const evidence = useMemo(() => report ? buildTarvisEvidencePacket(report) : undefined, [report]);
   const { settings: glucoseAppearance } = useGlucoseAppearance();
   const personalTargetProfile = useMemo(
@@ -3331,7 +3334,7 @@ export function TarvisScreen({
           {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Exact questions and period summaries work on this phone. Connect an AI provider in settings for broader questions."}
         </Text>
         {provider === "chatgpt" && hasApiKey ? (
-          <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", paddingVertical: 5 }}>
+          <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", justifyContent: "center", minHeight: 44, paddingVertical: 5 }}>
             <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Manage usage in ChatGPT ↗</Text>
           </Pressable>
         ) : null}
@@ -3743,7 +3746,7 @@ export function TarvisScreen({
                         placeholder={TARVIS_PROVIDERS[selectedProvider].placeholder}
                         placeholderTextColor={colors.textTertiary}
                         secureTextEntry
-                        style={[styles.keyInput, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderRadius: radius.md, color: colors.text }]}
+                        style={[styles.keyInput, { backgroundColor: colors.surfaceElevated, borderColor: colors.controlBorder, borderRadius: radius.md, color: colors.text }]}
                         value={apiKey}
                       />
                     )}
@@ -3996,7 +3999,7 @@ export function TarvisScreen({
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => setHistoryVisible(true)}
-                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    style={({ pressed }) => ({ justifyContent: "center", minHeight: 44, opacity: pressed ? 0.6 : 1 })}
                   >
                     <Text
                       style={[
@@ -4387,7 +4390,7 @@ export function TarvisScreen({
         transparent
         visible={chatGptPlanInfoVisible}
       >
-        <View style={styles.confirmationFrame}>
+        <View style={[styles.confirmationFrame, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View accessibilityViewIsModal style={[styles.confirmationCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.surfaceBorder, borderRadius: radius.lg }]}>
             <View style={[styles.confirmationIcon, { backgroundColor: `${colors.primary}18`, borderRadius: radius.pill }]}>
               <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.primary} />
@@ -4457,8 +4460,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.25,
   },
   compactHeaderSubtitle: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
     textAlign: "center",
   },
@@ -4491,14 +4494,14 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 3,
   },
-  settingsEyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 0.9, marginBottom: 9 },
+  settingsEyebrow: { fontSize: 12, fontWeight: "800", letterSpacing: 0.9, marginBottom: 9 },
   providerChoiceList: { gap: 8 },
   providerChoice: { minHeight: 70, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 10, flexDirection: "row", alignItems: "center", gap: 9 },
   providerChoiceIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   providerChoiceCopy: { flex: 1, minWidth: 0, gap: 2 },
   providerChoiceTitle: { fontSize: 14, lineHeight: 19, fontWeight: "800" },
-  providerChoiceSubtitle: { fontSize: 11, lineHeight: 15 },
-  providerChoiceBadge: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4, paddingHorizontal: 7, paddingVertical: 5, overflow: "hidden" },
+  providerChoiceSubtitle: { fontSize: 12, lineHeight: 16 },
+  providerChoiceBadge: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4, paddingHorizontal: 7, paddingVertical: 5, overflow: "hidden" },
   providerDetails: { borderWidth: StyleSheet.hairlineWidth, padding: 15, marginTop: 18 },
   providerDetailsHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 13 },
   providerDetailsTitle: { fontSize: 17, lineHeight: 23, fontWeight: "800" },
@@ -4506,7 +4509,7 @@ const styles = StyleSheet.create({
   providerFields: { gap: 9 },
   costCallout: { flexDirection: "row", alignItems: "flex-start", gap: 7, padding: 11, borderWidth: StyleSheet.hairlineWidth },
   costCalloutText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  fieldLabel: { fontSize: 11, lineHeight: 16, fontWeight: "800", letterSpacing: 0.8 },
+  fieldLabel: { fontSize: 12, lineHeight: 17, fontWeight: "800", letterSpacing: 0.8 },
   settingsSelect: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, paddingHorizontal: 12 },
   settingsSelectText: { flex: 1, fontSize: 13, fontWeight: "700" },
   settingsDropdown: { borderWidth: 1, overflow: "hidden" },
@@ -4592,8 +4595,8 @@ const styles = StyleSheet.create({
   recordsReadyText: {
     flex: 1,
     flexShrink: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
     textAlign: "center",
   },
@@ -4612,8 +4615,8 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   conversationActionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
   suggestions: {
@@ -4669,7 +4672,7 @@ const styles = StyleSheet.create({
   },
   historyRowCopy: { flex: 1, gap: 3 },
   historyRowTitle: { fontSize: 14, lineHeight: 20, fontWeight: "800" },
-  historyRowMeta: { fontSize: 11, lineHeight: 16 },
+  historyRowMeta: { fontSize: 12, lineHeight: 17 },
   historyMenuButton: {
     width: 36,
     height: 36,
@@ -4706,8 +4709,8 @@ const styles = StyleSheet.create({
   },
   recentList: { gap: 8 },
   recentActionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
   recentConversation: {
@@ -4726,8 +4729,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   recentConversationMeta: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 2,
   },
   exchange: { gap: 9, marginBottom: 16 },
@@ -4763,15 +4766,15 @@ const styles = StyleSheet.create({
   },
   directEyebrowCopy: { flex: 1 },
   directEyebrow: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "900",
     letterSpacing: 0.55,
     textTransform: "uppercase",
   },
   directConfidence: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
     marginTop: 1,
   },
@@ -4789,8 +4792,8 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   directMetricLabel: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
     letterSpacing: 0.25,
     textTransform: "uppercase",
@@ -4820,15 +4823,15 @@ const styles = StyleSheet.create({
   },
   directInlineAction: {
     alignSelf: "flex-start",
-    minHeight: 40,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingRight: 8,
   },
   directInlineActionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
   directFindings: { gap: 12, marginTop: 16 },
@@ -4864,8 +4867,8 @@ const styles = StyleSheet.create({
   },
   directInterpretationCopy: { flex: 1 },
   directInterpretationLabel: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "900",
     textTransform: "uppercase",
     letterSpacing: 0.35,
@@ -4883,7 +4886,7 @@ const styles = StyleSheet.create({
     marginTop: 13,
     padding: 11,
   },
-  directSafetyText: { flex: 1, fontSize: 11, lineHeight: 17 },
+  directSafetyText: { flex: 1, fontSize: 13, lineHeight: 19 },
   directDetails: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 16,
@@ -4898,7 +4901,7 @@ const styles = StyleSheet.create({
   },
   directDetailsButtonCopy: { flex: 1 },
   directDetailsTitle: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
-  directDetailsCount: { fontSize: 10, lineHeight: 15, marginTop: 1 },
+  directDetailsCount: { fontSize: 12, lineHeight: 17, marginTop: 1 },
   directDetailsBody: { gap: 12, paddingBottom: 4 },
   directEvidenceItem: {
     flexDirection: "row",
@@ -4906,24 +4909,24 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   directEvidenceCopy: { flex: 1 },
-  directEvidenceLabel: { fontSize: 11, lineHeight: 16, fontWeight: "800" },
-  directEvidenceDetail: { fontSize: 11, lineHeight: 17, marginTop: 1 },
+  directEvidenceLabel: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
+  directEvidenceDetail: { fontSize: 13, lineHeight: 19, marginTop: 1 },
   directCaveats: {
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 4,
     paddingTop: 11,
   },
   directCaveatsTitle: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
     marginBottom: 1,
   },
-  directCaveat: { fontSize: 10, lineHeight: 16 },
+  directCaveat: { fontSize: 12, lineHeight: 18 },
   directFollowUps: { gap: 7, marginTop: 17 },
   directFollowUpsTitle: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "900",
     letterSpacing: 0.35,
     textTransform: "uppercase",
@@ -4939,8 +4942,8 @@ const styles = StyleSheet.create({
   },
   directFollowUpText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: "700",
   },
   answerHeading: {
@@ -4951,8 +4954,8 @@ const styles = StyleSheet.create({
   answerHeadingCopy: { flex: 1 },
   answerTitle: { fontSize: 17, lineHeight: 23, fontWeight: "800" },
   confidence: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
     marginTop: 3,
   },
@@ -4965,7 +4968,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  interpretationText: { flex: 1, fontSize: 11, lineHeight: 17 },
+  interpretationText: { flex: 1, fontSize: 13, lineHeight: 19 },
   interpretationLabel: { fontWeight: "800" },
   answerText: { fontSize: 14, lineHeight: 22, marginTop: 13 },
   evidenceSummary: {
@@ -4992,13 +4995,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   evidenceWindowLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
   },
   evidenceWindowRange: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   evidenceMetrics: {
@@ -5022,19 +5025,19 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   evidenceMetricUnit: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   evidenceMetricLabel: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     marginTop: 1,
   },
   evidenceCoverage: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 8,
   },
   evidenceCoverageNotice: {
@@ -5047,13 +5050,13 @@ const styles = StyleSheet.create({
   },
   evidenceCoverageNoticeText: {
     flex: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   evidenceSummaryNote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 11,
   },
   evidenceList: { gap: 8, marginTop: 16 },
@@ -5068,7 +5071,7 @@ const styles = StyleSheet.create({
   },
   evidenceCopy: { flex: 1 },
   evidenceLabel: { fontSize: 12, lineHeight: 17, fontWeight: "700" },
-  evidenceCount: { fontSize: 10, lineHeight: 15, marginTop: 1 },
+  evidenceCount: { fontSize: 12, lineHeight: 17, marginTop: 1 },
   limitations: {
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 4,
@@ -5076,12 +5079,12 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   limitationsTitle: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: "800",
     marginBottom: 2,
   },
-  limitationText: { fontSize: 11, lineHeight: 17 },
+  limitationText: { fontSize: 13, lineHeight: 19 },
   routeMarker: { height: 0, width: 0 },
   errorCard: {
     minHeight: 58,
@@ -5134,8 +5137,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   boundary: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: "center",
     marginTop: 9,
     paddingHorizontal: 10,

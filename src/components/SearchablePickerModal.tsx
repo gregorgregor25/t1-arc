@@ -74,7 +74,7 @@ export function SearchablePickerModal({
           placeholderTextColor={colors.textTertiary}
           style={[
             styles.search,
-            { borderColor: colors.border, borderRadius: radius.md, color: colors.text },
+            { borderColor: colors.controlBorder, borderRadius: radius.md, color: colors.text },
           ]}
           value={query}
         />

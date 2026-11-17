@@ -1589,8 +1589,8 @@ const styles = StyleSheet.create({
     borderRadius: 99,
   },
   statusText: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.35,
     textTransform: 'uppercase',
@@ -1656,8 +1656,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   allowed: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     letterSpacing: 0.55,
     fontWeight: '900',
     marginTop: 1,
@@ -1794,8 +1794,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   syncPanelMode: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '900',
     letterSpacing: 0.45,
     marginTop: 2,

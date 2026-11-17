@@ -303,8 +303,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   factLabel: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     marginTop: 2,
     textTransform: "uppercase",

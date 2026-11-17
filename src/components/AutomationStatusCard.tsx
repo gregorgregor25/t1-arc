@@ -711,8 +711,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   overallText: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -795,18 +795,18 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   statusText: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
   },
   connectorDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 3,
   },
   connectorMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 3,
   },
   timingRow: {
@@ -817,8 +817,8 @@ const styles = StyleSheet.create({
   },
   timingText: {
     flex: 1,
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
   },
   historyButton: {
     minHeight: 48,
@@ -855,13 +855,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   historyTitle: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
   historyMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
 });

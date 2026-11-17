@@ -95,7 +95,7 @@ export function ChatGptConnectionCard({
       ) : null}
       {state.accounts.length ? (
         <View style={{ gap: 7 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>ACCOUNT</Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.8 }}>ACCOUNT</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Choose ChatGPT account"
@@ -167,7 +167,7 @@ export function ChatGptConnectionCard({
       {account?.connected ? (
         <View style={{ gap: 9 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>MODEL</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.8 }}>MODEL</Text>
             <Pressable accessibilityRole="button" disabled={disabled || refreshingModels} onPress={() => { void refreshModels(false).catch(() => undefined); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5 }}>
               {refreshingModels ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons accessibilityElementsHidden name="refresh" size={15} color={colors.primary} />}
               <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Refresh models</Text>
@@ -200,7 +200,7 @@ export function ChatGptConnectionCard({
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700" }} numberOfLines={1}>{model.displayName}</Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 11 }} numberOfLines={1}>{model.slug}</Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>{model.slug}</Text>
                     </View>
                     {model.slug === state.selectedModel ? <Ionicons accessibilityElementsHidden name="checkmark" size={18} color={colors.primary} /> : null}
                   </Pressable>

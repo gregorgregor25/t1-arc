@@ -2,6 +2,7 @@ import { Modal, Pressable, StatusBar, StyleSheet, Text, useWindowDimensions, Vie
 
 import type { GlucoseReading, TrendDirection } from '@/domain/models';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
+import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 
 import { bedsideGlucosePresentation } from './bedsideGlucosePresentation';
 
@@ -34,6 +35,7 @@ export function BedsideGlucoseView({
   now: number;
 }) {
   const { defaults: regional } = useRegionalProfile();
+  const insets = useSystemBarInsets();
   const { width, height } = useWindowDimensions();
   const shown = bedsideGlucosePresentation(reading, trend, now, regional);
   const valueSize = Math.min(width * 0.32, height * 0.3, 180);
@@ -90,7 +92,7 @@ export function BedsideGlucoseView({
             </Text>
           </View>
         )}
-        <Text maxFontSizeMultiplier={1.3} style={styles.hint}>Tap to close</Text>
+        <Text maxFontSizeMultiplier={1.6} style={[styles.hint, { bottom: 36 + insets.bottom }]}>Tap to close</Text>
       </Pressable>
     </Modal>
   );

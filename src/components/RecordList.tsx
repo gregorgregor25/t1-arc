@@ -488,8 +488,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   kind: {
-    fontSize: 8,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.45,
     marginTop: 1,
@@ -505,13 +505,13 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   detail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   source: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   actions: {

@@ -1583,8 +1583,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   compactDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   cardTop: {
@@ -1651,8 +1651,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   modalEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1.05,
   },
@@ -1694,8 +1694,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   optional: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   kindGrid: {
     flexDirection: "row",
@@ -1742,8 +1742,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   lockedKindDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   fieldGroup: {},
@@ -1815,8 +1815,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   timeZone: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 5,
   },
   twoColumn: {

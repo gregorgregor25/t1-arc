@@ -114,7 +114,7 @@ export function SupportReportCard() {
             <Text style={[styles.label, ink]}>What went wrong?</Text>
             <TextInput accessibilityLabel="What went wrong?" multiline editable={!busy && !sent} maxLength={SUPPORT_MESSAGE_LIMIT} value={message}
               onChangeText={value => { setMessage(value); setConsent(false); }} textAlignVertical="top"
-              style={[styles.input, ink, { borderColor: colors.border, borderRadius: radius.md }]} />
+              style={[styles.input, ink, { borderColor: colors.controlBorder, borderRadius: radius.md }]} />
             <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: includeDiagnostics, disabled: !diagnostics || busy || sent }}
               disabled={!diagnostics || busy || sent} onPress={() => { setIncludeDiagnostics(value => !value); setConsent(false); }} style={styles.check}>
               <Ionicons name={includeDiagnostics ? 'checkbox' : 'square-outline'} size={26} color={colors.primary} />

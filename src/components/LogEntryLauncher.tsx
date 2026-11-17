@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/theme/theme";
+import { FLOATING_BUTTON_SIZE } from "@/theme/tokens";
 
 import { SurfaceSheen } from "./SurfaceSheen";
 
@@ -295,8 +296,8 @@ export function LogEntryLauncher({
 const styles = StyleSheet.create({
   floatingButton: {
     position: "absolute",
-    width: 58,
-    height: 58,
+    width: FLOATING_BUTTON_SIZE,
+    height: FLOATING_BUTTON_SIZE,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
@@ -383,7 +384,7 @@ const styles = StyleSheet.create({
   },
   optionDetail: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

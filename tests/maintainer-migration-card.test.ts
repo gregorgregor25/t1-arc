@@ -55,6 +55,9 @@ vi.mock("@/providers/GlucoseAppearanceProvider", () => ({
   useGlucoseAppearance: () => ({ reload: vi.fn() }),
 }));
 vi.mock("@/theme/theme", () => ({ useAppTheme: vi.fn() }));
+vi.mock("@/hooks/useSystemBarInsets", () => ({
+  useSystemBarInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 
 describe("maintainer migration file boundary", () => {
   it("accepts only the dedicated migration extension", () => {

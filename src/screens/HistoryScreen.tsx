@@ -598,8 +598,8 @@ const styles = StyleSheet.create({
   coverageNoticeText: {
     flex: 1,
     minWidth: 0,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   stack: {
     gap: 12,

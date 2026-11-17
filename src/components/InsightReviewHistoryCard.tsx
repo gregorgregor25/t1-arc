@@ -159,8 +159,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   unreadText: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
@@ -193,8 +193,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   label: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',

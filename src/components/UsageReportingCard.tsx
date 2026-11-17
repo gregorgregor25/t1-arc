@@ -84,6 +84,7 @@ export function UsageReportingCard() {
         <Pressable
           accessibilityRole="button"
           onPress={retry}
+          style={styles.textAction}
         >
           <Text style={[styles.link, { color: colors.primary }]}>{USAGE_REPORTING_COPY.loadError}</Text>
         </Pressable>
@@ -93,6 +94,7 @@ export function UsageReportingCard() {
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   fill: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   heading: { fontSize: 18, lineHeight: 26, fontWeight: '700' },

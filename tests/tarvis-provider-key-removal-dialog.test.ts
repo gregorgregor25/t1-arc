@@ -32,6 +32,7 @@ function renderDialog(confirmation: string, provider: TarvisProvider) {
     exports: {},
     React: { createElement: (type: unknown, props: object, ...children: unknown[]) => ({ type, props, children }) },
     useAppTheme: () => ({ colors: { accent: "#123", text: "#123", textSecondary: "#456", onPrimary: "#fff" }, radius: {} }),
+    useSystemBarInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
     TARVIS_PROVIDERS,
     styles: {},
     Modal: "Modal", View: "View", Pressable: "Pressable", Text: "Text",

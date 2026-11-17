@@ -1615,7 +1615,7 @@ export function GlookoImportCard() {
                       backgroundColor: colors.surface,
                       borderColor:
                         manualTimeZoneValid || manualSettingsLocked
-                          ? colors.border
+                          ? colors.controlBorder
                           : colors.danger,
                       color: colors.text,
                       opacity: manualSettingsLocked ? 0.72 : 1,
@@ -2058,8 +2058,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   importInterpretation: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   metrics: {

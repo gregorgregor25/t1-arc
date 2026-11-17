@@ -53,6 +53,9 @@ vi.mock("@/providers/GlucoseAppearanceProvider", () => ({
   useGlucoseAppearance: () => ({ reload: vi.fn() }),
 }));
 vi.mock("@/theme/theme", () => ({ useAppTheme: vi.fn() }));
+vi.mock("@/hooks/useSystemBarInsets", () => ({
+  useSystemBarInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 vi.mock("@/components/SectionCard", () => ({ SectionCard: () => null }));
 
 function preferencePayload(version: 1 | 2 | 3 | 4) {

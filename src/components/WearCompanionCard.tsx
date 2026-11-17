@@ -317,8 +317,8 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '900',
     letterSpacing: 1.15,
   },
@@ -330,8 +330,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: {
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '900',
     letterSpacing: 0.55,
   },
@@ -382,8 +382,8 @@ const styles = StyleSheet.create({
   },
   faceUnit: {
     color: '#78949A',
-    fontSize: 6,
-    lineHeight: 9,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     letterSpacing: 0.65,
   },
@@ -406,8 +406,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   statusDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 2,
   },
   features: {
@@ -428,8 +428,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   featureDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   refresh: {
@@ -447,8 +447,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   footnote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 12,
   },
 });

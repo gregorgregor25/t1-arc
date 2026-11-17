@@ -152,7 +152,7 @@ export function FeedbackScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 }, content: { padding: 20, paddingBottom: 42, gap: 16 },
-  backRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  backRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingVertical: 8 },
   back: { fontSize: 18, fontWeight: '600' },
   title: { fontSize: 29, lineHeight: 36, fontWeight: '700' },
   body: { fontSize: 16, lineHeight: 24 },
@@ -161,6 +161,6 @@ const styles = StyleSheet.create({
   choiceText: { fontSize: 16 }, primaryButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   secondaryButton: { minHeight: 50, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   buttonText: { fontSize: 16, fontWeight: '700' }, address: { marginTop: 16, fontSize: 15 },
-  link: { fontSize: 15, fontWeight: '600', paddingVertical: 8 }, small: { fontSize: 14, lineHeight: 21, marginTop: 6 },
+  link: { fontSize: 15, fontWeight: '600', paddingVertical: 12 }, small: { fontSize: 14, lineHeight: 21, marginTop: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
 });

@@ -1297,8 +1297,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   eyebrow: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1,
   },
@@ -1358,8 +1358,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   sourceRecordMeta: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   sourceRecordRows: {
@@ -1372,15 +1372,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   sourceRecordLabel: {
-    fontSize: 8,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.35,
     textTransform: "uppercase",
   },
   sourceRecordValue: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 18,
   },
   explainer: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1428,8 +1428,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   summaryLabel: {
-    fontSize: 8,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.65,
     marginTop: 1,

@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   divided: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 14 },
   copy: { flex: 1, gap: 4 },
-  eyebrow: { fontSize: 11, fontWeight: "800", letterSpacing: 0.8 },
+  eyebrow: { fontSize: 12, fontWeight: "800", letterSpacing: 0.8 },
   title: { fontSize: 15, fontWeight: "800" },
   detail: { fontSize: 13, lineHeight: 19 },
   note: { fontSize: 12, lineHeight: 17 },

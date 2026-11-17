@@ -24,8 +24,8 @@ export function GmiCard() {
   const summary = timeline.data ? gmiSummary(timeline.data.glucose, timeline.data.range) : undefined;
   const number = (value: number, digits = 0) => formatRegionalNumber(value, defaults.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
   return (
-    <SectionCard style={{ marginTop: 14 }}>
-      <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 20, fontWeight: '700' }}>Glucose estimate · GMI</Text>
+    <SectionCard style={styles.card}>
+      <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Glucose estimate · GMI</Text>
       <Text style={[styles.detail, { color: colors.textSecondary }]}>Your last 14 days of sensor glucose</Text>
       {timeline.error ? <Text style={{ color: colors.warning }}>Unable to update this estimate. Pull down to retry.</Text> : null}
       {summary?.percent !== null && summary?.percent !== undefined ? (
@@ -47,6 +47,8 @@ export function GmiCard() {
 }
 
 const styles = StyleSheet.create({
+  card: { marginTop: 16 },
+  title: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
   values: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 12 },
   value: { fontSize: 32, fontWeight: '800' },
   units: { fontSize: 17, fontWeight: '600' },

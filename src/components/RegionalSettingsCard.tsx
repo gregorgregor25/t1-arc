@@ -326,7 +326,7 @@ export function RegionalSettingsCard({
                       style={[
                         styles.countryInput,
                         {
-                          borderColor: colors.border,
+                          borderColor: colors.controlBorder,
                           borderRadius: radius.md,
                           color: colors.text,
                         },
@@ -404,7 +404,7 @@ export function RegionalSettingsCard({
                         style={[
                           styles.textSettingInput,
                           {
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.md,
                             color: colors.text,
                           },
@@ -490,15 +490,15 @@ const styles = StyleSheet.create({
   detail: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   loading: { marginTop: 18 },
   group: { marginTop: 16 },
-  groupLabel: { fontSize: 11, lineHeight: 16, fontWeight: "800" },
+  groupLabel: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 7 },
-  option: { minHeight: 40, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" },
-  optionText: { fontSize: 11, lineHeight: 16, fontWeight: "800" },
+  option: { minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" },
+  optionText: { fontSize: 13, lineHeight: 18, fontWeight: "800" },
   textSettingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 },
   textSettingInput: { flex: 1, minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 13 },
   countryInput: { width: 86, minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 13 },
   saveSetting: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
-  saveSettingText: { fontSize: 11, fontWeight: "900" },
+  saveSettingText: { fontSize: 12, fontWeight: "900" },
   moreButton: {
     minHeight: 48,
     flexDirection: "row",
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
   },
   pickerValue: { flex: 1, fontSize: 13, lineHeight: 18 },
   pickerAction: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
-  settingHelp: { fontSize: 10, lineHeight: 15, marginTop: 6 },
-  resolved: { fontSize: 10, lineHeight: 15, marginTop: 11 },
-  error: { fontSize: 11, lineHeight: 17, marginTop: 9 },
+  settingHelp: { fontSize: 12, lineHeight: 17, marginTop: 6 },
+  resolved: { fontSize: 12, lineHeight: 17, marginTop: 11 },
+  error: { fontSize: 13, lineHeight: 19, marginTop: 9 },
 });

@@ -16,6 +16,7 @@ import {
 } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/theme/theme";
+import { spacing } from "@/theme/tokens";
 
 import { DemoModeNotice } from "./DemoModeNotice";
 
@@ -30,6 +31,14 @@ interface AppScreenProps extends PropsWithChildren {
   scrollViewRef?: RefObject<ScrollView | null>;
   quietHeader?: boolean;
   fixedHeader?: boolean;
+  /**
+   * Set on screens that hide the bottom tab bar. Their content then reaches
+   * the bottom edge, so scroll padding and the footer include the system
+   * navigation bar inset.
+   */
+  tabBarHidden?: boolean;
+  /** Extra room at the end of the scroll for floating controls (dp). */
+  bottomClearance?: number;
 }
 
 export function AppScreen({
@@ -44,6 +53,8 @@ export function AppScreen({
   scrollViewRef,
   quietHeader = false,
   fixedHeader = false,
+  tabBarHidden = false,
+  bottomClearance = 0,
 }: AppScreenProps) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -54,6 +65,11 @@ export function AppScreen({
         Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0,
       )
     : 0;
+  const navigationBarInset =
+    tabBarHidden && !edges.includes("bottom") ? insets.bottom : 0;
+  const contentBottomPadding =
+    Math.max(BASE_BOTTOM_PADDING, bottomClearance + spacing.lg) +
+    navigationBarInset;
   const screenHeader = header ?? (
     <View style={[styles.header, quietHeader && styles.quietHeader]}>
       <View style={styles.headerCopy}>
@@ -97,7 +113,10 @@ export function AppScreen({
       ) : null}
       <ScrollView
         ref={scrollViewRef}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: contentBottomPadding },
+        ]}
         keyboardShouldPersistTaps="handled"
         style={styles.scrollView}
         refreshControl={
@@ -115,7 +134,11 @@ export function AppScreen({
         {fixedHeader ? null : screenHeader}
         {children}
       </ScrollView>
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      {footer ? (
+        <View style={[styles.footer, { paddingBottom: navigationBarInset }]}>
+          {footer}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -145,6 +168,9 @@ export function SectionHeading({
   );
 }
 
+/** Room below the last card so it can scroll clear of the tab bar edge. */
+const BASE_BOTTOM_PADDING = 116;
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -155,7 +181,6 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 116,
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",

@@ -36,6 +36,7 @@ import {
   type PortablePreferences,
 } from "@/domain/portablePreferences";
 import { formatDate, formatTime, toDateKey } from "@/domain/time";
+import { useSystemBarInsets } from "@/hooks/useSystemBarInsets";
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
@@ -178,6 +179,7 @@ export function createBackupPreviewArtifactCleaner(
 
 export function EncryptedBackupCard({ onDataChanged }: Props) {
   const { colors, radius, setMode } = useAppTheme();
+  const insets = useSystemBarInsets();
   const { reload: reloadGlucoseAppearance } = useGlucoseAppearance();
   const [busy, setBusy] = useState<BusyState>("idle");
   const [workingLabel, setWorkingLabel] = useState("");
@@ -800,7 +802,14 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "android" ? 16 : 0}
-          style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}
+          style={[
+            styles.modalBackdrop,
+            {
+              backgroundColor: colors.overlay,
+              paddingTop: 16 + insets.top,
+              paddingBottom: 16 + insets.bottom,
+            },
+          ]}
         >
           <View
             accessibilityViewIsModal
@@ -925,7 +934,7 @@ export function EncryptedBackupCard({ onDataChanged }: Props) {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: passphraseError
                       ? colors.danger
-                      : colors.border,
+                      : colors.controlBorder,
                     borderRadius: radius.md,
                     color: colors.text,
                   },
@@ -1176,8 +1185,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1.2,
   },

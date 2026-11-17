@@ -511,6 +511,7 @@ export function SourcesScreen({
     <AppScreen
       title="Settings"
       fixedHeader
+      tabBarHidden
       refreshing={syncing}
       onRefresh={() => void refreshData()}
       scrollViewRef={scrollViewRef}
@@ -885,7 +886,7 @@ export function SourcesScreen({
                         styles.input,
                         {
                           backgroundColor: colors.surfaceMuted,
-                          borderColor: colors.border,
+                          borderColor: colors.controlBorder,
                           borderRadius: radius.md,
                           color: colors.text,
                         },
@@ -2113,7 +2114,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regionChip: {
-    minHeight: 42,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,
     alignItems: "center",
@@ -2125,8 +2126,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   fieldHelp: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
   },
   input: {
     minHeight: 52,

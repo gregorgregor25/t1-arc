@@ -166,7 +166,7 @@ export function CycleTrackingScreen() {
   }
 
   const cellBorder = colors.surfaceBorder;
-  return <AppScreen title="Cycle tracking" trailing={<Pressable accessibilityRole="button" accessibilityLabel="Back to health" onPress={() => navigation.navigate('Health')} style={styles.back}><Ionicons name="close" size={25} color={colors.textSecondary} /></Pressable>}>
+  return <AppScreen title="Cycle tracking" tabBarHidden trailing={<Pressable accessibilityRole="button" accessibilityLabel="Back to health" onPress={() => navigation.navigate('Health')} style={styles.back}><Ionicons name="close" size={25} color={colors.textSecondary} /></Pressable>}>
     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your history, at a glance</Text>
     {loading ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading cycle history" style={styles.loading} /> : null}
     {error ? <ErrorCard message={error} title="Cycle tracking could not finish that" /> : null}
@@ -213,7 +213,7 @@ export function CycleTrackingScreen() {
 
 const styles = StyleSheet.create({
   subtitle: { fontSize: 15, lineHeight: 22, marginBottom: 18 },
-  back: { padding: 6 }, loading: { marginVertical: 40 }, section: { marginTop: 16 },
+  back: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }, loading: { marginVertical: 40 }, section: { marginTop: 16 },
   primaryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 14, paddingHorizontal: 16 },
   primaryText: { fontSize: 16, fontWeight: '700' },
   h2: { fontSize: 18, fontWeight: '700', lineHeight: 26 },
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   choice: { flexGrow: 1, minHeight: 48, borderWidth: 1, padding: 10, justifyContent: 'center', alignItems: 'center' },
   choiceText: { fontSize: 14, fontWeight: '600' },
-  pill: { minHeight: 40, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, justifyContent: 'center' },
+  pill: { minHeight: 44, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, justifyContent: 'center' },
   notes: { minHeight: 94, textAlignVertical: 'top', padding: 12, borderWidth: 1, fontSize: 15 },
   deleteLink: { alignSelf: 'center', padding: 12, marginTop: 3 },
   historyRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },

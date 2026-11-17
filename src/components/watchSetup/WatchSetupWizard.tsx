@@ -156,7 +156,7 @@ export function WatchSetupWizard({ visible, onClose }: { visible: boolean; onClo
     <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
     <TextInput accessibilityLabel={label} value={value} onChangeText={change} editable={!busy}
       autoCapitalize="none" autoCorrect={false} keyboardType={numeric ? 'number-pad' : 'default'}
-      style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.sm }]} />
+      style={[styles.input, { color: colors.text, borderColor: colors.controlBorder, backgroundColor: colors.surface, borderRadius: radius.sm }]} />
   </View>;
 
   return <FoodToolsPage visible={visible} title={WATCH_SETUP_TITLES[step]!} backLabel={step === 0 || step === 5 ? 'Back to watch settings' : 'Back'} onBack={back} busy={busy}>
