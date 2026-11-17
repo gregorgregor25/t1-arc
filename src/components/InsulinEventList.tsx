@@ -222,8 +222,8 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   meta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   units: {
@@ -252,8 +252,8 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   note: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 10,
   },
 });

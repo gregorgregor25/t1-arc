@@ -606,8 +606,8 @@ const styles = StyleSheet.create({
   },
   exampleDot: { width: 6, height: 6, borderRadius: 3 },
   exampleText: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: "900",
     letterSpacing: 1,
   },
@@ -618,8 +618,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   miniEyebrow: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: "900",
     letterSpacing: 1.1,
   },
@@ -648,8 +648,8 @@ const styles = StyleSheet.create({
   },
   glucoseCopy: { flex: 1, zIndex: 2 },
   glucoseLabel: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: "900",
     letterSpacing: 1,
   },
@@ -671,8 +671,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   statusText: {
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: "900",
     letterSpacing: 0.7,
   },
@@ -704,7 +704,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   logBackdropTitle: { fontSize: 12, lineHeight: 16, fontWeight: "800" },
-  logBackdropMeta: { fontSize: 10, lineHeight: 14, marginTop: 1 },
+  logBackdropMeta: { fontSize: 11, lineHeight: 15, marginTop: 1 },
   logSheet: {
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 17,
@@ -746,14 +746,14 @@ const styles = StyleSheet.create({
     padding: 11,
   },
   miniMetricTop: { flexDirection: "row", alignItems: "center", gap: 6 },
-  miniMetricLabel: { fontSize: 10, lineHeight: 14, fontWeight: "700" },
+  miniMetricLabel: { fontSize: 11, lineHeight: 15, fontWeight: "700" },
   miniMetricValue: {
     fontSize: 19,
     lineHeight: 24,
     fontWeight: "900",
     marginTop: 7,
   },
-  miniMetricMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
+  miniMetricMeta: { fontSize: 11, lineHeight: 14, marginTop: 1 },
   timelineCard: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
@@ -766,7 +766,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   timelineTitle: { fontSize: 12, lineHeight: 16, fontWeight: "900" },
-  timelineMeta: { fontSize: 9, lineHeight: 12 },
+  timelineMeta: { fontSize: 11, lineHeight: 14 },
   timelineLegend: {
     flexDirection: "row",
     alignItems: "center",
@@ -775,7 +775,7 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
-  legendText: { fontSize: 8, lineHeight: 11, fontWeight: "700" },
+  legendText: { fontSize: 11, lineHeight: 14, fontWeight: "700" },
   tarvisBody: { justifyContent: "center" },
   questionBubble: {
     alignSelf: "flex-end",
@@ -794,7 +794,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   answerName: { fontSize: 13, lineHeight: 17, fontWeight: "900" },
-  answerMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
+  answerMeta: { fontSize: 11, lineHeight: 14, marginTop: 1 },
   answerText: { fontSize: 11, lineHeight: 17, marginTop: 12 },
   evidenceButton: {
     minHeight: 42,
@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 10,
   },
-  evidenceText: { fontSize: 10, lineHeight: 14, fontWeight: "800" },
+  evidenceText: { fontSize: 11, lineHeight: 15, fontWeight: "800" },
   controlBody: { minHeight: 233 },
   connectionNode: {
     position: "absolute",
@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
     gap: 6,
     zIndex: 2,
   },
-  connectionLabel: { fontSize: 9, lineHeight: 12, fontWeight: "700" },
+  connectionLabel: { fontSize: 11, lineHeight: 14, fontWeight: "700" },
   phone: {
     position: "absolute",
     width: 118,
@@ -846,8 +846,8 @@ const styles = StyleSheet.create({
     marginTop: 13,
   },
   phoneDetail: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 11,
+    lineHeight: 15,
     textAlign: "center",
     paddingHorizontal: 10,
     marginTop: 3,
@@ -864,5 +864,5 @@ const styles = StyleSheet.create({
     gap: 6,
     zIndex: 5,
   },
-  backupText: { fontSize: 9, lineHeight: 12, fontWeight: "700" },
+  backupText: { fontSize: 11, lineHeight: 14, fontWeight: "700" },
 });

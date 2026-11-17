@@ -912,8 +912,8 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   success: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
     marginTop: 7,
   },
@@ -936,13 +936,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   historyBody: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 3,
   },
   historyError: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 6,
   },
   historyActions: {
@@ -965,14 +965,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   historyButtonText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
   label: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '700',
     marginTop: 16,
     marginBottom: 6,
@@ -1002,8 +1002,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   help: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 8,
   },
   toggleRow: {
@@ -1016,10 +1016,10 @@ const styles = StyleSheet.create({
   },
   toggleCopy: { flex: 1 },
   toggleTitle: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  toggleDetail: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  toggleDetail: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   error: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 10,
   },
   primaryButton: {
@@ -1050,8 +1050,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   secondaryText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -1062,8 +1062,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cancelText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
   },
   loadIndicator: {

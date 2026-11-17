@@ -431,8 +431,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   schedule: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.65,
     marginTop: 2,
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   controlLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.65,
     marginTop: 16,

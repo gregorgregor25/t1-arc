@@ -595,8 +595,8 @@ const styles = StyleSheet.create({
     top: 0,
     right: 2,
     paddingLeft: 7,
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
@@ -702,8 +702,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   rangeText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
   },
   missing: {
@@ -757,8 +757,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -801,8 +801,8 @@ const styles = StyleSheet.create({
   },
   sourceEvidence: {
     marginTop: 10,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   modalButton: {
     minHeight: 48,

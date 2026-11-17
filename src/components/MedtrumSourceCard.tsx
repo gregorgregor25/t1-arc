@@ -701,10 +701,10 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1 },
   title: { fontSize: 16, lineHeight: 22, fontWeight: '800' },
   body: { fontSize: 12, lineHeight: 18, marginTop: 3 },
-  success: { fontSize: 11, lineHeight: 17, fontWeight: '700', marginTop: 7 },
+  success: { fontSize: 13, lineHeight: 19, fontWeight: '700', marginTop: 7 },
   label: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '700',
     marginTop: 16,
     marginBottom: 6,
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 13,
   },
-  chipText: { fontSize: 11, fontWeight: '800' },
+  chipText: { fontSize: 12, fontWeight: '800' },
   input: { minHeight: 54, borderWidth: 1, paddingHorizontal: 14, fontSize: 14 },
   passwordRow: {
     minHeight: 54,
@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
   },
   patientPanel: { borderWidth: 1, marginTop: 15, padding: 12 },
   patientTitle: { fontSize: 13, lineHeight: 18, fontWeight: '800' },
-  help: { fontSize: 11, lineHeight: 17, marginTop: 3 },
+  help: { fontSize: 13, lineHeight: 19, marginTop: 3 },
   patientRow: {
     minHeight: 58,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -745,8 +745,8 @@ const styles = StyleSheet.create({
   },
   patientCopy: { flex: 1 },
   patientName: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  patientId: { fontSize: 10, lineHeight: 15, marginTop: 2 },
-  error: { fontSize: 11, lineHeight: 17, marginTop: 11 },
+  patientId: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  error: { fontSize: 13, lineHeight: 19, marginTop: 11 },
   primaryButton: {
     minHeight: 54,
     marginTop: 16,
@@ -767,8 +767,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   secondaryText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -778,7 +778,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 4,
   },
-  cancelText: { fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  cancelText: { fontSize: 13, lineHeight: 18, fontWeight: '700' },
   loadIndicator: { marginTop: 16 },
   loadWarning: { gap: 8, marginTop: 12 },
   retryButton: {

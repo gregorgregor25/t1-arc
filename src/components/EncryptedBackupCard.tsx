@@ -1176,8 +1176,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1.2,
   },

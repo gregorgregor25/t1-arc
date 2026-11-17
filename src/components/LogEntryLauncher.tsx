@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   },
   optionDetail: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

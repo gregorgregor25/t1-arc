@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   countLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontVariant: ['tabular-nums'],
     fontWeight: '800',
     textAlign: 'center',

@@ -751,10 +751,10 @@ const styles = StyleSheet.create({
   metrics: { flexDirection: "row", flexWrap: "wrap", rowGap: 12 },
   metric: { width: "33.333%" },
   metricValue: { fontSize: 15, fontWeight: "800" },
-  metricLabel: { fontSize: 11, marginTop: 2 },
+  metricLabel: { fontSize: 12, marginTop: 2 },
   fingerprint: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 11,
+    fontSize: 12,
   },
   confirmation: { fontSize: 12, lineHeight: 18 },
   actions: { gap: 9 },

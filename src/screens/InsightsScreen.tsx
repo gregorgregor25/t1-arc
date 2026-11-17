@@ -1276,8 +1276,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.25,
   },
   compactHeaderSubtitle: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 1,
   },
   compactHeaderAction: {
@@ -1315,7 +1315,7 @@ const styles = StyleSheet.create({
   },
   periodToggleCopy: { flex: 1 },
   periodToggleTitle: { fontSize: 13, lineHeight: 18, fontWeight: "800" },
-  periodToggleDetail: { fontSize: 10, lineHeight: 15, marginTop: 1 },
+  periodToggleDetail: { fontSize: 12, lineHeight: 17, marginTop: 1 },
   retryErrorContent: {
     minHeight: 96,
     flexDirection: "row",
@@ -1406,8 +1406,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   reviewDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   reviewStack: {
@@ -1420,8 +1420,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   heroEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.9,
   },
@@ -1438,8 +1438,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   updating: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 5,
   },
   metricRow: {
@@ -1456,8 +1456,8 @@ const styles = StyleSheet.create({
     minWidth: 124,
   },
   metricLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   metricValue: {
     fontSize: 25,
@@ -1466,8 +1466,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   metricDelta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   metricFootnote: {
     marginTop: 8,
@@ -1505,8 +1505,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   suggestionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "600",
   },
   answerCard: {
@@ -1529,8 +1529,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   answerMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 9,
   },
   findingStack: {
@@ -1543,8 +1543,8 @@ const styles = StyleSheet.create({
   },
   noReviewDetail: {
     marginTop: 4,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   confidenceSection: {
     gap: 12,
@@ -1570,8 +1570,8 @@ const styles = StyleSheet.create({
   },
   confidenceDetail: {
     marginTop: 2,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   allFindingsButton: {
     minHeight: 46,
@@ -1608,8 +1608,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   findingKind: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.8,
   },
@@ -1630,8 +1630,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   caveat: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontStyle: "italic",
     marginTop: 7,
   },
@@ -1683,12 +1683,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   evidenceCount: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   evidenceDescription: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   exampleRow: {
@@ -1700,8 +1700,8 @@ const styles = StyleSheet.create({
   },
   exampleTime: {
     width: 38,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontVariant: ["tabular-nums"],
   },
   exampleCopy: {
@@ -1713,12 +1713,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   exampleSecondary: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
   },
   exampleId: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 2,
   },
   openRecordsButton: {
@@ -1734,8 +1734,8 @@ const styles = StyleSheet.create({
   },
   openRecordsText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
     textAlign: "center",
   },

@@ -343,8 +343,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.9,
   },
@@ -364,8 +364,8 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   countLabel: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
   },
   description: {
     fontSize: 12,
@@ -415,13 +415,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   detail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   meta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   sourceDetails: {
@@ -431,19 +431,19 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   sourceHeading: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.7,
     marginBottom: 5,
   },
   technical: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   payloadHeading: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.7,
     marginBottom: 6,
@@ -452,8 +452,8 @@ const styles = StyleSheet.create({
   payload: {
     borderWidth: StyleSheet.hairlineWidth,
     fontFamily: 'monospace',
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     padding: 9,
   },
   more: {

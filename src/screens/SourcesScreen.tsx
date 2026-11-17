@@ -2125,8 +2125,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   fieldHelp: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
   },
   input: {
     minHeight: 52,

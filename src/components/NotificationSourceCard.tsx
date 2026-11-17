@@ -621,8 +621,8 @@ const styles = StyleSheet.create({
   },
   meta: {
     marginTop: 10,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   appList: {
     gap: 8,
@@ -647,12 +647,12 @@ const styles = StyleSheet.create({
   },
   appDetail: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   appHint: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   unitSection: {
     marginTop: 4,
@@ -666,8 +666,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   unitDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   unitRow: {
     flexDirection: 'row',
@@ -683,8 +683,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unitLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '800',
   },
   emptyState: {
@@ -697,8 +697,8 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   error: {
     marginTop: 10,

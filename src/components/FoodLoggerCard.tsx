@@ -5293,8 +5293,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   compactDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   card: {
@@ -5374,8 +5374,8 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   close: {
     width: 48,
@@ -5409,8 +5409,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   editNoticeDetail: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   mealSummary: {
@@ -5504,8 +5504,8 @@ const styles = StyleSheet.create({
   },
   copyFromDayDetail: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   copyUndo: {
     minHeight: 52,
@@ -5657,7 +5657,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   customToggleDetail: {
-    fontSize: 11,
+    fontSize: 12,
   },
   quickCarbForm: {
     borderWidth: 1,
@@ -5720,7 +5720,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   customLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "700",
   },
   customNumberInput: {
@@ -5746,7 +5746,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   customHint: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   customBarcodeLink: {
@@ -5797,8 +5797,8 @@ const styles = StyleSheet.create({
   },
   barcodeNoticeText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   mealRow: {
     flexDirection: "row",
@@ -5913,8 +5913,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   fieldOptional: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   mealTitleInput: {
     minHeight: 52,
@@ -5927,8 +5927,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   recentMealHint: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.7,
@@ -5977,8 +5977,8 @@ const styles = StyleSheet.create({
   },
   recipeServing: {
     marginTop: "auto",
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
   },
   recentMealAction: {
@@ -6003,8 +6003,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   recentMealMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedBlock: {
     gap: 8,
@@ -6035,8 +6035,8 @@ const styles = StyleSheet.create({
   },
   resultCount: {
     flexShrink: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: "right",
   },
   totalCarbs: {
@@ -6051,8 +6051,8 @@ const styles = StyleSheet.create({
   },
   basketSecondary: {
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedFood: {
     minHeight: 128,
@@ -6083,8 +6083,8 @@ const styles = StyleSheet.create({
   },
   selectedBrand: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedDataStatus: {
     alignSelf: "flex-start",
@@ -6098,8 +6098,8 @@ const styles = StyleSheet.create({
   },
   selectedDataStatusText: {
     flexShrink: 1,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
   },
   selectedCarbs: {
@@ -6110,8 +6110,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   selectedMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   selectedControls: {
@@ -6146,14 +6146,14 @@ const styles = StyleSheet.create({
   },
   selectedSource: {
     width: "100%",
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   servingLabel: {
     width: "100%",
     marginRight: 2,
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: "700",
   },
   eachAmountShell: {
@@ -6173,8 +6173,8 @@ const styles = StyleSheet.create({
   },
   eachAmountUnit: {
     paddingHorizontal: 6,
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   countEditor: {
@@ -6214,7 +6214,7 @@ const styles = StyleSheet.create({
   },
   amountUnit: {
     paddingHorizontal: 7,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
   remove: {
@@ -6245,8 +6245,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   recipeSaveDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   recipeFields: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -6289,8 +6289,8 @@ const styles = StyleSheet.create({
   },
   recipeServingsUnit: {
     paddingRight: 10,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   recipeSaveButton: {
@@ -6337,8 +6337,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   onlineMessage: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     paddingVertical: 8,
   },
   hint: {
@@ -6376,8 +6376,8 @@ const styles = StyleSheet.create({
   },
   resultBrand: {
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   resultCarbs: {
     marginTop: 3,
@@ -6386,8 +6386,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   resultMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   error: {
@@ -6457,8 +6457,8 @@ const styles = StyleSheet.create({
   },
   dataInfoLabel: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   attributionBlock: {
@@ -6490,8 +6490,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   footerLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   footerCarbs: {
     fontSize: 15,
@@ -6499,8 +6499,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   footerMacros: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
   },
   save: {
     minWidth: 150,

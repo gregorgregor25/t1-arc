@@ -90,7 +90,7 @@ export function BedsideGlucoseView({
             </Text>
           </View>
         )}
-        <Text maxFontSizeMultiplier={1.3} style={styles.hint}>Tap to close</Text>
+        <Text maxFontSizeMultiplier={1.6} style={styles.hint}>Tap to close</Text>
       </Pressable>
     </Modal>
   );

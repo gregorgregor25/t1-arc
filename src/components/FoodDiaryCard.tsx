@@ -1017,8 +1017,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.9,
   },
@@ -1038,19 +1038,19 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   totalLabel: {
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "800",
     letterSpacing: 0.7,
   },
   energy: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 7,
   },
   repeatMessage: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 8,
   },
   rows: {
@@ -1083,8 +1083,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   mealMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   carbsCopy: {
@@ -1098,8 +1098,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   sourceOnly: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
@@ -1124,18 +1124,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemName: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   itemMeta: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   itemCarbs: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
     fontVariant: ["tabular-nums"],
   },
@@ -1151,8 +1151,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   responseEyebrow: {
-    fontSize: 8,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "900",
     letterSpacing: 0.7,
   },
@@ -1173,14 +1173,14 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   responseDeltaLabel: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "900",
     letterSpacing: 0.6,
   },
   responseMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 7,
   },
   responseFoot: {
@@ -1191,8 +1191,8 @@ const styles = StyleSheet.create({
   },
   responseCaveat: {
     flex: 1,
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
   },
   portionEditor: {
     width: 92,
@@ -1218,13 +1218,13 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   portionUnit: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     marginLeft: 4,
   },
   portionCarbs: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
   },
@@ -1238,14 +1238,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   macroValue: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
   },
   macroLabel: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "800",
     letterSpacing: 0.45,
   },
@@ -1264,8 +1264,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   repeatButtonText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
   mealAction: {
@@ -1279,18 +1279,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   mealActionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
   },
   portionHint: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 10,
   },
   portionError: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 10,
   },
   editActions: {
@@ -1309,8 +1309,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   editButtonText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
   },
   showMore: {
@@ -1321,13 +1321,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   showMoreText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
   },
   footnote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 12,
   },
   filteredEmpty: {

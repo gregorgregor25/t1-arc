@@ -57,5 +57,5 @@ export function WatchFacePreview({ id, size = 128 }: { id: WatchFaceId; size?: n
 
 const styles = StyleSheet.create({
   root: { alignItems: 'center', gap: 5 },
-  caption: { fontSize: 10, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
+  caption: { fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
 });

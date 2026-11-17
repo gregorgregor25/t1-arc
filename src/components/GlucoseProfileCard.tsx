@@ -246,7 +246,7 @@ export function GlucoseProfileCard({
                     />
                     <SvgText
                       fill={colors.textTertiary}
-                      fontSize={8}
+                      fontSize={11}
                       textAnchor="start"
                       x={LEFT + plotWidth + 7}
                       y={y(tick) + 3}
@@ -324,7 +324,7 @@ export function GlucoseProfileCard({
                   return (
                     <SvgText
                       fill={colors.textTertiary}
-                      fontSize={8}
+                      fontSize={11}
                       key={hour}
                       textAnchor={
                         hour === 0 ? 'start' : hour === 24 ? 'end' : 'middle'
@@ -433,8 +433,8 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.9,
   },
@@ -458,8 +458,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   inspectText: {
-    fontSize: 8,
-    lineHeight: 11,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
@@ -494,12 +494,12 @@ const styles = StyleSheet.create({
     height: 12,
   },
   legendText: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
   },
   footnote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 12,
   },
 });

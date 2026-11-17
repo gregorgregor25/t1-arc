@@ -1005,8 +1005,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeText: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '800',
     letterSpacing: 0.65,
   },
@@ -1032,8 +1032,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   settingDetail: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   positionSection: {
@@ -1074,8 +1074,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   positionLabel: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '700',
     textAlign: 'center',
   },
@@ -1099,8 +1099,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   sizeLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -1136,8 +1136,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   appearanceDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 2,
   },
   recoveryButton: {
@@ -1196,8 +1196,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   aodReadyDetail: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   message: {
@@ -1215,8 +1215,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   footnote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 12,
   },
 });

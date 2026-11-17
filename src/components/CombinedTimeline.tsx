@@ -1077,7 +1077,7 @@ export function CombinedTimeline({
                             x={width - 2}
                             y={glucoseY(tick) + 4}
                             fill={colors.textTertiary}
-                            fontSize={10}
+                            fontSize={11}
                             textAnchor="end"
                           >
                             {formatRegionalNumber(
@@ -1142,7 +1142,7 @@ export function CombinedTimeline({
                         x={PLOT_LEFT}
                         y={insulinTop - 18}
                         fill={colors.textTertiary}
-                        fontSize={10}
+                        fontSize={11}
                         fontWeight="600"
                       >
                         {insulinAvailable
@@ -1283,11 +1283,11 @@ export function CombinedTimeline({
                                   {barWidth >= 72 ? (
                                     <SvgText
                                       fill={colors.insulin}
-                                      fontSize={8}
+                                      fontSize={11}
                                       fontWeight="700"
                                       textAnchor="middle"
                                       x={startX + barWidth / 2}
-                                      y={insulinBottom - barHeight + 11}
+                                      y={insulinBottom - barHeight + 12}
                                     >
                                       {formatRegionalFixedNumber(
                                         total.basalUnits ?? 0,
@@ -1357,7 +1357,7 @@ export function CombinedTimeline({
                           x={tickX}
                           y={chartHeight - 3}
                           fill={colors.textTertiary}
-                          fontSize={10}
+                          fontSize={11}
                           textAnchor={
                             index === 0
                               ? "start"
@@ -1448,7 +1448,7 @@ export function CombinedTimeline({
                         </View>
                         {marker.count > 1 ? (
                           <View style={[styles.mealMarkerCount, { backgroundColor: colors.accent }]}>
-                            <Text style={[styles.mealMarkerCountText, { color: colors.onPrimary }]}>
+                            <Text maxFontSizeMultiplier={1.3} style={[styles.mealMarkerCountText, { color: colors.onPrimary }]}>
                               {marker.count > 9 ? "9+" : marker.count}
                             </Text>
                           </View>
@@ -1598,8 +1598,8 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   layerHeading: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.7,
     marginTop: 14,
@@ -1663,8 +1663,8 @@ const styles = StyleSheet.create({
     borderRadius: 99,
   },
   legendLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   fidelityNotice: {
     marginTop: 11,
@@ -1708,8 +1708,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   inspectorEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     letterSpacing: 1,
     fontWeight: "800",
   },
@@ -1757,8 +1757,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   inspectorOffset: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   inspectorMeta: {
@@ -1779,8 +1779,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   contextHeading: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.8,
   },
@@ -1807,8 +1807,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   contextTime: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
   },
   contextEdit: {
     width: 36,
@@ -1861,17 +1861,20 @@ const styles = StyleSheet.create({
   },
   mealMarkerCount: {
     position: "absolute",
-    top: 0,
-    right: -2,
-    minWidth: 17,
-    height: 17,
+    top: -1,
+    right: -3,
+    minWidth: 18,
+    height: 18,
     borderRadius: 9,
-    paddingHorizontal: 2,
+    paddingHorizontal: 3,
     alignItems: "center",
     justifyContent: "center",
   },
+  // Supplementary count badge; the meal list in the inspector carries the
+  // same information, so the micro size is acceptable here.
   mealMarkerCountText: {
-    fontSize: 9,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: "800",
   },
   chart: {
@@ -1879,8 +1882,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   footnote: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 7,
   },
 });
