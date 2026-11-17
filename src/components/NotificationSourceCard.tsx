@@ -376,6 +376,7 @@ export function NotificationSourceCard({
           <Pressable
             accessibilityRole="button"
             onPress={() => void refreshStatus()}
+            style={styles.textAction}
           >
             <Text style={[styles.appName, { color: colors.primary }]}>
               Retry saved source
@@ -594,6 +595,7 @@ export function NotificationSourceCard({
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -675,7 +677,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   unitOption: {
-    minHeight: 42,
+    minHeight: 44,
     flex: 1,
     borderWidth: 1,
     alignItems: 'center',

@@ -345,6 +345,7 @@ export function MedtrumSourceCard({
             <Pressable
               accessibilityRole="button"
               onPress={retryLoad}
+              style={styles.textAction}
             >
               <Text style={[styles.secondaryText, { color: colors.primary }]}>
                 Retry saved connection
@@ -691,6 +692,7 @@ export function MedtrumSourceCard({
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   icon: {
     width: 48,
@@ -711,7 +713,7 @@ const styles = StyleSheet.create({
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    minHeight: 40,
+    minHeight: 44,
     borderWidth: 1,
     justifyContent: 'center',
     paddingHorizontal: 13,

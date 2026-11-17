@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   inspect: {
-    minHeight: 38,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 11,
     flexDirection: 'row',

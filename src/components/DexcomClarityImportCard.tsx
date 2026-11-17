@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   },
   dateOrderOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   dateOrderOption: {
-    minHeight: 42,
+    minHeight: 44,
     borderWidth: 1,
     justifyContent: "center",
     paddingHorizontal: 13,

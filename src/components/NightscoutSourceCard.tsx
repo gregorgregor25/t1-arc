@@ -479,6 +479,7 @@ export function NightscoutSourceCard() {
             <Pressable
               accessibilityRole="button"
               onPress={retryLoad}
+              style={styles.textAction}
             >
               <Text style={[styles.secondaryText, { color: colors.primary }]}>
                 Retry saved connection
@@ -887,6 +888,7 @@ export function NightscoutSourceCard() {
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -952,14 +954,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   historyButton: {
-    minHeight: 42,
+    minHeight: 44,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   pauseButton: {
-    minHeight: 42,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,

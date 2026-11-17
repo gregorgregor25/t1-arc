@@ -88,6 +88,7 @@ export function DeviceAgeChips() {
           accessibilityRole="button"
           accessibilityLabel={chip.accessibilityLabel}
           accessibilityHint="Shows the record this age was calculated from"
+          hitSlop={{ top: 4, bottom: 4 }}
           onPress={() => showSource(chip)}
           style={({ pressed }) => [
             styles.chip,

@@ -1827,7 +1827,7 @@ const styles = StyleSheet.create({
     marginTop: 13,
   },
   contextAction: {
-    minHeight: 38,
+    minHeight: 44,
     borderRadius: 11,
     paddingHorizontal: 12,
     flexDirection: "row",

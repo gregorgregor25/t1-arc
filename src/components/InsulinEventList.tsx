@@ -104,7 +104,7 @@ export function InsulinEventList({
                       <Pressable
                         accessibilityLabel="Edit manual insulin dose"
                         accessibilityRole="button"
-                        hitSlop={4}
+                        hitSlop={8}
                         onPress={() => onEditManualInsulin(delivery)}
                         style={({ pressed }) => [
                           styles.action,
@@ -123,7 +123,7 @@ export function InsulinEventList({
                       <Pressable
                         accessibilityLabel="Delete manual insulin dose"
                         accessibilityRole="button"
-                        hitSlop={4}
+                        hitSlop={8}
                         onPress={() =>
                           Alert.alert(
                             'Delete insulin dose?',

@@ -2113,7 +2113,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   regionChip: {
-    minHeight: 42,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,
     alignItems: "center",

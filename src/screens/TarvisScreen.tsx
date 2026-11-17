@@ -3331,7 +3331,7 @@ export function TarvisScreen({
           {retryAt ? "AI connection cooldown active. Local answers remain available; broader AI questions must wait." : hasApiKey ? provider === "chatgpt" ? `Using ChatGPT plan · ${chatGptState.accounts.find((item) => item.id === chatGptState.activeAccountId)?.label ?? "ChatGPT account"}. Selected evidence and recent shared conversation may be sent when you tap Send.` : `AI answers use ${TARVIS_PROVIDERS[provider].label}. Selected evidence and recent shared conversation may be sent when you tap Send.` : provider === "chatgpt" && configuredProviders.chatgpt ? "ChatGPT is connected. Choose an available model in settings for broader AI answers. Local answers still work." : "Exact questions and period summaries work on this phone. Connect an AI provider in settings for broader questions."}
         </Text>
         {provider === "chatgpt" && hasApiKey ? (
-          <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", paddingVertical: 5 }}>
+          <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ alignSelf: "flex-start", justifyContent: "center", minHeight: 44, paddingVertical: 5 }}>
             <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Manage usage in ChatGPT ↗</Text>
           </Pressable>
         ) : null}
@@ -3996,7 +3996,7 @@ export function TarvisScreen({
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => setHistoryVisible(true)}
-                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    style={({ pressed }) => ({ justifyContent: "center", minHeight: 44, opacity: pressed ? 0.6 : 1 })}
                   >
                     <Text
                       style={[
@@ -4820,7 +4820,7 @@ const styles = StyleSheet.create({
   },
   directInlineAction: {
     alignSelf: "flex-start",
-    minHeight: 40,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,

@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: "center",
-    minHeight: 42,
+    minHeight: 44,
     paddingHorizontal: 14,
   },
   secondaryText: { fontSize: 13, fontWeight: "700" },

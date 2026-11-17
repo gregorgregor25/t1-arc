@@ -3054,7 +3054,7 @@ const styles = StyleSheet.create({
   goalError: { marginTop: 8, fontSize: 13, lineHeight: 18 },
   goalRemove: {
     alignSelf: "flex-start",
-    minHeight: 40,
+    minHeight: 44,
     justifyContent: "center",
     marginTop: 6,
   },

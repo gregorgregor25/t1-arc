@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
   group: { marginTop: 16 },
   groupLabel: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 7 },
-  option: { minHeight: 40, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" },
+  option: { minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, alignItems: "center", justifyContent: "center" },
   optionText: { fontSize: 13, lineHeight: 18, fontWeight: "800" },
   textSettingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 },
   textSettingInput: { flex: 1, minHeight: 44, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, fontSize: 13 },

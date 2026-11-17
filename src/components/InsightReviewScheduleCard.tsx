@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   },
   dayOption: {
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 36,
+    minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: 11,
   },
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginTop: 10,
-    minHeight: 42,
+    minHeight: 44,
     paddingHorizontal: 14,
   },
   timeButtonText: {
