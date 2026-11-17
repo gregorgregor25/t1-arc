@@ -121,9 +121,11 @@ export interface PortablePreferenceAdapter {
   }): Promise<unknown>;
   /**
    * Saves this phone's current alarm choices with both master switches (alerts
-   * and sound) off, changing nothing else. Runs before anything is restored.
+   * and sound) off, changing nothing else, and switches the older alert
+   * notifications off too. Runs before anything is restored, whatever the
+   * backup contains.
    */
-  disarmGlucoseAlarms(): Promise<unknown>;
+  disarmGlucoseAlarms(): Promise<{ notices: string[] } | void>;
   /**
    * Restores the older common alert choices, switched off. When the backup also
    * carries full alarm choices they replace the native choices in one save
@@ -251,6 +253,18 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
       // later validation or restore failure can leave it armed.
       const configuration = await nativeAlarmConfiguration();
       if (configuration) await saveGlucoseAlarmConfiguration(disarmed(configuration));
+      // The older alert notifications have their own switch. A backup without
+      // alert choices (version 1) never reaches setGlucoseAlerts, so switch
+      // them off here as well.
+      const legacy = await loadGlucoseAlertPreferences();
+      if (!legacy.enabled) return { notices: [] };
+      await saveGlucoseAlertPreferences({ ...legacy, enabled: false });
+      await resetGlucoseAlertState();
+      return {
+        notices: configuration
+          ? []
+          : ['Glucose alerts were switched off while restoring. Check them in alert settings and turn them on when you are ready.'],
+      };
     },
     setGlucoseAlerts: async (settings, { fullAlarmChoicesFollow }) => {
       const notices: string[] = [];
@@ -409,7 +423,8 @@ async function restoreValidatedPortablePreferences(
   const notices: string[] = [];
   // Switch alarms off first, before anything is merged or validated. A later
   // preference failure must never leave the prior native audible owner running.
-  await destination.disarmGlucoseAlarms();
+  const disarm = await destination.disarmGlucoseAlarms();
+  if (disarm) notices.push(...disarm.notices);
   const fullAlarmChoices =
     includedGroups.includes('glucoseAlarms') && safe.glucoseAlarms !== null
       ? safe.glucoseAlarms

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   configuration: null as GlucoseAlarmConfiguration | null,
   events: [] as string[],
   saveNative: vi.fn(), getNative: vi.fn(), getAppearance: vi.fn(), getStatus: vi.fn(),
-  setAppearance: vi.fn(), saveLegacy: vi.fn(), resetLegacy: vi.fn(),
+  setAppearance: vi.fn(), saveLegacy: vi.fn(), resetLegacy: vi.fn(), loadLegacy: vi.fn(),
 }));
 vi.mock('../modules/t1arc-glucose-display', () => ({ default: {
   getGlucoseAlarmConfigurationAsync: mocks.getNative,
@@ -24,7 +24,7 @@ vi.mock('../modules/t1arc-glucose-display', () => ({ default: {
   setAodSizeAsync: async () => true,
 } }));
 vi.mock('@/data/glucoseAlerts/glucoseAlertPreferences', () => ({
-  loadGlucoseAlertPreferences: async () => DEFAULT_GLUCOSE_ALERT_PREFERENCES,
+  loadGlucoseAlertPreferences: mocks.loadLegacy,
   saveGlucoseAlertPreferences: mocks.saveLegacy,
   resetGlucoseAlertState: mocks.resetLegacy,
 }));
@@ -61,6 +61,7 @@ describe('portable preferences with a configured native alarm owner', () => {
       lowSound: 'custom:12345678-1234-1234-1234-123456789abc',
     };
     mocks.getNative.mockImplementation(async () => mocks.configuration);
+    mocks.loadLegacy.mockResolvedValue(DEFAULT_GLUCOSE_ALERT_PREFERENCES);
     mocks.getAppearance.mockResolvedValue(DEFAULT_GLUCOSE_APPEARANCE);
     mocks.getStatus.mockResolvedValue({ ...STATUS, customSounds: [{ id: CUSTOM, name: 'Kitchen bell' }] });
     mocks.saveNative.mockImplementation(async (config: GlucoseAlarmConfiguration) => {
@@ -274,5 +275,33 @@ describe('portable preferences with a configured native alarm owner', () => {
     await restorePortablePreferences(preferences);
     expect(mocks.saveNative).not.toHaveBeenCalled();
     expect(mocks.saveLegacy).toHaveBeenCalledWith({ ...preferences.glucoseAlerts, enabled: false });
+  });
+});
+
+describe('restoring a backup on a phone that only has the older alert notifications', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.events.length = 0;
+    mocks.configuration = null;
+    mocks.getNative.mockImplementation(async () => mocks.configuration);
+    mocks.getAppearance.mockResolvedValue(DEFAULT_GLUCOSE_APPEARANCE);
+    mocks.getStatus.mockResolvedValue(STATUS);
+    mocks.loadLegacy.mockResolvedValue({ ...DEFAULT_GLUCOSE_ALERT_PREFERENCES, enabled: true });
+    mocks.saveLegacy.mockImplementation(async () => { mocks.events.push('legacy saved'); });
+  });
+
+  it('switches the older alerts off even when a version 1 backup has no alert choices', async () => {
+    const v1 = validatePortablePreferences({
+      version: 1,
+      glucoseAppearance: DEFAULT_GLUCOSE_APPEARANCE,
+      glanceableDisplay: { lockScreenVisible: true, aodPosition: 'bottomCenter', aodSize: 'standard' },
+      insightReviews: { weeklyNotificationEnabled: false },
+    });
+    const outcome = await restorePortablePreferences(v1);
+    expect(mocks.saveLegacy).toHaveBeenCalledOnce();
+    expect(mocks.saveLegacy).toHaveBeenCalledWith({ ...DEFAULT_GLUCOSE_ALERT_PREFERENCES, enabled: false });
+    expect(mocks.resetLegacy).toHaveBeenCalledOnce();
+    expect(mocks.saveNative).not.toHaveBeenCalled();
+    expect(outcome.notices).toContainEqual(expect.stringMatching(/switched off while restoring/));
   });
 });
