@@ -318,6 +318,11 @@ export function ManualContextCard({
   const [noteCategory, setNoteCategory] = useState<NoteCategory>("illness");
   const [noteDetail, setNoteDetail] = useState("");
   const [meterReading, setMeterReading] = useState("");
+  // The saved reading being edited, with the text first shown for it. If the
+  // value text is unchanged, the stored value and entry unit are kept as-is.
+  const meterReadingOriginal = useRef<
+    { text: string; glucoseMmolL: number; enteredUnit: "mgDl" | "mmolL" } | undefined
+  >(undefined);
   const [sensorSourceId, setSensorSourceId] = useState<string>();
   const [sensorModelId, setSensorModelId] = useState<string>();
   const [sensorWarmupMinutes, setSensorWarmupMinutes] = useState('');
@@ -356,6 +361,7 @@ export function ManualContextCard({
     setNoteCategory("illness");
     setNoteDetail("");
     setMeterReading("");
+    meterReadingOriginal.current = undefined;
     setSensorSourceId(glucoseSourceId);
     setSensorModelId(undefined);
     setSensorWarmupMinutes('');
@@ -433,11 +439,16 @@ export function ManualContextCard({
         setNoteCategory(draft.category);
         setNoteDetail(draft.detail ?? "");
         break;
-      case "meter-glucose":
-        setMeterReading(
-          formatGlucose(draft.glucoseMmolL, regional, { withUnit: false }),
-        );
+      case "meter-glucose": {
+        const text = formatGlucose(draft.glucoseMmolL, regional, { withUnit: false });
+        setMeterReading(text);
+        meterReadingOriginal.current = {
+          text,
+          glucoseMmolL: draft.glucoseMmolL,
+          enteredUnit: draft.enteredUnit,
+        };
         break;
+      }
       case "sensor-start":
         setObservationFields({ ...EMPTY_OBSERVATION_FIELDS, location: draft.location });
         setSensorSourceId(draft.glucoseSourceId);
@@ -717,6 +728,15 @@ export function ManualContextCard({
       case "meter-glucose": {
         if (timestamp > Date.now() + 60_000) {
           throw new Error("Meter readings cannot be dated in the future.");
+        }
+        const original = meterReadingOriginal.current;
+        if (original && meterReading.trim() === original.text.trim()) {
+          return {
+            kind,
+            timestamp,
+            enteredUnit: original.enteredUnit,
+            glucoseMmolL: original.glucoseMmolL,
+          };
         }
         const enteredUnit = regional.glucoseUnit === "mgDl" ? "mgDl" : "mmolL";
         return {

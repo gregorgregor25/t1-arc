@@ -256,7 +256,14 @@ export function manualMeterReadingDraftFromEvent(
   ) {
     return undefined;
   }
-  const unit = getRuntimeRegionalDefaults().glucoseUnit;
+  // Keep the unit the reading was first entered in (recorded in its detail),
+  // so editing only the time never rewrites the measurement or provenance.
+  const recordedUnit = /Entered in mg\/dL\./.test(event.detail ?? "")
+    ? "mgDl"
+    : /Entered in mmol\/L\./.test(event.detail ?? "")
+      ? "mmolL"
+      : undefined;
+  const unit = recordedUnit ?? getRuntimeRegionalDefaults().glucoseUnit;
   return {
     kind: "meter-glucose",
     timestamp: event.start,

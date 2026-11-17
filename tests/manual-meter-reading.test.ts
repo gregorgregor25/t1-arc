@@ -28,6 +28,21 @@ function meter(value = 5.4, unit: "mmolL" | "mgDl" = "mmolL") {
 }
 
 describe("manual meter (fingerstick) readings", () => {
+  it("keeps the value and entry unit when a saved reading is reopened for editing", () => {
+    const event = meter(meterReadingMmolLFromInput(97, "mgDl"), "mgDl");
+    const draft = manualContextDraftFromEvent(event);
+    expect(draft).toMatchObject({
+      kind: "meter-glucose",
+      enteredUnit: "mgDl",
+      glucoseMmolL: event.glucoseMmolL,
+    });
+    const mmolEvent = meter(40, "mmolL");
+    expect(manualContextDraftFromEvent(mmolEvent)).toMatchObject({
+      enteredUnit: "mmolL",
+      glucoseMmolL: 40,
+    });
+  });
+
   it("is stored as a traceable manual note with a canonical value and provenance", () => {
     const event = meter();
     expect(event).toMatchObject({
