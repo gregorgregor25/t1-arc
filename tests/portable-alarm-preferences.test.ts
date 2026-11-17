@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { capturePortablePreferences, restorePortablePreferences } from '@/data/backup/portablePreferences';
 import { DEFAULT_GLUCOSE_ALARM_CONFIGURATION, type GlucoseAlarmConfiguration } from '@/domain/glucoseAlarms';
 import { DEFAULT_GLUCOSE_ALERT_PREFERENCES } from '@/domain/glucoseAlerts';
+import { validatePortablePreferences } from '@/domain/portablePreferences';
 import { DEFAULT_GLUCOSE_APPEARANCE } from '@/domain/glucoseAppearance';
 import { DEFAULT_REGIONAL_PROFILE } from '@/domain/regionalProfile';
 
@@ -88,7 +89,8 @@ describe('portable preferences with a configured native alarm owner', () => {
     preferences.glucoseAlarms = null;
     preferences.glucoseAlerts.highThresholdMmolL = 20;
     await restorePortablePreferences(preferences);
-    expect(mocks.events).toEqual(['native disabled', 'legacy saved']);
+    // Switched off on its own first, then the merged choices, then legacy.
+    expect(mocks.events).toEqual(['native disabled', 'native disabled', 'legacy saved']);
     expect(mocks.configuration).toMatchObject({
       enabled: false, audioEnabled: false, highThresholdMmolL: 20,
       veryHighEnabled: false, veryHighThresholdMmolL: null,
@@ -157,6 +159,110 @@ describe('portable preferences with a configured native alarm owner', () => {
     expect(result.glucoseAlarms?.configuration).toMatchObject({
       schemaVersion: 2, urgentLowEnabled: true, urgentLowThresholdMmolL: 3, urgentLowSound: CUSTOM,
       highPersistMinutes: 0, hypoTreatmentSnoozeMinutes: 15,
+    });
+  });
+
+  describe('switching existing alarms off before restoring', () => {
+    beforeEach(() => {
+      // An armed phone with urgent low on at 3.0 mmol/L.
+      mocks.configuration = {
+        ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, enabled: true, audioEnabled: true,
+        urgentLowEnabled: true, urgentLowThresholdMmolL: 3, lowThresholdMmolL: 3.9, highThresholdMmolL: 12,
+      };
+    });
+
+    async function backupWith(change: (preferences: Awaited<ReturnType<typeof capturePortablePreferences>>) => void) {
+      const preferences = await capturePortablePreferences();
+      change(preferences);
+      const raw = JSON.parse(JSON.stringify(preferences)) as Record<string, unknown> & { version: number };
+      // Review timing was added in version 6.
+      if (raw.version < 6) raw.insightReviews = { weeklyNotificationEnabled: preferences.insightReviews.weeklyNotificationEnabled };
+      return validatePortablePreferences(raw);
+    }
+
+    it('switches alarms off even when an older backup’s low level conflicts with urgent low here', async () => {
+      // A version 6 backup with a valid low level of 2.5 mmol/L and no urgent low.
+      const preferences = await backupWith(p => {
+        p.version = 6 as typeof p.version;
+        delete (p as Partial<typeof p>).glucoseAlarms;
+        p.glucoseAlerts.lowThresholdMmolL = 2.5;
+      });
+      const outcome = await restorePortablePreferences(preferences);
+      expect(mocks.events[0]).toBe('native disabled');
+      expect(mocks.configuration).toMatchObject({
+        enabled: false, audioEnabled: false, urgentLowEnabled: true, urgentLowThresholdMmolL: 3, lowThresholdMmolL: 3.9,
+      });
+      expect(outcome.notices).toContainEqual(expect.stringMatching(/could not be combined[\s\S]*urgent low level must be below the low level[\s\S]*switched off/));
+      expect(mocks.saveLegacy).toHaveBeenCalledWith({ ...preferences.glucoseAlerts, enabled: false });
+      expect(mocks.setAppearance).toHaveBeenCalled();
+    });
+
+    it('applies an older backup’s choices when they fit, after first switching alarms off', async () => {
+      const preferences = await backupWith(p => {
+        p.version = 6 as typeof p.version;
+        delete (p as Partial<typeof p>).glucoseAlarms;
+        p.glucoseAlerts.lowThresholdMmolL = 3.6;
+      });
+      const saved: GlucoseAlarmConfiguration[] = [];
+      mocks.saveNative.mockImplementation(async (config: GlucoseAlarmConfiguration) => {
+        mocks.events.push('native disabled'); saved.push(config); mocks.configuration = config; return {};
+      });
+      const outcome = await restorePortablePreferences(preferences);
+      expect(saved[0]).toMatchObject({ enabled: false, audioEnabled: false, lowThresholdMmolL: 3.9 });
+      expect(mocks.configuration).toMatchObject({ enabled: false, audioEnabled: false, lowThresholdMmolL: 3.6, urgentLowThresholdMmolL: 3 });
+      expect(outcome.notices).toEqual([]);
+    });
+
+    it('restores a full backup with its own urgent low of 2.3 below a low of 2.5 in one save', async () => {
+      const preferences = await backupWith(p => {
+        p.glucoseAlerts.lowThresholdMmolL = 2.5;
+        p.glucoseAlarms!.configuration.lowThresholdMmolL = 2.5;
+        p.glucoseAlarms!.configuration.urgentLowThresholdMmolL = 2.3;
+      });
+      const saved: GlucoseAlarmConfiguration[] = [];
+      mocks.saveNative.mockImplementation(async (config: GlucoseAlarmConfiguration) => {
+        mocks.events.push('native disabled'); saved.push(config); mocks.configuration = config; return {};
+      });
+      const outcome = await restorePortablePreferences(preferences);
+      // First the phone's own choices switched off, then the complete restored choices.
+      expect(saved).toHaveLength(2);
+      expect(saved[0]).toMatchObject({ enabled: false, audioEnabled: false, urgentLowThresholdMmolL: 3, lowThresholdMmolL: 3.9 });
+      expect(saved[1]).toMatchObject({
+        enabled: false, audioEnabled: false, urgentLowEnabled: true, urgentLowThresholdMmolL: 2.3, lowThresholdMmolL: 2.5,
+      });
+      expect(outcome.notices).toEqual([expect.stringMatching(/restored switched off/)]);
+    });
+
+    it('switches alarms off for a version 1 backup that carries no alert choices', async () => {
+      const preferences = await backupWith(p => {
+        p.version = 1 as typeof p.version;
+        for (const key of ['glucoseAlerts', 'themeMode', 'healthGoals', 'treatmentProfile', 'regionalProfile', 'glucoseAlarms']) {
+          delete (p as unknown as Record<string, unknown>)[key];
+        }
+      });
+      await restorePortablePreferences(preferences);
+      expect(mocks.events).toEqual(['native disabled']);
+      expect(mocks.configuration).toMatchObject({ enabled: false, audioEnabled: false, lowThresholdMmolL: 3.9, urgentLowThresholdMmolL: 3 });
+      expect(mocks.saveLegacy).not.toHaveBeenCalled();
+    });
+
+    it('switches alarms off for version 2 to 5 backups with a conflicting low level', async () => {
+      for (const version of [2, 3, 4, 5] as const) {
+        mocks.configuration = { ...mocks.configuration!, enabled: true, audioEnabled: true };
+        mocks.events.length = 0;
+        const preferences = await backupWith(p => {
+          p.version = version as typeof p.version;
+          const raw = p as unknown as Record<string, unknown>;
+          delete raw.glucoseAlarms;
+          if (version < 5) delete raw.regionalProfile;
+          if (version < 4) delete raw.treatmentProfile;
+          if (version < 3) { delete raw.themeMode; delete raw.healthGoals; }
+          p.glucoseAlerts.lowThresholdMmolL = 2.5;
+        });
+        const outcome = await restorePortablePreferences(preferences);
+        expect(mocks.configuration, `version ${version}`).toMatchObject({ enabled: false, audioEnabled: false });
+        expect(outcome.notices).toContainEqual(expect.stringMatching(/could not be combined/));
+      }
     });
   });
 

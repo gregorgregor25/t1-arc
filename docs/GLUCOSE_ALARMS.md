@@ -203,7 +203,15 @@ sound for that level (Steady pulse for urgent low, low and missing readings; Two
 notes for high and very high), and the restore summary says so. Backups made in
 preferences format 1–6 still restore; they carry only the older common low/high
 choices, and the existing alarm choices on the phone are disarmed but otherwise
-kept. Restoring first disables both the native alarm owner and its audio.
+kept. Restoring first disables both the native alarm owner and its audio: the
+phone's current choices are saved with **Allow T1 Arc alerts** and **Allow
+alarm sounds** off, on their own, before anything from the backup is merged or
+checked. A version 7 backup's full choices are then checked as a whole and saved
+in one step. For an older backup, its low, high and missing-reading choices are
+combined with the phone's other choices; if that combination is not valid (for
+example a backup low level of 2.5 mmol/L with urgent low at 3.0 mmol/L on the
+phone), the phone keeps its own choices, switched off, and the restore summary
+says what could not be restored.
 Full local-data erasure disables the native owner and removes its files.
 
 Automated coverage (Kotlin) exercises arming from saved choices across

@@ -46,6 +46,7 @@ function adapter(): PortablePreferenceAdapter {
     setAodSize: vi.fn(async () => undefined),
     setWeeklyReviewEnabled: vi.fn(async () => undefined),
     setWeeklyReviewTiming: vi.fn(async () => undefined),
+    disarmGlucoseAlarms: vi.fn(async () => undefined),
     setGlucoseAlerts: vi.fn(async () => undefined),
     setThemePreference: vi.fn(async () => undefined),
     setStepGoal: vi.fn(async () => undefined),
@@ -117,7 +118,8 @@ describe('portable preferences', () => {
       highThresholdMmolL: 14,
       staleEnabled: true,
       repeatMinutes: 60,
-    });
+    }, { fullAlarmChoicesFollow: false });
+    expect(destination.disarmGlucoseAlarms).toHaveBeenCalledOnce();
     expect(destination.setThemePreference).toHaveBeenCalledWith('dark');
     expect(destination.setStepGoal).toHaveBeenCalledWith(8_500);
     expect(destination.setTreatmentProfile).toHaveBeenCalledWith(null);
