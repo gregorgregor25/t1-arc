@@ -23,6 +23,16 @@ collector and ongoing notification. It is separate from audible glucose alerts.
 screen may see the reading. Android's notification privacy settings have final
 control. T1 Arc cannot override a system restriction.
 
+**Show insulin and carbs on board** is on by default. When AAPS or Nightscout
+reports them, the notification shows them beside glucose, for example
+`IOB 1.35 U · COB 20 g`, and the expanded notification says who calculated
+them. A value the source did not report is left out rather than shown as zero.
+After 12 minutes the estimate shows its own age; after an hour it is hidden.
+If glucose is hidden on the lock screen, IOB and COB are hidden too. These
+are your looping system's estimates, not records of insulin delivered or carbs
+eaten. The watch does not show them yet; that would come in a later, optional
+companion update.
+
 **Glucose on always-on display** needs Android Accessibility permission. If
 Android blocks it after a sideload, follow its **Allow restricted settings**
 instructions for T1 Arc. Enable the service itself, not just the floating
@@ -60,6 +70,14 @@ four-hour glucose trace, observed history duration, trend and range badge.
 It follows the app's theme, units and configured glucose colours. Tap the card
 to open Today; the calculated-trend button opens its supporting readings.
 The default is four columns by two rows, subject to your launcher's grid.
+When AAPS or Nightscout reports insulin and carbs on board, the card shows
+them in a row above the trend, following the same setting and age rules as
+the notification.
+
+You can also resize the widget smaller than before. Below 280 × 110 dp it
+switches to a compact card: the value, direction arrow and reading age, plus
+IOB and COB when there is room. A stale value is struck through, as on Today.
+Widgets at their existing sizes keep the full card.
 
 The widget reads the encrypted display snapshot published from the same saved
 reading selection and history as Today. A pinned widget keeps the existing
