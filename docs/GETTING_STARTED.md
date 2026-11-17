@@ -34,23 +34,33 @@ again after installation.
 
 ## First run
 
-The onboarding tour explains local storage, regional choices, connections and
-the limits of the app. Start with the synthetic demo if you want to explore
-without connecting personal data. The demo is a temporary viewing mode. A
+The onboarding tour explains local storage, connections and the limits of the
+app. Its last step lets you choose your glucose unit, reminds you that glucose
+alerts start switched off (with a button to alert settings) and shows the
+anonymous usage-counts switch. Nothing there is switched on for you. Start with
+the synthetic demo if you want to explore without connecting personal data. The demo is a temporary viewing mode. A
 fresh app launch returns to the private live-data view, and no example record
 is copied into personal history.
 
+Tap the gear on any main screen to open Settings. Data connections come first;
+if you are not sure which one to use, open **Which source do I need?**. On an
+empty Today screen, **Connect a source** opens the same place.
+
 Before relying on a live glucose source:
 
-1. choose the correct country, locale and glucose unit;
+1. choose the glucose unit in **Settings > Region and services**, and the
+   country and number formats under **More options** on that page;
 2. connect the provider region used by the account;
 3. compare the newest reading and timestamp with the provider's official app;
 4. keep the official medical-device display available.
 
-Some optional display features open Android system settings. Always-on display
-access can require **Allow restricted settings** in T1 Arc's Android app-info
-menu before Accessibility can be enabled. T1 Arc cannot approve that permission
-for itself.
+Your target range and low and high levels are under **Settings > Display and
+alerts > Glucose ranges**.
+
+Some optional display features open Android system settings. The experimental
+always-on display, in **Settings > Advanced and experimental**, can require
+**Allow restricted settings** in T1 Arc's Android app-info menu before
+Accessibility can be enabled. T1 Arc cannot approve that permission for itself.
 
 ## Update T1 Arc
 
@@ -82,7 +92,8 @@ bug report with the T1 Arc versions involved and no personal health data.
 
 ## Check which build is installed
 
-Open the settings menu and choose **About T1 Arc**. This shows the version,
+Open Settings with the gear and choose **About T1 Arc**, under **Help and
+information**. This shows the version,
 Android package and source revision. **Share build details** copies those
 details into Android's share sheet without including health records or keys.
 
@@ -90,6 +101,10 @@ If two icons have the same name, open each app and compare its package. Keep
 both until you know where your records are. A private test package and an
 official package have separate storage; installing one does not move data from
 the other. Older test builds may not have an About page.
+
+Development (`.dev`) and private test (`.sideload`) installations are named
+**T1 Arc Dev** in the launcher; the official app is named **T1 Arc**. (Builds
+made before this change may still show **T1 Arc** for both.)
 
 A package ending in `.sideload` is a private test installation, not the official
 public package. Renaming its APK file does not turn it into an official update.

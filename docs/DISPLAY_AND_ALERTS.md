@@ -7,8 +7,9 @@ replaces the official CGM or pump display.
 ## Appearance and glucose colours
 
 **App appearance** follows the phone or uses a fixed light or dark theme.
-For glucose colours, open **Phone and lock screen > Glucose ranges and colours**,
-choose a range and colour, then press **Save**. The preview uses example values.
+For your target range, low and high levels and their colours, open
+**Glucose ranges** at the top of **Display and alerts**, choose a range and
+colour, then press **Save**. The preview uses example values.
 New installations use green for in-range glucose; you can change it. Existing
 saved colour choices are preserved. Display units are chosen separately under **Region and services**. Neither
 choice rewrites stored readings.
@@ -33,7 +34,9 @@ are your looping system's estimates, not records of insulin delivered or carbs
 eaten. The watch does not show them yet; that would come in a later, optional
 companion update.
 
-**Glucose on always-on display** needs Android Accessibility permission. If
+**Glucose on always-on display** is experimental and lives in **Settings >
+Advanced and experimental**. It appears there once **Keep glucose visible** is
+on. It needs Android Accessibility permission. If
 Android blocks it after a sideload, follow its **Allow restricted settings**
 instructions for T1 Arc. Enable the service itself, not just the floating
 Accessibility shortcut. Do not uninstall a working app just to expose a
@@ -45,7 +48,7 @@ position periodically. Manufacturer power and lock-screen policies can affect it
 
 ## Bedside view
 
-On **Today**, open the settings menu and choose **Bedside view**. It shows the
+On **Today**, tap the moon button beside the gear to open **Bedside view**. It shows the
 latest glucose, direction arrow and reading age in large, dim text on a black
 screen. Tap anywhere to close it. A delayed reading is labelled **Delayed**; a
 stale one is struck through and labelled **Last known**. With no reading in
@@ -98,8 +101,8 @@ Check timestamps rather than assuming a visible value is current.
 
 ## Android Auto and Wear OS
 
-The **Experimental Android Auto glance** switch is under **Phone and lock
-screen**. A GitHub APK needs Android Auto developer mode and its **Unknown
+The **Experimental Android Auto glance** switch is in **Settings > Advanced and
+experimental**. A GitHub APK needs Android Auto developer mode and its **Unknown
 sources** option for this route. Availability also depends on the car and
 Android Auto configuration. It is not a driving safety system; do not interact
 with it while driving.

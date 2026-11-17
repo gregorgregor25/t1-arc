@@ -2,10 +2,16 @@
 
 ## Start with onboarding
 
-The tour explains the local-first data model, regional settings, source
-connections and the limits of the app. You can explore the synthetic demo
-without connecting a real provider. Demo records stay separate from personal
-history. A fresh app launch returns to the private live-data view.
+The tour explains the local-first data model, source connections and the
+limits of the app. Its last step asks three quick things: your glucose unit
+(saved only when you tap a choice), a reminder that glucose alerts start
+switched off with a button to alert settings, and whether to share anonymous
+usage counts. Nothing on that step is switched on for you. You can replay the
+tour from **Settings > Feedback and more**.
+
+You can explore the synthetic demo without connecting a real provider. Demo
+records stay separate from personal history. A fresh app launch returns to the
+private live-data view.
 
 T1 Arc does not calculate insulin doses or replace the official display for a
 CGM or pump.
@@ -182,9 +188,9 @@ contains no glucose value or health conclusion.
 ## Data freshness
 
 Glooko and other imported records can arrive later than the original event.
-Check the record time as well as the last successful refresh. **Settings >
-Source health** shows each source's newest record and any gaps in the last 24
-hours. See
+Check the record time as well as the last successful refresh. **Source
+health**, under **Data connections** at the top of Settings, shows each
+source's newest record and any gaps in the last 24 hours. See
 [how current each source is](DATA_FRESHNESS.md) before interpreting a partial day.
 
 ## Exports
@@ -207,20 +213,41 @@ privacy > Export records**.
 
 ## Settings
 
-Settings contains:
+The gear at the top of each main screen opens Settings directly. Type in
+**Search settings** to find a setting by name, for example "target range",
+"backup" or "alarm"; choosing a result opens that page and, where there is one,
+the right panel.
 
-- source connections;
-- region, locale and measurement units;
-- glucose display, alerts, notification, widget and lock-screen choices;
-- Health Connect and activity sources;
-- encrypted backup, restore and local-data controls;
-- **Source health** for each connection, and record exports;
-- **About T1 Arc**, with build details and links to source code and licences.
+Settings is grouped in this order:
 
-The overview starts with connection shortcuts. Open **Region and services**
-for country and unit preferences. The close button stays at the top while you
-scroll. Android Back returns from a detail page to all settings, then to the
-previous app screen.
+1. **Data connections**: **Which source do I need?**, glucose connections
+   (AAPS local, LibreLinkUp, Dexcom, Nightscout, Medtrum, xDrip and
+   Notification source), Health Connect, Glooko, Hevy and Strava, then
+   **Source health**.
+2. **Display, alerts and units**: **Display and alerts**, **Watch & watch
+   faces** and **Region and services**.
+3. **Data and backup**: **Backup and privacy**, then **Automatic updates**.
+4. **Assistant**: Tarv1s and **Diabetes profile**.
+5. **Feedback and more**: **Share feedback**, **Cycle tracking** and the tour.
+6. **Help and information**: **Help and support** and **About T1 Arc**.
+7. **Advanced and experimental**: features still being tested.
+
+Dexcom and Medtrum are marked **Not yet tested with a real account**. They
+follow the providers' published behaviour and pass automated tests, but have
+not been checked with a real account. Please report what you find.
+
+If Today has no glucose yet, **Connect a source** opens Settings with the data
+connections first. The close button stays at the top while you scroll. Android
+Back returns from a detail page to all settings, then to the previous app
+screen.
+
+### Region and services
+
+The glucose unit (mmol/L or mg/dL) is at the top. **More options** holds the
+region preset, country, number and date formats, measurements, energy unit,
+calendar time zone and clinical guidance. Country and home time zone open a
+searchable list. If the phone's system cannot provide that list, type the time
+zone instead, for example Europe/London.
 
 Android keeps final control over notification, accessibility, lock-screen and
 Health Connect permissions. T1 Arc opens the relevant system page where Android
@@ -228,8 +255,11 @@ does not allow an app to grant its own permission.
 
 ### Display and alerts
 
-Open **Display and alerts** for appearance, the persistent notification,
-lock-screen display, glucose alerts and home-screen widget. Watch setup is under
+Open **Display and alerts** for **Glucose ranges** (your target range, low and
+high levels and their colours, at the top of the page), appearance, the
+persistent notification, lock-screen display, glucose alerts and home-screen
+widget. The experimental always-on display overlay and Android Auto glance are
+in **Settings > Advanced and experimental**. Watch setup is under
 **Settings > Watch & watch faces**; see [Watch setup](WATCH_SETUP.md).
 These are separate choices. See [Display and alerts](DISPLAY_AND_ALERTS.md) for
 setup, test alerts and Android permission limits.
@@ -243,11 +273,25 @@ not convert a carbohydrate ratio.
 
 ### Anonymous usage counts
 
-**Settings > Privacy > Share anonymous usage counts** is on by default. It sends
+**Settings > Backup and privacy > Share anonymous usage counts** is on by
+default, and new users see the same switch on the tour's last step. It sends
 one small message a day and a weekly count of the days the app was opened or
 monitoring, with the app version, and nothing that identifies you or your
 health records. Turning it off stops sending and deletes the local activity
 history. See [Anonymous usage counts](../PRIVACY.md#anonymous-usage-counts-on-by-default).
+
+### Advanced and experimental
+
+**Settings > Advanced and experimental** collects features that are still
+being tested and may not work on every phone or car:
+
+- **Glucose on always-on display**, an optional overlay on the locked dark
+  screen. It uses the glucose notification, so turn on **Keep glucose visible**
+  in **Display and alerts** first;
+- **Experimental Android Auto glance**.
+
+Development builds also show an earlier test-app migration tool here. Your
+records do not depend on anything on this page.
 
 ### Check for an APK update
 
