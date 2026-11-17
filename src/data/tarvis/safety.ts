@@ -72,7 +72,7 @@ const DESCRIPTIVE_INSULIN_HISTORY =
   /\b(?:how much|how many|what)\b[\s\S]{0,70}\b(?:did i (?:take|receive|deliver|use|have|enter|give|bolus|log|record)|i (?:took|received|used|had|entered|gave|bolused|logged|recorded)|(?:entered|given|logged) by me|by myself|was delivered|were (?:given|delivered|entered|recorded|automatic)|did (?:my )?pump deliver|did (?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:give|deliver)|(?:aaps|the loop|my loop|the pump|my pump|the pod|my pod) (?:gave|delivered))\b|\b(?:how much|how many|what)\s+(?:total\s+)?(?:insulin|bolus|basal)\b[\s\S]{0,50}\b(?:today|yesterday|last|past|previous|on\s+\d|between|from)\b|\bhow many\s+(?:boluses|smbs?|micro ?boluses)\s+(?:were|did)\b/i;
 // A sentence that also asks what to do now or next is never only history.
 const FORWARD_LOOKING_TREATMENT =
-  /\b(?:should|shall|do i need|will i need|right now)\b|\bwhat\s+(?:dose|bolus|correction)\b[\s\S]{0,40}\b(?:for|with|to)\b|\bfor\s+(?:dinner|lunch|breakfast|tonight|tomorrow|later)\b/i;
+  /\b(?:should|shall|do i need|will i need|right now|now|next|going to)\b|\bwhat\s+(?:dose|bolus|correction)\b[\s\S]{0,40}\b(?:for|with|to)\b|\bfor\s+(?:dinner|lunch|breakfast|tonight|tomorrow|later)\b/i;
 const DANGEROUS_CURRENT_GLUCOSE =
   /\b(?:(?:my (?:glucose|blood sugar|sugar|reading)(?: (?:reading|level))?\s+(?:is|reads?|shows?)|current (?:glucose|blood sugar|sugar|reading)(?: (?:reading|level))?(?:\s+(?:is|reads?|shows?))?|i(?:'m| am)(?: currently)?(?: at)?)\s*[\s\S]{0,20}\b(?:low|hypo|very high|(?:[0-2](?:[.,]\d+)?|3(?:[.,]\d+)?)\s*mmol|(?:below|under)\s*4(?:[.,]0)?|(?:above|over)\s*(?:20|360))\b)/i;
 const CURRENT_HIGH_KETONES =
@@ -1507,29 +1507,33 @@ function describesInsulinHistoryOnly(text: string) {
   );
 }
 
+/** A sentence that asks for an amount. */
+const QUANTITY_QUESTION =
+  /\b(?:how much|how many|what (?:dose|amount|bolus|correction))\b/i;
+
 /**
- * True for a dose, treatment or setting request. "How many ... units" is
- * matched within one sentence, so a record question followed by "Totals in
- * units." is not mistaken for a dose request. A record question is exempt
- * only when that same sentence asks nothing about now or next, and a history
- * clause never exempts a personal treatment change elsewhere in the prompt.
+ * True for a dose, treatment or setting request. The request is matched across
+ * the whole prompt, so a dose request split over two sentences ("How much do I
+ * need? Answer in units.") is still refused. A record question is exempt only
+ * when every sentence that asks for an amount is history-only and nothing in
+ * the prompt asks about now or next. A history clause never exempts a personal
+ * treatment change elsewhere in the prompt.
  */
 function requestsTreatmentAdvice(prompt: string) {
-  const sentenceRequests = promptSentences(prompt).filter(
-    (sentence) =>
-      DIRECT_TREATMENT_REQUEST.test(sentence) && DOSE_OR_SETTING.test(sentence),
-  );
-  const wholePromptRequest =
+  const request =
     UNAMBIGUOUS_TREATMENT_ACTION.test(prompt) ||
+    (DIRECT_TREATMENT_REQUEST.test(prompt) && DOSE_OR_SETTING.test(prompt)) ||
     (LOW_GLUCOSE_CONTEXT.test(prompt) && DIRECT_LOW_CARB_TREATMENT.test(prompt));
-  if (!wholePromptRequest && sentenceRequests.length === 0) return false;
+  if (!request) return false;
   if (DOSE_OR_SETTING.test(prompt) && PERSONAL_TREATMENT_CHANGE.test(prompt)) {
     return true;
   }
-  if (sentenceRequests.some((sentence) => !describesInsulinHistoryOnly(sentence))) {
-    return true;
-  }
-  return wholePromptRequest && !describesInsulinHistoryOnly(prompt);
+  if (FORWARD_LOOKING_TREATMENT.test(prompt)) return true;
+  const quantitySentences = promptSentences(prompt).filter((sentence) =>
+    QUANTITY_QUESTION.test(sentence),
+  );
+  if (quantitySentences.length === 0) return !describesInsulinHistoryOnly(prompt);
+  return !quantitySentences.every(describesInsulinHistoryOnly);
 }
 
 export function classifyTarvisSafety(question: string): TarvisSafetyDecision {

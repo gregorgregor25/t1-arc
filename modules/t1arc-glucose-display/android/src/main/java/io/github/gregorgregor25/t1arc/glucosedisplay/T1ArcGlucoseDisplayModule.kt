@@ -3214,7 +3214,12 @@ class T1ArcGlucoseDisplayService : Service() {
         if (
           resolvedMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY &&
             resolvedMode == foregroundStartedMode &&
-            foregroundType == foregroundStartedType
+            foregroundType == foregroundStartedType &&
+            // Skip only while Android still reports this service in the
+            // foreground. If it was ever demoted, post again so the
+            // startForegroundService deadline is always met.
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            foregroundServiceType != 0
         ) {
           refreshShownNotification = true
           return@mutate resolvedMode

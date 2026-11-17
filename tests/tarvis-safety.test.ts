@@ -1364,6 +1364,7 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "How many SMBs did AAPS give overnight, in units?",
     "How much insulin did the loop deliver today, split into basal and boluses?",
     "How many boluses were automatic yesterday? Show the units.",
+    "Of the boluses AAPS gave me today, how many were automatic SMBs and how many did I enter myself? Give the totals in units.",
   ])("answers the record question %s", (question) => {
     expect(classifyTarvisSafety(question).kind).toBe("allow");
   });
@@ -1378,6 +1379,11 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "What bolus for 60 g of carbs?",
     "How much insulin did I take yesterday? And how many units for dinner?",
     "How many units did I enter myself today. How many units do I need right now?",
+    "My glucose is 14. How much do I need? Answer in units.",
+    "How much for 45 g? Bolus wise.",
+    "What dose? For 40g carbs.",
+    "How much correction did I give myself yesterday; how much correction now",
+    "How much bolus did I take yesterday? How much for the same meal next time?",
   ])("still refuses the dose or setting request %s", (question) => {
     const decision = classifyTarvisSafety(question);
     expect(decision.kind).toBe("treatment-advice");
