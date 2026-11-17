@@ -161,7 +161,9 @@ describe('clinic report', () => {
     expect(report.html).toContain('Coefficient of variation');
     expect(report.html).toContain('not a medical device');
     expect(report.html).toContain('Data sources: LibreLinkUp, Nightscout.');
-    expect(report.html.match(/class="day"/g)).toHaveLength(15);
+    // 15 calendar days touch a rolling 14-day period; the overview keeps the last 14.
+    expect(report.html.match(/class="day"/g)).toHaveLength(14);
+    expect(report.html).toContain("The last 14 days of this period.");
     expect(report.html).not.toMatch(/undefined|NaN|<script/);
     // The only address is the SVG namespace; nothing is loaded from the network.
     expect(report.html.replaceAll('http://www.w3.org/2000/svg', '')).not.toMatch(/https?:\/\//);

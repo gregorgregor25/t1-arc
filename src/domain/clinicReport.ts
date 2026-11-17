@@ -22,6 +22,9 @@ import { addDays, type DateKey, toDateKey, zonedDateTimeToTimestamp } from './ti
 
 export const CLINIC_REPORT_DEFAULT_DAYS = 14;
 
+/** Daily tiles shown at most; longer periods show their last days. */
+export const DAILY_OVERVIEW_MAX_DAYS = 14;
+
 export interface ClinicReportInput {
   summary: PeriodSummary;
   /** Readings for the period (already the same set used for `summary`). */
@@ -283,7 +286,9 @@ export function buildClinicReport(input: ClinicReportInput): ClinicReport {
       body.push(`<section class="typical"><h2>Typical day</h2>${typicalDaySvg(profile, settings)}<p class="small">All ${esc(formatRegionalNumber(profile.expectedDays, settings.locale, { maximumFractionDigits: 0 }))} days laid over one day in ${esc(formatRegionalNumber(profile.binMinutes, settings.locale, { maximumFractionDigits: 0 }))}-minute periods. Line: median. Dark band: middle 50% of readings. Light band: middle 80%. A period is drawn only when readings come from at least ${esc(formatRegionalNumber(profile.minimumDaysPerBin, settings.locale, { maximumFractionDigits: 0 }))} days. Shaded area: standard range.</p></section>`);
     }
 
-    const days = reportDays(range, settings.timeZone);
+    const allDays = reportDays(range, settings.timeZone);
+    // Keeps the report to about one printed page for longer periods.
+    const days = allDays.slice(-DAILY_OVERVIEW_MAX_DAYS);
     const tiles = days.map((day) => {
       const dayReadings = glucose.filter((reading) => reading.timestamp >= day.range.start && reading.timestamp < day.range.end);
       const daySummary = calculateGlucoseRangeSummary({ readings: dayReadings, range: day.range });
@@ -292,7 +297,7 @@ export function buildClinicReport(input: ClinicReportInput): ClinicReport {
     });
     if (tiles.length) {
       sections.push('daily');
-      body.push(`<section class="daily"><h2>Daily overview</h2><p class="small">Each day from 00:00 to 24:00. Shaded band: standard range. In range uses the standard range.</p><div class="days">${tiles.join('')}</div></section>`);
+      body.push(`<section class="daily"><h2>Daily overview</h2><p class="small">${days.length < allDays.length ? `The last ${esc(formatRegionalNumber(days.length, settings.locale, { maximumFractionDigits: 0 }))} days of this period. ` : ''}Each day from 00:00 to 24:00. Shaded band: standard range. In range uses the standard range.</p><div class="days">${tiles.join('')}</div></section>`);
     }
   }
 
