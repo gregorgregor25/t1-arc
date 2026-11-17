@@ -119,3 +119,140 @@ describe('cross-source insulin reconciliation', () => {
     expect(summary.stats.basalUnits).toBe(0);
   });
 });
+
+describe('one delivery recorded by several sources', () => {
+  const at = Date.parse('2026-11-12T12:00:00Z');
+  const ids = (records: readonly BolusDelivery[]) => records.map((record) => record.id);
+  const total = (records: readonly BolusDelivery[]) =>
+    Math.round(records.reduce((sum, record) => sum + record.units, 0) * 100) / 100;
+  const sources = {
+    glooko: bolus('glooko:1', 'glooko-export', at, 1),
+    local: bolus('aaps-local:bolus:1', 'aaps-local', at, 1),
+    nightscout: bolus('nightscout:bolus:1', 'nightscout', at, 1),
+  };
+
+  it.each([
+    [['glooko', 'local', 'nightscout'], 'glooko:1'],
+    [['nightscout', 'local', 'glooko'], 'glooko:1'],
+    [['glooko', 'local'], 'glooko:1'],
+    [['glooko', 'nightscout'], 'glooko:1'],
+    [['local', 'nightscout'], 'aaps-local:bolus:1'],
+    [['glooko'], 'glooko:1'],
+    [['local'], 'aaps-local:bolus:1'],
+    [['nightscout'], 'nightscout:bolus:1'],
+  ] as const)('counts %j once, keeping %s', (names, keptId) => {
+    const result = reconcileBolusSources(names.map((name) => sources[name]));
+    expect(ids(result.boluses)).toEqual([keptId]);
+    expect(total(result.boluses)).toBe(1);
+    expect(result.hidden).toHaveLength(names.length - 1);
+    expect(result.hidden.every((item) => item.keptId === keptId)).toBe(true);
+  });
+
+  it('keeps two real boluses three minutes apart in one source, with each copy matched to its own', () => {
+    const later = at + 3 * minute;
+    const result = reconcileBolusSources([
+      bolus('glooko:a', 'glooko-export', at, 1),
+      bolus('glooko:b', 'glooko-export', later, 1),
+      bolus('aaps-local:bolus:a', 'aaps-local', at, 1),
+      bolus('aaps-local:bolus:b', 'aaps-local', later, 1),
+      bolus('nightscout:bolus:a', 'nightscout', at, 1),
+      bolus('nightscout:bolus:b', 'nightscout', later, 1),
+    ]);
+    expect(ids(result.boluses)).toEqual(['glooko:a', 'glooko:b']);
+    expect(total(result.boluses)).toBe(2);
+    expect(
+      result.hidden.map(({ record, keptId }) => [record.id, keptId]).sort(),
+    ).toEqual([
+      ['aaps-local:bolus:a', 'glooko:a'],
+      ['aaps-local:bolus:b', 'glooko:b'],
+      ['nightscout:bolus:a', 'glooko:a'],
+      ['nightscout:bolus:b', 'glooko:b'],
+    ]);
+  });
+
+  it('keeps two real boluses one minute apart when only one source recorded both', () => {
+    const result = reconcileBolusSources([
+      bolus('nightscout:bolus:a', 'nightscout', at, 1),
+      bolus('nightscout:bolus:b', 'nightscout', at + minute, 1),
+      bolus('aaps-local:bolus:a', 'aaps-local', at, 1),
+    ]);
+    expect(total(result.boluses)).toBe(2);
+    expect(result.hidden).toHaveLength(1);
+  });
+
+  it('does not let one source hide two copies of a single delivery from another', () => {
+    const result = reconcileBolusSources([
+      bolus('glooko:1', 'glooko-export', at, 1),
+      bolus('nightscout:bolus:a', 'nightscout', at, 1),
+      bolus('nightscout:bolus:b', 'nightscout', at + 30_000, 1),
+    ]);
+    expect(ids(result.boluses)).toEqual(['glooko:1', 'nightscout:bolus:b']);
+  });
+
+  it('matches within 2 minutes and 0.05 U, and keeps records just outside', () => {
+    const glooko = bolus('glooko:1', 'glooko-export', at, 1);
+    const near = (id: string, offset: number, units: number) =>
+      reconcileBolusSources([glooko, bolus(id, 'nightscout', at + offset, units)]).boluses.length;
+    expect(near('in-time', 2 * minute, 1)).toBe(1);
+    expect(near('in-time-before', -2 * minute, 1)).toBe(1);
+    expect(near('late', 2 * minute + 1_000, 1)).toBe(2);
+    expect(near('in-amount', 0, 1.04)).toBe(1);
+    expect(near('out-amount', 0, 1.06)).toBe(2);
+    expect(near('smaller', 0, 0.94)).toBe(2);
+  });
+
+  it('matches a copy to the nearest delivery when two could match', () => {
+    const result = reconcileBolusSources([
+      bolus('glooko:a', 'glooko-export', at, 1),
+      bolus('glooko:b', 'glooko-export', at + 90_000, 1),
+      bolus('nightscout:bolus:b', 'nightscout', at + 80_000, 1),
+      bolus('nightscout:bolus:a', 'nightscout', at + 10_000, 1),
+    ]);
+    expect(ids(result.boluses)).toEqual(['glooko:a', 'glooko:b']);
+    expect(
+      Object.fromEntries(result.hidden.map(({ record, keptId }) => [record.id, keptId])),
+    ).toEqual({ 'nightscout:bolus:a': 'glooko:a', 'nightscout:bolus:b': 'glooko:b' });
+  });
+
+  it('counts an SMB sent locally and to Nightscout once, and keeps separate SMBs', () => {
+    const smb = (id: string, sourceId: string, timestamp: number): BolusDelivery => ({
+      ...bolus(id, sourceId, timestamp, 0.4),
+      deliveryType: 'SMB',
+    });
+    const result = reconcileBolusSources([
+      smb('aaps-local:bolus:1', 'aaps-local', at),
+      smb('aaps-local:bolus:2', 'aaps-local', at + 5 * minute),
+      smb('nightscout:bolus:1', 'nightscout', at),
+      smb('nightscout:bolus:2', 'nightscout', at + 5 * minute),
+    ]);
+    expect(result.boluses).toHaveLength(2);
+    expect(total(result.boluses)).toBe(0.8);
+  });
+
+  it('counts an extended bolus from three sources once without absorbing the separate normal bolus', () => {
+    const extended = (id: string, sourceId: string): BolusDelivery => ({
+      ...bolus(id, sourceId, at, 3),
+      deliveryType: 'Combo Bolus (extended over 60 min)',
+      initialUnits: 1,
+      extendedUnits: 2,
+    });
+    const result = reconcileBolusSources([
+      extended('glooko:combo', 'glooko-export'),
+      extended('aaps-local:bolus:combo', 'aaps-local'),
+      extended('nightscout:bolus:combo', 'nightscout'),
+      bolus('nightscout:bolus:meal', 'nightscout', at, 1),
+    ]);
+    expect(ids(result.boluses)).toEqual(['glooko:combo', 'nightscout:bolus:meal']);
+    expect(total(result.boluses)).toBe(4);
+  });
+
+  it('never hides or matches manual entries', () => {
+    const result = reconcileBolusSources([
+      bolus('manual:1', 'manual-context', at, 1),
+      bolus('manual:2', 'manual-context', at, 1),
+      sources.local,
+      sources.nightscout,
+    ]);
+    expect(ids(result.boluses)).toEqual(['manual:1', 'manual:2', 'aaps-local:bolus:1']);
+  });
+});

@@ -31,56 +31,102 @@ export interface BolusReconciliation {
   hidden: { record: BolusDelivery; keptId: string }[];
 }
 
+interface RankedRecord<T> {
+  record: T;
+  order: number;
+  rank: number | undefined;
+}
+
+interface CopyGroup<T> {
+  canonical: RankedRecord<T>;
+  /** The canonical record and every copy it absorbed, one per source. */
+  members: T[];
+  absorbedRanks: Set<number>;
+}
+
+/**
+ * Shared matching for records that several sources can each hold one copy of.
+ *
+ * Sources are processed in precedence order. A record from the highest
+ * source present stays as the canonical delivery. A record from a lower
+ * source is hidden only when it matches a canonical delivery (or a copy that
+ * delivery already absorbed) and that delivery has not yet absorbed a copy
+ * from the same source. So one delivery absorbs at most one copy from each
+ * lower source, and two genuine deliveries recorded close together in one
+ * source both stay. Matching is greedy by time difference, closest first, so
+ * each copy goes to the nearest delivery it can belong to.
+ */
+function reconcileCopies<T extends { id: string; sourceId: string }>(
+  records: readonly T[],
+  timeOf: (record: T) => number,
+  matches: (kept: T, copy: T) => boolean,
+): { kept: T[]; hidden: { record: T; keptId: string }[] } {
+  const ranked: RankedRecord<T>[] = records.map((record, order) => ({
+    record,
+    order,
+    rank: precedence(record.sourceId),
+  }));
+  const unranked = ranked.filter((item) => item.rank === undefined);
+  const ranks = [...new Set(ranked.flatMap((item) => (item.rank === undefined ? [] : [item.rank])))]
+    .sort((left, right) => left - right);
+  const groups: CopyGroup<T>[] = [];
+  const hidden: { record: T; keptId: string }[] = [];
+  for (const rank of ranks) {
+    const copies = ranked.filter((item) => item.rank === rank);
+    const pairs: { copy: RankedRecord<T>; group: CopyGroup<T>; distance: number }[] = [];
+    for (const copy of copies) {
+      for (const group of groups) {
+        if (group.absorbedRanks.has(rank)) continue;
+        const distances = group.members
+          .filter((member) => matches(member, copy.record))
+          .map((member) => Math.abs(timeOf(member) - timeOf(copy.record)));
+        if (distances.length === 0) continue;
+        pairs.push({ copy, group, distance: Math.min(...distances) });
+      }
+    }
+    pairs.sort(
+      (left, right) =>
+        left.distance - right.distance ||
+        timeOf(left.group.canonical.record) - timeOf(right.group.canonical.record) ||
+        left.group.canonical.record.id.localeCompare(right.group.canonical.record.id) ||
+        left.copy.record.id.localeCompare(right.copy.record.id),
+    );
+    const absorbed = new Set<RankedRecord<T>>();
+    for (const { copy, group } of pairs) {
+      if (absorbed.has(copy) || group.absorbedRanks.has(rank)) continue;
+      absorbed.add(copy);
+      group.absorbedRanks.add(rank);
+      group.members.push(copy.record);
+      hidden.push({ record: copy.record, keptId: group.canonical.record.id });
+    }
+    for (const copy of copies) {
+      if (absorbed.has(copy)) continue;
+      groups.push({ canonical: copy, members: [copy.record], absorbedRanks: new Set() });
+    }
+  }
+  const kept = [...unranked, ...groups.map((group) => group.canonical)]
+    .sort((left, right) => left.order - right.order)
+    .map((item) => item.record);
+  hidden.sort(
+    (left, right) =>
+      timeOf(left.record) - timeOf(right.record) || left.record.id.localeCompare(right.record.id),
+  );
+  return { kept, hidden };
+}
+
+function sameBolus(kept: BolusDelivery, copy: BolusDelivery) {
+  return (
+    kept.sourceId !== copy.sourceId &&
+    Math.abs(kept.timestamp - copy.timestamp) <= DUPLICATE_BOLUS_WINDOW_MS &&
+    Math.abs(kept.units - copy.units) < DUPLICATE_BOLUS_UNITS_TOLERANCE
+  );
+}
+
 export function reconcileBolusSources(
   boluses: readonly BolusDelivery[],
 ): BolusReconciliation {
-  const ranked = boluses
-    .map((record, order) => ({ record, order, rank: precedence(record.sourceId) }))
-    .sort(
-      (left, right) =>
-        (left.rank ?? -1) - (right.rank ?? -1) ||
-        left.record.timestamp - right.record.timestamp ||
-        left.record.id.localeCompare(right.record.id),
-    );
-  const kept: typeof ranked = [];
-  const matched = new Set<string>();
-  const hidden: BolusReconciliation['hidden'] = [];
-  for (const candidate of ranked) {
-    if (candidate.rank === undefined || candidate.rank === 0) {
-      kept.push(candidate);
-      continue;
-    }
-    const match = kept
-      .filter(
-        (other) =>
-          other.rank !== undefined &&
-          other.rank < candidate.rank! &&
-          other.record.sourceId !== candidate.record.sourceId &&
-          !matched.has(other.record.id) &&
-          Math.abs(other.record.timestamp - candidate.record.timestamp) <=
-            DUPLICATE_BOLUS_WINDOW_MS &&
-          Math.abs(other.record.units - candidate.record.units) <
-            DUPLICATE_BOLUS_UNITS_TOLERANCE,
-      )
-      .sort(
-        (left, right) =>
-          Math.abs(left.record.timestamp - candidate.record.timestamp) -
-            Math.abs(right.record.timestamp - candidate.record.timestamp) ||
-          left.record.id.localeCompare(right.record.id),
-      )[0];
-    if (match) {
-      matched.add(match.record.id);
-      hidden.push({ record: candidate.record, keptId: match.record.id });
-    } else {
-      kept.push(candidate);
-    }
-  }
-  return {
-    boluses: kept
-      .sort((left, right) => left.order - right.order)
-      .map((item) => item.record),
-    hidden,
-  };
+  const { kept, hidden } = reconcileCopies(boluses, (record) => record.timestamp, sameBolus);
+  return { boluses: kept, hidden };
 }
 
 function scaled(record: BasalDelivery, start: number, end: number, part?: number): BasalDelivery {
