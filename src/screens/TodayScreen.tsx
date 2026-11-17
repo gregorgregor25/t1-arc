@@ -25,6 +25,8 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
 import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
 import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
+import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
+import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
@@ -117,9 +119,15 @@ export function TodayScreen() {
     id: 'aaps-local', label: 'Glucose', detail: 'AndroidAPS local',
     freshness: 'missing' as const, origin: 'live' as const, isLive: true,
   } : glucoseSource;
+  // Nightscout users see the same combined card when their looping system
+  // reports IOB or COB through Nightscout, labelled with that provenance.
+  const nightscoutEstimates = useNightscoutCardEstimates(
+    dataMode === 'live' && !aapsSelected && latest.reading?.sourceId === NIGHTSCOUT_SOURCE_ID,
+    revision,
+  );
   const aapsEstimates = aapsSelected ? { context: aaps.context }
     : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
-      ? { unavailable: aaps.kind === 'unavailable' } : undefined;
+      ? { unavailable: aaps.kind === 'unavailable' } : nightscoutEstimates;
   const trendAssessment = useMemo(
     () =>
       assessGlucoseTrend(cardReading, aapsSelected ? aaps.history : selectedTimeline.data?.glucose ?? []),

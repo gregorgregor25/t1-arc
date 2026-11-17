@@ -15,7 +15,7 @@ export function AapsEstimateSummary({ estimates, now }: { estimates: AapsEstimat
     <View accessible accessibilityLabel={presentation.accessibilityLabel}
       style={[styles.summary, { borderTopColor: colors.divider }]}>
       <View style={styles.headingRow}>
-        <Text style={[styles.heading, { color: colors.text }]}>AAPS estimates</Text>
+        <Text style={[styles.heading, { color: colors.text }]}>{presentation.heading}</Text>
         <Text style={[styles.age, { color: presentation.stale ? colors.warning : colors.textSecondary }]}>
           {presentation.age}
         </Text>
