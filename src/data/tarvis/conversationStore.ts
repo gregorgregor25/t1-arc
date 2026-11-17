@@ -4,6 +4,10 @@ import {
 } from "@/data/persistence/t1arcDatabase";
 import { compactTarvisEvidence } from "@/data/tarvis/evidenceCompaction";
 import {
+  isTarvisEvidenceLineData,
+  type TarvisEvidenceLineData,
+} from "@/data/tarvis/evidenceLine";
+import {
   type GlucoseAnswerBundleV2,
   isGlucoseAnswerBundleV2,
   parseGlucoseAnswerBundleV2,
@@ -95,6 +99,8 @@ export interface StoredTarvisExchange {
   clarificationQuestion?: string;
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
+  /** Fixed, locally built line naming the period, readings, coverage and range used. */
+  evidenceLine?: TarvisEvidenceLineData;
   requestMetrics?: TarvisRequestMetrics;
   /** Independent of requestMetrics: a request can be sent but rejected locally. */
   modelRequestSent?: boolean;
@@ -1083,6 +1089,10 @@ function parsedExchange(
     intent: isTarvisIntentV1(exchange.intent) ? exchange.intent : undefined,
     presentation: isTarvisEvidencePresentation(exchange.presentation)
       ? exchange.presentation
+      : undefined,
+    // Optional display metadata: an invalid line is dropped, never the exchange.
+    evidenceLine: isTarvisEvidenceLineData(exchange.evidenceLine)
+      ? exchange.evidenceLine
       : undefined,
   } satisfies LoadedStoredTarvisExchange;
 }

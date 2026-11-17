@@ -27,6 +27,7 @@ import { AppScreen } from "@/components/AppScreen";
 import { SectionCard } from "@/components/SectionCard";
 import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
 import { TarvisPeriodSummaryCard } from "@/components/TarvisPeriodSummaryCard";
+import { TarvisEvidenceLine } from "@/components/TarvisEvidenceLine";
 import { TarvisWorkspaceSwitcher } from "@/components/TarvisWorkspaceSwitcher";
 import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
@@ -37,6 +38,10 @@ import {
 } from "@/data/tarvis/evidencePacket";
 import { localTarvisEvidenceFallback } from "@/data/tarvis/evidenceAnswerGuardrail";
 import { compactTarvisEvidence } from "@/data/tarvis/evidenceCompaction";
+import {
+  buildTarvisEvidenceLineData,
+  type TarvisEvidenceLineData,
+} from "@/data/tarvis/evidenceLine";
 import {
   buildTarvisEvidencePresentation,
   TarvisEvidencePresentation,
@@ -244,6 +249,7 @@ interface ChatExchange {
   clarificationQuestion?: string;
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
+  evidenceLine?: TarvisEvidenceLineData;
   requestMetrics?: TarvisRequestMetrics;
   modelRequestSent: boolean;
   answerSource: "hosted" | "local";
@@ -1485,6 +1491,17 @@ export function TarvisScreen({
       clarificationQuestion: exchange.clarificationQuestion,
       intent: exchange.intent,
       presentation: exchange.presentation,
+      // Older exchanges: rebuild from what was saved with them, never from the
+      // current packet, which may describe a different period.
+      evidenceLine:
+        exchange.evidenceLine ??
+        buildTarvisEvidenceLineData({
+          answer: exchange.answer,
+          answerBundle: exchange.answerBundle,
+          presentation: exchange.presentation,
+          question: exchange.question,
+          references: exchange.evidence,
+        }),
       requestMetrics: exchange.requestMetrics,
       modelRequestSent:
         exchange.modelRequestSent ?? Boolean(exchange.requestMetrics),
@@ -1762,6 +1779,7 @@ export function TarvisScreen({
       clarificationQuestion: exchange.clarificationQuestion,
       intent: exchange.intent,
       presentation: exchange.presentation,
+      evidenceLine: exchange.evidenceLine,
       requestMetrics: exchange.requestMetrics,
       modelRequestSent: exchange.modelRequestSent,
       answerSource: exchange.answerSource,
@@ -1834,6 +1852,17 @@ export function TarvisScreen({
         evidence: evidenceLookup,
         intent,
         presentation,
+        evidenceLine: buildTarvisEvidenceLineData({
+          answer,
+          answerBundle,
+          presentation,
+          packet: evidenceLookup.packet,
+          question: prompt,
+          references: answer.evidenceIds.flatMap((id) => {
+            const reference = evidenceLookup.references.get(id);
+            return reference ? [reference] : [];
+          }),
+        }),
         requestMetrics,
         modelRequestSent,
         answerSource,
@@ -4308,6 +4337,7 @@ export function TarvisScreen({
                             ) : null}
                           </>
                         )}
+                        <TarvisEvidenceLine data={exchange.evidenceLine} />
                         {exchange.scope.kind !== 'legacy-unknown' ? <SaveToNotebookButton id={exchange.id} title={exchange.question} answer={exchange.answer} evidence={[...exchange.evidence.references.values()]} createdAt={exchange.createdAt} ownerIdentity={exchange.scope.ownerIdentity} dataMode={exchange.scope.dataMode} disabled={working} onSaved={entry => { setNotebookSeed(entry); setNotebookVisible(true); }} /> : null}
                         <TarvisReportButton key={`report-${exchange.id}-${exchange.scope.kind === 'legacy-unknown' ? 'legacy' : `${exchange.scope.ownerIdentity}-${exchange.scope.dataMode}`}`} response={exchange.answer.answer} disabled={working} />
                         <TarvisRouteMarker
