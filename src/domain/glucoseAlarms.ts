@@ -1,14 +1,20 @@
 import type { GlucoseAlertPreferences } from './glucoseAlerts';
 import { addDays, getZonedDateTimeParts, toDateKey, zonedWallClockCandidates } from './time';
 
-export type GlucoseAlarmKind = 'low' | 'high' | 'veryHigh' | 'stale';
+export type GlucoseAlarmKind = 'urgentLow' | 'low' | 'high' | 'veryHigh' | 'stale';
 export type GlucoseAlarmRepeatMinutes = 0 | 5 | 10 | 15 | 20 | 30 | 60 | 120;
+/** "Only alert if it stays out of range for N minutes". High and very high only. */
+export type GlucoseAlarmHighPersistMinutes = 0 | 5 | 10 | 15 | 20 | 30;
+/** Low-alert pause after a logged hypo treatment; 0 turns it off. */
+export type GlucoseAlarmHypoTreatmentSnoozeMinutes = 0 | 10 | 15 | 20 | 30;
 export interface GlucoseAlarmCustomSound { id: string; name: string }
 
 export interface GlucoseAlarmConfiguration {
-  schemaVersion: 1;
+  schemaVersion: 2;
   enabled: boolean;
   audioEnabled: boolean;
+  urgentLowEnabled: boolean;
+  urgentLowThresholdMmolL: number;
   lowEnabled: boolean;
   lowThresholdMmolL: number;
   highEnabled: boolean;
@@ -17,9 +23,12 @@ export interface GlucoseAlarmConfiguration {
   veryHighThresholdMmolL: number | null;
   staleEnabled: boolean;
   repeatMinutes: GlucoseAlarmRepeatMinutes;
+  highPersistMinutes: GlucoseAlarmHighPersistMinutes;
+  hypoTreatmentSnoozeMinutes: GlucoseAlarmHypoTreatmentSnoozeMinutes;
   nightEnabled: boolean;
   nightStartMinutes: number;
   nightEndMinutes: number;
+  urgentLowSound: string;
   lowSound: string;
   highSound: string;
   veryHighSound: string;
@@ -28,14 +37,26 @@ export interface GlucoseAlarmConfiguration {
   rampSeconds: number;
 }
 
+/** Choices saved before urgent low, the high delay and the hypo pause existed. */
+export type GlucoseAlarmConfigurationV1 = Omit<GlucoseAlarmConfiguration,
+  'schemaVersion' | 'urgentLowEnabled' | 'urgentLowThresholdMmolL' | 'urgentLowSound' | 'highPersistMinutes' | 'hypoTreatmentSnoozeMinutes'> & {
+  schemaVersion: 1;
+};
+
 export interface GlucoseAlarmStatus {
   configured: boolean;
   enabled: boolean;
   audioEnabled: boolean;
+  /** Follows the saved choices only, so it survives restarts, reboots and app updates. */
+  audioArmed: boolean;
   activeKind: GlucoseAlarmKind | null;
   episodeId: string | null;
   readingTimestampMs: number | null;
   snoozedUntilMs: number | null;
+  /** End of the automatic low pause after a logged hypo treatment. */
+  lowPausedUntilMs: number | null;
+  /** Longest snooze allowed for the active alert (30 for urgent low). */
+  maxSnoozeMinutes: number;
   acknowledged: boolean;
   missing: boolean;
   playbackState: 'idle' | 'playing' | 'blocked';
@@ -43,13 +64,38 @@ export interface GlucoseAlarmStatus {
   customSounds: GlucoseAlarmCustomSound[];
 }
 
+export const GLUCOSE_ALARM_KINDS: readonly GlucoseAlarmKind[] = ['urgentLow', 'low', 'high', 'veryHigh', 'stale'];
+export const GLUCOSE_ALARM_SOUND_KEYS = {
+  urgentLow: 'urgentLowSound',
+  low: 'lowSound',
+  high: 'highSound',
+  veryHigh: 'veryHighSound',
+  stale: 'staleSound',
+} as const satisfies Record<GlucoseAlarmKind, keyof GlucoseAlarmConfiguration>;
+/** Built-in sound used when a custom sound is unavailable. */
+export const GLUCOSE_ALARM_BUILT_IN_SOUND: Record<GlucoseAlarmKind, 'pulse' | 'notes'> = {
+  urgentLow: 'pulse', low: 'pulse', high: 'notes', veryHigh: 'notes', stale: 'pulse',
+};
 export const GLUCOSE_ALARM_SNOOZE_MINUTES = [5, 10, 15, 20, 30, 60] as const;
 export const MAX_GLUCOSE_ALARM_SNOOZE_MS = 24 * 60 * 60_000;
+const MAX_SNOOZE_MINUTES = MAX_GLUCOSE_ALARM_SNOOZE_MS / 60_000;
+export const URGENT_LOW_MAX_SNOOZE_MINUTES = 30;
+export const DEFAULT_URGENT_LOW_MMOL_L = 3.0;
+export const GLUCOSE_ALARM_HIGH_PERSIST_MINUTES: readonly GlucoseAlarmHighPersistMinutes[] = [0, 5, 10, 15, 20, 30];
+export const GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES: readonly GlucoseAlarmHypoTreatmentSnoozeMinutes[] = [0, 10, 15, 20, 30];
+export const DEFAULT_GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES: GlucoseAlarmHypoTreatmentSnoozeMinutes = 15;
 
+/**
+ * Quiet by default: the master switch and the sound switch are off. Urgent low
+ * is ready at 3.0 mmol/L (54 mg/dL) for when the user turns alerts on.
+ * Ordinary high stays at a loose 13.9 mmol/L with no delay.
+ */
 export const DEFAULT_GLUCOSE_ALARM_CONFIGURATION: GlucoseAlarmConfiguration = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   enabled: false,
   audioEnabled: false,
+  urgentLowEnabled: true,
+  urgentLowThresholdMmolL: DEFAULT_URGENT_LOW_MMOL_L,
   lowEnabled: true,
   lowThresholdMmolL: 3.9,
   highEnabled: true,
@@ -58,9 +104,12 @@ export const DEFAULT_GLUCOSE_ALARM_CONFIGURATION: GlucoseAlarmConfiguration = {
   veryHighThresholdMmolL: null,
   staleEnabled: false,
   repeatMinutes: 30,
+  highPersistMinutes: 0,
+  hypoTreatmentSnoozeMinutes: DEFAULT_GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES,
   nightEnabled: false,
   nightStartMinutes: 23 * 60,
   nightEndMinutes: 7 * 60,
+  urgentLowSound: 'pulse',
   lowSound: 'pulse',
   highSound: 'notes',
   veryHighSound: 'notes',
@@ -74,33 +123,83 @@ export function isGlucoseAlarmSoundId(value: unknown): value is string {
     (value === 'pulse' || value === 'notes' || /^custom:[a-f0-9-]{36}$/.test(value));
 }
 
+/**
+ * Mirrors the native upgrade. Urgent low follows the existing low switch at
+ * 3.0 mmol/L, or 0.2 mmol/L below a low threshold that is already at or
+ * under 3.0. It stays off when that would fall below 2.0 mmol/L.
+ */
+export function migratedUrgentLow(lowEnabled: boolean, lowThresholdMmolL: number): { enabled: boolean; thresholdMmolL: number } {
+  const threshold = lowThresholdMmolL > DEFAULT_URGENT_LOW_MMOL_L
+    ? DEFAULT_URGENT_LOW_MMOL_L
+    : Math.round((lowThresholdMmolL - 0.2) * 10) / 10;
+  if (!Number.isFinite(threshold) || threshold < 2 || threshold >= lowThresholdMmolL) return { enabled: false, thresholdMmolL: 2 };
+  return { enabled: lowEnabled, thresholdMmolL: threshold };
+}
+
 export function validateGlucoseAlarmConfiguration(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return 'The alarm choices could not be read.';
   const config = value as Record<string, unknown>;
-  if (config.schemaVersion !== 1) return 'This version of the alarm choices is not supported.';
-  const booleans = ['enabled', 'audioEnabled', 'lowEnabled', 'highEnabled', 'veryHighEnabled', 'staleEnabled', 'nightEnabled'];
+  if (config.schemaVersion !== 2) return 'This version of the alarm choices is not supported.';
+  const booleans = ['enabled', 'audioEnabled', 'urgentLowEnabled', 'lowEnabled', 'highEnabled', 'veryHighEnabled', 'staleEnabled', 'nightEnabled'];
   if (booleans.some(key => typeof config[key] !== 'boolean')) return 'Every alarm switch must be on or off.';
+  const urgentLow = config.urgentLowThresholdMmolL;
   const low = config.lowThresholdMmolL;
   const high = config.highThresholdMmolL;
   const veryHigh = config.veryHighThresholdMmolL;
   if (typeof low !== 'number' || !Number.isFinite(low) || low < 2 || low > 6) return 'Choose a valid low glucose threshold.';
+  if (typeof urgentLow !== 'number' || !Number.isFinite(urgentLow) || urgentLow < 2 || urgentLow > 4) return 'Choose an urgent low level between 2.0 and 4.0 mmol/L.';
+  if (config.urgentLowEnabled && config.lowEnabled && urgentLow >= low) return 'The urgent low level must be below the low level.';
   if (typeof high !== 'number' || !Number.isFinite(high) || high < 7 || high > 25 || high < low + 1) return 'Choose a high glucose threshold above the low threshold.';
   if (veryHigh !== null && (typeof veryHigh !== 'number' || !Number.isFinite(veryHigh) || veryHigh <= high || veryHigh > 33.3)) return 'The very high glucose threshold must be above high glucose.';
   if (config.veryHighEnabled && veryHigh === null) return 'Choose a very high glucose threshold before enabling it.';
   if (typeof config.repeatMinutes !== 'number' || ![0, 5, 10, 15, 20, 30, 60, 120].includes(config.repeatMinutes)) return 'Choose a supported reminder interval.';
+  if (typeof config.highPersistMinutes !== 'number' || !(GLUCOSE_ALARM_HIGH_PERSIST_MINUTES as readonly number[]).includes(config.highPersistMinutes)) return 'Choose a supported delay for high alerts.';
+  if (typeof config.hypoTreatmentSnoozeMinutes !== 'number' || !(GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES as readonly number[]).includes(config.hypoTreatmentSnoozeMinutes)) return 'Choose a supported pause after a logged hypo treatment.';
   const clockMinutes = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1440;
   if (!clockMinutes(config.nightStartMinutes) || !clockMinutes(config.nightEndMinutes)) return 'Choose valid start and end times for night alerts.';
   if (config.nightEnabled && config.nightStartMinutes === config.nightEndMinutes) return 'Choose different start and end times for night alerts.';
-  if (['lowSound', 'highSound', 'veryHighSound', 'staleSound'].some(key => !isGlucoseAlarmSoundId(config[key]))) return 'Choose an available sound for each alarm.';
+  if (Object.values(GLUCOSE_ALARM_SOUND_KEYS).some(key => !isGlucoseAlarmSoundId(config[key]))) return 'Choose an available sound for each alarm.';
   if (typeof config.volume !== 'number' || !Number.isFinite(config.volume) || config.volume < 0 || config.volume > 1) return 'Choose an alarm volume between 0% and 100%.';
   if (typeof config.rampSeconds !== 'number' || !Number.isFinite(config.rampSeconds) || config.rampSeconds < 0 || config.rampSeconds > 15) return 'Choose an alarm volume ramp between 0 and 15 seconds.';
   return undefined;
 }
 
+/**
+ * Accepts version 1 or 2 choices and returns version 2, or undefined when
+ * invalid. Version 1 gains quiet defaults: urgent low per migratedUrgentLow,
+ * no high delay and a 15-minute low pause after a logged hypo treatment. The
+ * master switch and the sound switch are never changed.
+ */
+export function upgradeGlucoseAlarmConfiguration(value: unknown): GlucoseAlarmConfiguration | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const config = value as Record<string, unknown>;
+  let candidate: Record<string, unknown> = config;
+  if (config.schemaVersion === 1) {
+    const lowThreshold = typeof config.lowThresholdMmolL === 'number' ? config.lowThresholdMmolL : Number.NaN;
+    const urgent = migratedUrgentLow(config.lowEnabled === true, lowThreshold);
+    candidate = {
+      ...config,
+      schemaVersion: 2,
+      urgentLowEnabled: urgent.enabled,
+      urgentLowThresholdMmolL: urgent.thresholdMmolL,
+      urgentLowSound: config.lowSound,
+      highPersistMinutes: 0,
+      hypoTreatmentSnoozeMinutes: DEFAULT_GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES,
+    };
+  }
+  if (validateGlucoseAlarmConfiguration(candidate)) return undefined;
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(DEFAULT_GLUCOSE_ALARM_CONFIGURATION)) result[key] = candidate[key];
+  return result as unknown as GlucoseAlarmConfiguration;
+}
+
 /** Seeds the editing form only. Calling this must never persist or arm audio. */
 export function glucoseAlarmConfigurationFromLegacy(legacy: GlucoseAlertPreferences): GlucoseAlarmConfiguration {
+  const urgent = migratedUrgentLow(legacy.lowEnabled, legacy.lowThresholdMmolL);
   return {
     ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION,
+    urgentLowEnabled: urgent.enabled,
+    urgentLowThresholdMmolL: urgent.thresholdMmolL,
     enabled: legacy.enabled,
     lowEnabled: legacy.lowEnabled,
     lowThresholdMmolL: legacy.lowThresholdMmolL,
@@ -111,17 +210,30 @@ export function glucoseAlarmConfigurationFromLegacy(legacy: GlucoseAlertPreferen
   };
 }
 
-export function validateGlucoseAlarmSnoozeUntil(untilMs: number, now = Date.now()): string | undefined {
-  if (!Number.isSafeInteger(now) || !Number.isSafeInteger(untilMs) || untilMs <= now || untilMs - now > MAX_GLUCOSE_ALARM_SNOOZE_MS) {
-    return 'Choose a snooze end time within the next 24 hours.';
+/** Longest snooze for an alert kind. Urgent low is capped at 30 minutes. */
+export function maxGlucoseAlarmSnoozeMinutes(kind: GlucoseAlarmKind | null | undefined): number {
+  return kind === 'urgentLow' ? URGENT_LOW_MAX_SNOOZE_MINUTES : MAX_SNOOZE_MINUTES;
+}
+
+/** Snooze presets offered for an alert whose longest snooze is maxMinutes. */
+export function glucoseAlarmSnoozeOptions(maxMinutes = MAX_SNOOZE_MINUTES): number[] {
+  return GLUCOSE_ALARM_SNOOZE_MINUTES.filter(minutes => minutes <= maxMinutes);
+}
+
+export function validateGlucoseAlarmSnoozeUntil(untilMs: number, now = Date.now(), maxMinutes = MAX_SNOOZE_MINUTES): string | undefined {
+  const maxMs = Math.min(MAX_GLUCOSE_ALARM_SNOOZE_MS, Math.max(0, maxMinutes) * 60_000);
+  if (!Number.isSafeInteger(now) || !Number.isSafeInteger(untilMs) || untilMs <= now || untilMs - now > maxMs) {
+    return maxMs < MAX_GLUCOSE_ALARM_SNOOZE_MS
+      ? `Urgent low alerts can be snoozed for up to ${Math.round(maxMs / 60_000)} minutes.`
+      : 'Choose a snooze end time within the next 24 hours.';
   }
   return undefined;
 }
 
-export function glucoseAlarmSnoozeUntil(minutes: number, now = Date.now()): number {
+export function glucoseAlarmSnoozeUntil(minutes: number, now = Date.now(), maxMinutes = MAX_SNOOZE_MINUTES): number {
   if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60) throw new Error('Choose a snooze duration of up to 24 hours.');
   const until = now + minutes * 60_000;
-  const error = validateGlucoseAlarmSnoozeUntil(until, now);
+  const error = validateGlucoseAlarmSnoozeUntil(until, now, maxMinutes);
   if (error) throw new Error(error);
   return until;
 }
@@ -132,6 +244,7 @@ export function customClockSnoozeUntil(
   minutes: number,
   now = Date.now(),
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  maxMinutes = MAX_SNOOZE_MINUTES,
 ): number {
   if (!Number.isFinite(now)) throw new Error('The current time is not available.');
   const today = toDateKey(now, timeZone);
@@ -146,9 +259,16 @@ export function customClockSnoozeUntil(
     candidate = tomorrowCandidates.find(timestamp => timestamp > now);
     if (candidate === undefined) throw new Error('That time does not exist tomorrow because the clocks change. Choose another time.');
   }
-  const error = validateGlucoseAlarmSnoozeUntil(candidate, now);
+  const error = validateGlucoseAlarmSnoozeUntil(candidate, now, maxMinutes);
   if (error) throw new Error(error);
   return candidate;
 }
 
 export const nextGlucoseAlarmSnoozeTime = customClockSnoozeUntil;
+
+/** Confirmation text after a logged hypo treatment paused ordinary low alerts. */
+export function hypoTreatmentPauseNotice(pausedUntilMs: number | null, now: number, clock: (timestamp: number) => string): string | undefined {
+  if (pausedUntilMs === null || !Number.isFinite(pausedUntilMs) || pausedUntilMs <= now) return undefined;
+  const minutes = Math.max(1, Math.ceil((pausedUntilMs - now) / 60_000));
+  return `Low glucose alerts are paused for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}, until ${clock(pausedUntilMs)}. Urgent low alerts still sound.`;
+}

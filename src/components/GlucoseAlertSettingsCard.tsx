@@ -11,6 +11,7 @@ import {
   previewGlucoseAlarmSound, saveGlucoseAlarmConfiguration, stopGlucoseAlarmPreview,
 } from '@/data/glucoseAlerts/glucoseAlarms';
 import {
+  GLUCOSE_ALARM_HIGH_PERSIST_MINUTES, GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES, URGENT_LOW_MAX_SNOOZE_MINUTES,
   type GlucoseAlarmConfiguration, type GlucoseAlarmKind, type GlucoseAlarmStatus,
   validateGlucoseAlarmConfiguration,
 } from '@/domain/glucoseAlarms';
@@ -24,20 +25,29 @@ import { SectionCard } from './SectionCard';
 import { pickerTimeForWallClock, regionalClockUses24Hours } from './zonedDateTimePicker';
 
 const NOTIFICATION_PERMISSION = 'android.permission.POST_NOTIFICATIONS';
-const KINDS: { kind: GlucoseAlarmKind; label: string; enabled: 'lowEnabled' | 'highEnabled' | 'veryHighEnabled' | 'staleEnabled'; sound: 'lowSound' | 'highSound' | 'veryHighSound' | 'staleSound' }[] = [
+const KINDS: { kind: GlucoseAlarmKind; label: string; enabled: 'urgentLowEnabled' | 'lowEnabled' | 'highEnabled' | 'veryHighEnabled' | 'staleEnabled'; sound: 'urgentLowSound' | 'lowSound' | 'highSound' | 'veryHighSound' | 'staleSound' }[] = [
+  { kind: 'urgentLow', label: 'Urgent low glucose', enabled: 'urgentLowEnabled', sound: 'urgentLowSound' },
   { kind: 'low', label: 'Low glucose', enabled: 'lowEnabled', sound: 'lowSound' },
   { kind: 'high', label: 'High glucose', enabled: 'highEnabled', sound: 'highSound' },
   { kind: 'veryHigh', label: 'Very high glucose', enabled: 'veryHighEnabled', sound: 'veryHighSound' },
   { kind: 'stale', label: 'Missing or stale readings', enabled: 'staleEnabled', sound: 'staleSound' },
 ];
 const REPEAT_MINUTES = [0, 5, 10, 15, 20, 30, 60, 120] as const;
+const KIND_DETAIL: Record<GlucoseAlarmKind, string> = {
+  urgentLow: `Takes priority over low. Not quietened by the night schedule or a logged hypo treatment, and it can be snoozed for up to ${URGENT_LOW_MAX_SNOOZE_MINUTES} minutes. Suggested level: 3.0 mmol/L (54 mg/dL).`,
+  low: 'Uses the glucose threshold you choose below.',
+  high: 'Uses the glucose threshold you choose below.',
+  veryHigh: 'Uses the glucose threshold you choose below.',
+  stale: 'A separate warning when glucose updates stop.',
+};
+const minutesLabel = (minutes: number) => minutes === 0 ? 'Off' : `${minutes} min`;
 
 export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) {
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
   const [configuration, setConfiguration] = useState<GlucoseAlarmConfiguration>();
   const [status, setStatus] = useState<GlucoseAlarmStatus>();
-  const [thresholds, setThresholds] = useState({ low: '', high: '', veryHigh: '' });
+  const [thresholds, setThresholds] = useState({ urgentLow: '', low: '', high: '', veryHigh: '' });
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState<string>();
   const [message, setMessage] = useState<{ text: string; error?: boolean }>();
@@ -69,6 +79,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       if (configurationGeneration === configurationRefreshGeneration.current && !dirty.current) {
         setConfiguration(next);
         setThresholds({
+          urgentLow: formatGlucose(next.urgentLowThresholdMmolL, regional, { withUnit: false }),
           low: formatGlucose(next.lowThresholdMmolL, regional, { withUnit: false }),
           high: formatGlucose(next.highThresholdMmolL, regional, { withUnit: false }),
           veryHigh: next.veryHighThresholdMmolL === null ? '' : formatGlucose(next.veryHighThresholdMmolL, regional, { withUnit: false }),
@@ -139,7 +150,8 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       return number === undefined ? NaN : glucoseToMmolL(number, regional.glucoseUnit);
     };
     const next: GlucoseAlarmConfiguration = {
-      ...configuration, lowThresholdMmolL: parse(thresholds.low), highThresholdMmolL: parse(thresholds.high),
+      ...configuration, urgentLowThresholdMmolL: parse(thresholds.urgentLow),
+      lowThresholdMmolL: parse(thresholds.low), highThresholdMmolL: parse(thresholds.high),
       veryHighThresholdMmolL: thresholds.veryHigh.trim() ? parse(thresholds.veryHigh) : null,
     };
     const error = validateGlucoseAlarmConfiguration(next);
@@ -233,11 +245,12 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
         <View style={[styles.icon, { backgroundColor: `${colors.warning}18`, borderRadius: radius.md }]}><Ionicons accessibilityElementsHidden name="notifications-outline" size={23} color={colors.warning} /></View>
         <View style={styles.copy}><Text style={[styles.title, { color: colors.text }]}>Glucose alerts</Text><Text style={[styles.body, { color: colors.textSecondary }]}>Choose glucose levels, sounds and quiet hours. Changes take effect when you save.</Text></View>
       </View>
+      <Text style={[styles.body, { color: colors.text }]}>T1 Arc’s alarms are a back-up. Keep your sensor maker’s alarms, or your AAPS alarms, turned on as well.</Text>
       <SettingSwitch label="Allow T1 Arc alerts" detail="Uses the selected glucose source on this phone." value={configuration.enabled} disabled={busy} onChange={enabled => edit({ enabled })} />
       <SettingSwitch label="Allow alarm sounds" detail="Uses Android’s alarm audio, including while the ringer is on vibrate. Saving can sound an alert if glucose is already outside your levels." value={configuration.audioEnabled} disabled={busy || !configuration.enabled} onChange={audioEnabled => edit({ audioEnabled })} />
       {KINDS.map(item => (
         <View key={item.kind} style={[styles.section, { borderColor: colors.border }]}>
-          <SettingSwitch label={item.label} detail={item.kind === 'stale' ? 'A separate warning when glucose updates stop.' : item.kind === 'high' && configuration.nightEnabled ? 'Shown silently during your night schedule.' : 'Uses the glucose threshold you choose below.'} value={configuration[item.enabled]} disabled={busy} onChange={enabled => edit({ [item.enabled]: enabled })} />
+          <SettingSwitch label={item.label} detail={item.kind === 'high' && configuration.nightEnabled ? 'Shown silently during your night schedule.' : KIND_DETAIL[item.kind]} value={configuration[item.enabled]} disabled={busy} onChange={enabled => edit({ [item.enabled]: enabled })} />
           {item.kind !== 'stale' ? <View style={styles.inputRow}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Threshold</Text>
             <TextInput accessibilityLabel={`${item.label} threshold in ${glucoseUnitLabel(regional.glucoseUnit)}`} keyboardType="decimal-pad" editable={!busy} placeholder={item.kind === 'veryHigh' ? 'Choose' : undefined} placeholderTextColor={colors.textTertiary} value={thresholds[item.kind]} onChangeText={value => { dirty.current = true; setThresholds(current => ({ ...current, [item.kind]: value })); }} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background, borderRadius: radius.sm }]} />
@@ -268,20 +281,32 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
         <Text style={[styles.foot, { color: colors.textSecondary }]}>The built-in sounds have not been validated for waking people. Check the actual sound and volume on your own phone.</Text>
       </View>
       <View style={[styles.section, { borderColor: colors.border }]}>
-        <SettingSwitch label="Night schedule" detail="Low and very high keep their chosen sounds. Ordinary high is silent, with no notification vibration. Times follow this phone’s clock." value={configuration.nightEnabled} disabled={busy} onChange={nightEnabled => edit({ nightEnabled })} />
+        <Text style={[styles.heading, { color: colors.text }]}>Only alert if high lasts</Text>
+        <AlarmChoices>{GLUCOSE_ALARM_HIGH_PERSIST_MINUTES.map(highPersistMinutes => <AlarmAction key={highPersistMinutes} label={highPersistMinutes === 0 ? 'Straight away' : `${highPersistMinutes} min`} selected={configuration.highPersistMinutes === highPersistMinutes} disabled={busy} onPress={() => edit({ highPersistMinutes })} />)}</AlarmChoices>
+        <Text style={[styles.foot, { color: colors.textSecondary }]}>High and very high alerts wait until glucose has stayed above the level for this long. Urgent low, low and missing-reading alerts are never delayed.</Text>
+      </View>
+      <View style={[styles.section, { borderColor: colors.border }]}>
+        <Text style={[styles.heading, { color: colors.text }]}>Pause low alerts after a logged hypo treatment</Text>
+        <AlarmChoices>{GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES.map(hypoTreatmentSnoozeMinutes => <AlarmAction key={hypoTreatmentSnoozeMinutes} label={minutesLabel(hypoTreatmentSnoozeMinutes)} selected={configuration.hypoTreatmentSnoozeMinutes === hypoTreatmentSnoozeMinutes} disabled={busy} onPress={() => edit({ hypoTreatmentSnoozeMinutes })} />)}</AlarmChoices>
+        <Text style={[styles.foot, { color: colors.textSecondary }]}>When you log “Treating a hypo”, ordinary low alerts pause for this long, counted from the treatment time. Urgent low alerts still sound.</Text>
+      </View>
+      <View style={[styles.section, { borderColor: colors.border }]}>
+        <SettingSwitch label="Night schedule" detail="Urgent low, low, very high and missing-reading alerts keep their chosen sounds. Ordinary high is silent, with no notification vibration. Times follow this phone’s clock." value={configuration.nightEnabled} disabled={busy} onChange={nightEnabled => edit({ nightEnabled })} />
         <AlarmChoices><AlarmAction label={`From ${clock(configuration.nightStartMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightStartMinutes')} /><AlarmAction label={`Until ${clock(configuration.nightEndMinutes)}`} disabled={busy} onPress={() => chooseNightTime('nightEndMinutes')} /></AlarmChoices>
       </View>
       <View style={[styles.section, { borderColor: colors.border }]}>
         <Text style={[styles.heading, { color: colors.text }]}>Repeat while unresolved</Text>
         <AlarmChoices>{REPEAT_MINUTES.map(repeatMinutes => <AlarmAction key={repeatMinutes} label={repeatMinutes === 0 ? 'Never' : repeatMinutes >= 60 ? `${repeatMinutes / 60} ${repeatMinutes === 60 ? 'hour' : 'hours'}` : `${repeatMinutes} min`} selected={configuration.repeatMinutes === repeatMinutes} disabled={busy} onPress={() => edit({ repeatMinutes })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose.</Text>
+        <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose. Urgent low can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts.</Text>
       </View>
+      {status?.audioArmed ? <Text style={[styles.body, { color: colors.textSecondary }]}>Alarm sounds are armed with your saved choices.</Text> : null}
       {status?.readinessIssues.map(issue => <Text key={issue} style={[styles.body, { color: colors.warning }]}>{issue}</Text>)}
       {message ? <Text accessibilityLiveRegion="polite" style={[styles.body, { color: message.error ? colors.danger : colors.accent }]}>{message.text}</Text> : null}
       <AlarmAction label={busy ? 'Saving…' : configuration.audioEnabled && configuration.enabled ? 'Save and arm alarm sounds' : 'Save alert choices'} primary disabled={busy} onPress={() => void persist()} />
       <AlarmAction label="Android notification settings" onPress={() => void T1ArcGlucoseDisplay.openGlucoseAlertAppSettingsAsync().catch(() => false)} />
       <AlarmAction label="Allow precise alarm timing" onPress={() => void openGlucoseAlarmExactAlarmSettings().catch(error => setMessage({ error: true, text: error instanceof Error ? error.message : 'Android alarm timing settings could not be opened.' }))} />
-      <Text style={[styles.foot, { color: colors.textSecondary }]}>Phone notification and alarm permissions, alarm volume, and background restrictions still apply.</Text>
+      <Text style={[styles.foot, { color: colors.textSecondary }]}>Your saved choices are used again automatically after the phone restarts, after T1 Arc updates and if Android closes T1 Arc in the background. Alerts start again once the phone has been unlocked after a restart. If you force-stop T1 Arc, open it once to restart alerts.</Text>
+      <Text style={[styles.foot, { color: colors.textSecondary }]}>Phone notification and alarm permissions, alarm volume, Do Not Disturb and background restrictions still apply. If Android needs a change, a warning shows here and in T1 Arc’s ongoing notification.</Text>
     </SectionCard>
   );
 }

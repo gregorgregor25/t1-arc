@@ -7,7 +7,7 @@ import {
   acknowledgeGlucoseAlarm, cancelGlucoseAlarmSnooze, getGlucoseAlarmStatus, snoozeGlucoseAlarm,
 } from '@/data/glucoseAlerts/glucoseAlarms';
 import {
-  customClockSnoozeUntil, GLUCOSE_ALARM_SNOOZE_MINUTES, glucoseAlarmSnoozeUntil,
+  customClockSnoozeUntil, glucoseAlarmSnoozeOptions, glucoseAlarmSnoozeUntil,
   type GlucoseAlarmKind, type GlucoseAlarmStatus,
 } from '@/domain/glucoseAlarms';
 import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
@@ -17,7 +17,7 @@ import { AlarmAction, AlarmChoices, alarmClockLabel, alarmUntilLabel } from './G
 import { regionalClockUses24Hours } from './zonedDateTimePicker';
 
 const LABELS: Record<GlucoseAlarmKind, string> = {
-  low: 'Low glucose alert', high: 'High glucose alert', veryHigh: 'Very high glucose alert', stale: 'Glucose updates are missing',
+  urgentLow: 'Urgent low glucose alert', low: 'Low glucose alert', high: 'High glucose alert', veryHigh: 'Very high glucose alert', stale: 'Glucose updates are missing',
 };
 
 /** Foreground controls only. Native code owns evaluation and sound playback. */
@@ -33,7 +33,7 @@ export function GlucoseAlarmHost() {
   const [dismissedEpisode, setDismissedEpisode] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
-  const [confirmation, setConfirmation] = useState<{ episodeId: string; untilMs: number }>();
+  const [confirmation, setConfirmation] = useState<{ episodeId: string; untilMs: number; maxSnoozeMinutes: number }>();
   const mounted = useRef(true);
   const running = useRef(false);
   const actionBusy = useRef(false);
@@ -94,14 +94,15 @@ export function GlucoseAlarmHost() {
   function customTime() {
     if (!status?.episodeId || busy || Platform.OS !== 'android') return;
     const episodeId = status.episodeId;
+    const maxSnoozeMinutes = status.maxSnoozeMinutes;
     DateTimePickerAndroid.open({
-      value: new Date(Date.now() + 15 * 60_000), mode: 'time', display: 'clock',
+      value: new Date(Date.now() + Math.min(15, maxSnoozeMinutes) * 60_000), mode: 'time', display: 'clock',
       is24Hour: regionalClockUses24Hours(regional.locale),
       onChange: (event, selected) => {
         if (event.type !== 'set' || !selected || !mounted.current) return;
         try {
-          const untilMs = customClockSnoozeUntil(selected.getHours(), selected.getMinutes());
-          setConfirmation({ episodeId, untilMs }); setMessage(undefined);
+          const untilMs = customClockSnoozeUntil(selected.getHours(), selected.getMinutes(), Date.now(), undefined, maxSnoozeMinutes);
+          setConfirmation({ episodeId, untilMs, maxSnoozeMinutes }); setMessage(undefined);
         } catch (error) { setMessage(error instanceof Error ? error.message : 'Choose a future snooze time.'); }
       },
     });
@@ -114,6 +115,7 @@ export function GlucoseAlarmHost() {
   const automaticallyExpanded = status.activeKind !== 'high' && !snoozed && !status.acknowledged && dismissedEpisode !== episodeId;
   const visible = expanded || automaticallyExpanded;
   const label = LABELS[status.activeKind];
+  const maxSnoozeMinutes = status.maxSnoozeMinutes;
   const detail = status.missing
     ? 'Current glucose is unavailable. This does not mean glucose has returned to range.'
     : status.readingTimestampMs !== null
@@ -141,13 +143,14 @@ export function GlucoseAlarmHost() {
                 <Text style={[styles.heading, { color: colors.text }]}>Snooze this alert?</Text>
                 <Text style={[styles.body, { color: colors.text }]}>{alarmUntilLabel(confirmation.untilMs, regional.locale, observedAt)}</Text>
                 <Text style={[styles.small, { color: colors.textSecondary }]}>Uses this phone’s local clock. Other alert levels are not snoozed.</Text>
-                <AlarmChoices><AlarmAction label="Confirm snooze" primary disabled={busy} onPress={() => void perform(() => snoozeGlucoseAlarm(confirmation.episodeId, confirmation.untilMs))} /><AlarmAction label="Choose again" disabled={busy} onPress={() => { setConfirmation(undefined); customTime(); }} /><AlarmAction label="Cancel" disabled={busy} onPress={() => setConfirmation(undefined)} /></AlarmChoices>
+                <AlarmChoices><AlarmAction label="Confirm snooze" primary disabled={busy} onPress={() => void perform(() => snoozeGlucoseAlarm(confirmation.episodeId, confirmation.untilMs, confirmation.maxSnoozeMinutes))} /><AlarmAction label="Choose again" disabled={busy} onPress={() => { setConfirmation(undefined); customTime(); }} /><AlarmAction label="Cancel" disabled={busy} onPress={() => setConfirmation(undefined)} /></AlarmChoices>
               </View> : <>
                 <Text style={[styles.heading, { color: colors.text }]}>Snooze this alert</Text>
-                <AlarmChoices>{GLUCOSE_ALARM_SNOOZE_MINUTES.map(minutes => <AlarmAction key={minutes} label={minutes === 60 ? '1 hour' : `${minutes} min`} disabled={busy} onPress={() => void perform(() => snoozeGlucoseAlarm(episodeId, glucoseAlarmSnoozeUntil(minutes)))} />)}<AlarmAction label="Snooze until…" disabled={busy} onPress={customTime} /></AlarmChoices>
+                <AlarmChoices>{glucoseAlarmSnoozeOptions(maxSnoozeMinutes).map(minutes => <AlarmAction key={minutes} label={minutes === 60 ? '1 hour' : `${minutes} min`} disabled={busy} onPress={() => void perform(() => snoozeGlucoseAlarm(episodeId, glucoseAlarmSnoozeUntil(minutes, Date.now(), maxSnoozeMinutes), maxSnoozeMinutes))} />)}<AlarmAction label="Snooze until…" disabled={busy} onPress={customTime} /></AlarmChoices>
+                {status.activeKind === 'urgentLow' ? <Text style={[styles.small, { color: colors.textSecondary }]}>Urgent low can be snoozed for up to {maxSnoozeMinutes} minutes.</Text> : null}
                 {snoozed ? <AlarmAction label="Cancel snooze" disabled={busy} onPress={() => void perform(() => cancelGlucoseAlarmSnooze(episodeId), false)} /> : null}
                 <AlarmAction label="Silence this alert" primary disabled={busy} onPress={() => void perform(() => acknowledgeGlucoseAlarm(episodeId))} />
-                <Text style={[styles.small, { color: colors.textSecondary }]}>Silencing is not a recovery. If the alert remains unresolved, your repeat setting controls reminders. A new low or very high alert is separate.</Text>
+                <Text style={[styles.small, { color: colors.textSecondary }]}>Silencing is not a recovery. If the alert remains unresolved, your repeat setting controls reminders. A new urgent low, low or very high alert is separate.</Text>
               </>}
               {message ? <Text accessibilityLiveRegion="polite" style={[styles.body, { color: colors.danger }]}>{message}</Text> : null}
               <AlarmAction label="Close controls" disabled={busy} onPress={dismiss} />

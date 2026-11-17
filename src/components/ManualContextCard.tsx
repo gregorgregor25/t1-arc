@@ -41,6 +41,8 @@ import {
 } from "@/domain/time";
 import { suggestedMealType } from "@/domain/mealTiming";
 import { getRuntimeEmergencyCareTerms } from "@/domain/emergencyCare";
+import { hypoTreatmentPauseNotice } from "@/domain/glucoseAlarms";
+import { pauseLowGlucoseAlarmAfterHypoTreatment } from "@/data/glucoseAlerts/glucoseAlarms";
 import { type BolusDelivery, HealthContextEvent } from "@/domain/models";
 import { formatRegionalNumber } from "@/domain/regionalFormat";
 import {
@@ -734,8 +736,19 @@ export function ManualContextCard({
         savedTitle = event.title;
         ketoneDraft = draft.kind === "ketone" ? draft : undefined;
       }
+      let pauseNotice: string | undefined;
+      if (savedKind === "hypo-treatment" && !editing) {
+        // Ordinary low alerts pause as chosen in alarm settings; urgent low
+        // still sounds. A pause failure never blocks the saved entry.
+        try {
+          const pause = await pauseLowGlucoseAlarmAfterHypoTreatment(savedTimestamp);
+          pauseNotice = hypoTreatmentPauseNotice(pause.pausedUntilMs, Date.now(), formatTime);
+        } catch {
+          pauseNotice = undefined;
+        }
+      }
       setSavedMessage(
-        `${savedTitle} ${editing ? "updated" : "saved"} at ${formatTime(savedTimestamp)}.`,
+        `${savedTitle} ${editing ? "updated" : "saved"} at ${formatTime(savedTimestamp)}.${pauseNotice ? ` ${pauseNotice}` : ""}`,
       );
       setOpen(false);
       if (editing) onEditEnd?.();

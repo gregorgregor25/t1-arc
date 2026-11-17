@@ -2,6 +2,8 @@ import T1ArcGlucoseDisplay, { type GlucoseAlertChannelStatus } from '../../../mo
 import {
   glucoseAlarmConfigurationFromLegacy,
   isGlucoseAlarmSoundId,
+  maxGlucoseAlarmSnoozeMinutes,
+  upgradeGlucoseAlarmConfiguration,
   validateGlucoseAlarmConfiguration,
   validateGlucoseAlarmSnoozeUntil,
   type GlucoseAlarmConfiguration,
@@ -23,9 +25,10 @@ export function glucoseAlarmSupportAvailable() {
 export async function loadGlucoseAlarmConfiguration(): Promise<GlucoseAlarmConfiguration> {
   const native = await T1ArcGlucoseDisplay.getGlucoseAlarmConfigurationAsync?.();
   if (native !== null && native !== undefined) {
-    const error = validateGlucoseAlarmConfiguration(native);
-    if (error) throw new Error(error);
-    return native;
+    // An older native build may still return version 1 choices.
+    const upgraded = upgradeGlucoseAlarmConfiguration(native);
+    if (!upgraded) throw new Error(validateGlucoseAlarmConfiguration(native) ?? 'The alarm choices could not be read.');
+    return upgraded;
   }
   // This is only an editing seed. No save, native ownership update or audio
   // arming may happen merely because settings or a headless runtime loaded.
@@ -48,23 +51,41 @@ export async function loadGlucoseAlarmConfiguration(): Promise<GlucoseAlarmConfi
   });
 }
 
+/** Fills fields that an older native build does not report yet. */
+export function normalizeGlucoseAlarmStatus(status: GlucoseAlarmStatus): GlucoseAlarmStatus {
+  // Never invent a status the native layer did not return.
+  if (!status || typeof status !== 'object') return status;
+  const partial: Partial<GlucoseAlarmStatus> = status;
+  return {
+    ...status,
+    audioArmed: typeof partial.audioArmed === 'boolean' ? partial.audioArmed : status.enabled && status.audioEnabled,
+    lowPausedUntilMs: typeof partial.lowPausedUntilMs === 'number' ? partial.lowPausedUntilMs : null,
+    maxSnoozeMinutes: typeof partial.maxSnoozeMinutes === 'number' && partial.maxSnoozeMinutes > 0
+      ? partial.maxSnoozeMinutes
+      : maxGlucoseAlarmSnoozeMinutes(status.activeKind),
+  };
+}
+
 export async function saveGlucoseAlarmConfiguration(configuration: GlucoseAlarmConfiguration): Promise<GlucoseAlarmStatus> {
   const error = validateGlucoseAlarmConfiguration(configuration);
   if (error) throw new Error(error);
   if (!T1ArcGlucoseDisplay.saveGlucoseAlarmConfigurationAsync) return unsupported();
-  return T1ArcGlucoseDisplay.saveGlucoseAlarmConfigurationAsync(configuration);
+  return normalizeGlucoseAlarmStatus(await T1ArcGlucoseDisplay.saveGlucoseAlarmConfigurationAsync(configuration));
 }
 
 export async function getGlucoseAlarmStatus(): Promise<GlucoseAlarmStatus> {
-  if (T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync) return T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync();
+  if (T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync) return normalizeGlucoseAlarmStatus(await T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync());
   return {
     configured: false,
     enabled: false,
     audioEnabled: false,
+    audioArmed: false,
     activeKind: null,
     episodeId: null,
     readingTimestampMs: null,
     snoozedUntilMs: null,
+    lowPausedUntilMs: null,
+    maxSnoozeMinutes: maxGlucoseAlarmSnoozeMinutes(null),
     acknowledged: false,
     missing: true,
     playbackState: 'blocked',
@@ -77,24 +98,41 @@ function validateEpisodeId(episodeId: string) {
   if (!episodeId || episodeId.length > 200) throw new Error('This alarm has ended. Refresh the alarm controls.');
 }
 
-export async function snoozeGlucoseAlarm(episodeId: string, untilMs: number): Promise<GlucoseAlarmStatus> {
+/** maxSnoozeMinutes comes from the alarm status; native enforces the same cap. */
+export async function snoozeGlucoseAlarm(episodeId: string, untilMs: number, maxSnoozeMinutes?: number): Promise<GlucoseAlarmStatus> {
   validateEpisodeId(episodeId);
-  const error = validateGlucoseAlarmSnoozeUntil(untilMs);
+  const error = validateGlucoseAlarmSnoozeUntil(untilMs, Date.now(), maxSnoozeMinutes);
   if (error) throw new Error(error);
   if (!T1ArcGlucoseDisplay.snoozeGlucoseAlarmAsync) return unsupported();
-  return T1ArcGlucoseDisplay.snoozeGlucoseAlarmAsync(episodeId, untilMs);
+  return normalizeGlucoseAlarmStatus(await T1ArcGlucoseDisplay.snoozeGlucoseAlarmAsync(episodeId, untilMs));
 }
 
 export async function cancelGlucoseAlarmSnooze(episodeId: string): Promise<GlucoseAlarmStatus> {
   validateEpisodeId(episodeId);
   if (!T1ArcGlucoseDisplay.cancelGlucoseAlarmSnoozeAsync) return unsupported();
-  return T1ArcGlucoseDisplay.cancelGlucoseAlarmSnoozeAsync(episodeId);
+  return normalizeGlucoseAlarmStatus(await T1ArcGlucoseDisplay.cancelGlucoseAlarmSnoozeAsync(episodeId));
 }
 
 export async function acknowledgeGlucoseAlarm(episodeId: string): Promise<GlucoseAlarmStatus> {
   validateEpisodeId(episodeId);
   if (!T1ArcGlucoseDisplay.acknowledgeGlucoseAlarmAsync) return unsupported();
-  return T1ArcGlucoseDisplay.acknowledgeGlucoseAlarmAsync(episodeId);
+  return normalizeGlucoseAlarmStatus(await T1ArcGlucoseDisplay.acknowledgeGlucoseAlarmAsync(episodeId));
+}
+
+export interface GlucoseLowAlarmPause { pausedUntilMs: number | null; minutes: number }
+
+/**
+ * Pauses ordinary low alerts after a logged "Treating a hypo" entry, for the
+ * minutes chosen in alarm settings (0 turns this off). Urgent low alerts are
+ * never paused. Resolves with no pause when unsupported or turned off.
+ */
+export async function pauseLowGlucoseAlarmAfterHypoTreatment(treatedAtMs: number): Promise<GlucoseLowAlarmPause> {
+  if (!Number.isSafeInteger(treatedAtMs) || treatedAtMs <= 0) throw new Error('The hypo treatment time is not valid.');
+  if (!T1ArcGlucoseDisplay.pauseGlucoseLowAlarmAfterHypoTreatmentAsync) return { pausedUntilMs: null, minutes: 0 };
+  const result = await T1ArcGlucoseDisplay.pauseGlucoseLowAlarmAfterHypoTreatmentAsync(treatedAtMs);
+  const pausedUntilMs = typeof result?.pausedUntilMs === 'number' && Number.isFinite(result.pausedUntilMs) ? result.pausedUntilMs : null;
+  const minutes = pausedUntilMs !== null && typeof result?.minutes === 'number' && Number.isFinite(result.minutes) ? result.minutes : 0;
+  return { pausedUntilMs, minutes };
 }
 
 export async function importGlucoseAlarmSound(uri: string, displayName: string): Promise<GlucoseAlarmCustomSound> {
