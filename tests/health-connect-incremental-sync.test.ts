@@ -12,6 +12,7 @@ import {
   healthConnectSyncDue,
   healthConnectSyncShouldStop,
   healthConnectWindowCheckDue,
+  healthConnectPreviousRunUnfinished,
   orderHealthConnectCategoriesForSync,
   syncHealthConnect,
   syncHealthConnectIfDue,
@@ -473,6 +474,46 @@ describe('Health Connect incremental sync', () => {
     await syncHealthConnect({ categories: ['weight'] });
     expect(storedIds()).toEqual(['weight-1', 'weight-2']);
     expect(syncRow()).toMatchObject({ changes_token: 'token-1' });
+  });
+
+  it('recounts category totals after a run that stopped part-way through the changes feed', async () => {
+    await firstFullSync([weight(1), weight(2)]);
+    vi.setSystemTime(NOW + HOUR);
+    const controller = new AbortController();
+    native.readChangesPageAsync.mockImplementationOnce(async () => {
+      controller.abort();
+      return {
+        upserted: [weight(3)],
+        deletedRecordIds: [],
+        sources,
+        nextChangesToken: 'token-2',
+        hasMore: true,
+        tokenExpired: false,
+      };
+    });
+
+    const stopped = await syncHealthConnect({
+      categories: ['weight'],
+      control: { signal: controller.signal },
+    });
+    expect(stopped.stoppedEarly).toBe(true);
+    expect(storedIds()).toEqual(['weight-1', 'weight-2', 'weight-3']);
+    // The committed page is kept, but the totals were not recounted yet.
+    expect(syncRow()).toMatchObject({ record_count: 2 });
+
+    // The next run finds nothing new, yet recounts because the last one stopped.
+    vi.setSystemTime(NOW + 2 * HOUR);
+    native.readChangesPageAsync.mockResolvedValueOnce(emptyChanges());
+    const next = await syncHealthConnect({ categories: ['weight'] });
+    expect(next.stoppedEarly).toBe(false);
+    expect(syncRow()).toMatchObject({ record_count: 3, last_success_at_ms: NOW + 2 * HOUR });
+  });
+
+  it('knows when the previous run for a category did not finish', () => {
+    expect(healthConnectPreviousRunUnfinished(undefined)).toBe(false);
+    expect(healthConnectPreviousRunUnfinished({ lastAttemptAt: NOW, lastSuccessAt: NOW + 10 })).toBe(false);
+    expect(healthConnectPreviousRunUnfinished({ lastAttemptAt: NOW })).toBe(true);
+    expect(healthConnectPreviousRunUnfinished({ lastAttemptAt: NOW + 10, lastSuccessAt: NOW })).toBe(true);
   });
 
   it('starts no work when the time budget is already used', async () => {

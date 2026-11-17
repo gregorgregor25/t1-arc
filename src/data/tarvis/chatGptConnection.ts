@@ -247,6 +247,15 @@ function publicState(saved: SavedConnection | undefined, available: boolean): Ch
   };
 }
 
+/**
+ * Gives a signed-in account with no model chosen the first model ChatGPT
+ * lists for it, so the connection can be used straight after sign-in. A model
+ * the user chose is never replaced, even when it is no longer listed.
+ */
+function preselectChatGptModel(account: SavedAccount) {
+  if (!account.selectedModel && account.models.length) account.selectedModel = account.models[0]!.slug;
+}
+
 async function fetchModels(token: string, lease: LocalDataWriteLease): Promise<ChatGptModel[]> {
   try {
     const native = await getNative();
@@ -406,6 +415,7 @@ export async function signInChatGpt(lease: LocalDataWriteLease, existingAccountI
       }
       account.models = models;
       account.modelsFetchedAt = Date.now();
+      preselectChatGptModel(account);
       await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     }));
   }
@@ -494,6 +504,7 @@ export async function selectChatGptAccount(id: string, lease: LocalDataWriteLeas
     }
     account.models = models;
     account.modelsFetchedAt = Date.now();
+    preselectChatGptModel(account);
     saved.activeAccountId = id;
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
@@ -535,6 +546,7 @@ export async function refreshChatGptModels(lease: LocalDataWriteLease): Promise<
     }
     account.models = models;
     account.modelsFetchedAt = Date.now();
+    preselectChatGptModel(account);
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
   });

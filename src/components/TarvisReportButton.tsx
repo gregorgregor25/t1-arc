@@ -13,9 +13,8 @@ export function TarvisReportButton({ response, disabled = false }: { response: s
   const { colors } = useAppTheme();
   const [visible, setVisible] = useState(false);
   return <>
-    <Pressable accessibilityRole="button" disabled={disabled} onPress={() => setVisible(true)} style={({ pressed }) => [styles.inline, { opacity: pressed || disabled ? 0.55 : 1 }]}>
-      <Ionicons name="flag-outline" size={17} color={colors.textSecondary} accessibilityElementsHidden />
-      <Text style={[styles.label, { color: colors.textSecondary }]}>Report response</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="Report response" disabled={disabled} hitSlop={4} onPress={() => setVisible(true)} style={({ pressed }) => [styles.iconButton, { opacity: pressed || disabled ? 0.55 : 1 }]}>
+      <Ionicons name="flag-outline" size={19} color={colors.textSecondary} accessibilityElementsHidden />
     </Pressable>
     <TarvisReportSheet visible={visible} onClose={() => setVisible(false)} response={response} disabled={disabled} />
   </>;
@@ -124,6 +123,7 @@ function TarvisReportForm({ onClose, response, disabled }: { onClose(): void; re
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   inline: { minHeight: 48, flexDirection: 'row', gap: 8, alignItems: 'center' },
+  iconButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 14, lineHeight: 21, fontWeight: '600', flexShrink: 1 },
   body: { fontSize: 15, lineHeight: 23 },
   small: { fontSize: 12, lineHeight: 18 },

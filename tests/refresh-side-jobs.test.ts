@@ -230,6 +230,14 @@ describe('DataProvider refresh contracts', () => {
     expect(performRefresh).toContain('backgroundStop.dispose()');
   });
 
+  it('keeps the Health Connect stop signal listening until that job settles', () => {
+    expect(performRefresh).toContain('healthSyncSettled = job.then(');
+    const cleanup = performRefresh.slice(performRefresh.lastIndexOf('} finally {'));
+    expect(cleanup).toContain('void healthSyncSettled.then(() => backgroundStop.dispose());');
+    // Disposed straight away only when no Health Connect job started.
+    expect(cleanup.indexOf('if (healthSyncSettled)')).toBeLessThan(cleanup.indexOf('backgroundStop.dispose();'));
+  });
+
   it('publishes a revision after a successful full pass, even when silent', () => {
     const settle = performRefresh.slice(
       performRefresh.indexOf('onSourceSettled:'),

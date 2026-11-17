@@ -1637,6 +1637,14 @@ async function loadHealthConnectSyncStates(
   return rows.map(syncFromRow);
 }
 
+/** True when the last attempt for a category has no success at or after it. */
+export function healthConnectPreviousRunUnfinished(
+  state: Pick<HealthConnectSyncState, 'lastAttemptAt' | 'lastSuccessAt'> | undefined,
+) {
+  if (state?.lastAttemptAt === undefined) return false;
+  return state.lastSuccessAt === undefined || state.lastSuccessAt < state.lastAttemptAt;
+}
+
 /**
  * Categories that have waited longest go first, so a run stopped by its time
  * budget cannot starve the same categories every time.
@@ -1741,6 +1749,10 @@ async function performHealthConnectSync(options?: {
       options?.fullHistory || !prior?.lastSuccessAt || !tokenMatchesSource,
     );
     let fullScanMarkerPersisted = fullHistory;
+    // The previous run for this category started but never finished (stopped
+    // by its time budget, cancelled or failed), so pages it committed may have
+    // left the category totals stale. Recount them when this run succeeds.
+    const previousRunUnfinished = healthConnectPreviousRunUnfinished(prior);
     await markSyncAttempt(
       category,
       attemptedAt,
@@ -1884,7 +1896,7 @@ async function performHealthConnectSync(options?: {
         configurationRevision,
         authoritativeChangesToken,
         {
-          refreshStats: fullHistory || categoryChanged,
+          refreshStats: fullHistory || categoryChanged || previousRunUnfinished,
           windowCheckedAt: windowRead ? attemptedAt : undefined,
         },
       );

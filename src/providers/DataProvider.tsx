@@ -945,6 +945,10 @@ export function DataProvider({ children }: PropsWithChildren) {
         // Slow side jobs stop when the person leaves the app; the background
         // job and the next app open continue from where they stopped.
         const backgroundStop = createAppBackgroundAbort(AppState);
+        // Set once the Health Connect job starts. The pass can end before the
+        // job does (for example when the source step throws), so the stop
+        // signal must keep listening until the job itself settles.
+        let healthSyncSettled: Promise<void> | undefined;
         const runSideJobs =
           repositoryState.mode === "live" && includeHealthConnect;
         const sideJobs: RefreshSideJob<RefreshSideJobName>[] = runSideJobs
@@ -953,15 +957,21 @@ export function DataProvider({ children }: PropsWithChildren) {
                 name: "health_sync",
                 // A visible refresh may check Health Connect again after a
                 // few minutes; an automatic app-open pass at most every 30.
-                run: () =>
-                  syncHealthConnectIfDue(
+                run: () => {
+                  const job = syncHealthConnectIfDue(
                     Date.now(),
                     visible
                       ? HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS
                       : HEALTH_CONNECT_APP_OPEN_SYNC_INTERVAL_MS,
                     undefined,
                     { signal: backgroundStop.signal, allowWindowCheck: true },
-                  ),
+                  );
+                  healthSyncSettled = job.then(
+                    () => undefined,
+                    () => undefined,
+                  );
+                  return job;
+                },
               },
               {
                 name: "insight_review",
@@ -1075,7 +1085,11 @@ export function DataProvider({ children }: PropsWithChildren) {
             setRevision((value) => value + 1);
           }
         } finally {
-          backgroundStop.dispose();
+          if (healthSyncSettled) {
+            void healthSyncSettled.then(() => backgroundStop.dispose());
+          } else {
+            backgroundStop.dispose();
+          }
         }
       };
       // An explicit refresh waits for a silent pass in flight, then runs its

@@ -100,7 +100,7 @@ describe("ChatGPT account connection", () => {
     testState.listModels.mockResolvedValue(catalog("gpt-first", "gpt-second"));
   });
 
-  it("keeps a stable host ID, displays only listed models in server order, and requires explicit model choice", async () => {
+  it("keeps a stable host ID, displays only listed models in server order, and preselects the first listed model", async () => {
     testState.listModels.mockResolvedValue(JSON.stringify({ models: [
       { slug: "hidden", display_name: "Hidden", visibility: "hidden" },
       { slug: "gpt-first", display_name: "First", visibility: "list" },
@@ -110,8 +110,10 @@ describe("ChatGPT account connection", () => {
     expect(testState.signIn).toHaveBeenCalledWith(expect.objectContaining({ hostId: "urn:uuid:12345678-1234-4234-8234-123456789abc", requestConsent: false }));
     expect(first.connected).toBe(true);
     expect(first.models.map((model) => model.slug)).toEqual(["gpt-first", "gpt-second"]);
-    expect(first.selectedModel).toBeUndefined();
-    await expect(getChatGptRequestSession(lease)).rejects.toMatchObject({ name: "ChatGptModelUnavailableError" });
+    // Signed in with no model chosen: the first listed model is preselected
+    // so the connection is usable straight away.
+    expect(first.selectedModel).toBe("gpt-first");
+    expect(await getChatGptRequestSession(lease)).toMatchObject({ model: "gpt-first" });
 
     await selectChatGptModel("gpt-second", lease);
     expect(await getChatGptRequestSession(lease)).toMatchObject({ model: "gpt-second", accessToken: "access-subject-one" });
@@ -387,5 +389,48 @@ describe("ChatGPT account connection", () => {
     await expect(attempt).rejects.toThrow("privacy erase superseded write");
     expect(testState.values.size).toBe(0);
     await clearChatGptStoredData();
+  });
+});
+
+describe("ChatGPT model preselection", () => {
+  beforeEach(() => {
+    resetTarvisConnectionCoordinatorForTests();
+    testState.epoch = 7;
+    testState.values.clear();
+    vi.clearAllMocks();
+    testState.signIn.mockResolvedValue(callback());
+    testState.complete.mockResolvedValue(credentials());
+    testState.refresh.mockImplementation(async (input) => input);
+    testState.revoke.mockResolvedValue(true);
+    testState.cancel.mockResolvedValue(undefined);
+    testState.listModels.mockResolvedValue(catalog("gpt-first", "gpt-second"));
+  });
+
+  it("leaves the model empty when the account lists no models, then preselects on refresh", async () => {
+    testState.listModels.mockResolvedValueOnce(catalog());
+    const signedIn = await signInChatGpt(lease);
+    expect(signedIn.selectedModel).toBeUndefined();
+    const refreshed = await refreshChatGptModels(lease);
+    expect(refreshed.selectedModel).toBe("gpt-first");
+  });
+
+  it("never replaces a model the user chose, even when it is no longer listed", async () => {
+    await signInChatGpt(lease);
+    await selectChatGptModel("gpt-second", lease);
+    testState.listModels.mockResolvedValueOnce(catalog("gpt-third"));
+    const refreshed = await refreshChatGptModels(lease);
+    expect(refreshed.selectedModel).toBe("gpt-second");
+    expect(refreshed.models.map((model) => model.slug)).toEqual(["gpt-third"]);
+  });
+
+  it("preselects for a second account when switching to it", async () => {
+    await signInChatGpt(lease);
+    testState.signIn.mockResolvedValueOnce(callback("oaiapp_two"));
+    testState.complete.mockResolvedValueOnce(credentials("oaiapp_two", "subject-two"));
+    testState.listModels.mockResolvedValueOnce(catalog("gpt-second", "gpt-first"));
+    const second = await signInChatGpt(lease);
+    expect(second.selectedModel).toBe("gpt-second");
+    const back = await selectChatGptAccount(second.accounts.find((account) => account.id !== second.activeAccountId)!.id, lease);
+    expect(back.selectedModel).toBe("gpt-first");
   });
 });

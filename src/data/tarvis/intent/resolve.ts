@@ -126,6 +126,11 @@ const TYPO_REPLACEMENTS: [RegExp, string][] = [
   [/\b(?:hihgs|higs)\b/g, "highs"],
   [/\b(?:lwo|lwoes)\b/g, "lows"],
   [/\btim[ -]in[ -]range\b/g, "time in range"],
+  // Speech-to-text forms of "time in range": "timing range", "time and
+  // range", "time in rage" and the hyphenated "time-in-range".
+  [/\btiming[ -]range\b/g, "time in range"],
+  [/\btime[ -](?:and|in)[ -]rage\b/g, "time in range"],
+  [/\btime[ -](?:and|in)[ -]range\b/g, "time in range"],
   [/\byday\b/g, "yesterday"],
 ];
 

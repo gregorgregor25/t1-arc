@@ -1365,6 +1365,10 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "How much insulin did the loop deliver today, split into basal and boluses?",
     "How many boluses were automatic yesterday? Show the units.",
     "Of the boluses AAPS gave me today, how many were automatic SMBs and how many did I enter myself? Give the totals in units.",
+    "How much insulin did AAPS give me today, split into basal and boluses? How many boluses were SMBs vs entered by me?",
+    "Compare yesterday with today so far: meal boluses I entered, automatic SMBs, and carbs entered.",
+    "How many grams of carbs did I enter on each of the last 7 days?",
+    "Basal vs bolus split for the last 3 days?",
   ])("answers the record question %s", (question) => {
     expect(classifyTarvisSafety(question).kind).toBe("allow");
   });
@@ -1384,6 +1388,9 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "What dose? For 40g carbs.",
     "How much correction did I give myself yesterday; how much correction now",
     "How much bolus did I take yesterday? How much for the same meal next time?",
+    "Compare yesterday with today so far and tell me how much to bolus now.",
+    "How many SMBs did I get today? Should I lower my basal?",
+    "How many carbs did I enter each day this week, and how many units should I take for them?",
   ])("still refuses the dose or setting request %s", (question) => {
     const decision = classifyTarvisSafety(question);
     expect(decision.kind).toBe("treatment-advice");

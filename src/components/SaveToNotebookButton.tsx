@@ -65,16 +65,17 @@ function SaveAnswerButton({ id, title, answer, evidence, createdAt, ownerIdentit
       if (mounted.current) setSaving(false);
     }
   }
+  // A small icon button on the answer card footer: 44 px target, spoken label.
+  const label = saving ? 'Saving on your phone' : saved ? 'Saved. Open notebook' : 'Save to notebook';
   return <View>
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy), busy: saving }} disabled={Boolean(busy)} onPress={() => void save()} style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', gap: 8, alignItems: 'center', opacity: busy || pressed ? 0.55 : 1 })}>
-      <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={colors.primary} accessibilityElementsHidden />
-      <Text style={[styles.label, { color: colors.primary }]}>{saving ? 'Saving on your phone…' : saved ? 'Saved · Open notebook' : 'Save to notebook'}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: Boolean(busy), busy: saving }} disabled={Boolean(busy)} hitSlop={4} onPress={() => void save()} style={({ pressed }) => [styles.icon, { opacity: busy || pressed ? 0.55 : 1 }]}>
+      <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={colors.primary} accessibilityElementsHidden />
     </Pressable>
     {error ? <Text accessibilityLiveRegion="polite" style={[styles.error, { color: colors.warning }]}>{error}</Text> : null}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  label: { fontSize: 14, lineHeight: 21, fontWeight: '600', flexShrink: 1 },
+  icon: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   error: { fontSize: 14, lineHeight: 21 },
 });

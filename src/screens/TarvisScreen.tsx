@@ -36,7 +36,6 @@ import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { SectionCard } from "@/components/SectionCard";
 import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
 import { TarvisPeriodSummaryCard } from "@/components/TarvisPeriodSummaryCard";
-import { TarvisEvidenceLine } from "@/components/TarvisEvidenceLine";
 import { TarvisWorkspaceSwitcher } from "@/components/TarvisWorkspaceSwitcher";
 import { TarvisOrb } from "@/components/TarvisOrb";
 import { TarvisConversationArchive } from "@/components/TarvisConversationArchive";
@@ -89,6 +88,12 @@ import {
   buildDeviceChangeAnswer,
   recordQuestionRange,
 } from "@/data/tarvis/recordAnswers";
+import {
+  buildCarbsPerDayAnswer,
+  buildInsulinBreakdownAnswer,
+  carbsPerDayRange,
+  recordPeriodsRange,
+} from "@/data/tarvis/insulinBreakdownAnswer";
 import { tarvisEvidencePlanClarificationAnswer } from "@/data/tarvis/evidencePlanner";
 import { loadPlannedGlucoseEpisodeEvidence } from "@/data/tarvis/plannedGlucoseEpisodeEvidence";
 import { loadRetrospectiveEventReview } from "@/data/tarvis/retrospectiveEventReview";
@@ -113,12 +118,20 @@ import {
 import { tarvisSettingsPresentation } from "@/data/tarvis/conversationScope";
 import { captureTarvisEntry, createTarvisComposerLifecycle } from '@/data/tarvis/composerLifecycle';
 import { formatTarvisConversation } from "@/data/tarvis/conversationExport";
-import { isTarvisGeneralEducationAnswer } from "@/data/tarvis/generalEducation";
 import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacket";
 import { buildTarvisSuggestions, isDefaultContextQuestion, type TarvisEntry } from '@/domain/tarvisEntry';
 import { PersonalNotebook } from '@/components/PersonalNotebook';
 import { SaveToNotebookButton } from '@/components/SaveToNotebookButton';
 import { TarvisReportButton, TarvisReportSheet } from '@/components/TarvisReportButton';
+import { TarvisProviderSwitchOffer } from '@/components/tarvis/TarvisProviderSwitchOffer';
+import { TarvisShortAnswerCard } from '@/components/tarvis/TarvisShortAnswerCard';
+import { useRegionalProfile } from '@/providers/RegionalProfileProvider';
+import { buildTarvisDirectShortAnswer, buildTarvisShortAnswer } from '@/data/tarvis/shortAnswer';
+import {
+  tarvisProviderSwitchCopy,
+  tarvisProviderSwitchOffer,
+  tarvisSettingsViewProvider,
+} from '@/data/tarvis/providerChoice';
 import type { NotebookEntry } from '@/domain/personalNotebook';
 import { buildSelectedContextAnswer, selectedContextRange } from '@/data/tarvis/selectedContextAnswer';
 import { buildSelectedHealthEvidencePacket } from '@/data/tarvis/selectedHealthEvidence';
@@ -603,7 +616,12 @@ function directConfidenceLabel(
       : "Limited evidence";
 }
 
-function TarvisDirectAnswerContent({
+/**
+ * The Details part of a rich model answer: its evidence (tappable when it
+ * points at stored records or reviewed guidance) and follow-up questions.
+ * The short answer itself is drawn by TarvisShortAnswerCard.
+ */
+function TarvisDirectAnswerDetails({
   disabled,
   evidenceLookup,
   guidanceSources,
@@ -619,380 +637,71 @@ function TarvisDirectAnswerContent({
   presentation: TarvisDirectAnswerPresentation;
 }) {
   const { colors, radius } = useAppTheme();
-  const [detailsVisible, setDetailsVisible] = useState(false);
-  const [findingsVisible, setFindingsVisible] = useState(false);
-  const [summaryVisible, setSummaryVisible] = useState(false);
-  const detailCount =
-    presentation.evidence.length + presentation.limitations.length;
-  const visibleFindings = findingsVisible
-    ? presentation.keyFindings
-    : presentation.keyFindings.slice(0, 3);
-  const hiddenFindingCount = Math.max(
-    0,
-    presentation.keyFindings.length - visibleFindings.length,
-  );
-
   return (
     <>
-      <View style={styles.directEyebrowRow}>
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.accent}
-          name={directAnswerIcon(presentation.kind)}
-          size={18}
-        />
-        <View style={styles.directEyebrowCopy}>
-          <Text style={[styles.directEyebrow, { color: colors.accent }]}>
-            Tarv1s
-          </Text>
-          <Text
-            style={[styles.directConfidence, { color: colors.textTertiary }]}
-          >
-            {directAnswerKindLabel(presentation)} ·{" "}
-            {directConfidenceLabel(presentation.confidence)}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={[styles.directHeadline, { color: colors.text }]}>
-        {presentation.headline}
+      <Text style={[styles.directConfidence, { color: colors.textTertiary }]}>
+        {directAnswerKindLabel(presentation)} · {directConfidenceLabel(presentation.confidence)}
       </Text>
-
-      {presentation.primaryMetric ? (
-        <View
-          accessible
-          accessibilityLabel={`${presentation.primaryMetric.label}: ${presentation.primaryMetric.value} ${presentation.primaryMetric.unit}`}
-          style={[
-            styles.directMetric,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderColor: colors.border,
-              borderRadius: radius.lg,
-            },
-          ]}
-        >
-          <Text
-            style={[styles.directMetricLabel, { color: colors.textSecondary }]}
-          >
-            {presentation.primaryMetric.label}
-          </Text>
-          <View style={styles.directMetricValueRow}>
-            <Text style={[styles.directMetricValue, { color: colors.text }]}>
-              {presentation.primaryMetric.value}
-            </Text>
-            {presentation.primaryMetric.unit ? (
-              <Text
-                style={[
-                  styles.directMetricUnit,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                {presentation.primaryMetric.unit}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      <Text
-        numberOfLines={summaryVisible ? undefined : 5}
-        style={[styles.directSummary, { color: colors.textSecondary }]}
-      >
-        {presentation.summary}
-      </Text>
-      {presentation.summary.length > 360 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: summaryVisible }}
-          onPress={() => setSummaryVisible((visible) => !visible)}
-          style={({ pressed }) => [
-            styles.directInlineAction,
-            { opacity: pressed ? 0.65 : 1 },
-          ]}
-        >
-          <Text
-            style={[styles.directInlineActionText, { color: colors.primary }]}
-          >
-            {summaryVisible ? "Show less" : "Read the full answer"}
-          </Text>
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.primary}
-            name={summaryVisible ? "chevron-up" : "chevron-down"}
-            size={16}
-          />
-        </Pressable>
-      ) : null}
-
-      {presentation.keyFindings.length ? (
-        <View style={styles.directFindings}>
-          {visibleFindings.map((finding, index) => (
-            <View
-              key={`${finding.title}:${index}`}
-              style={styles.directFinding}
-            >
-              <View
-                style={[
-                  styles.directFindingMarker,
-                  { backgroundColor: colors.accent },
-                ]}
-              />
-              <View style={styles.directFindingCopy}>
-                <Text
-                  style={[styles.directFindingTitle, { color: colors.text }]}
-                >
-                  {finding.title}
-                </Text>
-                <Text
-                  style={[
-                    styles.directFindingDetail,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  {finding.detail}
-                </Text>
-              </View>
-            </View>
-          ))}
-          {hiddenFindingCount || findingsVisible ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ expanded: findingsVisible }}
-              onPress={() => setFindingsVisible((visible) => !visible)}
-              style={({ pressed }) => [
-                styles.directInlineAction,
-                { opacity: pressed ? 0.65 : 1 },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.directInlineActionText,
-                  { color: colors.primary },
-                ]}
-              >
-                {findingsVisible
-                  ? "Show fewer details"
-                  : `Show ${formatEvidenceCount(hiddenFindingCount)} more ${hiddenFindingCount === 1 ? "detail" : "details"}`}
-              </Text>
-              <Ionicons
-                accessibilityElementsHidden
-                color={colors.primary}
-                name={findingsVisible ? "chevron-up" : "chevron-down"}
-                size={16}
-              />
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-
-      {presentation.interpretation ? (
-        <View
-          style={[
-            styles.directInterpretation,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderColor: colors.border,
-              borderRadius: radius.md,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.primary}
-            name="sparkles-outline"
-            size={17}
-          />
-          <View style={styles.directInterpretationCopy}>
-            <Text
-              style={[
-                styles.directInterpretationLabel,
-                { color: colors.primary },
-              ]}
-            >
-              My read
-            </Text>
-            <Text
-              style={[
-                styles.directInterpretationText,
-                { color: colors.textSecondary },
-              ]}
-            >
-              {presentation.interpretation}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
-      {presentation.safetyNotice ? (
-        <View
-          style={[
-            styles.directSafety,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderColor: colors.warning,
-              borderRadius: radius.md,
-            },
-          ]}
-        >
-          <Ionicons
-            accessibilityElementsHidden
-            color={colors.warning}
-            name="medical-outline"
-            size={17}
-          />
-          <Text
-            style={[styles.directSafetyText, { color: colors.textSecondary }]}
-          >
-            {presentation.safetyNotice}
-          </Text>
-        </View>
-      ) : null}
-
-      {detailCount ? (
-        <View style={[styles.directDetails, { borderColor: colors.divider }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: detailsVisible }}
-            onPress={() => setDetailsVisible((visible) => !visible)}
-            style={({ pressed }) => [
-              styles.directDetailsButton,
-              { opacity: pressed ? 0.65 : 1 },
-            ]}
-          >
-            <View style={styles.directDetailsButtonCopy}>
-              <Text style={[styles.directDetailsTitle, { color: colors.text }]}>
-                {detailsVisible ? "Hide evidence" : "See evidence"}
-              </Text>
-              <Text
-                style={[
-                  styles.directDetailsCount,
-                  { color: colors.textTertiary },
-                ]}
-              >
-                {detailCount} {detailCount === 1 ? "item" : "items"}
-              </Text>
-            </View>
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.primary}
-              name={detailsVisible ? "chevron-up" : "chevron-down"}
-              size={18}
-            />
-          </Pressable>
-          {detailsVisible ? (
-            <View style={styles.directDetailsBody}>
-              {presentation.evidence.map((item, index) => {
-                const reference = item.evidenceId
-                  ? evidenceLookup.references.get(item.evidenceId)
-                  : undefined;
-                const guidance = item.evidenceId?.startsWith("guidance:")
-                  ? guidanceSources.find(
-                      ({ knowledgeId }) =>
-                        `guidance:${knowledgeId}` === item.evidenceId,
-                    )
-                  : undefined;
-                const content = (
-                  <>
-                    <Ionicons
-                      accessibilityElementsHidden
-                      color={colors.accent}
-                      name="document-text-outline"
-                      size={16}
-                    />
-                    <View style={styles.directEvidenceCopy}>
-                      <Text
-                        style={[
-                          styles.directEvidenceLabel,
-                          { color: colors.text },
-                        ]}
-                      >
-                        {item.label}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.directEvidenceDetail,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        {item.detail}
-                      </Text>
-                    </View>
-                    {reference || guidance ? (
-                      <Ionicons
-                        accessibilityElementsHidden
-                        color={colors.textTertiary}
-                        name={guidance ? "open-outline" : "chevron-forward"}
-                        size={17}
-                      />
-                    ) : null}
-                  </>
-                );
-                return reference || guidance ? (
-                  <Pressable
-                    key={`${item.label}:${index}`}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      if (reference) onInspectEvidence(reference);
-                      else if (guidance)
-                        void Linking.openURL(guidance.sourceUrl);
-                    }}
-                    style={({ pressed }) => [
-                      styles.directEvidenceItem,
-                      { opacity: pressed ? 0.65 : 1 },
-                    ]}
-                  >
-                    {content}
-                  </Pressable>
-                ) : (
-                  <View
-                    key={`${item.label}:${index}`}
-                    style={styles.directEvidenceItem}
-                  >
-                    {content}
-                  </View>
-                );
-              })}
-              {presentation.limitations.length ? (
-                <View
-                  style={[
-                    styles.directCaveats,
-                    { borderColor: colors.divider },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.directCaveatsTitle,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Keep in mind
+      {presentation.evidence.length ? (
+        <View style={styles.directDetailsBody}>
+          {presentation.evidence.map((item, index) => {
+            const reference = item.evidenceId
+              ? evidenceLookup.references.get(item.evidenceId)
+              : undefined;
+            const guidance = item.evidenceId?.startsWith("guidance:")
+              ? guidanceSources.find(
+                  ({ knowledgeId }) => `guidance:${knowledgeId}` === item.evidenceId,
+                )
+              : undefined;
+            const content = (
+              <>
+                <Ionicons
+                  accessibilityElementsHidden
+                  color={colors.accent}
+                  name={directAnswerIcon(presentation.kind)}
+                  size={16}
+                />
+                <View style={styles.directEvidenceCopy}>
+                  <Text style={[styles.directEvidenceLabel, { color: colors.text }]}>
+                    {item.label}
                   </Text>
-                  {presentation.limitations.map((item, index) => (
-                    <Text
-                      key={`${item}:${index}`}
-                      style={[
-                        styles.directCaveat,
-                        { color: colors.textTertiary },
-                      ]}
-                    >
-                      • {item}
-                    </Text>
-                  ))}
+                  <Text style={[styles.directEvidenceDetail, { color: colors.textSecondary }]}>
+                    {item.detail}
+                  </Text>
                 </View>
-              ) : null}
-            </View>
-          ) : null}
+                {reference || guidance ? (
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={colors.textTertiary}
+                    name={guidance ? "open-outline" : "chevron-forward"}
+                    size={17}
+                  />
+                ) : null}
+              </>
+            );
+            return reference || guidance ? (
+              <Pressable
+                key={`${item.label}:${index}`}
+                accessibilityRole="button"
+                onPress={() => {
+                  if (reference) onInspectEvidence(reference);
+                  else if (guidance) void Linking.openURL(guidance.sourceUrl);
+                }}
+                style={({ pressed }) => [styles.directEvidenceItem, { opacity: pressed ? 0.65 : 1 }]}
+              >
+                {content}
+              </Pressable>
+            ) : (
+              <View key={`${item.label}:${index}`} style={styles.directEvidenceItem}>
+                {content}
+              </View>
+            );
+          })}
         </View>
       ) : null}
-
       {presentation.followUpQuestions.length ? (
         <View style={styles.directFollowUps}>
-          <Text
-            style={[
-              styles.directFollowUpsTitle,
-              { color: colors.textSecondary },
-            ]}
-          >
+          <Text style={[styles.directFollowUpsTitle, { color: colors.textSecondary }]}>
             You could ask
           </Text>
           {presentation.followUpQuestions.map((followUp, index) => (
@@ -1011,15 +720,8 @@ function TarvisDirectAnswerContent({
                 },
               ]}
             >
-              <Text style={[styles.directFollowUpText, { color: colors.text }]}>
-                {followUp}
-              </Text>
-              <Ionicons
-                accessibilityElementsHidden
-                color={colors.primary}
-                name="arrow-forward"
-                size={16}
-              />
+              <Text style={[styles.directFollowUpText, { color: colors.text }]}>{followUp}</Text>
+              <Ionicons accessibilityElementsHidden color={colors.primary} name="arrow-forward" size={16} />
             </Pressable>
           ))}
         </View>
@@ -1388,6 +1090,7 @@ export function TarvisScreen({
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
+  const { defaults: regionalDefaults } = useRegionalProfile();
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   // Connection and privacy, and the weekly review reminder, live in Settings.
   const openTarvisSettingsPage = useCallback(() => {
@@ -1437,7 +1140,8 @@ export function TarvisScreen({
   const closeTarvisSettings = useCallback(() => {
     setSettingsVisible(false);
     setApiKey('');
-    setSelectedProvider(provider);
+    // Never reopen on a saved provider with no key while another connection is ready.
+    setSelectedProvider(tarvisSettingsViewProvider({ provider, hasApiKey, configuredProviders, chatGpt: chatGptState }));
     setSelectedModels(savedModels);
     setModelMenuOpen(false);
     setProviderTermsOpen(false);
@@ -1446,8 +1150,9 @@ export function TarvisScreen({
       settingsOpenedFromMenu.current = false;
       onReturnToSettings?.();
     }
-  }, [onReturnToSettings, provider, savedModels]);
+  }, [onReturnToSettings, provider, hasApiKey, configuredProviders, chatGptState, savedModels]);
   const [apiKey, setApiKey] = useState("");
+  const providerSwitchOffer = tarvisProviderSwitchOffer({ provider, hasApiKey, configuredProviders, chatGpt: chatGptState });
   const [, setUsage] = useState<TarvisUsage>();
   const [question, setQuestion] = useState("");
   const [composerLifecycle] = useState(createTarvisComposerLifecycle);
@@ -1458,7 +1163,6 @@ export function TarvisScreen({
   const [suggestionSnapshot, setSuggestionSnapshot] = useState<{ scope: string; data: TimelineData }>();
   const suggestionData = suggestionSnapshot?.scope === conversationScope.identity ? suggestionSnapshot.data : undefined;
   const suggestions = useMemo(() => buildTarvisSuggestions(suggestionData, asOf), [suggestionData, asOf]);
-  const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
   const [notebookVisible, setNotebookVisible] = useState(false);
   const [notebookSeed, setNotebookSeed] = useState<NotebookEntry>();
   const [exchanges, setExchanges] = useState<ChatExchange[]>([]);
@@ -1624,7 +1328,7 @@ export function TarvisScreen({
       const settings = await loadTarvisSettings();
       setHasApiKey(settings.hasApiKey);
       setProvider(settings.provider);
-      setSelectedProvider(settings.provider);
+      setSelectedProvider(tarvisSettingsViewProvider(settings));
       setConfiguredProviders(settings.configuredProviders);
       setSelectedModels(settings.selectedModels);
       setSavedModels(settings.selectedModels);
@@ -1649,7 +1353,7 @@ export function TarvisScreen({
         if (!active) return;
         setHasApiKey(settings.hasApiKey);
         setProvider(settings.provider);
-        setSelectedProvider(settings.provider);
+        setSelectedProvider(tarvisSettingsViewProvider(settings));
         setConfiguredProviders(settings.configuredProviders);
         setSelectedModels(settings.selectedModels);
         setSavedModels(settings.selectedModels);
@@ -2265,6 +1969,47 @@ export function TarvisScreen({
       .catch(() => undefined);
   }
 
+  /** One tap from the switch offer: use a connection that is already set up. */
+  async function switchToReadyProvider(next: TarvisProvider) {
+    if (working || settingsWorking) return;
+    if (next === "chatgpt") {
+      setSelectedProvider("chatgpt");
+      await runChatGptAction(async (lease) => {
+        if (!chatGptState.selectedModel) throw new Error("Choose a ChatGPT model first.");
+        await selectTarvisProvider("chatgpt", lease, chatGptState.selectedModel);
+        return getChatGptState(lease);
+      }, "ChatGPT is now selected for AI answers. Your plan usage is managed in ChatGPT.", true);
+      return;
+    }
+    setSettingsActionError(undefined);
+    setSettingsNotice(undefined);
+    setSettingsWorking(true);
+    try {
+      const writeLease = await acquireLocalDataWriteLease();
+      await selectTarvisProvider(next, writeLease, savedModels[next]);
+      const settings = await loadTarvisSettings(writeLease);
+      setHasApiKey(settings.hasApiKey);
+      setProvider(settings.provider);
+      setSelectedProvider(settings.provider);
+      setConfiguredProviders(settings.configuredProviders);
+      setSavedModels(settings.selectedModels);
+      setSelectedModels(settings.selectedModels);
+      if (settings.chatGpt) setChatGptState(settings.chatGpt);
+      setApiKey("");
+      setChangeKeyVisible(false);
+      setSettingsNotice(`${TARVIS_PROVIDERS[next].label} is now selected for AI answers.`);
+      setError(undefined);
+      setErrorNeedsSettings(false);
+      setErrorManageUsage(false);
+      setRetryAt(0);
+    } catch (reason) {
+      if (isLocalDataWriteSupersededError(reason) || isTarvisConnectionSupersededError(reason)) return;
+      setSettingsActionError(reason instanceof Error ? reason.message : "The connection could not be changed. Try again.");
+    } finally {
+      setSettingsWorking(false);
+    }
+  }
+
   function removeKey() {
     if (working || settingsWorking) return;
     setConfirmation("remove-key");
@@ -2280,6 +2025,10 @@ export function TarvisScreen({
         const settings = await loadTarvisSettings();
         setHasApiKey(settings.hasApiKey);
         setConfiguredProviders(settings.configuredProviders);
+        if (settings.chatGpt) setChatGptState(settings.chatGpt);
+        // Removing the key in use moves the view to a ready connection, if any;
+        // the switch offer then asks before anything changes.
+        if (selectedProvider === settings.provider) setSelectedProvider(tarvisSettingsViewProvider(settings));
         setSettingsNotice(`${TARVIS_PROVIDERS[selectedProvider].label} key removed.`);
         setApiKey("");
         setChangeKeyVisible(false);
@@ -2458,6 +2207,30 @@ export function TarvisScreen({
             estimate: loadCurrentIob ? await loadCurrentIob(estimateAsOf) : undefined,
             liveData: Boolean(loadCurrentIob),
             asOf: estimateAsOf,
+          });
+        } else if (plan.question.kind === "insulin-breakdown") {
+          if (!loadTimelineData) {
+            throw new Error("Your local health data is not ready yet.");
+          }
+          const timeline = await loadTimelineData(
+            recordPeriodsRange(plan.question.periods, questionAsOf),
+          );
+          local = buildInsulinBreakdownAnswer({
+            question: plan.question,
+            timeline,
+            asOf: questionAsOf,
+          });
+        } else if (plan.question.kind === "carbs-per-day") {
+          if (!loadTimelineData) {
+            throw new Error("Your local health data is not ready yet.");
+          }
+          const timeline = await loadTimelineData(
+            carbsPerDayRange(plan.question, questionAsOf),
+          );
+          local = buildCarbsPerDayAnswer({
+            question: plan.question,
+            timeline,
+            asOf: questionAsOf,
           });
         } else {
           if (!loadTimelineData) {
@@ -3669,6 +3442,13 @@ export function TarvisScreen({
                     </Text>
                   </View>
                 </View>
+                {providerSwitchOffer ? (
+                  <TarvisProviderSwitchOffer
+                    {...tarvisProviderSwitchCopy({ provider, hasApiKey, configuredProviders, chatGpt: chatGptState }, providerSwitchOffer)}
+                    disabled={settingsWorking || working}
+                    onUse={() => void switchToReadyProvider(providerSwitchOffer)}
+                  />
+                ) : null}
                 <View accessible accessibilityLabel="Works without a connection: exact questions about your records, and period summaries for today, last night, 7, 14 or 30 days." style={[styles.providerDetails, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
                   <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>WORKS WITHOUT A CONNECTION</Text>
                   {[
@@ -4220,270 +4000,146 @@ export function TarvisScreen({
                         />
                       </View>
                       <View style={styles.assistantContent}>
-                        {exchange.answer.directPresentation ? (
-                          <TarvisDirectAnswerContent
-                            disabled={working}
-                            evidenceLookup={exchange.evidence}
-                            guidanceSources={exchange.guidanceSources}
-                            onInspectEvidence={onInspectEvidence}
-                            onFollowUp={(followUp) =>
-                              void sendQuestion(followUp)
-                            }
-                            presentation={exchange.answer.directPresentation}
-                          />
-                        ) : (
-                          <>
-                            <View style={styles.answerHeading}>
-                              <Ionicons
-                                accessibilityElementsHidden
-                                color={colors.accent}
-                                name="document-text-outline"
-                                size={20}
-                              />
-                              <View style={styles.answerHeadingCopy}>
-                                <Text
+                        <TarvisShortAnswerCard
+                          model={exchange.answer.directPresentation
+                            ? buildTarvisDirectShortAnswer({
+                                presentation: exchange.answer.directPresentation,
+                                evidenceLine: exchange.evidenceLine,
+                                asOf: exchange.createdAt,
+                                settings: regionalDefaults,
+                                answerSource: exchange.answerSource,
+                                modelRequestSent: exchange.modelRequestSent,
+                              })
+                            : buildTarvisShortAnswer({
+                                answer: exchange.answer,
+                                evidenceLine: exchange.evidenceLine,
+                                asOf: exchange.createdAt,
+                                settings: regionalDefaults,
+                                answerSource: exchange.answerSource,
+                                modelRequestSent: exchange.modelRequestSent,
+                              })}
+                          details={
+                            <>
+                              {exchange.intent ? (
+                                <View
+                                  accessible
+                                  accessibilityLabel={`Answering for ${describeTarvisIntent(exchange.intent, { timezone: "local time" })}`}
                                   style={[
-                                    styles.answerTitle,
-                                    { color: colors.text },
+                                    styles.interpretation,
+                                    {
+                                      backgroundColor: colors.surfaceMuted,
+                                      borderColor: colors.border,
+                                      borderRadius: radius.md,
+                                    },
                                   ]}
                                 >
-                                  {exchange.answer.headline}
-                                </Text>
-                                {exchange.answer.responseKind !== 'safety-boundary' &&
-                                (exchange.answer.evidenceIds.length > 0 || isTarvisGeneralEducationAnswer(exchange.answer)) ? (
-                                  <Text
-                                    style={[
-                                      styles.confidence,
-                                      { color: colors.textTertiary },
-                                    ]}
-                                  >
-                                    {isTarvisGeneralEducationAnswer(exchange.answer)
-                                      ? "General explanation · No personal records used"
-                                      : confidenceLabel(exchange.answer.confidence)}
+                                  <Ionicons
+                                    accessibilityElementsHidden
+                                    color={colors.primary}
+                                    name="calculator-outline"
+                                    size={15}
+                                  />
+                                  <Text style={[styles.interpretationText, { color: colors.textSecondary }]}>
+                                    <Text style={styles.interpretationLabel}>Answering for </Text>
+                                    {describeTarvisIntent(exchange.intent, { timezone: "local time" })}
                                   </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                            {exchange.intent && expandedAnswers.has(exchange.id) ? (
-                              <View
-                                accessible
-                                accessibilityLabel={`Answering for ${describeTarvisIntent(exchange.intent, { timezone: "local time" })}`}
-                                style={[
-                                  styles.interpretation,
-                                  {
-                                    backgroundColor: colors.surfaceMuted,
-                                    borderColor: colors.border,
-                                    borderRadius: radius.md,
-                                  },
-                                ]}
-                              >
-                                <Ionicons
-                                  accessibilityElementsHidden
-                                  color={colors.primary}
-                                  name="calculator-outline"
-                                  size={15}
+                                </View>
+                              ) : null}
+                              <TarvisEvidenceSummary presentation={exchange.presentation} />
+                              {exchange.answer.directPresentation ? (
+                                <TarvisDirectAnswerDetails
+                                  disabled={working}
+                                  evidenceLookup={exchange.evidence}
+                                  guidanceSources={exchange.guidanceSources}
+                                  onInspectEvidence={onInspectEvidence}
+                                  onFollowUp={(followUp) => void sendQuestion(followUp)}
+                                  presentation={exchange.answer.directPresentation}
                                 />
-                                <Text
-                                  style={[
-                                    styles.interpretationText,
-                                    { color: colors.textSecondary },
-                                  ]}
-                                >
-                                  <Text style={styles.interpretationLabel}>
-                                    Answering for{" "}
+                              ) : null}
+                              {!exchange.answer.directPresentation && exchange.guidanceSources.length ? (
+                                <View style={styles.evidenceList}>
+                                  <Text style={[styles.evidenceHeading, { color: colors.text }]}>
+                                    Reviewed NICE guidance
                                   </Text>
-                                  {describeTarvisIntent(exchange.intent, {
-                                    timezone: "local time",
-                                  })}
-                                </Text>
-                              </View>
-                            ) : null}
-                            <Text
-                              style={[
-                                styles.answerText,
-                                { color: colors.textSecondary },
-                              ]}
-                            >
-                              {exchange.answer.answer}
-                            </Text>
-                            {exchange.guidanceSources.length ? (
-                              <View style={styles.evidenceList}>
-                                <Text
-                                  style={[
-                                    styles.evidenceHeading,
-                                    { color: colors.text },
-                                  ]}
-                                >
-                                  Reviewed NICE guidance
-                                </Text>
-                                {exchange.guidanceSources.map((source) => (
-                                  <Pressable
-                                    key={source.knowledgeId}
-                                    accessibilityHint="Opens the NICE guidance in your browser"
-                                    accessibilityLabel={`${source.sourceTitle}. Recommendations ${source.recommendationRefs.join(", ")}`}
-                                    accessibilityRole="link"
-                                    onPress={() => {
-                                      void Linking.openURL(
-                                        source.sourceUrl,
-                                      ).catch(() => {
-                                        setError(
-                                          "The NICE guidance link could not be opened on this device.",
-                                        );
-                                      });
-                                    }}
-                                    style={({ pressed }) => [
-                                      styles.evidenceButton,
-                                      {
-                                        backgroundColor: colors.surfaceMuted,
-                                        borderRadius: radius.md,
-                                        opacity: pressed ? 0.68 : 1,
-                                      },
-                                    ]}
-                                  >
-                                    <Ionicons
-                                      accessibilityElementsHidden
-                                      color={colors.primary}
-                                      name="shield-checkmark-outline"
-                                      size={18}
-                                    />
-                                    <View style={styles.evidenceCopy}>
-                                      <Text
-                                        style={[
-                                          styles.evidenceLabel,
-                                          { color: colors.text },
-                                        ]}
-                                      >
-                                        {source.sourceTitle}
-                                      </Text>
-                                      <Text
-                                        style={[
-                                          styles.evidenceCount,
-                                          { color: colors.textTertiary },
-                                        ]}
-                                      >
-                                        NICE recommendations{" "}
-                                        {source.recommendationRefs.join(", ")}
-                                      </Text>
-                                    </View>
-                                    <Ionicons
-                                      accessibilityElementsHidden
-                                      color={colors.textTertiary}
-                                      name="open-outline"
-                                      size={17}
-                                    />
-                                  </Pressable>
-                                ))}
-                              </View>
-                            ) : null}
-                            {exchange.answer.evidenceIds.length ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: expandedAnswers.has(exchange.id) }} onPress={() => setExpandedAnswers(current => { const next = new Set(current); if (next.has(exchange.id)) next.delete(exchange.id); else next.add(exchange.id); return next; })} style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}><Ionicons accessibilityElementsHidden name={expandedAnswers.has(exchange.id) ? 'chevron-up' : 'chevron-down'} size={18} color={colors.primary} /><Text style={[styles.evidenceLabel, { color: colors.primary }]}>{expandedAnswers.has(exchange.id) ? 'Hide supporting details' : 'View calculation and records'}</Text></Pressable> : null}
-                            {expandedAnswers.has(exchange.id) ? <TarvisEvidenceSummary
-                              presentation={exchange.presentation}
-                            /> : null}
-                            {exchange.answer.evidenceIds.length && expandedAnswers.has(exchange.id) ? (
-                              <View style={styles.evidenceList}>
-                                <Text
-                                  style={[
-                                    styles.evidenceHeading,
-                                    { color: colors.text },
-                                  ]}
-                                >
-                                  What Tarv1s used
-                                </Text>
-                                {exchange.answer.evidenceIds.map((id) => {
-                                  const reference =
-                                    exchange.evidence.references.get(id);
-                                  if (!reference) return null;
-                                  return (
+                                  {exchange.guidanceSources.map((source) => (
                                     <Pressable
-                                      key={id}
-                                      accessibilityRole="button"
-                                      onPress={() =>
-                                        onInspectEvidence(reference)
-                                      }
+                                      key={source.knowledgeId}
+                                      accessibilityHint="Opens the NICE guidance in your browser"
+                                      accessibilityLabel={`${source.sourceTitle}. Recommendations ${source.recommendationRefs.join(", ")}`}
+                                      accessibilityRole="link"
+                                      onPress={() => {
+                                        void Linking.openURL(source.sourceUrl).catch(() => {
+                                          setError("The NICE guidance link could not be opened on this device.");
+                                        });
+                                      }}
                                       style={({ pressed }) => [
                                         styles.evidenceButton,
-                                        {
-                                          backgroundColor: colors.surfaceMuted,
-                                          borderRadius: radius.md,
-                                          opacity: pressed ? 0.68 : 1,
-                                        },
+                                        { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, opacity: pressed ? 0.68 : 1 },
                                       ]}
                                     >
-                                      <Ionicons
-                                        accessibilityElementsHidden
-                                        color={colors.primary}
-                                        name="document-text-outline"
-                                        size={18}
-                                      />
+                                      <Ionicons accessibilityElementsHidden color={colors.primary} name="shield-checkmark-outline" size={18} />
                                       <View style={styles.evidenceCopy}>
-                                        <Text
-                                          style={[
-                                            styles.evidenceLabel,
-                                            { color: colors.text },
-                                          ]}
-                                        >
-                                          {reference.label}
-                                        </Text>
-                                        <Text
-                                          style={[
-                                            styles.evidenceCount,
-                                            { color: colors.textTertiary },
-                                          ]}
-                                        >
-                                          {formatEvidenceCount(
-                                            reference.recordIds.length,
-                                          )}{" "}
-                                          {reference.recordIds.length === 1
-                                            ? "record"
-                                            : "records"}
+                                        <Text style={[styles.evidenceLabel, { color: colors.text }]}>{source.sourceTitle}</Text>
+                                        <Text style={[styles.evidenceCount, { color: colors.textTertiary }]}>
+                                          NICE recommendations{" "}
+                                          {source.recommendationRefs.join(", ")}
                                         </Text>
                                       </View>
-                                      <Ionicons
-                                        accessibilityElementsHidden
-                                        color={colors.textTertiary}
-                                        name="chevron-forward"
-                                        size={17}
-                                      />
+                                      <Ionicons accessibilityElementsHidden color={colors.textTertiary} name="open-outline" size={17} />
                                     </Pressable>
-                                  );
-                                })}
-                              </View>
-                            ) : null}
-                            {exchange.answer.limitations.length ? (
-                              <View
-                                style={[
-                                  styles.limitations,
-                                  { borderColor: colors.divider },
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.limitationsTitle,
-                                    { color: colors.textSecondary },
-                                  ]}
-                                >
-                                  Worth keeping in mind
+                                  ))}
+                                </View>
+                              ) : null}
+                              {!exchange.answer.directPresentation && exchange.answer.evidenceIds.some((id) => exchange.evidence.references.has(id)) ? (
+                                <View style={styles.evidenceList}>
+                                  <Text style={[styles.evidenceHeading, { color: colors.text }]}>
+                                    {exchange.evidenceLine && !exchange.evidenceLine.windows.some((window) => window.recordLabel)
+                                      ? "See the readings"
+                                      : "See the records"}
+                                  </Text>
+                                  {exchange.answer.evidenceIds.map((id) => {
+                                    const reference = exchange.evidence.references.get(id);
+                                    if (!reference) return null;
+                                    return (
+                                      <Pressable
+                                        key={id}
+                                        accessibilityRole="button"
+                                        onPress={() => onInspectEvidence(reference)}
+                                        style={({ pressed }) => [
+                                          styles.evidenceButton,
+                                          { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, opacity: pressed ? 0.68 : 1 },
+                                        ]}
+                                      >
+                                        <Ionicons accessibilityElementsHidden color={colors.primary} name="document-text-outline" size={18} />
+                                        <View style={styles.evidenceCopy}>
+                                          <Text style={[styles.evidenceLabel, { color: colors.text }]}>{reference.label}</Text>
+                                          <Text style={[styles.evidenceCount, { color: colors.textTertiary }]}>
+                                            {formatEvidenceCount(reference.recordIds.length)}{" "}
+                                            {reference.recordIds.length === 1 ? "record" : "records"}
+                                          </Text>
+                                        </View>
+                                        <Ionicons accessibilityElementsHidden color={colors.textTertiary} name="chevron-forward" size={17} />
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                              ) : null}
+                              {exchange.answer.responseKind !== 'safety-boundary' &&
+                              !exchange.answer.directPresentation &&
+                              exchange.answer.evidenceIds.length > 0 ? (
+                                <Text style={[styles.confidence, { color: colors.textTertiary }]}>
+                                  {confidenceLabel(exchange.answer.confidence)}
                                 </Text>
-                                {exchange.answer.limitations.map(
-                                  (limitation) => (
-                                    <Text
-                                      key={limitation}
-                                      style={[
-                                        styles.limitationText,
-                                        { color: colors.textTertiary },
-                                      ]}
-                                    >
-                                      • {limitation}
-                                    </Text>
-                                  ),
-                                )}
-                              </View>
-                            ) : null}
-                          </>
-                        )}
-                        <TarvisEvidenceLine data={exchange.evidenceLine} />
-                        {exchange.scope.kind !== 'legacy-unknown' ? <SaveToNotebookButton id={exchange.id} title={exchange.question} answer={exchange.answer} evidence={[...exchange.evidence.references.values()]} createdAt={exchange.createdAt} ownerIdentity={exchange.scope.ownerIdentity} dataMode={exchange.scope.dataMode} disabled={working} onSaved={entry => { setNotebookSeed(entry); setNotebookVisible(true); }} /> : null}
-                        <TarvisReportButton key={`report-${exchange.id}-${exchange.scope.kind === 'legacy-unknown' ? 'legacy' : `${exchange.scope.ownerIdentity}-${exchange.scope.dataMode}`}`} response={exchange.answer.answer} disabled={working} />
+                              ) : null}
+                            </>
+                          }
+                          footer={
+                            <>
+                              {exchange.scope.kind !== 'legacy-unknown' ? <SaveToNotebookButton id={exchange.id} title={exchange.question} answer={exchange.answer} evidence={[...exchange.evidence.references.values()]} createdAt={exchange.createdAt} ownerIdentity={exchange.scope.ownerIdentity} dataMode={exchange.scope.dataMode} disabled={working} onSaved={entry => { setNotebookSeed(entry); setNotebookVisible(true); }} /> : null}
+                              <TarvisReportButton key={`report-${exchange.id}-${exchange.scope.kind === 'legacy-unknown' ? 'legacy' : `${exchange.scope.ownerIdentity}-${exchange.scope.dataMode}`}`} response={exchange.answer.answer} disabled={working} />
+                            </>
+                          }
+                        />
                         <TarvisRouteMarker
                           hostedAnswer={exchange.answerSource === "hosted"}
                           latest={exchangeIndex === exchanges.length - 1}

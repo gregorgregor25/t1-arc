@@ -28,6 +28,10 @@ describe("device change questions", () => {
     ["How long ago did I change my sensor?", ["sensor"]],
     ["When did I last change my site, sensor and insulin cartridge?", ["site", "sensor", "insulin"]],
     ["When did I last change my insulin?", ["insulin"]],
+    ["When did I last change my set?", ["site"]],
+    ["When did I put a new set in?", ["site"]],
+    ["How long since I changed my infusion set?", ["site"]],
+    ["When did I start my new sensor?", ["sensor"]],
   ])("parses %s", (question, changes) => {
     const parsed = parseRecordQuestion(question);
     expect(parsed?.kind === "device-change" ? parsed.changes : undefined).toEqual(changes);
@@ -39,6 +43,15 @@ describe("device change questions", () => {
     "When did I last eat?",
     "When did I last set a temp target?",
     "How often should I change my pod?",
+    // Near misses: a change used as an anchor for another question.
+    "When was my last low after I changed my sensor?",
+    "average glucose since my last sensor change",
+    "When did AAPS last set a new temp basal?",
+    "When did AAPS last start a new temp basal?",
+    "When did I last set a new temp target?",
+    "What was my time in range since I changed my site?",
+    "How many highs since my last pod change?",
+    "When did I last change my profile?",
   ])("leaves %s to the existing pipeline", (question) => {
     expect(parseRecordQuestion(question)).toBeUndefined();
   });
