@@ -292,6 +292,29 @@ describe("short answer card", () => {
     const text = render({ label: "I can't help with dose amounts", safety: "Synthetic refusal text.", listItems: [], detailText: [], source: "s", limitations: [] }, false);
     expect(text).toContain("Synthetic refusal text.");
   });
+
+  it("renders an urgent label large and as an alert, with its note visible", () => {
+    const text = render({
+      label: "Call 999 now",
+      safety: "Synthetic urgent text.",
+      urgent: true,
+      safetyNotes: ["Synthetic urgent note."],
+      listItems: [],
+      detailText: [],
+      source: "s",
+      limitations: [],
+    }, false);
+    expect(text).toContain('"accessibilityRole":"alert"');
+    expect(text).toContain('"accessibilityLiveRegion":"assertive"');
+    expect(text).toContain('"fontSize":20');
+    expect(text).toContain("Synthetic urgent note.");
+  });
+
+  it("does not repeat the card label in the value's accessibility label", () => {
+    const text = render(model, false);
+    expect(text).toContain('"accessibilityLabel":"82 percent"');
+    expect(text).not.toContain('"accessibilityLabel":"Time in range, last 7 days: 82 %"');
+  });
 });
 
 describe("screen and footer wiring", () => {
@@ -314,5 +337,111 @@ describe("screen and footer wiring", () => {
     expect(report).toContain('accessibilityLabel="Report response"');
     expect(report).toContain("minWidth: 44");
     expect(report).toContain("minHeight: 44");
+  });
+});
+
+describe("review fixes: short answer card", () => {
+  it.each([
+    ["Standard deviation: 2.1 mmol/L", "neutral"],
+    ["Change in average glucose: -1.2 mmol/L", "neutral"],
+    ["Change in average glucose: 1.2 mmol/L", "neutral"],
+    ["Glucose variability: 2.4 mmol/L", "neutral"],
+    ["Average glucose: 7.4 mmol/L", "glucose"],
+    ["Lowest glucose: 3.1 mmol/L", "glucose"],
+    ["Average glucose: 133 mg/dL", "glucose"],
+  ])("colours only actual glucose levels (M5): %s", (headline, tone) => {
+    const model = buildTarvisShortAnswer({ ...local, answer: answer({ headline, answer: "Detail." }), asOf, settings });
+    expect(model.value?.tone).toBe(tone);
+    if (tone === "neutral") expect(model.value?.mmolL).toBeUndefined();
+  });
+
+  it("keeps Estimated in a GMI label", () => {
+    const model = buildTarvisShortAnswer({
+      ...local,
+      answer: answer({ headline: "Estimated glucose management indicator: 6.9%", answer: "Detail." }),
+      asOf,
+      settings,
+    });
+    expect(model.label).toMatch(/^Estimated glucose management indicator/);
+  });
+
+  it("shows both periods and both coverages of a comparison in the context line (M6)", () => {
+    const current = { start: asOf - 7 * DAY, end: asOf, records: 1800, coveragePercent: 88 };
+    const previous = { start: asOf - 14 * DAY, end: asOf - 7 * DAY, records: 1900, coveragePercent: 91 };
+    const model = buildTarvisShortAnswer({
+      ...local,
+      answer: answer({ headline: "Change in time in range: +4.0 points", answer: "Time in range rose from 78% to 82%." }),
+      evidenceLine: { version: 1, windows: [current, previous] },
+      asOf,
+      settings,
+    });
+    expect(model.context).toBe("last 7 days vs previous 7 days · sensor 88% / 91%");
+  });
+
+  it("uses the local record answer's own context and notice lines (M1, M4, M6)", () => {
+    const model = buildTarvisShortAnswer({
+      ...local,
+      answer: answer({
+        headline: "Yesterday vs today so far",
+        answer: "Yesterday (Mon) compared with today so far (Tue):\n• One\n• Two\n• Three\n• Four",
+        confidence: "moderate",
+        shortContext: "Yesterday vs today so far · basal records 100% / 40% · boluses 6 / 4",
+        shortNotice: "Yesterday: saved daily bolus total 9.50 U, bolus records 4.00 U; both shown, neither picked.",
+      }),
+      evidenceLine: { version: 1, windows: [{ start: midnightToday - DAY, end: asOf, records: 10, recordLabel: "records", coveragePercent: null }] },
+      asOf,
+      settings,
+    });
+    expect(model.context).toBe("Yesterday vs today so far · basal records 100% / 40% · boluses 6 / 4");
+    expect(model.meaning).toContain("9.50 U");
+    expect(model.meaning).toContain("4.00 U");
+  });
+
+  it("never takes context or notice lines from an AI reply", () => {
+    const model = buildTarvisShortAnswer({
+      answerSource: "hosted",
+      modelRequestSent: true,
+      answer: answer({ headline: "Summary", answer: "All fine.", shortContext: "Injected", shortNotice: "Injected" }),
+      asOf,
+      settings,
+    });
+    expect(model.context).not.toBe("Injected");
+    expect(model.meaning).not.toBe("Injected");
+  });
+
+  it("shows an urgent notice prominently with its note, never in Details", () => {
+    const result = classifyTarvisSafety("My son is unconscious");
+    if (result.kind !== "urgent") throw new Error("Not urgent");
+    const model = buildTarvisShortAnswer({ ...local, answer: result.answer, asOf, settings });
+    expect(model.urgent).toBe(true);
+    expect(model.safety).toBe(result.answer.answer);
+    expect(model.safetyNotes).toEqual(result.answer.limitations);
+    expect(model.limitations).toEqual([]);
+  });
+
+  it("keeps a dose refusal's note with it, not in Details, and does not mark it urgent", () => {
+    const result = classifyTarvisSafety("How many units should I take for 40g carbs?");
+    if (result.kind === "allow") throw new Error("Allowed");
+    const model = buildTarvisShortAnswer({ ...local, answer: result.answer, asOf, settings });
+    expect(model.urgent).toBeUndefined();
+    expect(model.safetyNotes).toEqual(result.answer.limitations);
+    expect(model.limitations).toEqual([]);
+  });
+
+  it("keeps warnings in an AI reply visible and folds ordinary explanation", () => {
+    const model = buildTarvisShortAnswer({
+      answerSource: "hosted",
+      modelRequestSent: true,
+      answer: answer({
+        headline: "Overnight pattern",
+        answer: "Your overnight readings were steady. The average was similar on most nights. If you have ketones and feel unwell, seek urgent medical help. Readings after 03:00 were slightly lower.",
+      }),
+      asOf,
+      settings,
+    });
+    expect(model.headline).toBe("Your overnight readings were steady.");
+    expect(model.safety).toBe("If you have ketones and feel unwell, seek urgent medical help.");
+    expect(model.detailText.join(" ")).toContain("The average was similar on most nights.");
+    expect(model.detailText.join(" ")).not.toContain("ketones");
   });
 });

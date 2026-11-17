@@ -79,6 +79,13 @@ export interface BolusDelivery {
   carbRatioGramsPerUnit?: number;
   initialUnits?: number;
   extendedUnits?: number;
+  /**
+   * Read-time only, never stored. Set by source reconciliation when the kept
+   * record comes from a source that does not record AAPS's SMB marking
+   * (Glooko) and a hidden copy of the same delivery from a source that does
+   * (Nightscout, AAPS) says whether it was an SMB.
+   */
+  smbMarking?: { sourceId: string; smb: boolean };
   sourceId: string;
   importedAt?: number;
   sourceFile?: string;

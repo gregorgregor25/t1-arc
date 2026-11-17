@@ -12,7 +12,9 @@ import {
 import { parseRecordQuestion, type InsulinBreakdownQuestion } from "@/data/tarvis/recordQuestions";
 import { coordinateTarvisRequest } from "@/data/tarvis/requestCoordinator";
 import { classifyTarvisSafety } from "@/data/tarvis/safety";
-import type { BasalDelivery, BolusDelivery, InsulinDailyTotal, MealEvent, TimelineData } from "@/domain/models";
+import { reconcileBolusSources } from "@/domain/insulinSourceReconciliation";
+import { MANUAL_CONTEXT_SOURCE_ID } from "@/data/manualContext";
+import type { BasalDelivery, BolusDelivery, DataSourceStatus, InsulinDailyTotal, MealEvent, TimelineData } from "@/domain/models";
 
 // Synthetic records only. Tests run in Europe/London (vitest.config.ts).
 const HOUR = 60 * 60 * 1000;
@@ -36,6 +38,9 @@ function basal(start: number, end: number, rate: number, extra: Partial<BasalDel
 function meal(start: number, carbsGrams: number | undefined, extra: Partial<MealEvent> = {}): MealEvent {
   ids += 1;
   return { id: `meal-${ids}`, kind: "meal", start, title: "Carbs", mealType: "snack", carbsGrams, sourceId: "nightscout", origin: "imported", ...extra };
+}
+function source(changes: Partial<DataSourceStatus> & { id: string }): DataSourceStatus {
+  return { label: changes.id, detail: "", freshness: "current", origin: "imported", isLive: false, ...changes };
 }
 function timeline(changes: Partial<TimelineData>): TimelineData {
   return {
@@ -65,7 +70,7 @@ describe("breakdown and carbs-per-day questions", () => {
   it.each([
     ["How many grams of carbs did I enter on each of the last 7 days?", 7],
     ["How many carbs did I log each day for the past five days?", 5],
-    ["My carbs per day over the last week", 7],
+    ["My carbs per day over the past week", 7],
   ])("parses carbs per day: %s", (question, days) => {
     expect(parseRecordQuestion(question)).toEqual({ kind: "carbs-per-day", days });
   });
@@ -245,14 +250,18 @@ describe("breakdown answers", () => {
   });
 
   it("says where stored history starts when the period is earlier", () => {
-    const data = timeline({ sources: [{ dataFrom: TODAY + HOUR } as TimelineData["sources"][number]] });
+    const data = timeline({
+      boluses: [smb(TODAY + 2 * HOUR, 0.2)],
+      sources: [source({ id: "nightscout", dataFrom: TODAY + HOUR })],
+    });
     const { answer } = buildInsulinBreakdownAnswer({ question: both, timeline: data, asOf: NOW });
     expect(answer.limitations.some((item) => item.startsWith("Stored records start on"))).toBe(true);
+    expect(answer.shortNotice).toContain("Stored records start on");
   });
 });
 
 describe("carbs per day", () => {
-  it("lists every day oldest first, marks today and empty days", () => {
+  it("lists every day newest first, marks today and empty days", () => {
     const data = timeline({
       context: [
         meal(TODAY - 2 * 24 * HOUR + 9 * HOUR, 40),
@@ -265,9 +274,10 @@ describe("carbs per day", () => {
     const lines = answer.answer.split("\n");
     expect(answer.headline).toBe("Carbs entered, last 3 days");
     expect(lines).toHaveLength(4);
-    expect(lines[1]).toMatch(/^• .+: 75\.5 g \(2 entries\)$/);
+    expect(lines[0]).toContain("newest first");
+    expect(lines[1]).toMatch(/^• .+ \(so far\): 25 g \(1 entry\)$/);
     expect(lines[2]).toMatch(/^• .+: no carb entries stored$/);
-    expect(lines[3]).toMatch(/^• .+ \(so far\): 25 g \(1 entry\)$/);
+    expect(lines[3]).toMatch(/^• .+: 75\.5 g \(2 entries\)$/);
     expect(containsTreatmentDirective(answer.answer)).toBe(false);
   });
 
@@ -290,5 +300,196 @@ describe("screen wiring", () => {
     expect(block).toContain("buildCarbsPerDayAnswer({");
     expect(block).toContain('answerSource: "local"');
     expect(block).toContain("modelRequestSent: false");
+  });
+});
+
+describe("review fixes: SMB marking across sources (H2)", () => {
+  it("counts SMBs from the AAPS copy when Glooko holds the same boluses", () => {
+    const raw: BolusDelivery[] = [];
+    for (let index = 0; index < 10; index += 1) {
+      raw.push({ id: `ns-${index}`, timestamp: TODAY + (index + 1) * HOUR, units: 0.3, deliveryType: "SMB", sourceId: "nightscout" });
+      if (index < 8) {
+        raw.push({ id: `gl-${index}`, timestamp: TODAY + (index + 1) * HOUR + 20_000, units: 0.3, deliveryType: "Normal", sourceId: "glooko-export" });
+      }
+    }
+    raw.push({ id: "ns-meal", timestamp: TODAY + 12.5 * HOUR, units: 6, deliveryType: "Meal Bolus", sourceId: "nightscout" });
+    const reconciled = reconcileBolusSources(raw).boluses;
+    // Totals are unchanged: one record per delivery, Glooko copies kept.
+    expect(reconciled).toHaveLength(11);
+    expect(reconciled.reduce((sum, record) => sum + record.units, 0)).toBeCloseTo(9);
+    expect(reconciled.filter((record) => record.sourceId === "glooko-export")).toHaveLength(8);
+    const { answer } = buildInsulinBreakdownAnswer({ question: today, timeline: timeline({ boluses: reconciled }), asOf: NOW });
+    expect(answer.answer).toContain("• SMBs delivered, marked SMB by AAPS: 10 (3.00 U)");
+    expect(answer.answer).toContain("• Other boluses delivered, not marked SMB: 1 (6.00 U)");
+    expect(answer.shortNotice ?? "").not.toMatch(/mark automatic/);
+  });
+
+  it("keeps a Glooko bolus with a matched non-SMB copy as a known other bolus", () => {
+    const reconciled = reconcileBolusSources([
+      { id: "gl-1", timestamp: TODAY + HOUR, units: 4, deliveryType: "Normal", sourceId: "glooko-export" },
+      { id: "ns-1", timestamp: TODAY + HOUR, units: 4, deliveryType: "Meal Bolus", sourceId: "nightscout" },
+    ]).boluses;
+    expect(reconciled).toEqual([
+      expect.objectContaining({ id: "gl-1", deliveryType: "Normal", smbMarking: { sourceId: "nightscout", smb: false } }),
+    ]);
+    const { answer } = buildInsulinBreakdownAnswer({ question: today, timeline: timeline({ boluses: reconciled }), asOf: NOW });
+    expect(answer.answer).toContain("• SMBs delivered, marked SMB by AAPS: none");
+    expect(answer.shortNotice).toBeUndefined();
+  });
+
+  it("says visibly how many boluses came only from Glooko", () => {
+    const boluses = [
+      smb(TODAY + HOUR, 0.3),
+      ...Array.from({ length: 8 }, (_, index) => bolus(TODAY + (index + 2) * HOUR, 0.5, { sourceId: "glooko-export" })),
+    ];
+    const { answer } = buildInsulinBreakdownAnswer({ question: today, timeline: timeline({ boluses }), asOf: NOW });
+    expect(answer.shortNotice).toContain("8 boluses came from Glooko, which doesn't mark automatic boluses");
+  });
+});
+
+describe("review fixes: conflicting totals are visible (M1)", () => {
+  const total: InsulinDailyTotal = {
+    id: "total-2",
+    timestamp: YESTERDAY + 23 * HOUR,
+    dateKey: "2030-11-11",
+    basalUnits: 12,
+    bolusUnits: 9.5,
+    totalUnits: 21.5,
+    sourceId: "glooko-export",
+  };
+  const data = () => timeline({
+    boluses: [
+      bolus(YESTERDAY + 8 * HOUR, 4, { sourceId: "glooko-export" }),
+      bolus(TODAY + 8 * HOUR, 3, { sourceId: "glooko-export" }),
+    ],
+    dailyInsulinTotals: [total],
+  });
+
+  it("shows both totals in the visible notice for one period", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: { kind: "insulin-breakdown", periods: [{ kind: "yesterday" }] },
+      timeline: data(),
+      asOf: NOW,
+    });
+    expect(answer.shortNotice).toContain("Saved daily bolus total 9.50 U, bolus records 4.00 U");
+  });
+
+  it("shows both totals in the visible notice and an early list line for two periods", () => {
+    const { answer } = buildInsulinBreakdownAnswer({ question: both, timeline: data(), asOf: NOW });
+    expect(answer.shortNotice).toContain("Yesterday: saved daily bolus total 9.50 U, bolus records 4.00 U");
+    const items = answer.answer.split("\n").filter((line) => line.startsWith("• "));
+    expect(items.findIndex((line) => line.startsWith("• Saved daily bolus total"))).toBeLessThan(4);
+  });
+
+  it("says a shared source note once for two periods and does not repeat notices in Details", () => {
+    const { answer } = buildInsulinBreakdownAnswer({ question: both, timeline: data(), asOf: NOW });
+    expect(answer.shortNotice).toBe(
+      "Yesterday: saved daily bolus total 9.50 U, bolus records 4.00 U; both shown, neither picked. "
+        + "Boluses in both periods came from Glooko, which doesn't mark automatic boluses, so SMBs can't be counted.",
+    );
+    expect(answer.limitations.join(" ")).not.toContain("both shown, neither picked");
+    expect(answer.limitations.join(" ")).not.toContain("Boluses in both periods");
+  });
+});
+
+describe("review fixes: long-acting injections are never dropped (M2)", () => {
+  it("lists manual long-acting injections with units and in the evidence", () => {
+    const { answer, evidence } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({
+        boluses: [
+          { id: "m1", timestamp: TODAY + 8 * HOUR, units: 20, deliveryType: "Manual long-acting dose", sourceId: MANUAL_CONTEXT_SOURCE_ID },
+          { id: "m2", timestamp: TODAY + 9 * HOUR, units: 5, deliveryType: "Manual rapid-acting dose", sourceId: MANUAL_CONTEXT_SOURCE_ID },
+        ],
+      }),
+      asOf: NOW,
+    });
+    const items = answer.answer.split("\n").filter((line) => line.startsWith("• "));
+    expect(items[1]).toBe("• Long-acting injections: 1 (20.00 U)");
+    expect(evidence[0]!.recordIds).toEqual(["m1", "m2"]);
+  });
+});
+
+describe("review fixes: periods are never widened (M3)", () => {
+  it.each([
+    "How many SMBs the day before yesterday?",
+    "How many SMBs on 3 November vs today",
+    "How many SMBs on 3rd Nov?",
+    "How many SMBs on 03/11?",
+    "How many SMBs did I get today at lunch",
+    "How many SMBs yesterday evening?",
+    "How many SMBs today vs tomorrow",
+    "How many SMBs today so far vs the last 7 days",
+    "How many SMBs this week vs last week?",
+    "How many SMBs in the last 24 hours?",
+    "How many carbs a day did I have this week",
+    "How many carbs a day did I have last week",
+  ])("does not answer a different period locally: %s", (question) => {
+    expect(parseRecordQuestion(question)).toBeUndefined();
+  });
+
+  it("reads this week and last week as calendar weeks", () => {
+    expect(parseRecordQuestion("How many SMBs this week?")).toEqual({ kind: "insulin-breakdown", periods: [{ kind: "this-week" }] });
+    expect(parseRecordQuestion("How many SMBs last week?")).toEqual({ kind: "insulin-breakdown", periods: [{ kind: "last-week" }] });
+    expect(parseRecordQuestion("How many SMBs over the past week?")).toEqual({
+      kind: "insulin-breakdown",
+      periods: [{ kind: "last-days", days: 7 }],
+    });
+    // NOW is Tuesday 12 November 2030, 14:30 in London.
+    expect(recordPeriodWindow({ kind: "this-week" }, NOW).range).toEqual({ start: TODAY - 24 * HOUR, end: NOW });
+    expect(recordPeriodWindow({ kind: "last-week" }, NOW).range).toEqual({
+      start: TODAY - 8 * 24 * HOUR,
+      end: TODAY - 24 * HOUR,
+    });
+  });
+
+  it("keeps a Monday-to-Sunday last week across the October DST change", () => {
+    // Monday 28 October 2030; the week before ran Monday 21 to Sunday 27 October, with a 25-hour Sunday.
+    const asOf = Date.parse("2030-10-28T09:00:00Z");
+    const window = recordPeriodWindow({ kind: "last-week" }, asOf);
+    expect(window.range.end - window.range.start).toBe(7 * 24 * HOUR + HOUR);
+    expect(window.dates).toMatch(/21 Oct .+ 27 Oct/);
+  });
+});
+
+describe("review fixes: freshness and coverage (M4, M6)", () => {
+  it("uses the insulin source's last record time, not now, in the lead line and notice", () => {
+    const { answer } = buildInsulinBreakdownAnswer({
+      question: today,
+      timeline: timeline({
+        boluses: [smb(TODAY + 8 * HOUR, 0.4)],
+        sources: [
+          source({ id: "nightscout", freshness: "stale", dataFrom: TODAY + 7 * HOUR, dataThrough: TODAY + 9 * HOUR }),
+          source({ id: "libre", dataFrom: YESTERDAY - 300 * 24 * HOUR, dataThrough: NOW }),
+        ],
+      }),
+      asOf: NOW,
+    });
+    expect(answer.answer.split("\n")[0]).toMatch(/records up to 09:00:$/);
+    expect(answer.answer).not.toContain("until 14:30");
+    expect(answer.shortNotice).toContain("Records are stored only up to 09:00");
+    // The glucose source's much earlier start must not hide the insulin source's late start.
+    expect(answer.shortNotice).toContain("Stored records start on");
+    expect(answer.confidence).toBe("moderate");
+  });
+
+  it("puts the period and basal coverage of both periods in the compact context line", () => {
+    const data = timeline({ basal: [basal(YESTERDAY, NOW, 0.5)], boluses: [smb(TODAY + HOUR, 0.2)] });
+    expect(buildInsulinBreakdownAnswer({ question: both, timeline: data, asOf: NOW }).answer.shortContext).toBe(
+      "Yesterday vs today so far · basal records 100% / 100% · boluses 0 / 1",
+    );
+    expect(buildInsulinBreakdownAnswer({ question: today, timeline: data, asOf: NOW }).answer.shortContext).toBe(
+      "Today so far · basal records 100% · 1 bolus, 0 carb entries",
+    );
+  });
+
+  it("gives carbs per day a context line and a per-source limitation", () => {
+    const data = timeline({
+      context: [meal(TODAY + 8 * HOUR, 30, { sourceLabel: "Nightscout" }), meal(TODAY + 9 * HOUR, 12, { sourceLabel: "Health Connect" })],
+    });
+    const { answer } = buildCarbsPerDayAnswer({ question: { kind: "carbs-per-day", days: 7 }, timeline: data, asOf: NOW });
+    expect(answer.shortContext).toBe("Last 7 days · 1 day with entries · 2 carb entries");
+    expect(answer.limitations.join(" ")).toContain("Carb entries come from Nightscout and Health Connect");
+    expect(answer.shortNotice).toContain("1 day has carbs from more than one source");
   });
 });

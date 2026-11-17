@@ -369,6 +369,8 @@ function validAnswer(value: unknown): value is TarvisAnswer {
     uniqueStrings(value.evidenceIds) &&
     Array.isArray(value.limitations) &&
     value.limitations.every((item) => typeof item === "string") &&
+    (value.shortContext === undefined || typeof value.shortContext === "string") &&
+    (value.shortNotice === undefined || typeof value.shortNotice === "string") &&
     (value.directPresentation === undefined ||
       isTarvisDirectAnswerPresentation(value.directPresentation))
   );

@@ -1948,6 +1948,9 @@ export function TarvisScreen({
       const settings = await loadTarvisSettings(writeLease);
       if (settings.chatGpt) setChatGptState(settings.chatGpt);
       setHasApiKey(settings.hasApiKey);
+      setProvider(settings.provider);
+      // Leave the signed-out ChatGPT view at once when another connection is ready.
+      setSelectedProvider(tarvisSettingsViewProvider(settings));
       setConfiguredProviders(settings.configuredProviders);
       setSavedModels(settings.selectedModels);
       setSelectedModels(settings.selectedModels);

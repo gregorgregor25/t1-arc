@@ -66,6 +66,18 @@ describe("which AI connection settings show", () => {
     expect(tarvisProviderSwitchOffer(input({ provider: "gemini" }))).toBeUndefined();
   });
 
+  it("after ChatGPT sign-out, leaves the signed-out ChatGPT view for a ready key", () => {
+    const signedOut = { available: true, connected: false, models: [], selectedModel: undefined };
+    const value = input({ provider: "chatgpt", configuredProviders: { ...none, claude: true }, chatGpt: signedOut });
+    expect(tarvisSettingsViewProvider(value)).toBe("claude");
+    expect(tarvisProviderSwitchOffer(value)).toBe("claude");
+  });
+
+  it("after ChatGPT sign-out with nothing else set up, shows ChatGPT's sign-in", () => {
+    const signedOut = { available: true, connected: false, models: [], selectedModel: undefined };
+    expect(tarvisSettingsViewProvider(input({ provider: "chatgpt", chatGpt: signedOut }))).toBe("chatgpt");
+  });
+
   it("never offers the provider that is already saved", () => {
     const value = input({ provider: "chatgpt", configuredProviders: { ...none, chatgpt: true }, chatGpt: chatGptReady });
     expect(tarvisProviderSwitchOffer(value)).toBeUndefined();
@@ -79,6 +91,12 @@ describe("Tarv1s settings screen wiring", () => {
     expect(screen.match(/setSelectedProvider\(tarvisSettingsViewProvider\(settings\)\)/g)?.length).toBeGreaterThanOrEqual(3);
     expect(screen).toContain("setSelectedProvider(tarvisSettingsViewProvider({ provider, hasApiKey, configuredProviders, chatGpt: chatGptState }))");
     expect(screen).not.toContain("setSelectedProvider(settings.provider);\n      setConfiguredProviders(settings.configuredProviders);\n      setSelectedModels");
+  });
+
+  it("updates the shown connection right after ChatGPT sign-out", () => {
+    const block = screen.slice(screen.indexOf("async function disconnectChatGpt"), screen.indexOf("function acknowledgeChatGptPlanInfo"));
+    expect(block).toContain("setProvider(settings.provider);");
+    expect(block).toContain("setSelectedProvider(tarvisSettingsViewProvider(settings));");
   });
 
   it("shows the switch offer before the provider list and uses the saved selection path", () => {

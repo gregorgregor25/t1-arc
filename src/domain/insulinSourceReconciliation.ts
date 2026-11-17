@@ -223,6 +223,44 @@ function sameBolus(kept: BolusDelivery, copy: BolusDelivery) {
   );
 }
 
+/** Glooko exports do not say whether a bolus was an automatic SMB; AAPS and Nightscout do. */
+export function bolusSourceRecordsSmbMarking(sourceId: string) {
+  return !/glooko/i.test(sourceId);
+}
+
+function isSmbDeliveryType(deliveryType: string | undefined) {
+  return deliveryType?.trim().toUpperCase() === 'SMB';
+}
+
+/**
+ * A kept Glooko copy loses AAPS's SMB marking. When a hidden copy of the same
+ * delivery comes from a source that records it, the kept record carries that
+ * marking (read-time only). Units, timestamps and totals are unchanged.
+ */
+function carrySmbMarking(
+  kept: BolusDelivery[],
+  hidden: readonly { record: BolusDelivery; keptId: string }[],
+): BolusDelivery[] {
+  const copiesByKept = new Map<string, BolusDelivery[]>();
+  for (const { record, keptId } of hidden) {
+    if (!bolusSourceRecordsSmbMarking(record.sourceId)) continue;
+    const list = copiesByKept.get(keptId) ?? [];
+    list.push(record);
+    copiesByKept.set(keptId, list);
+  }
+  if (!copiesByKept.size) return kept;
+  return kept.map((record) => {
+    if (bolusSourceRecordsSmbMarking(record.sourceId)) return record;
+    const copies = copiesByKept.get(record.id);
+    if (!copies?.length) return record;
+    const marked = copies.find((copy) => isSmbDeliveryType(copy.deliveryType)) ?? copies[0]!;
+    return {
+      ...record,
+      smbMarking: { sourceId: marked.sourceId, smb: isSmbDeliveryType(marked.deliveryType) },
+    };
+  });
+}
+
 export function reconcileBolusSources(
   boluses: readonly BolusDelivery[],
 ): BolusReconciliation {
@@ -232,7 +270,7 @@ export function reconcileBolusSources(
     eligible: () => true,
     matches: sameBolus,
   });
-  return { boluses: kept, hidden };
+  return { boluses: carrySmbMarking(kept, hidden), hidden };
 }
 
 function scaled(record: BasalDelivery, start: number, end: number, part?: number): BasalDelivery {

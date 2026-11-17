@@ -47,6 +47,10 @@ export interface TarvisShortAnswer {
   meaning?: string;
   /** Shown in full and never collapsed: a safety boundary or urgent advice. */
   safety?: string;
+  /** Urgent help: the label is shown large and announced as an alert. */
+  urgent?: boolean;
+  /** Notes that belong to a safety boundary; shown with it, never collapsed. */
+  safetyNotes?: string[];
   /** List answers: every item; the card shows {@link TARVIS_SHORT_LIST_VISIBLE} then "Show all". */
   listItems: string[];
   /** The rest of the answer text, under Details. */
@@ -87,9 +91,16 @@ function capitalise(text: string) {
   return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text;
 }
 
+/** "Observed time in range" reads "Time in range"; "Estimated" is kept, as it is part of the meaning. */
 function cleanLabel(label: string) {
-  return capitalise(label.replace(/^(?:observed|your|estimated)\s+/i, "").trim());
+  return capitalise(label.replace(/^(?:observed|your)\s+/i, "").trim());
 }
+
+const URGENT_HEADLINE = /\b(?:now|urgent(?:ly)?|emergency|ambulance|immediately|999|911|112|A&E)\b/i;
+
+/** Sentences a reply must never fold away: warnings and urgent advice. */
+const WARNING_SENTENCE =
+  /\b(?:999|911|112|111|emergency|ambulance|urgent(?:ly)?|A&E|immediately|seek\s+(?:urgent\s+|medical\s+)?(?:help|advice|care)|call\s+(?:your|the|a)\s+(?:diabetes|care|medical|clinical)|ketones?|DKA|ketoacidosis|do\s+not\s+drive|don't\s+drive|warning|danger(?:ous)?|unsafe|severe(?:ly)?)\b/i;
 
 function percent(value: number, settings: Settings) {
   return `${formatRegionalNumber(value, settings.locale, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}%`;
@@ -128,7 +139,39 @@ export function tarvisShortPeriod(
   return evidenceLinePeriod(window, settings);
 }
 
-/** "3.9–10.0 mmol/L · sensor worn 88% of the time". */
+/**
+ * Both periods of a comparison, compactly: "last 7 days vs previous 7 days",
+ * or each period's own name or dates when they are not back to back.
+ */
+export function tarvisShortComparisonPeriod(
+  windows: readonly { start: number; end: number }[],
+  asOf: number,
+  settings: Settings,
+) {
+  const names = windows.map((window) => tarvisShortPeriod(window, asOf, settings));
+  if (windows.length === 2) {
+    const [first, second] = windows as [{ start: number; end: number }, { start: number; end: number }];
+    const sameLength = Math.abs((first.end - first.start) - (second.end - second.start)) <= 60 * 60 * 1000;
+    const backToBack = Math.abs(first.start - second.end) <= 60 * 1000 || Math.abs(second.start - first.end) <= 60 * 1000;
+    const laterIndex = first.end >= second.end ? 0 : 1;
+    const later = names[laterIndex]!;
+    const days = /^last (.+) days$/.exec(later);
+    if (sameLength && backToBack && days) {
+      names[1 - laterIndex] = `previous ${days[1]} days`;
+    }
+  }
+  return names.join(" vs ");
+}
+
+/** The period text for the context line: one period, or both periods of a comparison. */
+function periodText(line: TarvisEvidenceLineData | undefined, asOf: number, settings: Settings) {
+  if (!line?.windows.length) return undefined;
+  return line.windows.length === 1
+    ? tarvisShortPeriod(line.windows[0]!, asOf, settings)
+    : tarvisShortComparisonPeriod(line.windows, asOf, settings);
+}
+
+/** "3.9–10.0 mmol/L · sensor worn 88% of the time", or "… · sensor 88% / 91%" for two periods. */
 function contextLine(line: TarvisEvidenceLineData | undefined, settings: Settings, withPeriod: string | undefined) {
   if (!line) return withPeriod;
   const parts: string[] = [];
@@ -139,12 +182,16 @@ function contextLine(line: TarvisEvidenceLineData | undefined, settings: Setting
   }
   const coverages = line.windows.map((window) => window.coveragePercent);
   if (coverages.every((value): value is number => value !== null)) {
-    parts.push(`sensor worn ${coverages.map((value) => percent(value, settings)).join(" and ")} of the time`);
+    parts.push(
+      coverages.length === 1
+        ? `sensor worn ${percent(coverages[0]!, settings)} of the time`
+        : `sensor ${coverages.map((value) => percent(value, settings)).join(" / ")}`,
+    );
   } else {
     const records = line.windows.map((window) =>
       `${formatRegionalNumber(window.records, settings.locale, { maximumFractionDigits: 0 })} ${window.recordLabel ?? (window.records === 1 ? "glucose reading" : "glucose readings")}`,
     );
-    parts.push(records.join(" and "));
+    parts.push(records.join(" / "));
   }
   return parts.join(" · ");
 }
@@ -189,11 +236,21 @@ function parseLocaleNumber(text: string) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+/** A glucose level (an average, a reading, the lowest or highest), not a spread or a change. */
+function isGlucoseLevelLabel(label: string) {
+  if (/\b(?:standard\s+deviation|sd|deviation|variab\w*|variation|coefficient|cv|change|changes|changed|difference|delta|drop|rise|fall|increase|decrease|spread|interquartile|iqr|swing|gap|vs\.?|versus|compared|per\s+hour|rate|gmi|management\s+indicator|a1c|hba1c)\b/i.test(label)) {
+    return false;
+  }
+  return /\b(?:glucose|bg|blood\s+sugar|sugar|reading|level|average|mean|median|lowest|highest|minimum|maximum|min|max|current|latest|peak|nadir)\b/i.test(label);
+}
+
 function toneFor(label: string, number: string, unit: string | undefined) {
   const value = parseLocaleNumber(number);
   if (value === undefined) return { tone: "neutral" as const };
-  if (unit === "mmol/L") return { tone: "glucose" as const, mmolL: value };
-  if (unit === "mg/dL") return { tone: "glucose" as const, mmolL: value / 18.016 };
+  // Only actual glucose levels take the range colours; a spread or a change does not.
+  if ((unit === "mmol/L" || unit === "mg/dL") && value > 0 && isGlucoseLevelLabel(label)) {
+    return { tone: "glucose" as const, mmolL: unit === "mmol/L" ? value : value / 18.016 };
+  }
   if (unit === "%" && /\btime in (?:the |my )?(?:standard |target )?range\b/i.test(label) && !/\b(?:below|above|tight)\b/i.test(label)) {
     return { tone: value >= TIME_IN_RANGE_TARGET_PERCENT ? "target" as const : "neutral" as const };
   }
@@ -246,6 +303,20 @@ function splitText(text: string) {
   return { headline: first, items: [], rest: all.length > 1 ? [all.slice(1).join(" ")] : [] };
 }
 
+/** Moves warning and urgent-advice sentences out of the folded text. */
+function keepWarningsVisible(paragraphs: readonly string[]) {
+  const visible: string[] = [];
+  const rest: string[] = [];
+  for (const paragraph of paragraphs) {
+    const folded: string[] = [];
+    for (const sentence of sentences(paragraph)) {
+      (WARNING_SENTENCE.test(sentence) ? visible : folded).push(sentence);
+    }
+    if (folded.length) rest.push(folded.join(" "));
+  }
+  return { visible, rest };
+}
+
 export interface BuildTarvisShortAnswerInput extends TarvisAnswerOrigin {
   answer: TarvisAnswer;
   evidenceLine?: TarvisEvidenceLineData;
@@ -264,29 +335,38 @@ export function buildTarvisShortAnswer({
 }: BuildTarvisShortAnswerInput): TarvisShortAnswer {
   const source = tarvisAnswerSourceLine({ answerSource, modelRequestSent });
   // Safety boundaries are shown whole, never shortened or collapsed.
+  // Their notes stay with them, outside Details.
   if (answer.responseKind === "safety-boundary") {
     return {
       label: answer.headline,
       safety: answer.answer,
+      ...(URGENT_HEADLINE.test(answer.headline) ? { urgent: true } : {}),
+      ...(answer.limitations.length ? { safetyNotes: answer.limitations } : {}),
       listItems: [],
       detailText: [],
       source,
-      limitations: answer.limitations,
+      limitations: [],
     };
   }
   const exactPeriod = evidenceLine ? formatTarvisEvidenceLine(evidenceLine, settings) : undefined;
   const singleWindow = evidenceLine?.windows.length === 1 ? evidenceLine.windows[0] : undefined;
   const period = singleWindow ? tarvisShortPeriod(singleWindow, asOf, settings) : undefined;
-  const meaning = meaningLine(evidenceLine, answer.limitations, settings);
+  const allPeriods = periodText(evidenceLine, asOf, settings);
+  // A local record answer brings its own period, coverage and notice lines.
+  const ownContext = answerSource === "local" ? answer.shortContext : undefined;
+  const ownNotice = answerSource === "local" ? answer.shortNotice : undefined;
+  const lowConfidence = answer.confidence === "limited" ? answer.limitations[0] : undefined;
+  const meaning = ownNotice ?? meaningLine(evidenceLine, answer.limitations, settings) ?? lowConfidence;
   const parsed = parseHeadlineValue(answer.headline);
 
   if (parsed) {
     const base = cleanLabel(parsed.label);
-    const label = period && !base.includes(",") ? `${base}, ${period}` : base;
+    const labelHasPeriod = Boolean(period) && !base.includes(",");
+    const label = labelHasPeriod ? `${base}, ${period}` : base;
     return {
       label,
       value: { text: parsed.number, ...(parsed.unit ? { unit: parsed.unit } : {}), ...toneFor(parsed.label, parsed.number, parsed.unit) },
-      context: contextLine(evidenceLine, settings, undefined),
+      context: ownContext ?? contextLine(evidenceLine, settings, labelHasPeriod ? undefined : allPeriods),
       ...(meaning ? { meaning } : {}),
       listItems: [],
       detailText: answer.answer.trim() ? [answer.answer.trim()] : [],
@@ -302,15 +382,19 @@ export function buildTarvisShortAnswer({
   const asksBack = text.includes("?") && text.length <= 400 && !splitBullets(text);
   const split = asksBack ? { headline: text, items: [], rest: [] } : splitText(text);
   const headline = split.headline ?? (split.items.length ? undefined : text);
+  // A reply from an AI connection keeps any warning or urgent advice visible;
+  // only ordinary explanation folds into Details.
+  const kept = answerSource === "hosted" ? keepWarningsVisible(split.rest) : { visible: [], rest: split.rest };
   return {
     label: answer.headline,
     ...(headline ? { headline } : {}),
     context: general
       ? "General explanation · no personal records used"
-      : contextLine(evidenceLine, settings, period),
+      : ownContext ?? contextLine(evidenceLine, settings, allPeriods),
     ...(meaning ? { meaning } : {}),
+    ...(kept.visible.length ? { safety: kept.visible.join(" "), urgent: kept.visible.some((item) => URGENT_HEADLINE.test(item)) } : {}),
     listItems: split.items,
-    detailText: split.rest,
+    detailText: kept.rest,
     ...(exactPeriod ? { exactPeriod } : {}),
     source,
     limitations: answer.limitations,
@@ -338,6 +422,7 @@ export function buildTarvisDirectShortAnswer({
   const metric = presentation.primaryMetric;
   const singleWindow = evidenceLine?.windows.length === 1 ? evidenceLine.windows[0] : undefined;
   const period = singleWindow ? tarvisShortPeriod(singleWindow, asOf, settings) : undefined;
+  const allPeriods = periodText(evidenceLine, asOf, settings);
   const meaning = meaningLine(evidenceLine, presentation.limitations, settings);
   const exactPeriod = evidenceLine ? formatTarvisEvidenceLine(evidenceLine, settings) : undefined;
   const findings = presentation.keyFindings.map((finding) => `${finding.title}: ${finding.detail}`);
@@ -351,9 +436,11 @@ export function buildTarvisDirectShortAnswer({
   return {
     label: value && metric ? (period ? `${cleanLabel(metric.label)}, ${period}` : cleanLabel(metric.label)) : presentation.headline,
     ...(value ? { value } : { headline: sentences(presentation.summary)[0] ?? presentation.summary }),
-    context: contextLine(evidenceLine, settings, value ? undefined : period),
+    context: contextLine(evidenceLine, settings, value && period ? undefined : allPeriods),
     ...(meaning ? { meaning } : {}),
-    ...(presentation.safetyNotice ? { safety: presentation.safetyNotice } : {}),
+    ...(presentation.safetyNotice
+      ? { safety: presentation.safetyNotice, ...(URGENT_HEADLINE.test(presentation.safetyNotice) ? { urgent: true } : {}) }
+      : {}),
     listItems: findings,
     detailText: [
       ...(value ? [presentation.headline, presentation.summary] : sentences(presentation.summary).slice(1)),

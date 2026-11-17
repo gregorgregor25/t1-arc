@@ -123,6 +123,25 @@ describe("ChatGPT account connection", () => {
     expect(await hasChatGptStoredData(lease)).toBe(true);
   });
 
+  it("starts a fresh sign-in from the recommended model, never a leftover choice", async () => {
+    const first = await signInChatGpt(lease);
+    await selectChatGptModel("gpt-second", lease);
+    await signOutChatGpt(lease);
+    // A synthetic leftover choice on a signed-out account.
+    const saved = testState.values.get("t1arc.tarvis.chatgpt-connection.v1") as { accounts: { id: string; selectedModel?: string }[] };
+    saved.accounts.find((account) => account.id === first.activeAccountId)!.selectedModel = "gpt-second";
+    const again = await signInChatGpt(lease);
+    expect(again.selectedModel).toBe("gpt-first");
+    expect(await getChatGptRequestSession(lease)).toMatchObject({ model: "gpt-first" });
+  });
+
+  it("keeps the user's model when renewing a live session", async () => {
+    const first = await signInChatGpt(lease);
+    await selectChatGptModel("gpt-second", lease);
+    const renewed = await signInChatGpt(lease, first.activeAccountId);
+    expect(renewed.selectedModel).toBe("gpt-second");
+  });
+
   it("discovers a newly listed 6.1 model on picker refresh without replacing the selected model", async () => {
     await signInChatGpt(lease);
     await selectChatGptModel("gpt-first", lease);

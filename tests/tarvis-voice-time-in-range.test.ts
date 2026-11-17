@@ -44,6 +44,13 @@ describe("speech-to-text forms of time in range", () => {
     expect(metricsOf(question)).toEqual(metrics);
   });
 
+  it.each([
+    "What time and range were my highs yesterday",
+    "my bolus timing range last week",
+  ])("does not read %s as time in range", (question) => {
+    expect(metricsOf(question)).not.toContain("glucose.time_in_range");
+  });
+
   it("does not turn unrelated words into time in range", () => {
     expect(metricsOf("What was my insulin timing yesterday?")).not.toContain("glucose.time_in_range");
     expect(metricsOf("How much did my glucose range over the last 7 days?")).not.toContain(

@@ -392,7 +392,9 @@ export async function signInChatGpt(lease: LocalDataWriteLease, existingAccountI
       const old = saved.accounts.find((account) => account.id === id);
       const account: SavedAccount = {
         id, clientId: credentials.clientId, subject: credentials.subject,
-        email: credentials.email, credentials, models: [], selectedModel: old?.selectedModel,
+        // A model choice is kept only when renewing a live session. A fresh
+        // sign-in always starts from the first listed (recommended) model.
+        email: credentials.email, credentials, models: [], selectedModel: old?.credentials ? old.selectedModel : undefined,
       };
       // Retain validated credentials if the model catalog is temporarily down.
       saved.accounts = [...saved.accounts.filter((item) => item.id !== id), account];

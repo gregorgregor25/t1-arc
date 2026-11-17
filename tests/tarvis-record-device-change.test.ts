@@ -32,6 +32,11 @@ describe("device change questions", () => {
     ["When did I put a new set in?", ["site"]],
     ["How long since I changed my infusion set?", ["site"]],
     ["When did I start my new sensor?", ["sensor"]],
+    // Review regressions.
+    ["When was my last set change?", ["site"]],
+    ["When was the last set change?", ["site"]],
+    ["When did I change set?", ["site"]],
+    ["When did I last change my sensor? My readings look off", ["sensor"]],
   ])("parses %s", (question, changes) => {
     const parsed = parseRecordQuestion(question);
     expect(parsed?.kind === "device-change" ? parsed.changes : undefined).toEqual(changes);

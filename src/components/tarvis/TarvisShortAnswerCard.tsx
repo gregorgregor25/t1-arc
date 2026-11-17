@@ -23,6 +23,19 @@ interface Props {
  * line, an extra line only when it changes the meaning, then a collapsed
  * Details section. Safety text is always shown in full.
  */
+const SPOKEN_UNITS: Readonly<Record<string, string>> = {
+  "%": "percent",
+  "mmol/L": "millimoles per litre",
+  "mg/dL": "milligrams per decilitre",
+  U: "units",
+  g: "grams",
+};
+
+/** The value alone; the label above it is read separately, so it is not repeated. */
+function spokenValue(text: string, unit: string | undefined) {
+  return unit ? `${text} ${SPOKEN_UNITS[unit] ?? unit}` : text;
+}
+
 export function TarvisShortAnswerCard({ model, details, footer }: Props) {
   const { colors, radius, dark } = useAppTheme();
   const { settings: appearance } = useGlucoseAppearance();
@@ -44,11 +57,21 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
 
   return (
     <View style={styles.card}>
-      <Text style={[styles.label, { color: colors.textSecondary }]}>{model.label}</Text>
+      {model.urgent ? (
+        <Text
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          style={[styles.urgentLabel, { color: colors.text }]}
+        >
+          {model.label}
+        </Text>
+      ) : (
+        <Text style={[styles.label, { color: colors.textSecondary }]}>{model.label}</Text>
+      )}
       {value ? (
         <View
           accessible
-          accessibilityLabel={`${model.label}: ${value.text}${value.unit ? ` ${value.unit}` : ""}`}
+          accessibilityLabel={spokenValue(value.text, value.unit)}
           style={styles.valueRow}
         >
           <Text maxFontSizeMultiplier={1.4} style={[styles.value, { color: valueColor }]}>
@@ -87,13 +110,23 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
 
       {model.safety ? (
         <View
+          {...(model.urgent ? { accessibilityRole: "alert" as const, accessibilityLiveRegion: "assertive" as const } : {})}
           style={[
             styles.safety,
             { backgroundColor: colors.surfaceMuted, borderColor: colors.warning, borderRadius: radius.md },
           ]}
         >
           <Ionicons accessibilityElementsHidden color={colors.warning} name="medical-outline" size={17} />
-          <Text style={[styles.safetyText, { color: colors.text }]}>{model.safety}</Text>
+          <View style={styles.safetyBody}>
+            <Text style={[model.urgent ? styles.urgentSafetyText : styles.safetyText, { color: colors.text }]}>
+              {model.safety}
+            </Text>
+            {model.safetyNotes?.map((note, index) => (
+              <Text key={`${index}:${note.slice(0, 24)}`} style={[styles.safetyNote, { color: colors.textSecondary }]}>
+                {note}
+              </Text>
+            ))}
+          </View>
         </View>
       ) : null}
 
@@ -162,6 +195,7 @@ export function TarvisShortAnswerCard({ model, details, footer }: Props) {
 const styles = StyleSheet.create({
   card: { gap: 6 },
   label: { fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  urgentLabel: { fontSize: 20, lineHeight: 26, fontWeight: "800" },
   valueRow: { flexDirection: "row", alignItems: "baseline", gap: 6 },
   value: { fontSize: 40, lineHeight: 46, fontWeight: "800", fontVariant: ["tabular-nums"] },
   unit: { fontSize: 16, lineHeight: 22, fontWeight: "600" },
@@ -173,7 +207,10 @@ const styles = StyleSheet.create({
   inlineAction: { minHeight: 44, justifyContent: "center", alignSelf: "flex-start" },
   inlineActionText: { fontSize: 14, fontWeight: "700" },
   safety: { flexDirection: "row", alignItems: "flex-start", gap: 9, padding: 12, borderWidth: 1 },
-  safetyText: { flex: 1, fontSize: 15, lineHeight: 22 },
+  safetyBody: { flex: 1, gap: 6 },
+  safetyText: { fontSize: 15, lineHeight: 22 },
+  urgentSafetyText: { fontSize: 17, lineHeight: 24, fontWeight: "700" },
+  safetyNote: { fontSize: 13, lineHeight: 19 },
   contextRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
   context: { flex: 1, fontSize: 13, lineHeight: 18 },
   meaningRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },

@@ -1507,6 +1507,42 @@ function describesInsulinHistoryOnly(text: string) {
   );
 }
 
+/**
+ * Asks to change, judge or choose a dose or setting, even next to a record
+ * question: "Lower my basal?", "how much to increase basal", "what ratio
+ * fits", "the best basal vs bolus split", "how much insulin would cover them",
+ * "how many units to bolus", "so I can pick my dose". Matched only with an
+ * insulin or setting word in the same prompt.
+ */
+const SETTING_OR_DOSE_JUDGEMENT = new RegExp(
+  [
+    // lower/raise/increase/decrease/change basal, ratio, ISF or target (not "did I change").
+    String.raw`\b(?:lower(?:ing)?|rais(?:e|ing)|increas(?:e|ing)|decreas(?:e|ing)|reduc(?:e|ing)|chang(?:e|ing)|adjust(?:ing)?|tweak(?:ing)?|bump(?:ing)?\s+up)\s+(?:(?:my|the|our|its|their)\s+)?(?:basal(?:\s+rates?)?|bolus(?:es)?|smbs?|carb(?:ohydrate)?\s+ratios?|(?:insulin[\s-]to[\s-]carb\s+)?ratios?|isf|insulin\s+sensitivity(?:\s+factor)?|sensitivity|correction\s+factors?|factors?|targets?|max\s+(?:iob|smb|basal)|dia)\b`,
+    // the best / ideal / right / better split, ratio or balance.
+    String.raw`\b(?:best|ideal|right|good|better|optimal|optimum|correct|proper|recommended|healthy|healthier|appropriate)\s+(?:basal[\s/-]*(?:vs\.?|versus|and|to|or|\/)?\s*bolus\s+)?(?:split|ratio|balance|mix|proportion|amounts?|basal|bolus|dose)\b`,
+    String.raw`\b(?:split|ratio|balance|mix|proportion)\b[\s\S]{0,30}\b(?:is|would\s+be|be)\s+(?:right|best|ideal|good|better|optimal|correct|ok(?:ay)?|enough)\b`,
+    String.raw`\b(?:suggest|propose|recommend)\w*\s+(?:a\s+|an\s+|the\s+|my\s+)?(?:better|new|different|good|right)?\s*(?:split|ratio|basal|bolus|dose|target|factor|setting)`,
+    // what ratio / factor / target fits.
+    String.raw`\bwhat\s+(?:carb(?:ohydrate)?\s+)?(?:ratio|factor|isf|sensitivity|target|basal(?:\s+rate)?|dose|split)\s+(?:fits|suits|works|would\s+(?:fit|suit|work|be\s+right)|is\s+(?:right|best|ideal)|do\s+i\s+need)\b`,
+    // insulin would cover them.
+    String.raw`\b(?:insulin|units?|bolus(?:es)?)\s+(?:would|will|should|could|to|do\s+i\s+need\s+to|needed\s+to)\s+cover\b`,
+    // how many units to bolus / how much to increase.
+    String.raw`\bhow\s+(?:many|much)\s+(?:more\s+|less\s+|fewer\s+|extra\s+)?(?:units?\s+|insulin\s+|basal\s+|bolus\s+)?(?:of\s+\w+\s+)?to\s+(?:bolus|take|give|inject|dose|correct|cover|use|increase|decrease|raise|lower|reduce|add|change)\b`,
+    // ...so I can pick my dose / so I can dose.
+    String.raw`\bso\s+(?:that\s+)?i\s+can\s+(?:(?:pick|choose|decide|work\s+out|set|plan|calculate|figure\s+out)\s+(?:my\s+|the\s+)?(?:dose|bolus|dosing|basal|insulin|units?|correction)|dose|bolus|inject|correct)\b`,
+    // what would you change / more basal would help / which is better.
+    String.raw`\bwhat\s+(?:would|should|could)\s+(?:you|i|we)\s+(?:change|adjust|tweak|do\s+differently)\b`,
+    String.raw`\b(?:basal|bolus|insulin|units?|smbs?)\b[\s\S]{0,30}\b(?:would|will|might|could)\s+help\b`,
+    String.raw`\bwhich\s+(?:one\s+)?(?:is|was|would\s+be)\s+(?:better|best|right|ideal|safer)\b`,
+  ].join("|"),
+  "i",
+);
+/** "did I change my basal", "when AAPS last lowered" describe history, not a request. */
+const HISTORICAL_SETTING_CHANGE =
+  /\b(?:did|have|has|had|when|was|were)\s+(?:i|you|aaps|the\s+loop|my\s+loop|it|we)\s+(?:last\s+|first\s+)?(?:lower|raise|increase|decrease|reduce|change|adjust|tweak|bump)\w*\b/gi;
+const INSULIN_OR_SETTING_CONTEXT =
+  /\b(?:insulin|basal|bolus(?:es)?|smbs?|units?|dose|doses|dosing|ratio|isf|sensitivity|correction|carbs?|target|factor)\b/i;
+
 /** A sentence that asks for an amount. */
 const QUANTITY_QUESTION =
   /\b(?:how much|how many|what (?:dose|amount|bolus|correction))\b/i;
@@ -1520,6 +1556,12 @@ const QUANTITY_QUESTION =
  * treatment change elsewhere in the prompt.
  */
 function requestsTreatmentAdvice(prompt: string) {
+  if (
+    SETTING_OR_DOSE_JUDGEMENT.test(prompt.replace(HISTORICAL_SETTING_CHANGE, " ")) &&
+    INSULIN_OR_SETTING_CONTEXT.test(prompt)
+  ) {
+    return true;
+  }
   const request =
     UNAMBIGUOUS_TREATMENT_ACTION.test(prompt) ||
     (DIRECT_TREATMENT_REQUEST.test(prompt) && DOSE_OR_SETTING.test(prompt)) ||

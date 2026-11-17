@@ -127,10 +127,15 @@ const TYPO_REPLACEMENTS: [RegExp, string][] = [
   [/\b(?:lwo|lwoes)\b/g, "lows"],
   [/\btim[ -]in[ -]range\b/g, "time in range"],
   // Speech-to-text forms of "time in range": "timing range", "time and
-  // range", "time in rage" and the hyphenated "time-in-range".
-  [/\btiming[ -]range\b/g, "time in range"],
-  [/\btime[ -](?:and|in)[ -]rage\b/g, "time in range"],
-  [/\btime[ -](?:and|in)[ -]range\b/g, "time in range"],
+  // range", "time in rage" and the hyphenated "time-in-range". The spoken
+  // forms are mapped only where they clearly name the metric ("my timing
+  // range", "what's my time and range"), never in "what time and range were
+  // my highs" or "my bolus timing range".
+  [/\btime-in-range\b/g, "time in range"],
+  [
+    /(^|\b(?:my|your|the|what's|whats|what is|was|is)\s+)(?:timing[ -]range|time[ -](?:and|in)[ -]rage|time[ -]and[ -]range)\b(?!\s+(?:of|were|was|for|did)\b)/g,
+    "$1time in range",
+  ],
   [/\byday\b/g, "yesterday"],
 ];
 

@@ -1369,6 +1369,8 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "Compare yesterday with today so far: meal boluses I entered, automatic SMBs, and carbs entered.",
     "How many grams of carbs did I enter on each of the last 7 days?",
     "Basal vs bolus split for the last 3 days?",
+    "Of the boluses AAPS gave me today, how many were automatic SMBs and how many did I enter myself? Totals in units.",
+    "How much insulin did AAPS give me today, split into basal and boluses?",
   ])("answers the record question %s", (question) => {
     expect(classifyTarvisSafety(question).kind).toBe("allow");
   });
@@ -1391,6 +1393,27 @@ describe("Tarv1s record questions about boluses versus dose requests", () => {
     "Compare yesterday with today so far and tell me how much to bolus now.",
     "How many SMBs did I get today? Should I lower my basal?",
     "How many carbs did I enter each day this week, and how many units should I take for them?",
+    // Review regressions: a record question joined to a dose or setting request.
+    "How many units to bolus today based on SMBs vs entered by me yesterday",
+    "How much basal vs bolus did I have yesterday. Lower my basal?",
+    "today basal vs bolus totals, then how much to increase basal",
+    "What's the best basal vs bolus split for today, in units",
+    "How many carbs per day did I eat in the last 7 days? What ratio fits?",
+    "How many carbs did I enter each day for the last 7 days and how much insulin would cover them?",
+    "How much basal vs bolus today and what would be a good split?",
+    "What basal vs bolus split is right for me today?",
+    "How much insulin today split into basal and boluses so I can pick my dose",
+    "basal vs bolus split today, suggest a better split",
+    "How many grams of carbs did I log each day the last 7 days so I can dose",
+    "How many SMBs did I get today, I want to increase my basal",
+    "Compare yesterday with today so far: SMBs, boluses I entered. How much more basal would help",
+    "How much insulin did I take yesterday split into basal and bolus, and what would you change",
+    "Break down basal vs bolus today, I'm thinking of raising basal 10%",
+    "Compare yesterday with today: SMBs vs boluses I entered. Which is better?",
+    "How many SMBs today? Raise my ISF?",
+    "Basal vs bolus yesterday - should my target change? Lower the target?",
+    "How many boluses yesterday, and what is the ideal split",
+    "Change my carb ratio based on yesterday's carbs",
   ])("still refuses the dose or setting request %s", (question) => {
     const decision = classifyTarvisSafety(question);
     expect(decision.kind).toBe("treatment-advice");
