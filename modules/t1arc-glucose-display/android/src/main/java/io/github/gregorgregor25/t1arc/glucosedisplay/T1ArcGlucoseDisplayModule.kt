@@ -3502,7 +3502,7 @@ class T1ArcAodAccessibilityService : AccessibilityService() {
     receiverRegistered = true
     T1ArcAodDiagnostics.recordEvent(
       this,
-      "T1 Arc service connected · lock your Pixel to test",
+      "T1 Arc service connected · lock your phone to test",
     )
     handler.postDelayed({ triggerDisplayCheck() }, 500L)
   }

@@ -10,7 +10,7 @@ export const SOURCE_SETUP_GUIDES: Partial<
     intro:
       "Read glucose and AAPS-calculated IOB and COB from AndroidAPS on this phone, including when the internet is unavailable.",
     steps: [
-      "Keep Juggluco sending glucose to AAPS through its existing xDrip broadcast setup.",
+      "Keep your glucose app (for example Juggluco or xDrip+) sending readings to AAPS as it does now.",
       "In AAPS, open Config Builder, then Synchronization, and enable External Companion Apps.",
       "Return here and choose Use AAPS as glucose source.",
       "Wait for a new AAPS update, then compare its glucose and time with AAPS. Check IOB and COB below the glucose card on Today.",

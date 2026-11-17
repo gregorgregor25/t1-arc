@@ -145,7 +145,7 @@ export function GlucoseDisplayCard({
     if (enabled && !connected) {
       Alert.alert(
         'Connect personal glucose first',
-        'Save and verify your LibreLinkUp follower connection before enabling glucose at a glance.',
+        'Connect and test a glucose source in Settings before turning on glucose at a glance.',
       );
       return;
     }
@@ -403,8 +403,8 @@ export function GlucoseDisplayCard({
           <Text style={[styles.body, { color: colors.textSecondary }]}>
             A prominent ongoing notification shows personal glucose, direction
             and age without sound or vibration. While enabled, T1 Arc checks
-            LibreLinkUp more frequently when a new reading is expected,
-            including when the app is closed.
+            for new readings more often when one is expected, including when
+            the app is closed.
           </Text>
         </View>
       </View>
@@ -419,7 +419,7 @@ export function GlucoseDisplayCard({
                     : status.freshness
                 }`
               : 'Status bar and notification shade'
-            : 'Connect LibreLinkUp first'
+            : 'Connect a glucose source first'
         }
         disabled={busy || !status?.supported}
         label="Keep glucose visible"
@@ -458,7 +458,7 @@ export function GlucoseDisplayCard({
       {enabled ? (
         <>
           <SettingRow
-            detail="Turn off to hide glucose, IOB and COB until your Pixel is unlocked"
+            detail="Turn off to hide glucose, IOB and COB until your phone is unlocked"
             disabled={busy}
             label="Show value on lock screen"
             onValueChange={requestLockScreenVisible}
@@ -467,7 +467,7 @@ export function GlucoseDisplayCard({
           <SettingRow
             detail={
               aodReady
-                ? 'Ready to appear after your Pixel enters always-on mode'
+                ? 'Ready to appear when your phone shows its always-on screen'
                 : status?.aodDesired
                   ? 'Enable the T1 Arc service, not its shortcut button'
                   : 'Optional value and direction on the locked dark screen'
@@ -681,7 +681,7 @@ export function GlucoseDisplayCard({
               {status?.aodLastError
                 ? `Last display error: ${status.aodLastError}`
                 : status?.aodLastEvent ??
-                  'Lock your Pixel to test the low-power display.'}
+                  'Lock your phone to test the always-on display.'}
             </Text>
           </View>
         </View>
