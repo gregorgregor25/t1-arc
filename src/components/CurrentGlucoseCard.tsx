@@ -2,6 +2,7 @@ import cardSpec from '../../modules/t1arc-glucose-display/shared/current-glucose
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -49,6 +50,7 @@ import {
   nowCardState,
   staleReadingMessage,
   type NowStateShape,
+  type NowTherapyStateLine,
 } from './nowCardPresentation';
 import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 import {
@@ -685,7 +687,82 @@ export function CurrentGlucoseCard({
   );
 }
 
+const THERAPY_STATE_ICONS: Record<NowTherapyStateLine['state']['kind'], keyof typeof Ionicons.glyphMap> = {
+  'temporary-target': 'flag-outline',
+  'profile-switch': 'person-outline',
+  'loop-mode': 'sync-outline',
+  'pump-suspend': 'pause-circle-outline',
+  exercise: 'walk-outline',
+};
+
+/**
+ * One calm chip per recorded AAPS state that is active now (at most two),
+ * shown under the Now card. Tapping shows the full record and its source
+ * (AAPS on this phone, or Nightscout). It repeats what was recorded and
+ * suggests nothing.
+ */
+export function NowTherapyStateChips({ lines }: { lines: readonly NowTherapyStateLine[] }) {
+  const { colors, radius, type } = useAppTheme();
+  if (!lines.length) return null;
+
+  function showRecord(line: NowTherapyStateLine) {
+    Alert.alert(
+      'Recorded setting',
+      `${line.detail}
+
+Source: ${line.source}
+
+This shows what your loop recorded. T1 Arc does not change any setting.`,
+    );
+  }
+
+  return (
+    <View accessibilityLabel="Recorded loop settings now" style={styles.therapyRow}>
+      {lines.map((line) => (
+        <Pressable
+          key={line.id}
+          accessibilityRole="button"
+          accessibilityLabel={`Recorded setting: ${line.text}`}
+          accessibilityHint="Shows the full record and where it came from"
+          onPress={() => showRecord(line)}
+          style={({ pressed }) => [
+            styles.therapyChip,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+              borderRadius: radius.pill,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textSecondary}
+            name={THERAPY_STATE_ICONS[line.state.kind]}
+            size={15}
+          />
+          <Text style={[styles.therapyLabel, { color: colors.text, fontSize: type.callout }]}>
+            {line.text}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  therapyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  therapyChip: {
+    minHeight: 44,
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  therapyLabel: { flexShrink: 1, fontWeight: '700' },
   card: {
     padding: cardSpec.padding,
     overflow: 'hidden',

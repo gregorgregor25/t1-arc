@@ -8,7 +8,8 @@ import { AppMenuButton } from "@/components/AppMenuButton";
 import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
-import { CurrentGlucoseCard } from "@/components/CurrentGlucoseCard";
+import { CurrentGlucoseCard, NowTherapyStateChips } from "@/components/CurrentGlucoseCard";
+import { nowTherapyStateLines } from "@/components/nowCardPresentation";
 import { ErrorCard } from "@/components/ErrorCard";
 import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -276,6 +277,23 @@ export function TodayScreen() {
     : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
+  // Recorded AAPS states active now ("Activity target until 11:30"). They
+  // are trusted as current only while AAPS or Nightscout data is arriving:
+  // a glucose reading from the loop source, or a recent live insulin record.
+  const therapyStateLines = useMemo(() => {
+    const data = todayTimeline.data;
+    if (!data?.therapyStates?.length) return [];
+    const loopReadingAt =
+      cardReading && (cardReading.sourceId === "aaps-local" || cardReading.sourceId === NIGHTSCOUT_SOURCE_ID)
+        ? cardReading.timestamp
+        : undefined;
+    const insulinStatus = data.sources.find((source) => source.label === "Insulin");
+    const liveInsulinAt = insulinStatus?.isLive ? insulinStatus.dataThrough : undefined;
+    const seen = Math.max(loopReadingAt ?? Number.NEGATIVE_INFINITY, liveInsulinAt ?? Number.NEGATIVE_INFINITY);
+    // States are read up to the end of the loaded day; an old load is stale too.
+    const freshAt = Number.isFinite(seen) ? Math.min(seen, data.range.end) : undefined;
+    return nowTherapyStateLines(data.therapyStates, now, freshAt);
+  }, [cardReading, now, todayTimeline.data]);
 
   return (
     <View style={styles.screen}>
@@ -319,6 +337,7 @@ export function TodayScreen() {
         )}
         {/* Checks shrink to chips under Now until they need attention. */}
         <View style={styles.chips}>
+          <NowTherapyStateChips lines={therapyStateLines} />
           <SensorChangeStatus
             onRecord={() => chooseLogEntry('sensor-start')}
             showRecordAction={false}

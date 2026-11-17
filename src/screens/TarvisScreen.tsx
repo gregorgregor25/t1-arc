@@ -23,7 +23,16 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
+import { AppMenuButton } from "@/components/AppMenuButton";
 import { AppScreen } from "@/components/AppScreen";
+import { TarvisHeaderMenu } from "@/components/tarvis/TarvisHeaderMenu";
+import {
+  tarvisHeaderMenuItems,
+  type TarvisHeaderMenuItemId,
+} from "@/components/tarvis/headerMenuItems";
+import type { RootTabParamList } from "@/navigation/AppNavigator";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { SectionCard } from "@/components/SectionCard";
 import { ChatGptConnectionCard } from "@/components/ChatGptConnectionCard";
 import { TarvisPeriodSummaryCard } from "@/components/TarvisPeriodSummaryCard";
@@ -103,7 +112,7 @@ import { focusTarvisEpisodeReviewPacket } from "@/data/tarvis/episodeReviewPacke
 import { buildTarvisSuggestions, isDefaultContextQuestion, type TarvisEntry } from '@/domain/tarvisEntry';
 import { PersonalNotebook } from '@/components/PersonalNotebook';
 import { SaveToNotebookButton } from '@/components/SaveToNotebookButton';
-import { TarvisReportButton } from '@/components/TarvisReportButton';
+import { TarvisReportButton, TarvisReportSheet } from '@/components/TarvisReportButton';
 import type { NotebookEntry } from '@/domain/personalNotebook';
 import { buildSelectedContextAnswer, selectedContextRange } from '@/data/tarvis/selectedContextAnswer';
 import { buildSelectedHealthEvidencePacket } from '@/data/tarvis/selectedHealthEvidence';
@@ -1369,6 +1378,15 @@ export function TarvisScreen({
   onInspectEvidence,
 }: Props) {
   const { colors, radius } = useAppTheme();
+  const navigation = useNavigation<NavigationProp<RootTabParamList>>();
+  // Connection and privacy, and the weekly review reminder, live in Settings.
+  const openTarvisSettingsPage = useCallback(() => {
+    navigation.navigate("Sources", sourceSettingsRouteParams("tarvis"));
+  }, [navigation]);
+  const openWeeklyReviewSettings = useCallback(() => {
+    navigation.navigate("Sources", sourceSettingsRouteParams("notifications"));
+  }, [navigation]);
+  const [reportSheetVisible, setReportSheetVisible] = useState(false);
   const insets = useSystemBarInsets();
   const evidence = useMemo(() => report ? buildTarvisEvidencePacket(report) : undefined, [report]);
   const { settings: glucoseAppearance } = useGlucoseAppearance();
@@ -3229,43 +3247,74 @@ export function TarvisScreen({
     }
   }
 
+  const headerMenuItems = tarvisHeaderMenuItems({
+    historyVisible,
+    conversationVisible,
+    exchangeCount: exchanges.length,
+    notebookAvailable: conversationScope.kind !== 'legacy-unknown',
+    working,
+  });
+  const latestExchange = exchanges.length ? exchanges[exchanges.length - 1] : undefined;
+
+  function chooseHeaderMenuItem(id: TarvisHeaderMenuItemId) {
+    switch (id) {
+      case "history":
+        setHistoryVisible(true);
+        setError(undefined);
+        return;
+      case "new-conversation":
+        if (exchangesRef.current.length) confirmNewConversation();
+        else questionInputRef.current?.focus();
+        return;
+      case "notebook":
+        setNotebookSeed(undefined);
+        setNotebookVisible(true);
+        return;
+      case "export":
+        void exportConversation();
+        return;
+      case "report":
+        if (latestExchange) setReportSheetVisible(true);
+        return;
+      case "weekly-reviews":
+        openWeeklyReviewSettings();
+        return;
+      case "settings":
+        openTarvisSettingsPage();
+        return;
+    }
+  }
+
+  // One header menu holds history, new conversation, notebook, export,
+  // reporting and the links to Settings. The left button is the usual
+  // Settings gear on the Ask home, and Back everywhere else.
+  const subViewOpen = settingsVisible || historyVisible || conversationVisible;
   const compactHeader = (
     <View style={styles.compactHeader}>
-      <Pressable
-        accessibilityLabel={
-          settingsVisible
-            ? settingsOpenedFromMenu.current ? "Back to Settings" : "Back to Tarv1s"
-            : historyVisible
-              ? "Back to Tarv1s home"
-              : conversationVisible
-                ? "Back to Tarv1s home"
-                : "Open conversation history"
-        }
-        accessibilityRole="button"
-        onPress={() => {
-          if (settingsVisible || historyVisible || conversationVisible) {
-            handleBack();
-            return;
+      {subViewOpen ? (
+        <Pressable
+          accessibilityLabel={
+            settingsVisible
+              ? settingsOpenedFromMenu.current ? "Back to Settings" : "Back to Tarv1s"
+              : "Back to Tarv1s home"
           }
-          setHistoryVisible(true);
-          setError(undefined);
-        }}
-        style={({ pressed }) => [
-          styles.compactHeaderButton,
-          { opacity: pressed ? 0.55 : 1 },
-        ]}
-      >
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.textSecondary}
-          name={
-            settingsVisible || historyVisible || conversationVisible
-              ? "chevron-back"
-              : "albums-outline"
-          }
-          size={21}
-        />
-      </Pressable>
+          accessibilityRole="button"
+          onPress={handleBack}
+          style={({ pressed }) => [
+            styles.compactHeaderButton,
+            { opacity: pressed ? 0.55 : 1 },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textSecondary}
+            name="chevron-back"
+            size={21}
+          />
+        </Pressable>
+      ) : (
+        <AppMenuButton />
+      )}
       <View style={styles.compactHeaderCopy}>
         <Text
           accessibilityRole="header"
@@ -3287,33 +3336,11 @@ export function TarvisScreen({
               : "Your health companion"}
         </Text>
       </View>
-      <Pressable
-        accessibilityLabel={
-          historyVisible || !conversationVisible ? "Open Tarv1s settings" : "Start a new conversation"
-        }
-        accessibilityRole="button"
-        accessibilityState={{ disabled: settingsVisible || working }}
-        disabled={settingsVisible || working}
-        onPress={() => {
-          if (historyVisible || !conversationVisible) {
-            setSettingsVisible(true);
-            return;
-          }
-          if (exchangesRef.current.length) confirmNewConversation();
-          else questionInputRef.current?.focus();
-        }}
-        style={({ pressed }) => [
-          styles.compactHeaderButton,
-          { opacity: settingsVisible || working ? 0 : pressed ? 0.55 : 1 },
-        ]}
-      >
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.textSecondary}
-          name={historyVisible || !conversationVisible ? "settings-outline" : "create-outline"}
-          size={22}
-        />
-      </Pressable>
+      {settingsVisible ? (
+        <View style={styles.compactHeaderButton} />
+      ) : (
+        <TarvisHeaderMenu items={headerMenuItems} onSelect={chooseHeaderMenuItem} />
+      )}
     </View>
   );
 
@@ -3360,7 +3387,7 @@ export function TarvisScreen({
             </Text>
             {provider === "chatgpt" && errorManageUsage ? (
               <Pressable accessibilityRole="link" onPress={() => void Linking.openURL("https://chatgpt.com/settings/usage").catch(() => setError("ChatGPT usage settings could not be opened."))} style={{ padding: 12 }}><Text style={{ color: colors.primary, fontWeight: "700" }}>Manage usage in ChatGPT</Text></Pressable>
-            ) : errorNeedsSettings ? <Pressable accessibilityRole="button" onPress={() => setSettingsVisible(true)} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>Connection settings</Text></Pressable> : null}
+            ) : errorNeedsSettings ? <Pressable accessibilityRole="button" accessibilityHint="Opens Tarv1s in Settings" onPress={openTarvisSettingsPage} style={{ padding: 12 }}><Text style={{ color: colors.primary }}>Connection settings</Text></Pressable> : null}
           </View>
         ) : null}
         <Text style={[styles.boundary, { color: colors.textSecondary }]}>
@@ -3443,35 +3470,6 @@ export function TarvisScreen({
       </View>
     ) : undefined;
 
-  const conversationActions = exchanges.length ? (
-    <View style={styles.conversationActions}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => void exportConversation()}
-        style={({ pressed }) => [
-          styles.conversationAction,
-          {
-            borderColor: colors.border,
-            borderRadius: radius.md,
-            opacity: pressed ? 0.65 : 1,
-          },
-        ]}
-      >
-        <Ionicons
-          accessibilityElementsHidden
-          color={colors.primary}
-          name="share-outline"
-          size={18}
-        />
-        <Text
-          style={[styles.conversationActionText, { color: colors.primary }]}
-        >
-          Export conversation
-        </Text>
-      </Pressable>
-    </View>
-  ) : null;
-
   // Key-free period summaries are the first thing a person sees until an AI
   // provider is connected. They are calculated on this phone from templates.
   const periodSummaryCard = liveData && loadTimelineData ? (
@@ -3504,17 +3502,6 @@ export function TarvisScreen({
           />
         )}
 
-        {!settingsVisible && conversationScope.kind !== 'legacy-unknown' ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open my notebook"
-            onPress={() => { setNotebookSeed(undefined); setNotebookVisible(true); }}
-            style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.65 : 1 })}
-          >
-            <Ionicons accessibilityElementsHidden name="bookmark-outline" size={18} color={colors.primary} />
-            <Text style={[styles.conversationActionText, { color: colors.primary }]}>My notebook</Text>
-          </Pressable>
-        ) : null}
         {loadingSettings && settingsVisible ? (
           <SectionCard style={styles.loadingCard}>
             <ActivityIndicator color={colors.primary} />
@@ -3858,9 +3845,8 @@ export function TarvisScreen({
               openConversationThread(threadId);
             }}
             onOpenSettings={() => {
-              setHistoryVisible(false);
-              setSettingsVisible(true);
               setError(undefined);
+              openTarvisSettingsPage();
             }}
             threads={recentThreads}
           />
@@ -3973,10 +3959,6 @@ export function TarvisScreen({
               </View>
             ) : null}
 
-            {conversationVisible && exchanges.length
-              ? conversationActions
-              : null}
-
             {!conversationVisible ? (
               <View style={styles.suggestions}>
                 {suggestions.map((suggestion) => (
@@ -4023,13 +4005,15 @@ export function TarvisScreen({
 
             {!conversationVisible && !periodSummaryFirst ? periodSummaryCard : null}
 
-            {!conversationVisible && recentThreads.length ? (
+            {!conversationVisible &&
+            (recentThreads.length || conversationScope.kind !== 'legacy-unknown') ? (
               <View style={styles.recentSection}>
                 <View style={styles.recentHeadingRow}>
-                  <Text style={[styles.recentHeading, { color: colors.text }]}>
-                    Recent conversations
+                  <Text accessibilityRole="header" style={[styles.recentHeading, { color: colors.text }]}>
+                    Recent
                   </Text>
-                  <Pressable
+                  {recentThreads.length ? <Pressable
+                    accessibilityLabel="See all conversations"
                     accessibilityRole="button"
                     onPress={() => setHistoryVisible(true)}
                     style={({ pressed }) => ({ justifyContent: "center", minHeight: 44, opacity: pressed ? 0.6 : 1 })}
@@ -4042,7 +4026,7 @@ export function TarvisScreen({
                     >
                       See all
                     </Text>
-                  </Pressable>
+                  </Pressable> : null}
                 </View>
                 <View style={styles.recentList}>
                   {recentThreads.slice(0, 3).map((thread) => (
@@ -4094,6 +4078,44 @@ export function TarvisScreen({
                       />
                     </Pressable>
                   ))}
+                  {conversationScope.kind !== 'legacy-unknown' ? (
+                    <Pressable
+                      accessibilityHint="Saved answers and appointment notes"
+                      accessibilityLabel="Open my notebook"
+                      accessibilityRole="button"
+                      onPress={() => { setNotebookSeed(undefined); setNotebookVisible(true); }}
+                      style={({ pressed }) => [
+                        styles.recentConversation,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          borderRadius: radius.md,
+                          opacity: pressed ? 0.72 : 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        accessibilityElementsHidden
+                        color={colors.primary}
+                        name="bookmark-outline"
+                        size={20}
+                      />
+                      <View style={styles.recentConversationCopy}>
+                        <Text style={[styles.recentConversationTitle, { color: colors.text }]}>
+                          My notebook
+                        </Text>
+                        <Text style={[styles.recentConversationMeta, { color: colors.textTertiary }]}>
+                          Saved answers and appointment notes
+                        </Text>
+                      </View>
+                      <Ionicons
+                        accessibilityElementsHidden
+                        color={colors.textTertiary}
+                        name="chevron-forward"
+                        size={18}
+                      />
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             ) : null}
@@ -4414,6 +4436,13 @@ export function TarvisScreen({
           </>
         )}
       </AppScreen>
+      <TarvisReportSheet
+        key={latestExchange ? `menu-report-${latestExchange.id}` : "menu-report"}
+        visible={reportSheetVisible && latestExchange !== undefined}
+        onClose={() => setReportSheetVisible(false)}
+        response={latestExchange?.answer.answer ?? ""}
+        disabled={working}
+      />
       {conversationScope.kind !== 'legacy-unknown' ? <PersonalNotebook visible={notebookVisible} onClose={() => { setNotebookVisible(false); setNotebookSeed(undefined); }} ownerIdentity={conversationScope.ownerIdentity} dataMode={conversationScope.dataMode} seed={notebookSeed} /> : null}
       <Modal
         animationType="fade"

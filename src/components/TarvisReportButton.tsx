@@ -10,8 +10,33 @@ import { PrivacyPolicyLink } from '@/components/PrivacyPolicyLink';
 
 /** Each mounted exchange owns its draft. Nothing is saved or sent on opening. */
 export function TarvisReportButton({ response, disabled = false }: { response: string; disabled?: boolean }) {
-  const { colors, radius } = useAppTheme();
+  const { colors } = useAppTheme();
   const [visible, setVisible] = useState(false);
+  return <>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={() => setVisible(true)} style={({ pressed }) => [styles.inline, { opacity: pressed || disabled ? 0.55 : 1 }]}>
+      <Ionicons name="flag-outline" size={17} color={colors.textSecondary} accessibilityElementsHidden />
+      <Text style={[styles.label, { color: colors.textSecondary }]}>Report response</Text>
+    </Pressable>
+    <TarvisReportSheet visible={visible} onClose={() => setVisible(false)} response={response} disabled={disabled} />
+  </>;
+}
+
+/**
+ * The report form on its own, so the Tarv1s menu can open it for the latest
+ * answer. Each opening starts a fresh draft with a new reference; nothing is
+ * saved or sent on opening.
+ */
+export function TarvisReportSheet({ visible, onClose, response, disabled = false }: {
+  visible: boolean;
+  onClose(): void;
+  response: string;
+  disabled?: boolean;
+}) {
+  return visible ? <TarvisReportForm onClose={onClose} response={response} disabled={disabled} /> : null;
+}
+
+function TarvisReportForm({ onClose, response, disabled }: { onClose(): void; response: string; disabled: boolean }) {
+  const { colors, radius } = useAppTheme();
   const [text, setText] = useState('');
   const [reason, setReason] = useState<ReportReason>('incorrect');
   const [consent, setConsent] = useState(false);
@@ -19,18 +44,14 @@ export function TarvisReportButton({ response, disabled = false }: { response: s
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string>();
-  const [id, setId] = useState('');
+  const [id] = useState(() => Crypto.randomUUID());
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); }, []);
   const version = Application.nativeApplicationVersion ?? 'unknown';
-  function open() {
-    setId(Crypto.randomUUID()); setText(''); setReason('incorrect'); setConsent(false);
-    setIncluded(false); setSent(false); setError(undefined); setVisible(true);
-  }
   function close() {
     // Do not imply that closing an in-flight request can recall an email.
     if (active.current) return;
-    setVisible(false); setText(''); setConsent(false);
+    setText(''); setConsent(false); onClose();
   }
   async function send() {
     if (active.current || !consent || !text.trim() || disabled) return;
@@ -49,11 +70,7 @@ export function TarvisReportButton({ response, disabled = false }: { response: s
   const muted = { color: colors.textSecondary };
   const ink = { color: colors.text };
   return <>
-    <Pressable accessibilityRole="button" disabled={disabled} onPress={open} style={({ pressed }) => [styles.inline, { opacity: pressed || disabled ? 0.55 : 1 }]}>
-      <Ionicons name="flag-outline" size={17} color={colors.textSecondary} accessibilityElementsHidden />
-      <Text style={[styles.label, muted]}>Report response</Text>
-    </Pressable>
-    <Modal visible={visible} animationType="slide" onRequestClose={close} presentationStyle="pageSheet">
+    <Modal visible animationType="slide" onRequestClose={close} presentationStyle="pageSheet">
       <SafeAreaView style={[styles.fill, { backgroundColor: colors.background }]}>
         <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>

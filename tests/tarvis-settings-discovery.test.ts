@@ -15,9 +15,11 @@ describe('Tarv1s settings discovery contract', () => {
     expect(parent).toContain("navigation.navigate('Sources', { focused: false, source: undefined })");
   });
 
-  it('offers settings on Tarv1s home without visiting conversation history', () => {
+  it('offers settings from the Tarv1s header menu by linking to Settings, Tarv1s', () => {
     const source = readFileSync('src/screens/TarvisScreen.tsx', 'utf8');
-    expect(source).toContain('historyVisible || !conversationVisible ? "Open Tarv1s settings"');
+    expect(source).toContain('navigation.navigate("Sources", sourceSettingsRouteParams("tarvis"))');
+    expect(source).toMatch(/case "settings":\s*openTarvisSettingsPage\(\);/);
+    expect(source).toContain('<TarvisHeaderMenu items={headerMenuItems} onSelect={chooseHeaderMenuItem} />');
     expect(source).toMatch(/if \(settingsVisible\) \{[\s\S]{0,500}?closeTarvisSettings\(\);/);
     expect(source).toContain('settingsOpenedFromMenu.current = false;');
     expect(source).toContain('onReturnToSettings?.();');
