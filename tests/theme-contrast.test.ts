@@ -6,7 +6,7 @@ import {
   contrastRatio,
   WCAG_AA_NON_TEXT,
   WCAG_AA_NORMAL_TEXT,
-} from '@/theme/contrast';
+} from './support/contrast';
 import type { AppColors } from '@/theme/theme';
 
 type PaletteName = keyof typeof appColors;
