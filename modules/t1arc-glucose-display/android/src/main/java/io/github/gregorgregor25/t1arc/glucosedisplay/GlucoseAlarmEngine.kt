@@ -112,26 +112,63 @@ internal data class NativeGlucoseAlarmConfiguration(val json: JSONObject) {
   val rampSeconds = json.getDouble("rampSeconds")
   val policy = GlucoseAlarmPolicyConfig(
     enabled = enabled,
+    urgentLowEnabled = json.getBoolean("urgentLowEnabled"), urgentLowThreshold = json.getDouble("urgentLowThresholdMmolL"),
     lowEnabled = json.getBoolean("lowEnabled"), lowThreshold = json.getDouble("lowThresholdMmolL"),
     highEnabled = json.getBoolean("highEnabled"), highThreshold = json.getDouble("highThresholdMmolL"),
     veryHighEnabled = json.getBoolean("veryHighEnabled"),
     veryHighThreshold = if (json.isNull("veryHighThresholdMmolL")) null else json.getDouble("veryHighThresholdMmolL"),
     staleEnabled = json.getBoolean("staleEnabled"), repeatMinutes = json.getInt("repeatMinutes"),
     nightEnabled = json.getBoolean("nightEnabled"), nightStart = json.getInt("nightStartMinutes"), nightEnd = json.getInt("nightEndMinutes"),
+    highPersistMinutes = json.getInt("highPersistMinutes"), hypoTreatmentSnoozeMinutes = json.getInt("hypoTreatmentSnoozeMinutes"),
   )
 
-  fun sound(kind: GlucoseAlarmKind): String = json.getString(when (kind) {
-    GlucoseAlarmKind.LOW -> "lowSound"; GlucoseAlarmKind.HIGH -> "highSound"
-    GlucoseAlarmKind.VERY_HIGH -> "veryHighSound"; GlucoseAlarmKind.STALE -> "staleSound"
-  })
+  fun sound(kind: GlucoseAlarmKind): String = json.getString(soundKey(kind))
 
   companion object {
-    fun parse(fields: Map<String, Any?>): NativeGlucoseAlarmConfiguration {
-      val booleans = listOf("enabled", "audioEnabled", "lowEnabled", "highEnabled", "veryHighEnabled", "staleEnabled", "nightEnabled")
+    fun soundKey(kind: GlucoseAlarmKind) = when (kind) {
+      GlucoseAlarmKind.URGENT_LOW -> "urgentLowSound"; GlucoseAlarmKind.LOW -> "lowSound"; GlucoseAlarmKind.HIGH -> "highSound"
+      GlucoseAlarmKind.VERY_HIGH -> "veryHighSound"; GlucoseAlarmKind.STALE -> "staleSound"
+    }
+
+    /**
+     * Version 1 choices (saved before urgent low, the high delay and the hypo
+     * pause existed) are upgraded in memory with quiet defaults. The master
+     * switch and the sound switch are never changed by this upgrade.
+     */
+    private fun upgradeVersion1(fields: Map<String, Any?>): Map<String, Any?> {
+      val low = (fields["lowThresholdMmolL"] as? Number)?.toDouble() ?: return fields
+      val (urgentEnabled, urgentThreshold) = GlucoseAlarmPolicy.migratedUrgentLow(fields["lowEnabled"] == true, low)
+      return fields + mapOf(
+        "schemaVersion" to 2.0,
+        "urgentLowEnabled" to urgentEnabled,
+        "urgentLowThresholdMmolL" to urgentThreshold,
+        "urgentLowSound" to fields["lowSound"],
+        "highPersistMinutes" to 0.0,
+        "hypoTreatmentSnoozeMinutes" to GlucoseAlarmPolicy.DEFAULT_HYPO_TREATMENT_SNOOZE_MINUTES.toDouble(),
+      )
+    }
+
+    fun parse(input: Map<String, Any?>): NativeGlucoseAlarmConfiguration {
+      val version = (input["schemaVersion"] as? Number)?.toDouble()
+      require(version == 1.0 || version == 2.0) { "Alarm configuration version is unsupported." }
+      val fields = if (version == 1.0) upgradeVersion1(input) else input
+      val booleans = listOf("enabled", "audioEnabled", "urgentLowEnabled", "lowEnabled", "highEnabled", "veryHighEnabled", "staleEnabled", "nightEnabled")
       require(booleans.all { fields[it] is Boolean }) { "Every glucose alarm switch must be on or off." }
-      val numbers = listOf("schemaVersion", "lowThresholdMmolL", "highThresholdMmolL", "repeatMinutes", "nightStartMinutes", "nightEndMinutes", "volume", "rampSeconds")
+      val numbers = listOf("schemaVersion", "urgentLowThresholdMmolL", "lowThresholdMmolL", "highThresholdMmolL", "repeatMinutes",
+        "nightStartMinutes", "nightEndMinutes", "volume", "rampSeconds", "highPersistMinutes", "hypoTreatmentSnoozeMinutes")
       require(numbers.all { (fields[it] as? Number)?.toDouble()?.isFinite() == true }) { "Alarm numbers must be finite." }
-      require((fields["schemaVersion"] as Number).toDouble() == 1.0) { "Alarm configuration version is unsupported." }
+      require((fields["highPersistMinutes"] as Number).toDouble() in GlucoseAlarmPolicy.PERSIST_MINUTES.map { it.toDouble() }) {
+        "Choose a supported delay for high alerts."
+      }
+      require((fields["hypoTreatmentSnoozeMinutes"] as Number).toDouble() in GlucoseAlarmPolicy.HYPO_TREATMENT_SNOOZE_MINUTES.map { it.toDouble() }) {
+        "Choose a supported pause after a logged hypo treatment."
+      }
+      val urgent = (fields["urgentLowThresholdMmolL"] as Number).toDouble()
+      val low = (fields["lowThresholdMmolL"] as Number).toDouble()
+      require(urgent in 2.0..4.0) { "Choose an urgent low level between 2.0 and 4.0 mmol/L." }
+      require(fields["urgentLowEnabled"] != true || fields["lowEnabled"] != true || urgent < low) {
+        "The urgent low level must be below the low level."
+      }
       require(fields.containsKey("veryHighThresholdMmolL"))
       val high = fields["veryHighThresholdMmolL"]
       require(high == null || (high is Number && high.toDouble().isFinite())) { "Very high glucose level is invalid." }
@@ -146,7 +183,7 @@ internal data class NativeGlucoseAlarmConfiguration(val json: JSONObject) {
       })
       require(!config.policy.nightEnabled || config.policy.nightStart != config.policy.nightEnd)
       require(config.volume in 0f..1f && config.rampSeconds in 0.0..15.0)
-      require(listOf("lowSound", "highSound", "veryHighSound", "staleSound").all { key ->
+      require(GlucoseAlarmKind.entries.map { soundKey(it) }.all { key ->
         val id = fields[key] as? String; id == "pulse" || id == "notes" || id?.matches(Regex("custom:[a-f0-9-]{36}")) == true
       }) { "Choose a built-in sound or an imported sound." }
       return config
@@ -160,8 +197,13 @@ internal object T1ArcGlucoseAlarmEngine {
   private val handler = Handler(Looper.getMainLooper())
   private var root: JSONObject? = null
   private var loaded = false
-  private var armedInProcess = false
+  // Audio arming is derived from the saved choice (configuration enabled +
+  // audioEnabled), never from an in-memory flag that a settings save had to
+  // set. A process restart, reboot or app update therefore keeps it armed.
   private var episode: GlucoseAlarmEpisode? = null
+  /** Lock-free copy for the ongoing notification builder; never contains glucose values. */
+  @Volatile var ongoingWarning: String? = null
+    private set
   private var missing = false
   private var playbackState = "idle"
   private var player: MediaPlayer? = null
@@ -171,6 +213,7 @@ internal object T1ArcGlucoseAlarmEngine {
   private var previewActive = false
   private var activePlaybackEpisode: String? = null
   private var notificationFingerprint: String? = null
+  private var pendingEpisodeId: String? = null
   private val processClockIdentity = -(UUID.randomUUID().hashCode() and Int.MAX_VALUE).coerceAtLeast(1)
 
   fun configured(context: Context) = GlucoseAlarmStore.configured(context)
@@ -186,7 +229,8 @@ internal object T1ArcGlucoseAlarmEngine {
           if (e.isNull("lastNotifiedElapsed")) null else e.getLong("lastNotifiedElapsed"),
           e.optBoolean("acknowledged"),
           if (e.isNull("snoozeUntilElapsed")) null else e.getLong("snoozeUntilElapsed"),
-          if (e.isNull("snoozeUntilWall")) null else e.getLong("snoozeUntilWall"), e.getInt("bootCount"))
+          if (e.isNull("snoozeUntilWall")) null else e.getLong("snoozeUntilWall"), e.getInt("bootCount"),
+          if (!e.has("excursionStartedAt") || e.isNull("excursionStartedAt")) null else e.getLong("excursionStartedAt"))
       }.getOrNull() }
       loaded = true
     }
@@ -204,8 +248,56 @@ internal object T1ArcGlucoseAlarmEngine {
       .put("id", current.id).put("kind", current.kind.wire).put("sourceIdentity", current.sourceIdentity)
       .put("createdAt", current.createdAt).put("lastNotifiedElapsed", current.lastNotifiedElapsed ?: JSONObject.NULL)
       .put("acknowledged", current.acknowledged).put("snoozeUntilElapsed", current.snoozeUntilElapsed ?: JSONObject.NULL)
-      .put("snoozeUntilWall", current.snoozeUntilWall ?: JSONObject.NULL).put("bootCount", current.bootCount))
+      .put("snoozeUntilWall", current.snoozeUntilWall ?: JSONObject.NULL).put("bootCount", current.bootCount)
+      .put("excursionStartedAt", current.excursionStartedAt ?: JSONObject.NULL))
     GlucoseAlarmStore.write(context, data)
+  }
+
+  private fun audioArmed(config: NativeGlucoseAlarmConfiguration?) = config?.enabled == true && config.audioEnabled
+
+  /** Elapsed-clock end of the low pause after a logged hypo treatment, for this boot only. */
+  private fun lowPauseUntilElapsed(context: Context, elapsed: Long): Long? =
+    load(context).optJSONObject("lowPause")?.takeIf { it.optInt("bootCount", Int.MIN_VALUE) == boot(context) }
+      ?.optLong("untilElapsed", 0L)?.takeIf { it > elapsed }
+
+  /** A missing custom file never prevents an alarm; the built-in pulse is used instead. */
+  private fun playableSound(context: Context, id: String): String =
+    if (id.startsWith("custom:") && runCatching { soundFile(context, id).exists() }.getOrDefault(false).not()) "pulse" else id
+
+  private fun customSoundMissing(context: Context, config: NativeGlucoseAlarmConfiguration): Boolean =
+    GlucoseAlarmKind.entries.any { kind ->
+      GlucoseAlarmPolicy.soundRequired(config.policy, config.audioEnabled, kind) && playableSound(context, config.sound(kind)) != config.sound(kind)
+    }
+
+  private fun readinessLocked(context: Context, config: NativeGlucoseAlarmConfiguration?): GlucoseAlarmArmingState {
+    val notifications = context.getSystemService(NotificationManager::class.java)
+    val audio = context.getSystemService(AudioManager::class.java)
+    val state = GlucoseAlarmArmingPolicy.resolve(GlucoseAlarmReadinessInput(
+      configured = configured(context),
+      configurationReadable = config != null,
+      enabled = config?.enabled == true,
+      audioEnabled = config?.audioEnabled == true,
+      appNotificationsAllowed = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+      // A channel that has not been created yet is created before the first alert.
+      channelAllowed = notifications.getNotificationChannel(ALARM_CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE,
+      monitorRunning = T1ArcGlucoseDisplayService.running,
+      playbackBlocked = playbackState == "blocked",
+      alarmStreamVolume = runCatching { audio.getStreamVolume(AudioManager.STREAM_ALARM) }.getOrDefault(1),
+      appVolume = config?.volume ?: 1f,
+      dndTotalSilence = runCatching { notifications.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE }.getOrDefault(false),
+      exactAlarmsAllowed = Build.VERSION.SDK_INT < 31 || context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms(),
+      customSoundMissing = config?.let { customSoundMissing(context, it) } ?: false,
+    ))
+    if (state.ongoingWarning != ongoingWarning) {
+      ongoingWarning = state.ongoingWarning
+      // Rebuild the ongoing notification so the warning appears or clears
+      // without waiting for the next glucose render.
+      handler.post {
+        val playing = synchronized(lock) { player != null && !previewActive && activePlaybackEpisode != null }
+        runCatching { T1ArcGlucoseDisplayService.setAlarmPlaybackForeground(context, playing) }
+      }
+    }
+    return state
   }
 
   fun getConfiguration(context: Context): Map<String, Any?>? = synchronized(lock) { configuration(context)?.json?.bridgeMap() }
@@ -225,19 +317,34 @@ internal object T1ArcGlucoseAlarmEngine {
       // episode; evaluation decides whether its threshold still applies.
       val configurationChanged = previous?.json?.toString() != next.json.toString()
       val restartingAudio = next.enabled && next.audioEnabled && GlucoseAlarmPolicy.shouldRestartAudio(
-        armedInProcess, playbackState == "blocked", player != null, configurationChanged)
+        audioArmed(previous), playbackState == "blocked", player != null, configurationChanged)
       if (restartingAudio && oldEpisode?.acknowledged == false &&
         (oldEpisode.bootCount != boot(context) || (oldEpisode.snoozeUntilElapsed ?: 0L) <= SystemClock.elapsedRealtime())) {
         episode = oldEpisode.copy(lastNotifiedElapsed = null)
       }
       try { persist(context) } catch (error: Exception) { root = oldRoot; episode = oldEpisode; throw error }
-      armedInProcess = next.enabled && next.audioEnabled && visible
       if (!next.enabled || !next.audioEnabled || configurationChanged || restartingAudio) stopPlaybackLocked(context)
       T1ArcGlucoseDisplayState.setAlertMonitoringEnabled(context, next.enabled)
     } }
     T1ArcGlucoseDisplayService.reconcile(context)
     reconcile(context)
     return status(context)
+  }
+
+  /**
+   * Restores monitoring from the saved choices after a reboot, app update or
+   * process restart. It never enables anything: it only restarts the monitor
+   * when alerts were left on, then evaluates the current reading.
+   */
+  fun resumeMonitoring(context: Context): Boolean {
+    if (!configured(context)) return false
+    val enabled = runCatching { synchronized(lock) { configuration(context)?.enabled == true } }.getOrDefault(false)
+    if (enabled && !T1ArcGlucoseDisplayService.running) {
+      // Android may refuse a background start; readiness then reports that the
+      // monitor is not running, and opening T1 Arc starts it again.
+      runCatching { T1ArcGlucoseDisplayService.ensureRunning(context) }
+    }
+    return reconcile(context)
   }
 
   fun reconcile(context: Context): Boolean {
@@ -267,11 +374,15 @@ internal object T1ArcGlucoseAlarmEngine {
     val elapsed = SystemClock.elapsedRealtime()
     val identity = "$epoch:${AapsLocalStore.generation(context)}:${AapsLocalStore.selectedSource(context) ?: "legacy"}"
     val calendar = Calendar.getInstance(TimeZone.getDefault()).apply { timeInMillis = now }
+    val lowPause = lowPauseUntilElapsed(context, elapsed)
     val decision = GlucoseAlarmPolicy.evaluate(config.policy, snapshot?.let {
       GlucoseAlarmObservation(it.mmolL, it.timestampMs, it.sourceIsLive, it.sourceHasError)
-    }, episode, identity, now, elapsed, boot(context), calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE))
+    }, episode, identity, now, elapsed, boot(context), calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE),
+      lowPause)
     missing = decision.missing
+    readinessLocked(context, config)
     if (decision.kind == null) {
+      pendingEpisodeId = null
       if (episode != null) { episode = null; persist(context) }
       if (!previewActive) stopPlaybackLocked(context)
       cancelNotification(context)
@@ -281,15 +392,29 @@ internal object T1ArcGlucoseAlarmEngine {
     val old = episode
     if (!decision.keepPrevious || old == null) {
       if (!previewActive) stopPlaybackLocked(context)
-      episode = GlucoseAlarmEpisode(UUID.randomUUID().toString(), decision.kind, identity, now, bootCount = boot(context))
+      episode = GlucoseAlarmEpisode(UUID.randomUUID().toString(), decision.kind, identity, now, bootCount = boot(context),
+        excursionStartedAt = decision.excursionStartedAt)
+      persist(context)
+    } else if (old.kind != decision.kind || old.excursionStartedAt != decision.excursionStartedAt) {
+      // Urgent low easing into low keeps its episode, controls and timers.
+      episode = old.copy(kind = decision.kind, excursionStartedAt = decision.excursionStartedAt)
       persist(context)
     }
     val current = requireNotNull(episode)
+    pendingEpisodeId = if (decision.pending) current.id else null
+    if (decision.pending) {
+      // Still inside the chosen "stays high for" delay: no notification, no sound.
+      if (!previewActive) stopPlaybackLocked(context)
+      cancelNotification(context)
+      val pendingElapsed = decision.pendingUntilWall?.let { elapsed + (it - now).coerceAtLeast(0L) }
+      schedule(context, listOfNotNull(elapsed + 60_000L, pendingElapsed).minOrNull())
+      return
+    }
     if (decision.missing && current.kind != GlucoseAlarmKind.STALE && !previewActive) stopPlaybackLocked(context)
     ensureNotificationChannel(context)
     val appNotificationsAllowed = NotificationManagerCompat.from(context).areNotificationsEnabled()
     val channelAllowed = notificationChannelAllowed(context)
-    val wantsAudio = !decision.silent && config.audioEnabled && armedInProcess
+    val wantsAudio = !decision.silent && audioArmed(config)
     val canDeliver = GlucoseAlarmPolicy.canDeliver(appNotificationsAllowed, channelAllowed, wantsAudio,
       T1ArcGlucoseDisplayService.running)
     if (!appNotificationsAllowed || !channelAllowed) {
@@ -302,7 +427,7 @@ internal object T1ArcGlucoseAlarmEngine {
       episode = current.copy(lastNotifiedElapsed = elapsed, acknowledged = false, snoozeUntilElapsed = null,
         snoozeUntilWall = null, bootCount = boot(context))
       persist(context)
-      if (wantsAudio) startPlaybackLocked(context, config.sound(current.kind), config.volume,
+      if (wantsAudio) startPlaybackLocked(context, playableSound(context, config.sound(current.kind)), config.volume,
         config.rampSeconds, current.id, false)
     }
     if (decision.silent && !decision.missing) {
@@ -310,7 +435,8 @@ internal object T1ArcGlucoseAlarmEngine {
       if (!previewActive) stopPlaybackLocked(context)
       cancelNotification(context)
     } else if (canDeliver) notify(context, snapshot)
-    val next = listOfNotNull(elapsed + 60_000L, episode?.snoozeUntilElapsed?.takeIf { it > elapsed }).minOrNull()
+    val next = listOfNotNull(elapsed + 60_000L, episode?.snoozeUntilElapsed?.takeIf { it > elapsed },
+      lowPause?.takeIf { current.kind == GlucoseAlarmKind.LOW }).minOrNull()
     schedule(context, next)
   }
 
@@ -323,8 +449,8 @@ internal object T1ArcGlucoseAlarmEngine {
     if (configured(context)) persist(context)
   }
 
+  /** The monitor stopping ends current playback only; the saved arming choice is kept. */
   fun monitorStopped(context: Context) = synchronized(lock) {
-    armedInProcess = false
     stopPlaybackLocked(context)
   }
 
@@ -332,8 +458,9 @@ internal object T1ArcGlucoseAlarmEngine {
     stopPlaybackLocked(context)
     schedule(context, null)
     cancelNotification(context)
-    armedInProcess = false
     episode = null
+    pendingEpisodeId = null
+    ongoingWarning = null
     root = JSONObject()
     loaded = true
     GlucoseAlarmStore.erase(context)
@@ -352,7 +479,7 @@ internal object T1ArcGlucoseAlarmEngine {
     T1ArcGlucosePublicationGate.observeCurrent(context) { _ -> synchronized(lock) {
       val old = currentEpisode(context, id)
       val elapsed = SystemClock.elapsedRealtime()
-      val untilElapsed = GlucoseAlarmPolicy.snoozeUntil(System.currentTimeMillis(), elapsed, until.toLong())
+      val untilElapsed = GlucoseAlarmPolicy.snoozeUntil(System.currentTimeMillis(), elapsed, until.toLong(), old.kind)
       episode = old.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = until.toLong(), bootCount = boot(context))
       persist(context)
       stopPlaybackLocked(context)
@@ -389,26 +516,51 @@ internal object T1ArcGlucoseAlarmEngine {
     val config = configuration(context)
     val current = episode
     val elapsed = SystemClock.elapsedRealtime()
-    val issues = mutableListOf<String>()
-    if (configured(context) && config == null) issues.add("Alarm choices could not be recovered securely. Save them again.")
-    if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) issues.add("Android notifications are blocked.")
-    if (context.getSystemService(NotificationManager::class.java).getNotificationChannel(ALARM_CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) {
-      issues.add("The Android glucose alarm notification channel is blocked.")
-    }
-    val audio = context.getSystemService(AudioManager::class.java)
-    if (config?.audioEnabled == true && audio.getStreamVolume(AudioManager.STREAM_ALARM) == 0) issues.add("Android alarm volume is zero.")
-    if (config?.enabled == true && config.audioEnabled && !armedInProcess) issues.add("Open these settings and save to re-arm audio after restart.")
-    if (config?.enabled == true && !T1ArcGlucoseDisplayService.running) issues.add("The background glucose monitor is not running. Open T1 Arc and save your alert choices again.")
-    if (config?.audioEnabled == true && config.volume == 0f) issues.add("T1 Arc alarm volume is zero.")
-    if (Build.VERSION.SDK_INT >= 31 && !context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) issues.add("Exact alarms are not allowed; Android may delay snooze expiry and missing-data checks.")
-    if (playbackState == "blocked") issues.add("Alarm playback was blocked. Open T1 Arc and re-arm audio.")
+    val readiness = readinessLocked(context, config)
+    val visible = current?.takeIf { it.id != pendingEpisodeId }
     mapOf("configured" to configured(context), "enabled" to (config?.enabled ?: false),
-      "audioEnabled" to (config?.audioEnabled ?: false), "activeKind" to current?.kind?.wire, "episodeId" to current?.id,
+      "audioEnabled" to (config?.audioEnabled ?: false), "audioArmed" to readiness.audioArmed,
+      "activeKind" to visible?.kind?.wire, "episodeId" to visible?.id,
       "readingTimestampMs" to T1ArcGlucoseDisplayState.snapshot(context)?.timestampMs?.toDouble(),
-      "snoozedUntilMs" to current?.takeIf { it.bootCount == boot(context) }?.snoozeUntilElapsed
+      "snoozedUntilMs" to visible?.takeIf { it.bootCount == boot(context) }?.snoozeUntilElapsed
         ?.takeIf { it > elapsed }?.let { (System.currentTimeMillis() + it - elapsed).toDouble() },
-      "acknowledged" to (current?.acknowledged ?: false), "missing" to missing, "playbackState" to playbackState,
-      "readinessIssues" to issues, "customSounds" to sounds(context))
+      "lowPausedUntilMs" to lowPauseUntilElapsed(context, elapsed)?.let { (System.currentTimeMillis() + it - elapsed).toDouble() },
+      "maxSnoozeMinutes" to ((visible?.kind?.let(GlucoseAlarmPolicy::maxSnoozeMs) ?: GlucoseAlarmPolicy.MAX_SNOOZE_MS) / 60_000L).toInt(),
+      "acknowledged" to (visible?.acknowledged ?: false), "missing" to missing, "playbackState" to playbackState,
+      "readinessIssues" to readiness.issues.map { it.message }, "customSounds" to sounds(context))
+  }
+
+  /**
+   * Called after the user saves a "Treating a hypo" entry. Pauses the ordinary
+   * low alert only; urgent low, high and missing-reading alerts are unchanged.
+   */
+  fun pauseLowAfterHypoTreatment(context: Context, treatedAtMs: Double): Map<String, Any?> {
+    require(treatedAtMs.isFinite() && treatedAtMs.toLong().toDouble() == treatedAtMs) { "The treatment time is invalid." }
+    if (!configured(context)) return mapOf("pausedUntilMs" to null, "minutes" to 0)
+    return T1ArcGlucosePublicationGate.observeCurrent(context) { _ -> synchronized(lock) {
+      val config = configuration(context)
+      val now = System.currentTimeMillis()
+      val elapsed = SystemClock.elapsedRealtime()
+      val untilWall = GlucoseAlarmPolicy.hypoTreatmentPauseUntil(config?.policy, treatedAtMs.toLong(), now)
+      if (untilWall != null) {
+        val untilElapsed = elapsed + (untilWall - now)
+        load(context).put("lowPause", JSONObject().put("untilElapsed", untilElapsed).put("untilWall", untilWall)
+          .put("bootCount", boot(context)))
+        val current = episode
+        if (current?.kind == GlucoseAlarmKind.LOW && (current.snoozeUntilElapsed ?: 0L) < untilElapsed) {
+          // An already sounding low is snoozed to the same end, so it is checked
+          // again (and can sound again) when the pause ends.
+          episode = current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, bootCount = boot(context))
+          if (activePlaybackEpisode == current.id) stopPlaybackLocked(context)
+        }
+        persist(context)
+        notificationFingerprint = null
+        if (episode != null && episode?.id != pendingEpisodeId) notify(context, T1ArcGlucoseDisplayState.snapshot(context))
+        schedule(context, min(elapsed + 60_000L, untilElapsed))
+      }
+      mapOf("pausedUntilMs" to untilWall?.toDouble(),
+        "minutes" to if (untilWall == null) 0 else (config?.policy?.hypoTreatmentSnoozeMinutes ?: 0))
+    } }
   }
 
   private fun sounds(context: Context): List<Map<String, String>> {
@@ -506,11 +658,16 @@ internal object T1ArcGlucoseAlarmEngine {
     val token = playbackGeneration
     handler.post {
       synchronized(lock) {
-        if (token != playbackGeneration || (!preview && (episode?.id != episodeId || !armedInProcess))) return@synchronized
+        if (token != playbackGeneration || (!preview && (episode?.id != episodeId || !audioArmed(configuration(context))))) return@synchronized
         try {
           if (!preview && !GlucoseAlarmPolicy.canDeliver(NotificationManagerCompat.from(context).areNotificationsEnabled(),
               notificationChannelAllowed(context), true, T1ArcGlucoseDisplayService.running)) error("Alarm notifications or monitor unavailable")
-          if (!preview && !T1ArcGlucoseDisplayService.setAlarmPlaybackForeground(context, true)) error("Foreground alarm playback unavailable")
+          // Prefer the media-playback service type. If Android refuses that
+          // upgrade (for example after a background start at boot), keep going
+          // under the monitor's existing foreground service rather than
+          // staying silent; a missing monitor still fails closed above.
+          if (!preview && !T1ArcGlucoseDisplayService.setAlarmPlaybackForeground(context, true) &&
+            !T1ArcGlucoseDisplayService.running) error("Foreground alarm playback unavailable")
           val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
           val manager = context.getSystemService(AudioManager::class.java)
           val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attributes)
@@ -581,7 +738,7 @@ internal object T1ArcGlucoseAlarmEngine {
 
   private fun ensureNotificationChannel(context: Context) {
     context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(ALARM_CHANNEL, "Glucose alarms", NotificationManager.IMPORTANCE_HIGH).apply {
-      description = "Low, high, very high and missing glucose warnings. Sound is controlled in T1 Arc."
+      description = "Urgent low, low, high, very high and missing glucose warnings. Sound is controlled in T1 Arc."
       setSound(null, null); enableVibration(false); lockscreenVisibility = Notification.VISIBILITY_PRIVATE
     })
   }
@@ -597,10 +754,13 @@ internal object T1ArcGlucoseAlarmEngine {
     val private = !T1ArcGlucoseDisplayState.lockScreenVisible(context)
     val snoozed = (current.snoozeUntilElapsed ?: 0) > SystemClock.elapsedRealtime() && current.bootCount == boot(context)
     val title = if (private) "T1 Arc glucose alarm" else when (current.kind) {
+      GlucoseAlarmKind.URGENT_LOW -> "Urgent low glucose"
       GlucoseAlarmKind.LOW -> "Low glucose"; GlucoseAlarmKind.HIGH -> "High glucose"
       GlucoseAlarmKind.VERY_HIGH -> "Very high glucose"; GlucoseAlarmKind.STALE -> "Glucose updates missing"
     }
     val text = if (private) "Open T1 Arc to review your alarm." else if (missing) "New readings are missing. Recovery has not been confirmed."
+      else if (current.kind == GlucoseAlarmKind.LOW && lowPauseUntilElapsed(context, SystemClock.elapsedRealtime()) != null)
+        "Low alert paused after your logged hypo treatment. Urgent low alerts still sound."
       else if (snoozed) "Snoozed. Open T1 Arc to review or change the end time."
       else if (current.acknowledged) "Acknowledged. Glucose has not yet returned to range."
       else snapshot?.let { "${T1ArcGlucoseDisplayState.displayGlucoseValue(context, it.mmolL)} ${T1ArcGlucoseDisplayState.displayGlucoseUnit(context)} · Open T1 Arc to review." } ?: "Open T1 Arc to review."
@@ -637,11 +797,29 @@ class T1ArcGlucoseAlarmReceiver : BroadcastReceiver() {
     Thread {
       try {
         when (intent?.action) {
-          ACTION_ALARM_TICK -> T1ArcGlucoseAlarmEngine.reconcile(context)
+          ACTION_ALARM_TICK -> T1ArcGlucoseAlarmEngine.resumeMonitoring(context)
           ACTION_ALARM_ACK -> intent.getStringExtra("episodeId")?.let { T1ArcGlucoseAlarmEngine.acknowledge(context, it) }
           ACTION_ALARM_SNOOZE -> intent.getStringExtra("episodeId")?.let { T1ArcGlucoseAlarmEngine.snooze(context, it, (System.currentTimeMillis() + 10 * 60_000L).toDouble()) }
         }
       } catch (_: Exception) { /* Old episode actions and revoked grants fail closed. */ }
+      finally { pending.finish() }
+    }.start()
+  }
+}
+
+/**
+ * Re-arms saved alarm choices after a phone restart or an app update without
+ * the user opening T1 Arc. Alarms that were never set up, or are switched off,
+ * stay off. LOCKED_BOOT_COMPLETED is not used: the encrypted choices live in
+ * credential-protected storage, which Android only opens after the first unlock.
+ */
+class T1ArcGlucoseAlarmRestartReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent?) {
+    if (intent?.action != Intent.ACTION_BOOT_COMPLETED && intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+    val pending = goAsync()
+    val appContext = context.applicationContext
+    Thread {
+      try { T1ArcGlucoseAlarmEngine.resumeMonitoring(appContext) } catch (_: Exception) { /* Opening T1 Arc retries. */ }
       finally { pending.finish() }
     }.start()
   }

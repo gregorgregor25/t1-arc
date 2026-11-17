@@ -2328,6 +2328,7 @@ private object T1ArcGlucoseNotification {
         .setOnlyAlertOnce(true)
         .setShowWhen(false)
         .setColor(Color.rgb(8, 127, 153))
+    T1ArcGlucoseAlarmEngine.ongoingWarning?.let { notification.setSubText(it) }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       notification.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
     }
@@ -2435,6 +2436,7 @@ private object T1ArcGlucoseNotification {
         ).build()
       )
 
+    T1ArcGlucoseAlarmEngine.ongoingWarning?.let { notification.setSubText(it) }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       notification.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
     }
@@ -3983,6 +3985,9 @@ class T1ArcGlucoseDisplayModule : Module() {
     }
     AsyncFunction("stopGlucoseAlarmPreviewAsync") Coroutine { ->
       T1ArcGlucoseAlarmEngine.stopPreview(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("pauseGlucoseLowAlarmAfterHypoTreatmentAsync") Coroutine { treatedAtMs: Double ->
+      T1ArcGlucoseAlarmEngine.pauseLowAfterHypoTreatment(requireNotNull(appContext.reactContext), treatedAtMs)
     }
     AsyncFunction("openGlucoseAlarmExactAlarmSettingsAsync") Coroutine { ->
       val context = requireNotNull(appContext.reactContext)

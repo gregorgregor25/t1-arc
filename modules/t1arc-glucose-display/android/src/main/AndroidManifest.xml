@@ -18,6 +18,16 @@
       android:name=".T1ArcGlucoseAlarmReceiver"
       android:enabled="true"
       android:exported="false" />
+    <!-- Re-arms saved glucose alarm choices after a reboot or an app update. -->
+    <receiver
+      android:name=".T1ArcGlucoseAlarmRestartReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
     <receiver
       android:name=".T1ArcAapsStatusReceiver"
       android:enabled="true"

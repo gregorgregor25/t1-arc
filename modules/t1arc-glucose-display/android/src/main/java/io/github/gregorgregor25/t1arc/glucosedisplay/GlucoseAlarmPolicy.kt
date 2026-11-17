@@ -1,13 +1,17 @@
 package io.github.gregorgregor25.t1arc.glucosedisplay
 
+import kotlin.math.roundToInt
+
 /** Pure policy, shared by native intake, watchdog and actions. No Android or audio calls. */
 internal enum class GlucoseAlarmKind(val wire: String) {
-  LOW("low"), HIGH("high"), VERY_HIGH("veryHigh"), STALE("stale");
+  URGENT_LOW("urgentLow"), LOW("low"), HIGH("high"), VERY_HIGH("veryHigh"), STALE("stale");
   companion object { fun parse(value: String?) = entries.firstOrNull { it.wire == value } }
 }
 
 internal data class GlucoseAlarmPolicyConfig(
   val enabled: Boolean = false,
+  val urgentLowEnabled: Boolean = false,
+  val urgentLowThreshold: Double = 3.0,
   val lowEnabled: Boolean = true,
   val lowThreshold: Double = 3.9,
   val highEnabled: Boolean = true,
@@ -19,6 +23,10 @@ internal data class GlucoseAlarmPolicyConfig(
   val nightEnabled: Boolean = false,
   val nightStart: Int = 23 * 60,
   val nightEnd: Int = 7 * 60,
+  /** High and very high only. Lows and missing readings are never delayed. */
+  val highPersistMinutes: Int = 0,
+  /** 0 turns the automatic low pause after a logged hypo treatment off. */
+  val hypoTreatmentSnoozeMinutes: Int = 0,
 )
 
 internal data class GlucoseAlarmObservation(
@@ -38,6 +46,8 @@ internal data class GlucoseAlarmEpisode(
   val snoozeUntilElapsed: Long? = null,
   val snoozeUntilWall: Long? = null,
   val bootCount: Int,
+  /** Wall time the reading first went beyond the high threshold; null means createdAt. */
+  val excursionStartedAt: Long? = null,
 )
 
 internal data class GlucoseAlarmDecision(
@@ -46,23 +56,37 @@ internal data class GlucoseAlarmDecision(
   val shouldNotify: Boolean,
   val silent: Boolean,
   val keepPrevious: Boolean,
+  /** A high that has not yet stayed out of range for the chosen time: no notification, no sound. */
+  val pending: Boolean = false,
+  val pendingUntilWall: Long? = null,
+  val excursionStartedAt: Long? = null,
 )
 
 internal object GlucoseAlarmPolicy {
   const val STALE_MS = 12 * 60_000L
   const val MAX_SNOOZE_MS = 24 * 60 * 60_000L
+  const val URGENT_LOW_MAX_SNOOZE_MS = 30 * 60_000L
+  const val URGENT_LOW_MAX_REPEAT_MINUTES = 30
   const val FUTURE_ALLOWANCE_MS = 120_000L
+  const val DEFAULT_URGENT_LOW_MMOL = 3.0
+  const val DEFAULT_HYPO_TREATMENT_SNOOZE_MINUTES = 15
+  val PERSIST_MINUTES = setOf(0, 5, 10, 15, 20, 30)
+  val HYPO_TREATMENT_SNOOZE_MINUTES = setOf(0, 10, 15, 20, 30)
+  private val DELAYABLE = setOf(GlucoseAlarmKind.HIGH, GlucoseAlarmKind.VERY_HIGH)
 
-  fun shouldRestartAudio(armedInProcess: Boolean, blocked: Boolean, hasPlayer: Boolean, configurationChanged: Boolean) =
-    !armedInProcess || blocked || (hasPlayer && configurationChanged)
+  fun shouldRestartAudio(wasArmed: Boolean, blocked: Boolean, hasPlayer: Boolean, configurationChanged: Boolean) =
+    !wasArmed || blocked || (hasPlayer && configurationChanged)
+
+  fun categoryEnabled(config: GlucoseAlarmPolicyConfig, kind: GlucoseAlarmKind): Boolean = when (kind) {
+    GlucoseAlarmKind.URGENT_LOW -> config.urgentLowEnabled
+    GlucoseAlarmKind.LOW -> config.lowEnabled
+    GlucoseAlarmKind.HIGH -> config.highEnabled
+    GlucoseAlarmKind.VERY_HIGH -> config.veryHighEnabled
+    GlucoseAlarmKind.STALE -> config.staleEnabled
+  }
 
   fun soundRequired(config: GlucoseAlarmPolicyConfig, audioEnabled: Boolean, kind: GlucoseAlarmKind): Boolean =
-    config.enabled && audioEnabled && when (kind) {
-      GlucoseAlarmKind.LOW -> config.lowEnabled
-      GlucoseAlarmKind.HIGH -> config.highEnabled
-      GlucoseAlarmKind.VERY_HIGH -> config.veryHighEnabled
-      GlucoseAlarmKind.STALE -> config.staleEnabled
-    }
+    config.enabled && audioEnabled && categoryEnabled(config, kind)
 
   /** A pending monitor start is not a delivered notification or an audio failure. */
   fun canDeliver(appNotificationsAllowed: Boolean, channelAllowed: Boolean, wantsAudio: Boolean, monitorReady: Boolean) =
@@ -74,6 +98,31 @@ internal object GlucoseAlarmPolicy {
       else minuteOfDay >= config.nightStart || minuteOfDay < config.nightEnd
   }
 
+  /**
+   * Only ordinary high is quietened by the night schedule. Urgent low, low,
+   * very high and missing readings always keep their chosen sound.
+   */
+  fun silentAtNight(kind: GlucoseAlarmKind) = kind == GlucoseAlarmKind.HIGH
+
+  fun maxSnoozeMs(kind: GlucoseAlarmKind) = if (kind == GlucoseAlarmKind.URGENT_LOW) URGENT_LOW_MAX_SNOOZE_MS else MAX_SNOOZE_MS
+
+  /** Urgent low always reminds again within 30 minutes, even after "Silence" or "Never". */
+  fun effectiveRepeatMinutes(config: GlucoseAlarmPolicyConfig, kind: GlucoseAlarmKind): Int =
+    if (kind != GlucoseAlarmKind.URGENT_LOW) config.repeatMinutes
+    else if (config.repeatMinutes <= 0 || config.repeatMinutes > URGENT_LOW_MAX_REPEAT_MINUTES) URGENT_LOW_MAX_REPEAT_MINUTES
+    else config.repeatMinutes
+
+  /**
+   * Older saved choices had no urgent-low level. It follows the user's existing
+   * low switch (the master switch and sound choice are unchanged), at 3.0 mmol/L
+   * or just below a low threshold that is already at or under 3.0.
+   */
+  fun migratedUrgentLow(lowEnabled: Boolean, lowThreshold: Double): Pair<Boolean, Double> {
+    val threshold = if (lowThreshold > DEFAULT_URGENT_LOW_MMOL) DEFAULT_URGENT_LOW_MMOL
+      else ((lowThreshold - 0.2) * 10).roundToInt() / 10.0
+    return if (threshold < 2.0 || threshold >= lowThreshold) false to 2.0 else lowEnabled to threshold
+  }
+
   fun evaluate(
     config: GlucoseAlarmPolicyConfig,
     observation: GlucoseAlarmObservation?,
@@ -83,6 +132,7 @@ internal object GlucoseAlarmPolicy {
     elapsedNow: Long,
     bootCount: Int,
     minuteOfDay: Int,
+    lowPausedUntilElapsed: Long? = null,
   ): GlucoseAlarmDecision {
     if (!config.enabled) return GlucoseAlarmDecision(null, false, false, true, false)
     val sameSource = previous?.sourceIdentity == identity
@@ -91,22 +141,25 @@ internal object GlucoseAlarmPolicy {
       !observation.mmolL.isFinite() || observation.mmolL !in 0.5..40.0
     if (missing) {
       // A lost feed is never evidence that a preceding excursion recovered.
-      val retained = previous?.takeIf { sameSource && when (it.kind) {
-        GlucoseAlarmKind.LOW -> config.lowEnabled
-        GlucoseAlarmKind.HIGH -> config.highEnabled
-        GlucoseAlarmKind.VERY_HIGH -> config.veryHighEnabled
-        GlucoseAlarmKind.STALE -> false
-      } }
-      if (retained != null) return GlucoseAlarmDecision(retained.kind, true, false, true, true)
+      val retained = previous?.takeIf { sameSource && it.kind != GlucoseAlarmKind.STALE && categoryEnabled(config, it.kind) }
+      if (retained != null) {
+        val start = retained.excursionStartedAt ?: retained.createdAt
+        // A high still waiting out its delay stays hidden; missing data cannot confirm it.
+        val pending = retained.kind in DELAYABLE && config.highPersistMinutes > 0 && retained.lastNotifiedElapsed == null
+        return GlucoseAlarmDecision(retained.kind, true, false, true, true, pending,
+          if (pending) start + config.highPersistMinutes * 60_000L else null, start)
+      }
       if (!config.staleEnabled) return GlucoseAlarmDecision(null, true, false, true, false)
       return notificationDecision(config, GlucoseAlarmKind.STALE, previous, sameSource,
-        true, elapsedNow, bootCount, minuteOfDay)
+        true, wallNow, elapsedNow, bootCount, minuteOfDay, lowPausedUntilElapsed)
     }
     val value = requireNotNull(observation).mmolL
     val oldKind = previous?.takeIf { sameSource }?.kind
+    val wasLow = oldKind == GlucoseAlarmKind.LOW || oldKind == GlucoseAlarmKind.URGENT_LOW
     val kind = when {
-      config.lowEnabled && (value <= config.lowThreshold ||
-        (oldKind == GlucoseAlarmKind.LOW && value < config.lowThreshold + 0.3)) -> GlucoseAlarmKind.LOW
+      config.urgentLowEnabled && (value <= config.urgentLowThreshold ||
+        (oldKind == GlucoseAlarmKind.URGENT_LOW && value < config.urgentLowThreshold + 0.3)) -> GlucoseAlarmKind.URGENT_LOW
+      config.lowEnabled && (value <= config.lowThreshold || (wasLow && value < config.lowThreshold + 0.3)) -> GlucoseAlarmKind.LOW
       config.veryHighEnabled && config.veryHighThreshold != null &&
         (value >= config.veryHighThreshold || (oldKind == GlucoseAlarmKind.VERY_HIGH && value > config.veryHighThreshold - 0.5)) -> GlucoseAlarmKind.VERY_HIGH
       config.highEnabled && (value >= config.highThreshold ||
@@ -114,7 +167,8 @@ internal object GlucoseAlarmPolicy {
       else -> null
     }
     if (kind == null) return GlucoseAlarmDecision(null, false, false, true, false)
-    return notificationDecision(config, kind, previous, sameSource, false, elapsedNow, bootCount, minuteOfDay)
+    return notificationDecision(config, kind, previous, sameSource, false, wallNow, elapsedNow, bootCount, minuteOfDay,
+      lowPausedUntilElapsed)
   }
 
   private fun notificationDecision(
@@ -123,25 +177,135 @@ internal object GlucoseAlarmPolicy {
     previous: GlucoseAlarmEpisode?,
     sameSource: Boolean,
     missing: Boolean,
+    wallNow: Long,
     elapsedNow: Long,
     bootCount: Int,
     minuteOfDay: Int,
+    lowPausedUntilElapsed: Long?,
   ): GlucoseAlarmDecision {
-    val same = sameSource && previous?.kind == kind
+    // Rising from urgent low into low continues the same episode instead of
+    // sounding a second, new alarm. Falling from low into urgent low is new.
+    val same = sameSource && previous != null &&
+      (previous.kind == kind || (previous.kind == GlucoseAlarmKind.URGENT_LOW && kind == GlucoseAlarmKind.LOW))
     val previousSameBoot = previous?.bootCount == bootCount
     val snoozed = same && previousSameBoot && (previous?.snoozeUntilElapsed ?: 0L) > elapsedNow
-    val repeatDue = same && config.repeatMinutes > 0 && previousSameBoot &&
-      previous?.lastNotifiedElapsed != null && elapsedNow - previous.lastNotifiedElapsed >= config.repeatMinutes * 60_000L
+    val repeatMinutes = effectiveRepeatMinutes(config, kind)
+    val repeatDue = same && repeatMinutes > 0 && previousSameBoot &&
+      previous?.lastNotifiedElapsed != null && elapsedNow - previous.lastNotifiedElapsed >= repeatMinutes * 60_000L
     val snoozeExpired = same && previousSameBoot && previous?.snoozeUntilElapsed != null &&
       previous.snoozeUntilElapsed <= elapsedNow
     val first = !same || previous?.lastNotifiedElapsed == null || !previousSameBoot
-    return GlucoseAlarmDecision(kind, missing, !snoozed && (first || repeatDue || snoozeExpired),
-      kind == GlucoseAlarmKind.HIGH && isNight(config, minuteOfDay), same)
+    // Only ordinary low is paused after a logged hypo treatment; urgent low is not.
+    val paused = kind == GlucoseAlarmKind.LOW && lowPausedUntilElapsed != null && lowPausedUntilElapsed > elapsedNow
+    val inheritedStart = previous?.takeIf {
+      same || (sameSource && it.kind in DELAYABLE && kind in DELAYABLE)
+    }?.let { it.excursionStartedAt ?: it.createdAt }
+    val start = (inheritedStart ?: wallNow).coerceAtMost(wallNow)
+    val delayMs = if (kind in DELAYABLE) config.highPersistMinutes.coerceAtLeast(0) * 60_000L else 0L
+    val alreadyNotified = same && previous?.lastNotifiedElapsed != null
+    val pending = delayMs > 0 && !alreadyNotified && wallNow - start < delayMs
+    return GlucoseAlarmDecision(kind, missing, !pending && !snoozed && !paused && (first || repeatDue || snoozeExpired),
+      silentAtNight(kind) && isNight(config, minuteOfDay), same, pending,
+      if (pending) start + delayMs else null, start)
   }
 
-  fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long): Long {
+  fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long, kind: GlucoseAlarmKind = GlucoseAlarmKind.LOW): Long {
     val duration = untilWall - wallNow
-    require(duration in 1L..MAX_SNOOZE_MS) { "Choose a future snooze time within the next 24 hours." }
+    require(duration >= 1L) { "Choose a future snooze time." }
+    require(duration <= maxSnoozeMs(kind)) {
+      if (kind == GlucoseAlarmKind.URGENT_LOW) "Urgent low alerts can be snoozed for up to 30 minutes."
+      else "Choose a future snooze time within the next 24 hours."
+    }
     return elapsedNow + duration
+  }
+
+  /**
+   * End of the automatic low pause after a logged hypo treatment, or null when
+   * none applies. It is counted from the treatment time and never extends past
+   * the chosen number of minutes from now.
+   */
+  fun hypoTreatmentPauseUntil(config: GlucoseAlarmPolicyConfig?, treatedAtWall: Long, wallNow: Long): Long? {
+    if (config == null || !config.enabled || !config.lowEnabled) return null
+    val minutes = config.hypoTreatmentSnoozeMinutes
+    if (minutes <= 0 || minutes !in HYPO_TREATMENT_SNOOZE_MINUTES) return null
+    if (treatedAtWall > wallNow + FUTURE_ALLOWANCE_MS) return null
+    val until = minOf(treatedAtWall + minutes * 60_000L, wallNow + minutes * 60_000L)
+    return until.takeIf { it > wallNow }
+  }
+}
+
+/** Something Android or the phone needs the user to change before alarms can work fully. */
+internal enum class GlucoseAlarmReadinessIssue(val message: String, val affectsSound: Boolean) {
+  CONFIGURATION_UNREADABLE("Your saved alarm choices could not be read securely on this phone. Open alarm settings, check them and save again.", true),
+  NOTIFICATIONS_BLOCKED("Android notifications for T1 Arc are turned off, so alarms cannot be shown or sounded. Turn them on in Android notification settings.", true),
+  CHANNEL_BLOCKED("The Android “Glucose alarms” notification category is turned off. Turn it on in Android notification settings.", true),
+  MONITOR_STOPPED("The background glucose monitor is not running. Open T1 Arc so Android can start it again.", true),
+  PLAYBACK_BLOCKED("Android stopped the last alarm sound. Check the alarm volume and that T1 Arc may run in the background.", true),
+  ALARM_VOLUME_ZERO("This phone’s alarm volume is at zero, so alarm sounds will be silent.", true),
+  APP_VOLUME_ZERO("T1 Arc’s alarm sound level is set to 0%.", true),
+  DO_NOT_DISTURB_SILENCES_ALARMS("Do Not Disturb is set to total silence, which also silences alarm sounds.", true),
+  EXACT_ALARMS_DENIED("Precise alarm timing is off. Android may delay snooze endings and missing-reading checks. Use “Allow precise alarm timing”.", false),
+  CUSTOM_SOUND_MISSING("A chosen alarm sound file is no longer on this phone. T1 Arc will use the built-in Steady pulse sound until you choose another.", false),
+}
+
+internal data class GlucoseAlarmReadinessInput(
+  val configured: Boolean,
+  val configurationReadable: Boolean,
+  val enabled: Boolean,
+  val audioEnabled: Boolean,
+  val appNotificationsAllowed: Boolean = true,
+  val channelAllowed: Boolean = true,
+  val monitorRunning: Boolean = true,
+  val playbackBlocked: Boolean = false,
+  val alarmStreamVolume: Int = 1,
+  val appVolume: Float = 1f,
+  val dndTotalSilence: Boolean = false,
+  val exactAlarmsAllowed: Boolean = true,
+  val customSoundMissing: Boolean = false,
+)
+
+internal data class GlucoseAlarmArmingState(
+  val alertsActive: Boolean,
+  val audioArmed: Boolean,
+  val issues: List<GlucoseAlarmReadinessIssue>,
+) {
+  /** Short, value-free text safe for the lock screen and the ongoing notification. */
+  val ongoingWarning: String?
+    get() = when {
+      issues.contains(GlucoseAlarmReadinessIssue.CONFIGURATION_UNREADABLE) -> "Alarms need attention · open T1 Arc"
+      !alertsActive || issues.isEmpty() -> null
+      audioArmed && issues.any { it.affectsSound } -> "Alarm sound needs attention · open T1 Arc"
+      else -> "Alarms need attention · open T1 Arc"
+    }
+}
+
+/**
+ * Arming follows the user's saved choice only. It never depends on whether the
+ * settings screen was opened in this process, so an app update, a reboot or a
+ * process restart keeps the same armed state. Problems Android needs the user
+ * to fix are reported, never silently treated as "armed and fine".
+ */
+internal object GlucoseAlarmArmingPolicy {
+  fun resolve(input: GlucoseAlarmReadinessInput): GlucoseAlarmArmingState {
+    val issues = mutableListOf<GlucoseAlarmReadinessIssue>()
+    if (input.configured && !input.configurationReadable) {
+      issues.add(GlucoseAlarmReadinessIssue.CONFIGURATION_UNREADABLE)
+      return GlucoseAlarmArmingState(false, false, issues)
+    }
+    val alertsActive = input.configured && input.enabled
+    val audioArmed = alertsActive && input.audioEnabled
+    if (!alertsActive) return GlucoseAlarmArmingState(false, false, issues)
+    if (!input.appNotificationsAllowed) issues.add(GlucoseAlarmReadinessIssue.NOTIFICATIONS_BLOCKED)
+    else if (!input.channelAllowed) issues.add(GlucoseAlarmReadinessIssue.CHANNEL_BLOCKED)
+    if (!input.monitorRunning) issues.add(GlucoseAlarmReadinessIssue.MONITOR_STOPPED)
+    if (audioArmed) {
+      if (input.playbackBlocked) issues.add(GlucoseAlarmReadinessIssue.PLAYBACK_BLOCKED)
+      if (input.alarmStreamVolume == 0) issues.add(GlucoseAlarmReadinessIssue.ALARM_VOLUME_ZERO)
+      if (input.appVolume <= 0f) issues.add(GlucoseAlarmReadinessIssue.APP_VOLUME_ZERO)
+      if (input.dndTotalSilence) issues.add(GlucoseAlarmReadinessIssue.DO_NOT_DISTURB_SILENCES_ALARMS)
+      if (input.customSoundMissing) issues.add(GlucoseAlarmReadinessIssue.CUSTOM_SOUND_MISSING)
+    }
+    if (!input.exactAlarmsAllowed) issues.add(GlucoseAlarmReadinessIssue.EXACT_ALARMS_DENIED)
+    return GlucoseAlarmArmingState(alertsActive, audioArmed, issues)
   }
 }
