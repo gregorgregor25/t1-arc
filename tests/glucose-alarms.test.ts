@@ -37,7 +37,10 @@ describe('glucose alarm choices', () => {
     { nightStartMinutes: -1 }, { nightEndMinutes: 1440 },
     { nightEnabled: true, nightStartMinutes: 420, nightEndMinutes: 420 },
     { repeatMinutes: 7 }, { lowSound: 'file:///private/audio.wav' },
-    { lowSound: 'custom:../file' }, { schemaVersion: 2 },
+    { lowSound: 'custom:../file' }, { schemaVersion: 1 }, { schemaVersion: 3 },
+    { urgentLowThresholdMmolL: 1.9 }, { urgentLowThresholdMmolL: 4.1 }, { urgentLowThresholdMmolL: 3.9 },
+    { urgentLowEnabled: 'on' }, { urgentLowSound: 'https://host/a.mp3' },
+    { highPersistMinutes: 7 }, { highPersistMinutes: 60 }, { hypoTreatmentSnoozeMinutes: 5 }, { hypoTreatmentSnoozeMinutes: 45 },
   ])('rejects malformed or unsafe choices %j', patch => {
     expect(validateGlucoseAlarmConfiguration({ ...defaults, ...patch })).toBeTypeOf('string');
   });

@@ -105,6 +105,7 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<{
   previewGlucoseAlarmSoundAsync?(soundId: string, volume: number): Promise<boolean>;
   stopGlucoseAlarmPreviewAsync?(): Promise<boolean>;
   openGlucoseAlarmExactAlarmSettingsAsync?(): Promise<boolean>;
+  pauseGlucoseLowAlarmAfterHypoTreatmentAsync?(treatedAtMs: number): Promise<{ pausedUntilMs: number | null; minutes: number }>;
   cancelGlucoseAlertsAsync(): Promise<boolean>;
   /** Earliest time a time-based alert change could be due, or null for none. */
   setNextAlertCheckAtAsync?(epochMs: number | null): Promise<boolean>;

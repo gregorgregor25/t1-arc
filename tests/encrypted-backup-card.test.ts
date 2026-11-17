@@ -290,6 +290,16 @@ describe("committed encrypted backup restore reporting", () => {
     expect(secondMessage).not.toMatch(/theme|health goal/i);
   });
 
+  it("adds alarm restore notices such as a replaced custom sound", () => {
+    const message = describeCommittedBackupRestore({
+      ...result,
+      preferenceNotice: "Alarm choices were restored switched off. The sound “Bell” is not on this phone, so low alerts use the built-in Steady pulse sound.",
+    } as never);
+    expect(message.tone).toBe("success");
+    expect(message.text).toContain("restored switched off");
+    expect(message.text).toContain("built-in Steady pulse sound");
+  });
+
   it("reports failed preference restoration as partial, not wholesale failure", () => {
     const message = describeCommittedBackupRestore({
       ...result,

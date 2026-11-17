@@ -98,6 +98,7 @@ const PREFERENCE_GROUP_LABELS: Record<PortablePreferenceGroup, string> = {
   healthGoals: "health goal",
   treatmentProfile: "diabetes profile",
   regionalProfile: "regional preferences",
+  glucoseAlarms: "alarm choices",
 };
 
 function formatList(items: readonly string[]) {
@@ -138,6 +139,10 @@ export function describeCommittedBackupRestore(
             result.preferenceWarning ?? "the preference restore failed"
           }.`
         : "";
+  const noticeText =
+    result.preferenceRestore === "restored" && result.preferenceNotice
+      ? ` ${result.preferenceNotice}`
+      : "";
   const refreshText = refreshIncomplete
     ? " The restored data is safely on this phone, but this screen could not fully refresh. Reopen T1 Arc to see every change."
     : "";
@@ -146,7 +151,7 @@ export function describeCommittedBackupRestore(
       result.preferenceRestore === "failed" || refreshIncomplete
         ? "warning"
         : "success",
-    text: `${historyText}${preferenceText}${refreshText}`,
+    text: `${historyText}${preferenceText}${noticeText}${refreshText}`,
   };
 }
 
