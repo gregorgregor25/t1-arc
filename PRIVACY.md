@@ -85,6 +85,30 @@ watch on the local network. Pairing codes are temporary; its ADB identity is
 kept in Android secure storage. Connections close after setup. Disabling watch
 debugging does not stop normal paired-watch glucose delivery.
 
+## Record exports and shared summaries
+
+Exports are made only when the user asks. **History → Share or export** and
+**Settings → Backup and privacy → Export records** can save glucose readings or
+insulin, carbohydrate and treatment records as CSV files, or a one-page clinic
+report as a self-contained HTML file (open it and print to PDF). **Copy summary
+as text** passes a text summary of the period on screen to Android's share
+sheet, which also offers Copy.
+
+These files and summaries are built on the phone from stored records. T1 Arc
+does not upload them. They are **not encrypted**: before each export or share,
+T1 Arc says so and asks the user to continue. Once saved or shared, a copy is
+outside T1 Arc's protection and the destination app's privacy practices apply.
+Erasing this device's data does not remove exported copies.
+
+CSV rows include local time with its UTC offset, the UTC time, the time zone,
+units, the source name, the source's record identifier and, where stored, the
+import time, source file name and row and source device identifier. They do not
+include provider credentials, tokens or Tarv1s conversations. The clinic report
+contains summary figures, charts drawn from readings, insulin and carbohydrate
+totals and the names of the data sources; it loads nothing from the network.
+Temporary files use the same private working directory and cleanup as other
+exports and are removed after saving or cancelling.
+
 ## Network flows chosen by the user
 
 T1 Arc has no maintainer data relay in the normal app path. A connection sends

@@ -29,6 +29,7 @@ import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { ErrorCard } from "@/components/ErrorCard";
 import { GlucoseProfileCard } from "@/components/GlucoseProfileCard";
 import { GlucoseRangeStatisticsCard } from "@/components/GlucoseRangeStatisticsCard";
+import { HistoryShareCard } from "@/components/HistoryShareCard";
 import { InsulinEventList } from "@/components/InsulinEventList";
 import { LoadingCard } from "@/components/LoadingCard";
 import { MetabolicSummaryCard } from "@/components/MetabolicSummaryCard";
@@ -42,6 +43,7 @@ import {
   TimelineData,
 } from "@/domain/models";
 import { formatRegionalNumber } from "@/domain/regionalFormat";
+import { laggingDataStamps } from "@/domain/dataThrough";
 import { buildInsulinReconciliation } from "@/domain/dataCompleteness";
 import { calculateGlucoseStats } from "@/domain/stats";
 import {
@@ -123,6 +125,13 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
   onCompare,
 }: PopulatedHistoryContentProps) {
   const { settings: appearance } = useGlucoseAppearance();
+  const { colors } = useAppTheme();
+  const { now } = useDataContext();
+  const { defaults: regional } = useRegionalProfile();
+  const dataStamps = useMemo(
+    () => laggingDataStamps(data, now, regional),
+    [data, now, regional],
+  );
   const personalRange = useMemo(
     () => personalGlucoseRange(appearance),
     [appearance],
@@ -175,12 +184,22 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
         layers={timelineLayers}
         onLayersChange={onLayersChange}
       />
+      {dataStamps.length ? (
+        <View accessibilityLabel="Records may be incomplete" style={styles.stamps}>
+          {dataStamps.map((stamp) => (
+            <Text key={stamp.kind} style={[styles.stampText, { color: colors.textSecondary }]}>
+              {stamp.text}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       <GlucoseRangeStatisticsCard
         compareLabel={compareLabel}
         label={periodLabel}
         onCompare={onCompare}
         summary={rangeSummary}
       />
+      <HistoryShareCard data={data} />
       {days > 1 ? (
         <>
           <GlucoseProfileCard data={data} onInspect={onInspect} />
@@ -484,6 +503,16 @@ export function HistoryScreen() {
                   navigation.navigate("Sources", sourceSettingsRouteParams()),
               }}
             />
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                navigation.navigate("Sources", { ...sourceSettingsRouteParams(), panel: "source-health" })
+              }
+              style={({ pressed }) => [styles.browseDays, styles.sourceHealthLink, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Ionicons accessibilityElementsHidden name="pulse-outline" size={18} color={colors.primary} />
+              <Text style={[styles.browseDaysLabel, { color: colors.primary }]}>See source health</Text>
+            </Pressable>
           </SectionCard>
         ) : (
           <PopulatedHistoryContent
@@ -562,4 +591,7 @@ const styles = StyleSheet.create({
   stack: {
     gap: 12,
   },
+  stamps: { gap: 2 },
+  stampText: { fontSize: 12, lineHeight: 18 },
+  sourceHealthLink: { justifyContent: 'center' },
 });

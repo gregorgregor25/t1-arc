@@ -5,6 +5,7 @@ import type {
   TimeRange,
   TimelineData,
 } from '@/domain/models';
+import { SOURCE_HEALTH_WINDOW_MS, type SourceHealthSnapshot } from '@/domain/sourceHealth';
 
 /**
  * Gives the first foreground render a stable, cache-only repository while the
@@ -37,5 +38,20 @@ export class StartupLocalFirstRepository implements DiabetesRepository {
 
   getSourceStatuses(now?: number): Promise<DataSourceStatus[]> {
     return this.delegate.getSourceStatuses(now);
+  }
+
+  getSourceHealthSnapshot(now?: number): Promise<SourceHealthSnapshot> {
+    if (this.delegate.getSourceHealthSnapshot) return this.delegate.getSourceHealthSnapshot(now);
+    const at = now ?? Date.now();
+    return this.delegate.getSourceStatuses(at).then((statuses) => ({
+      generatedAt: at,
+      window: { start: at - SOURCE_HEALTH_WINDOW_MS, end: at },
+      sources: statuses.map((status) => ({
+        kind: status.label === 'Insulin' ? 'insulin' as const : status.label === 'Glucose' ? 'glucose' as const : 'context' as const,
+        status,
+        recentRecords: [],
+      })),
+      duplicates: [],
+    }));
   }
 }

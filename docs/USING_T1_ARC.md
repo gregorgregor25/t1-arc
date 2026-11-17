@@ -78,6 +78,15 @@ shows the Glycemia Risk Index. **Compare with previous period** opens Insights
 for the same period. See [Glucose statistics](GLUCOSE_STATISTICS.md) for how
 each figure is calculated.
 
+**Share or export** sits below the Time in ranges card. **Copy summary as text**
+opens Android's share menu (choose Copy to paste it elsewhere) with the period,
+sensor coverage, the five glucose bands, the tight range and your own range
+(labelled as your setting), average glucose, GMI or the reason it is not shown,
+standard deviation, coefficient of variation and insulin totals with their source
+and "records through" time. **Share or export files** opens the export options
+described under [Exports](#exports). When synced records lag, a "records through"
+line appears above the summary.
+
 For an entry you recorded manually, open its edit form to correct it or choose
 **Delete entry**. Deletion asks for confirmation and cannot be undone. This
 control does not remove records imported from a connected provider.
@@ -173,8 +182,28 @@ contains no glucose value or health conclusion.
 ## Data freshness
 
 Glooko and other imported records can arrive later than the original event.
-Check the record time as well as the last successful refresh. See
+Check the record time as well as the last successful refresh. **Settings >
+Source health** shows each source's newest record and any gaps in the last 24
+hours. See
 [how current each source is](DATA_FRESHNESS.md) before interpreting a partial day.
+
+## Exports
+
+Choose 14, 30 or 90 days or All, then:
+
+- **Glucose readings (CSV)**: one row per reading with local and UTC times, the
+  time zone, the value in mmol/L and mg/dL and the source of each reading;
+- **Insulin, carbohydrate and treatment records (CSV)**: boluses, basal records,
+  daily insulin totals and logged carbohydrate, each with its source;
+- **Clinic report (HTML)**: one page with the summary, a **Typical day** chart, a
+  daily overview (the last 14 days of longer periods) and insulin and
+  carbohydrate totals with their sources. Sections without records are left out.
+  Open the saved file in a browser and print to PDF.
+
+Before each export T1 Arc reminds you that the file is **not encrypted**, contains
+health data and leaves T1 Arc once you save or share it. Android's save dialog
+lets you choose where it goes. The same options are in **Settings > Backup and
+privacy > Export records**.
 
 ## Settings
 
@@ -185,6 +214,7 @@ Settings contains:
 - glucose display, alerts, notification, widget and lock-screen choices;
 - Health Connect and activity sources;
 - encrypted backup, restore and local-data controls;
+- **Source health** for each connection, and record exports;
 - **About T1 Arc**, with build details and links to source code and licences.
 
 The overview starts with connection shortcuts. Open **Region and services**

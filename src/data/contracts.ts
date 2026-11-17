@@ -10,6 +10,12 @@ import {
   TimelineData,
 } from '@/domain/models';
 import type { DirectLibreRefreshReason } from '@/data/libreLinkUp/refreshPolicy';
+import {
+  SOURCE_HEALTH_WINDOW_MS,
+  type SourceDuplicateSummary,
+  type SourceHealthSnapshot,
+  type SourceHealthSourceInput,
+} from '@/domain/sourceHealth';
 
 /** Native collector tick that checks early whether a five-minute source now reads every minute. */
 export const CADENCE_PROBE_REFRESH_REASON = 'cadence-probe';
@@ -40,6 +46,14 @@ export interface GlucoseSource {
   getReadings(range: TimeRange): Promise<GlucoseReading[]>;
   getLatestReading(): Promise<GlucoseReading | undefined>;
   getStatus(now?: number): Promise<DataSourceStatus>;
+  /**
+   * Per configured source: stored sync metadata and record times in the
+   * window, plus exact-timestamp duplicates across sources. Cache-only.
+   */
+  getSourceHealth?(
+    window: TimeRange,
+    now: number,
+  ): Promise<{ sources: SourceHealthSourceInput[]; duplicates: SourceDuplicateSummary[] }>;
 }
 
 export interface InsulinSource {
@@ -64,6 +78,8 @@ export interface DiabetesRepository {
   getTimeline(range: TimeRange): Promise<TimelineData>;
   getLatestGlucose(): Promise<GlucoseReading | undefined>;
   getSourceStatuses(now?: number): Promise<DataSourceStatus[]>;
+  /** Cache-only view of each configured source for the source health panel. */
+  getSourceHealthSnapshot?(now?: number): Promise<SourceHealthSnapshot>;
 }
 
 export class CombinedDiabetesRepository implements DiabetesRepository {
@@ -157,5 +173,51 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
     return statuses.filter(
       (status): status is DataSourceStatus => status !== undefined,
     );
+  }
+
+  async getSourceHealthSnapshot(now = Date.now()): Promise<SourceHealthSnapshot> {
+    const window = { start: now - SOURCE_HEALTH_WINDOW_MS, end: now };
+    const [glucose, insulinStatus, basal, boluses, contextStatus, events] = await Promise.all([
+      this.glucoseSource.getSourceHealth
+        ? this.glucoseSource.getSourceHealth(window, now)
+        : Promise.all([
+            this.glucoseSource.getStatus(now),
+            this.glucoseSource.getReadings(window),
+          ]).then(([status, readings]) => ({
+            sources: [{
+              kind: 'glucose' as const,
+              status,
+              recentRecords: readings.map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+            }],
+            duplicates: [],
+          })),
+      this.insulinSource.getStatus(now),
+      this.insulinSource.getBasalDeliveries(window),
+      this.insulinSource.getBolusDeliveries(window),
+      this.contextSource?.getStatus?.(now) ?? Promise.resolve(undefined),
+      this.contextSource?.getEvents(window) ?? Promise.resolve([]),
+    ]);
+    const inWindow = (timestamp: number) => timestamp >= window.start && timestamp < window.end;
+    const sources: SourceHealthSourceInput[] = [
+      ...glucose.sources,
+      {
+        kind: 'insulin',
+        status: insulinStatus,
+        recentRecords: [
+          ...boluses.map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+          ...basal.map(({ start, sourceId }) => ({ timestamp: start, sourceId })),
+        ].filter((record) => inWindow(record.timestamp)),
+      },
+      ...(contextStatus
+        ? [{
+            kind: 'context' as const,
+            status: contextStatus,
+            recentRecords: events
+              .map(({ start, sourceId }) => ({ timestamp: start, sourceId }))
+              .filter((record) => inWindow(record.timestamp)),
+          }]
+        : []),
+    ];
+    return { generatedAt: now, window, sources, duplicates: glucose.duplicates };
   }
 }

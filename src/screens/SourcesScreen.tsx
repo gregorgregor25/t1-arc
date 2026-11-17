@@ -29,6 +29,8 @@ import { AutomationStatusCard } from "@/components/AutomationStatusCard";
 import { DexcomClarityImportCard } from "@/components/DexcomClarityImportCard";
 import { DexcomShareSourceCard } from "@/components/DexcomShareSourceCard";
 import { EncryptedBackupCard } from "@/components/EncryptedBackupCard";
+import { RecordExportPanel } from "@/components/RecordExportPanel";
+import { SourceHealthCard } from "@/components/SourceHealthCard";
 import { GlookoImportCard } from "@/components/GlookoImportCard";
 import { GlucoseDisplayCard } from "@/components/GlucoseDisplayCard";
 import { GlucoseAlertSettingsCard } from "@/components/GlucoseAlertSettingsCard";
@@ -127,7 +129,7 @@ function maskEmail(value: string) {
 export function SourcesScreen({
   route,
 }: {
-  route?: { params?: { focused?: boolean; source?: SourceJump } };
+  route?: { params?: { focused?: boolean; source?: SourceJump; panel?: "source-health" } };
 }) {
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const { colors, radius } = useAppTheme();
@@ -218,6 +220,16 @@ export function SourcesScreen({
       setTestState({ kind: "idle" });
     }
   }, [libreVerificationGuard, requestedSource]);
+
+  const requestedPanel = route?.params?.panel;
+  useEffect(() => {
+    if (requestedPanel !== "source-health") return;
+    // A one-off request from a "data unavailable" state: open the panel once,
+    // then clear the request so it does not reopen on later visits.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExpandedSetting("overview-source-health");
+    navigation.setParams({ panel: undefined });
+  }, [navigation, requestedPanel]);
 
   const loadSavedLibreCredentials = useCallback(async () => {
     const request = ++libreCredentialRequest.current;
@@ -510,6 +522,15 @@ export function SourcesScreen({
               <Ionicons accessibilityElementsHidden name="chevron-forward" size={18} color={colors.textTertiary} />
             </Pressable>
           </SectionCard>
+          <SettingsDisclosure
+            detail="When each connection last updated, its newest records and any gaps."
+            expanded={expandedSetting === "overview-source-health"}
+            icon="pulse-outline"
+            onToggle={() => toggleSetting("overview-source-health")}
+            title="Source health"
+          >
+            <SourceHealthCard />
+          </SettingsDisclosure>
           <SourceJumpGrid active={activeSource} onSelect={showSource} />
           <SettingsDisclosure
             detail="Add the insulin-to-carb ratios already agreed in your care plan."
@@ -1220,6 +1241,15 @@ export function SourcesScreen({
             title="Encrypted backup"
           >
             <EncryptedBackupCard onDataChanged={showChangedPersonalData} />
+          </SettingsDisclosure>
+          <SettingsDisclosure
+            detail="Save glucose, insulin and carbohydrate records as files, or a clinic report."
+            expanded={expandedSetting === "privacy-export"}
+            icon="document-text-outline"
+            onToggle={() => toggleSetting("privacy-export")}
+            title="Export records"
+          >
+            <SectionCard><RecordExportPanel /></SectionCard>
           </SettingsDisclosure>
           <SettingsDisclosure
             detail="Inspect or remove personal data stored on this device."

@@ -30,5 +30,6 @@ export function ConnectionSummary({ sources }: { sources: readonly DataSourceSta
         navigation.navigate('Sources', target ? sourceSettingsRouteParams(target) : { focused: false });
       }} style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.primary, fontWeight: '600' }}>Check connection</Text></Pressable>
     </View>) : null}
+    {expanded ? <Pressable accessibilityRole="button" onPress={() => navigation.navigate('Sources', { ...sourceSettingsRouteParams(), panel: 'source-health' })} style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.primary, fontWeight: '600' }}>See source health</Text></Pressable> : null}
   </View>;
 }

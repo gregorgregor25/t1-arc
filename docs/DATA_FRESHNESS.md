@@ -22,6 +22,33 @@ background work; internet access, battery restrictions, source availability and
 permissions also matter. Opening the app lets due work resume. Historical
 backfills and Glooko reports have their own slower schedules and may finish later.
 
+## Source health
+
+**Settings → Source health** (on the main Settings page, above the connection
+shortcuts) lists each configured source with:
+
+- the last successful update and the last check, with its result in plain words;
+- the newest record, for example "Records through 14:05";
+- how many records arrived in the last 24 hours;
+- notable gaps in the last 24 hours, for example "No glucose 02:10–03:40"
+  (glucose gaps of 30 minutes or more; a gap at the start of the window is shown
+  only if the source has older records);
+- the time zone used for these times, taken from the phone's settings.
+
+When two glucose sources supply a reading with exactly the same time, it says
+which source was kept. Readings at nearby but different times are not listed.
+Open it from **See source health** on History when a range has no records, or
+from the Today connection notice. It only reads stored records and changes
+nothing.
+
+## "Records through" stamps
+
+The Today insulin card and the History summary add "Insulin records through
+13:00" or "Glucose records through 13:00" only when synced records lag: glucose
+more than 12 minutes and insulin more than an hour behind the end of the period
+(or now). Insulin you type into T1 Arc is not synced, so it never adds a stamp.
+A period with no records of that type gets no stamp; the empty state explains it.
+
 ## Why today’s totals can change later
 
 A bolus can appear on a pump before Glooko makes it available to T1 Arc. Until

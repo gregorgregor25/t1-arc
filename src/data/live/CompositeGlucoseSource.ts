@@ -6,6 +6,11 @@ import { NOTIFICATION_SOURCE_ID } from '@/data/notification/types';
 import { GlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore';
 import { glucoseFreshness } from '@/domain/freshness';
 import {
+  summarizeExactDuplicates,
+  type SourceDuplicateSummary,
+  type SourceHealthSourceInput,
+} from '@/domain/sourceHealth';
+import {
   DataSourceStatus,
   GlucoseReading,
   TimeRange,
@@ -297,6 +302,61 @@ export class CompositeGlucoseSource implements GlucoseSource {
           freshness,
           origin,
         };
+  }
+
+  /**
+   * Cache-only source health: each configured source's stored sync status,
+   * its record times in the window, and exact-timestamp duplicates that the
+   * display resolves by source priority.
+   */
+  async getSourceHealth(
+    window: TimeRange,
+    now: number,
+  ): Promise<{ sources: SourceHealthSourceInput[]; duplicates: SourceDuplicateSummary[] }> {
+    const selection = await this.resolveSelectedSource();
+    const configured = this.configuredSourcesFor(selection.sourceId);
+    const [statuses, readings, bounds] = await Promise.all([
+      Promise.all(
+        configured.map((source) =>
+          source.getStatus(now).catch(
+            (): DataSourceStatus => ({
+              id: source.sourceId,
+              label: source.sourceId,
+              detail: 'Source unavailable',
+              freshness: 'missing',
+              origin: 'live',
+              isLive: false,
+            }),
+          ),
+        ),
+      ),
+      selection.sourceId === 'none'
+        ? Promise.resolve([] as GlucoseReading[])
+        : this.history.getReadings(window),
+      Promise.all(configured.map((source) => this.history.getBounds(source.sourceId))),
+    ]);
+    if (!(await this.selectionStillCurrent(selection))) {
+      return { sources: [], duplicates: [] };
+    }
+    const sources = configured.map((source, index): SourceHealthSourceInput => ({
+      kind: 'glucose',
+      status: statuses[index]!,
+      recentRecords: readings
+        .filter((reading) => reading.sourceId === source.sourceId)
+        .map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+      ...(bounds[index]?.earliest === undefined
+        ? {}
+        : { earliestRecordAt: bounds[index]!.earliest }),
+    }));
+    // A single selected source shows only its own readings, so nothing is
+    // chosen between sources.
+    const duplicates = selection.sourceId === undefined
+      ? summarizeExactDuplicates(
+          readings.map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+          (sourceId) => this.priority.get(sourceId) ?? Number.MAX_SAFE_INTEGER,
+        )
+      : [];
+    return { sources, duplicates };
   }
 
   private preferOneReadingPerExactTimestamp(
