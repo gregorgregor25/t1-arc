@@ -94,7 +94,15 @@ export function HealthScreen() {
           }
         />
         {dailyError ? (
-          <ErrorCard message={dailyError} />
+          <ErrorCard
+            details={dailyError}
+            message="Your health records are still saved on this phone. Tap Try again, or pull down to refresh."
+            onRetry={() => {
+              dailyHealth.reload();
+              healthTrend.reload();
+            }}
+            title="Health data could not be loaded"
+          />
         ) : !dailyHealth.metrics || healthTrend.loading ? (
           <LoadingCard label="Loading health data…" />
         ) : (

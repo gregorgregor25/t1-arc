@@ -7,6 +7,7 @@ import {
   parseHevyWorkoutPage,
 } from './validation';
 import type { HevyWorkout, HevyWorkoutEvent } from './types';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const HEVY_API_URL = 'https://api.hevyapp.com';
 const PAGE_SIZE = 10;
@@ -88,7 +89,7 @@ export function normalizeHevyApiKey(value: string) {
   ) {
     throw new HevyError(
       'invalid-key',
-      'Enter the API key shown in Hevy web settings. It should be a UUID.',
+      'Enter the API key shown in Hevy web settings. It looks like a long code of letters and numbers split by dashes.',
     );
   }
   return key;
@@ -264,7 +265,7 @@ export class HevyClient {
         }
         throw new HevyError(
           'server',
-          `Hevy returned HTTP ${response.status}. Your existing workouts are unchanged.`,
+          `${serviceStatusMessage('Hevy', response.status)} Your existing workouts are unchanged.`,
         );
       }
       return value;

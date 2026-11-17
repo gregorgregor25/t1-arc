@@ -218,7 +218,7 @@ describe('xDrip-compatible glucose source', () => {
     );
 
     await expect(source.refresh()).rejects.toThrow(
-      /larger than T1 Arc accepts/,
+      /more data than T1 Arc can accept/,
     );
   });
 });

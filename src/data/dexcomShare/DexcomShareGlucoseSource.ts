@@ -26,6 +26,7 @@ import {
   DexcomShareErrorCode,
   DexcomShareRegion,
 } from './types';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const INVALID_ID = '00000000-0000-0000-0000-000000000000';
@@ -213,7 +214,7 @@ export class DexcomShareGlucoseSource implements GlucoseSource {
           serverMessage ||
             (response.status === 401 || response.status === 403 || response.status === 500
               ? 'Dexcom rejected the account details. Check the publisher account, password and region.'
-              : `Dexcom Share returned HTTP ${response.status}.`),
+              : serviceStatusMessage('Dexcom Share', response.status)),
         );
       }
       return body;

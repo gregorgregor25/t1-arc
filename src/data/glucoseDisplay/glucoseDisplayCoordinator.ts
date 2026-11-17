@@ -154,7 +154,7 @@ function displaySourceLabel(sourceId: string) {
     return 'Nightscout';
   }
   if (sourceId === XDRIP_SOURCE_ID) {
-    return 'xDrip-compatible endpoint';
+    return 'xDrip or compatible app';
   }
   if (sourceId === DEXCOM_SHARE_SOURCE_ID) {
     return 'Dexcom Share';

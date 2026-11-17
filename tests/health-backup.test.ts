@@ -1327,6 +1327,6 @@ describe('health backup validation', () => {
   it('rejects an invalid timezone contract', () => {
     const backup = emptyBackup();
     backup.manifest.timeZone = 'not/a-zone';
-    expect(() => validateHealthBackupDocument(backup)).toThrow(/IANA time zone/i);
+    expect(() => validateHealthBackupDocument(backup)).toThrow(/unrecognised time zone/i);
   });
 });

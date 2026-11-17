@@ -473,7 +473,7 @@ describe('LibreLinkUp direct client', () => {
 
     await expect(client.getSnapshot()).rejects.toMatchObject({
       code: 'network',
-      message: 'LibreLinkUp request timed out.',
+      message: 'LibreLinkUp took too long to respond. T1 Arc will try again shortly.',
     });
   });
 
@@ -528,7 +528,7 @@ describe('LibreLinkUp direct client', () => {
 
     await expect(snapshot).rejects.toMatchObject({
       code: 'network',
-      message: 'LibreLinkUp request timed out.',
+      message: 'LibreLinkUp took too long to respond. T1 Arc will try again shortly.',
     });
   });
 
@@ -653,7 +653,7 @@ describe('LibreLinkUp direct client', () => {
 
     await expect(client.getSnapshot()).rejects.toMatchObject({
       code: 'network',
-      message: 'LibreLinkUp request failed with HTTP 503.',
+      message: 'LibreLinkUp is having a problem right now. T1 Arc will try again later. (Code 503)',
     });
   });
 });

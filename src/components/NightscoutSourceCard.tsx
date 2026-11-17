@@ -437,7 +437,7 @@ export function NightscoutSourceCard() {
               {saved.accessToken
                 ? 'read-only token protected on this phone'
                 : saved.apiSecret
-                  ? 'legacy API secret protected on this phone'
+                  ? 'API secret protected on this phone'
                   : 'public read access'}
             </Text>
             {latest ? (
@@ -759,7 +759,7 @@ export function NightscoutSourceCard() {
         ]}
       >
         <TextInput
-          accessibilityLabel="Nightscout legacy API secret"
+          accessibilityLabel="Nightscout API secret"
           autoCapitalize="none"
           autoCorrect={false}
           onChangeText={setApiSecret}
@@ -793,9 +793,9 @@ export function NightscoutSourceCard() {
       </View>
       {saved && !sameBaseUrl && !token && !apiSecret ? (
         <Text style={[styles.toggleDetail, { color: colors.textSecondary }]}>
-          The address is different. Enter that Nightscout address’s token or API
-          secret if it is not public; T1 Arc will never carry a saved credential
-          to another path or origin.
+          The address is different. If this site is not public, enter its token
+          or API secret. T1 Arc never sends a saved token or secret to a
+          different address.
         </Text>
       ) : null}
       <View style={[styles.toggleRow, { borderColor: colors.border }]}>
@@ -804,8 +804,8 @@ export function NightscoutSourceCard() {
             Read IOB and COB
           </Text>
           <Text style={[styles.toggleDetail, { color: colors.textSecondary }]}>
-            Also check Nightscout’s Pebble endpoint for insulin and carbs on
-            board.
+            Also read insulin and carbs on board, if your looping app sends
+            them to Nightscout.
           </Text>
         </View>
         <Switch

@@ -52,7 +52,11 @@ export function HealthConnectRecordReview() {
       />
 
       {sourceHealth.error ? (
-        <ErrorCard message={sourceHealth.error} />
+        <ErrorCard
+          details={sourceHealth.error}
+          message="Your imported records are still saved. Close this section and open it again in a moment."
+          title="Imported records could not be shown"
+        />
       ) : sourceHealth.loading ? (
         <LoadingCard label="Loading imported records…" />
       ) : sourceHealth.totalRecords ? (

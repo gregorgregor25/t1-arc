@@ -58,11 +58,11 @@ export const SOURCE_SETUP_GUIDES: Partial<
   nightscout: {
     title: "Nightscout",
     intro:
-      "Connect to the read-only glucose endpoint for your own Nightscout site.",
+      "Read glucose, and optionally treatments, from your own Nightscout site. T1 Arc only reads; it never changes your site.",
     steps: [
       "Enter the full Nightscout site address, including https://.",
-      "For a protected site, add either a read-only access token or the legacy API secret. Public sites can leave both blank.",
-      "Turn on IOB and COB only if your Nightscout pebble endpoint provides those values.",
+      "For a protected site, add a read-only access token (recommended) or your site’s API secret. Public sites can leave both blank.",
+      "Turn on IOB and COB only if your looping app sends insulin and carbs on board to Nightscout.",
       "Test the connection, then optionally choose how far back T1 Arc should build encrypted history.",
     ],
     note: "T1 Arc uses read requests only and never changes your Nightscout site. Rechecking the same site keeps its copied history; after a different site is verified, it replaces this source’s copied glucose, treatments and history progress.",

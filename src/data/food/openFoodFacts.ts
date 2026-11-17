@@ -8,6 +8,7 @@ import { FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY } from './providerRetention';
 import appPackage from '../../../package.json';
 import { isFoodSearchQueryReady } from './foodSearchRanking';
 import { openFoodFactsCountryTag } from './openFoodFactsCountries';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const OPEN_FOOD_FACTS_BASE =
   'https://world.openfoodfacts.org/api/v3/product';
@@ -606,7 +607,7 @@ export async function searchOpenFoodFactsPage(
   if (!response.ok) {
     throw new FoodLookupError(
       'service',
-      `Open Food Facts returned HTTP ${response.status}.`,
+      serviceStatusMessage('Open Food Facts', response.status),
     );
   }
 
@@ -705,7 +706,7 @@ export async function lookupOpenFoodFactsBarcode(
   if (!response.ok) {
     throw new FoodLookupError(
       'service',
-      `Open Food Facts returned HTTP ${response.status}.`,
+      serviceStatusMessage('Open Food Facts', response.status),
     );
   }
 

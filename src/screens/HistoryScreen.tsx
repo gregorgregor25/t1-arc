@@ -218,7 +218,9 @@ const PopulatedHistoryContent = memo(function PopulatedHistoryContent({
       <HypoTreatmentReviewCard data={data} />
       {foodError ? (
         <ErrorCard
-          message={`Food details are temporarily unavailable. ${foodError}`}
+          details={foodError}
+          message="Your other records are still shown. Food details will appear when they load."
+          title="Food details could not be loaded"
         />
       ) : null}
       <ContextEventList
@@ -488,7 +490,12 @@ export function HistoryScreen() {
             : `${formatRegionalNumber(days, regional.locale, { maximumFractionDigits: 0 })} days ending ${formatDate(selectedDate, { day: "numeric", month: "short" })}`}
         </Text> : null}
         {timeline.error ? (
-          <ErrorCard message={timeline.error} />
+          <ErrorCard
+            details={timeline.error}
+            message="Your records are safe on this phone. Tap Try again, or pull down to refresh."
+            onRetry={timeline.reload}
+            title="History could not be loaded"
+          />
         ) : timeline.loading || !timeline.data ? (
           <LoadingCard label="Loading historical data…" />
         ) : timelineIsEmpty ? (
