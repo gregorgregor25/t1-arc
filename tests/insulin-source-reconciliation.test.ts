@@ -243,6 +243,24 @@ describe('one delivery recorded by several sources', () => {
     ).toEqual({ 'nightscout:bolus:early': 'glooko:a', 'nightscout:bolus:late': 'glooko:b' });
   });
 
+  it('handles 90 days of SMBs every five minutes from three sources without running out of stack', () => {
+    // Glooko, Nightscout and AAPS copies 0, 2 and 4 minutes apart: each AAPS
+    // copy is nearer the next delivery, so matching must reassign along the
+    // whole chain.
+    const start = Date.parse('2026-08-01T00:00:00Z');
+    const records: BolusDelivery[] = [];
+    for (let index = 0; index < 25_920; index += 1) {
+      const time = start + index * 5 * minute;
+      records.push(bolus(`glooko:${index}`, 'glooko-export', time, 0.2));
+      records.push(bolus(`nightscout:${index}`, 'nightscout', time + 2 * minute, 0.2));
+      records.push(bolus(`aaps-local:${index}`, 'aaps-local', time + 4 * minute, 0.2));
+    }
+    const result = reconcileBolusSources(records);
+    expect(result.boluses).toHaveLength(25_920);
+    expect(result.boluses.every((record) => record.sourceId === 'glooko-export')).toBe(true);
+    expect(result.hidden).toHaveLength(51_840);
+  });
+
   it('counts an SMB sent locally and to Nightscout once, and keeps separate SMBs', () => {
     const smb = (id: string, sourceId: string, timestamp: number): BolusDelivery => ({
       ...bolus(id, sourceId, timestamp, 0.4),

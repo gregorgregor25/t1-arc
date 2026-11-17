@@ -141,17 +141,39 @@ function reconcileCopies<T extends { id: string; sourceId: string }>(
       if (copyGroup.has(copy) || groupHolder.has(group)) continue;
       assign(copy, group);
     }
-    const augment = (copy: RankedRecord<T>, visited: Set<CopyGroup<T>>): boolean => {
-      for (const group of options.get(copy) ?? []) {
-        if (visited.has(group)) continue;
-        visited.add(group);
-        const holder = groupHolder.get(group);
-        if (holder === undefined || augment(holder, visited)) {
-          assign(copy, group);
-          return true;
+    // Breadth-first search with an explicit queue, so a long chain of
+    // reassignments (months of SMBs a few minutes apart) cannot overflow the
+    // call stack. Groups a failed search visited cannot lead to a free group
+    // while the matching is unchanged, so they stay marked until the next
+    // successful reassignment; that keeps the total work close to linear.
+    let visited = new Set<CopyGroup<T>>();
+    const augment = (start: RankedRecord<T>) => {
+      const reachedFrom = new Map<CopyGroup<T>, RankedRecord<T>>();
+      const queue = [start];
+      let free: CopyGroup<T> | undefined;
+      for (let head = 0; head < queue.length && free === undefined; head += 1) {
+        for (const group of options.get(queue[head]) ?? []) {
+          if (visited.has(group)) continue;
+          visited.add(group);
+          reachedFrom.set(group, queue[head]);
+          const holder = groupHolder.get(group);
+          if (holder === undefined) {
+            free = group;
+            break;
+          }
+          queue.push(holder);
         }
       }
-      return false;
+      if (free === undefined) return;
+      // Walk back along the path, moving each copy to the group it reached.
+      let group: CopyGroup<T> | undefined = free;
+      while (group !== undefined) {
+        const copy: RankedRecord<T> = reachedFrom.get(group)!;
+        const previous = copyGroup.get(copy);
+        assign(copy, group);
+        group = copy === start ? undefined : previous;
+      }
+      visited = new Set();
     };
     const unmatched = copies
       .filter((copy) => !copyGroup.has(copy) && options.has(copy))
@@ -160,7 +182,7 @@ function reconcileCopies<T extends { id: string; sourceId: string }>(
           timeOf(left.record) - timeOf(right.record) ||
           left.record.id.localeCompare(right.record.id),
       );
-    for (const copy of unmatched) augment(copy, new Set());
+    for (const copy of unmatched) augment(copy);
     const absorbed = new Set<RankedRecord<T>>();
     for (const [copy, group] of copyGroup) {
       absorbed.add(copy);
