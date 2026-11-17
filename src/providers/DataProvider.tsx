@@ -268,6 +268,7 @@ import {
   publishVerifiedLibreSnapshotImmediately,
 } from "@/providers/libreRepositoryActivation";
 import { nextPresentationClock } from "@/providers/presentationClock";
+import { startForegroundInterval } from "@/hooks/foregroundInterval";
 
 interface DataContextValue {
   repository?: DiabetesRepository;
@@ -1004,8 +1005,12 @@ export function DataProvider({ children }: PropsWithChildren) {
         void publishLatestStoredGlucose();
       }
     };
-    const clockInterval = setInterval(reconcileClock, 15_000);
-    return () => clearInterval(clockInterval);
+    // Ages on screen update every 15 seconds while visible. The timer stops
+    // in the background, where headless sync keeps JavaScript awake, and the
+    // clock catches up as soon as the app is active again.
+    return startForegroundInterval(reconcileClock, 15_000, AppState, {
+      runOnResume: true,
+    });
   }, [publishLatestStoredGlucose]);
 
   useEffect(() => {
@@ -1023,7 +1028,7 @@ export function DataProvider({ children }: PropsWithChildren) {
     // Native foreground glucose sync owns the short catch-up cadence. The UI
     // only polls once a minute while active so it cannot duplicate headless
     // work or keep importing data after the app moves to the background.
-    const refreshInterval = setInterval(() => {
+    const stopRefreshInterval = startForegroundInterval(() => {
       // Frequent glucose polling must not also scan Health Connect, saved
       // insights, and Nightscout history. Those slower jobs run after the
       // initial paint, on app resume, and on explicit refresh.
@@ -1043,13 +1048,13 @@ export function DataProvider({ children }: PropsWithChildren) {
           else if (action === "read-stored") await publishLatestStoredGlucose();
         })();
       }
-    }, 60_000);
+    }, 60_000, AppState);
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshSilently();
     });
     return () => {
       clearTimeout(initialHealthRefresh);
-      clearInterval(refreshInterval);
+      stopRefreshInterval();
       subscription.remove();
     };
   }, [
@@ -1817,11 +1822,11 @@ export function DataProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!repositoryState.ready) return;
     void runAutomaticGlookoSync();
-    const foregroundInterval = setInterval(() => {
+    const stopForegroundInterval = startForegroundInterval(() => {
       if (AppState.currentState === "active") {
         void runAutomaticGlookoSync();
       }
-    }, GLOOKO_FOREGROUND_CHECK_INTERVAL_MS);
+    }, GLOOKO_FOREGROUND_CHECK_INTERVAL_MS, AppState);
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void runAutomaticGlookoSync();
     });
@@ -1831,7 +1836,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       }
     });
     return () => {
-      clearInterval(foregroundInterval);
+      stopForegroundInterval();
       subscription.remove();
       linkSubscription.remove();
     };
