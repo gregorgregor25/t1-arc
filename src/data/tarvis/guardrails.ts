@@ -83,11 +83,18 @@ const DIRECTIVE_MARKER =
 // matches judgement words ("indicated", "warranted") and imperatives such as
 // "Proceed".
 const RECORD_MARKER =
-  /\b(?:was|were|had|been|took|ate|gave|ran|rose|fell|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|averaged|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are)|delivered|entered|imported|received|injected|bolused|corrected|counted|calculated|estimated|reported|stored|synced|uploaded|started|ended|stopped|finished|resumed|suspended|paused|changed|switched|cancelled|canceled|replaced|noted|added|increased|decreased|reduced|raised|lowered|treated|covered|peaked|dropped|measured|appeared|occurred|happened|followed|preceded|expired|disconnected|reconnected|ceased|differed|varied|remained|stayed|lasted|began|continued|matched|exceeded)\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b/i;
+  /\b(?:was|were|had|been|took|ate|gave|ran|rose|fell|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|averaged|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are)|delivered|entered|imported|received|injected|bolused|corrected|counted|calculated|estimated|reported|stored|synced|uploaded|started|ended|stopped|finished|resumed|suspended|paused|changed|switched|cancelled|canceled|replaced|noted|added|increased|decreased|reduced|raised|lowered|treated|covered|peaked|dropped|measured|appeared|occurred|happened|followed|preceded|expired|disconnected|reconnected|ceased|differed|varied|remained|stayed|lasted|began|continued|matched|exceeded|data|coverage|available|unavailable|incomplete|partial|missing|absent|identical)\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b/i;
+// "The recorded bolus amount is 3.5 U": a stated record attribute. Checked
+// before adjectival record words are masked.
+const RECORD_ATTRIBUTE =
+  /\b(?:recorded|logged|reported|imported)\s+(?:\w+\s+){0,2}(?:amounts?|rates?|totals?|values?|counts?|numbers?)\s+(?:is|are|was|were)\b/i;
 // "the recorded 3 U" names a record inside what may be an instruction
 // ("Continue the recorded 4 U dose"); it is not itself a past-tense record.
 const ADJECTIVAL_RECORD =
   /\b(?:the|your|a|an|this|that|these|those|its|their|my|our)\s+(?:(?:two|three|last|previous|earlier|same)\s+)?(?:recorded|logged|delivered|entered|imported|reported|estimated|calculated)\b/gi;
+// "Reinstate the basal that was suspended at lunch": the record sits in a
+// relative clause, so it says nothing about the main verb.
+const RELATIVE_RECORD_CLAUSE = /\b(?:that|which|who|whichever)\s+[^,;]*/gi;
 const NOUN_MODIFIER =
   "(?:meal|correction|extended|combo|combination|dual|square|wave|manual|automatic|automated|small|large|big|single|first|second|third|last|previous|recorded|logged|earlier|later|overnight|basal|insulin|carb|sharp|steep|gradual|slight|total|\\d+(?:[.,]\\d+)?\\s*(?:u|g|units?|%)?)";
 const NOUN_VERB =
@@ -113,7 +120,7 @@ const DESCRIPTIVE_MASKS: readonly RegExp[] = [
 ];
 
 const IMPERATIVE_START =
-  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial|dose|resume|restart|pause|bump|boost|tweak|turn|proceed|program|programme|deliver|bring|keep|cancel|drop|leave|stick|maintain|continue|replicate|disconnect|reconnect|activate|deactivate|enable|disable|silence|begin|choose|select|sip|chew|swallow|consume|use|hold|apply|enter|log|start)\b|^\W*up\s+(?:your|the)\b/i;
+  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial|dose|resume|restart|pause|bump|boost|tweak|turn|proceed|program|programme|deliver|bring|keep|cancel|drop|leave|stick|maintain|continue|replicate|disconnect|reconnect|activate|deactivate|enable|disable|silence|begin|choose|select|sip|chew|swallow|consume|use|hold|apply|enter|log|start|copy|reinstate|adopt|follow|match|mirror|reuse|revert|restore|reapply|redo|lift|trim|shorten|lengthen|stretch)\b|^\W*up\s+(?:your|the)\b/i;
 // "Same again" or "repeat" points back at an earlier treatment on its own.
 const STRONG_BACK_REFERENCE = /\b(?:same again|repeat(?!ed\b)\w*)\b/i;
 // "The same" or "as before" is a comparison unless instruction wording joins
@@ -144,18 +151,35 @@ function splitSentences(text: string) {
 function isRecordedEventDescription(sentence: string, masked: string) {
   if (DIRECTIVE_MARKER.test(masked)) return false;
   if (BASE_TREATMENT_VERB.test(masked) || TREATMENT_GERUND_FORM.test(masked)) return false;
-  return RECORD_MARKER.test(sentence.replace(ADJECTIVAL_RECORD, " "));
+  const mainClause = sentence.replace(RELATIVE_RECORD_CLAUSE, " ");
+  return (
+    RECORD_ATTRIBUTE.test(mainClause) ||
+    RECORD_MARKER.test(mainClause.replace(ADJECTIVAL_RECORD, " "))
+  );
 }
 
 // Judgement words that present a treatment as called for.
 const TREATMENT_JUDGEMENT =
-  /\b(?:indicated|warranted|justified|called for|advised|advisable|recommended|needed|required|necessary|appropriate|in order)\b/i;
+  /\b(?:indicated|warranted|justified|called for|advised|advisable|recommended|needed|required|necessary|appropriate|in order|prudent|sensible|safest|makes sense|do well|time for|helpful|please|is to be|are to be|is best|are best|the (?:next|right|best|safest|sensible|obvious) (?:step|choice|course|option|move)|would (?:resolve|bring|fix|treat|suit|sort)|suits? (?:you|your))\b|\b(?:should|must|needs? to|ought to|has to|have to)\s+(?:remain|stay|be kept|continue)\b/i;
 // "Your basal needs a small reduction", "Your ratio would benefit from".
 const YOUR_TREATMENT_NEEDS =
   /\byour\s+(?:basal(?:\s+rates?)?|ratios?|bolus(?:es)?|insulin|doses?|pump|targets?|profiles?|corrections?|carbs?|isf|icr|factors?|temp(?:orary)?\s+(?:basal|target)s?)\b[^.;!?]{0,60}\b(?:needs?|should|must|ought|has to|have to|would benefit|will need|requires?)\b/i;
 // "An extra unit will bring the reading down."
 const QUANTITY_OUTCOME =
-  /\b(?:an?\s+extra|another|a\s+further|additional|one\s+more|half\s+an?|more|less)\s+(?:units?|u|grams?|g|insulin|carbs?|carbohydrates?|glucose\s+tablets?|bolus|correction|doses?)\b[^.;!?]{0,60}\b(?:will|would|should|could|might|may|can)\b/i;
+  /\b(?:an?\s+extra|another|a\s+further|additional|one\s+more|half\s+an?)\s+(?:units?|u|grams?|g|insulin|carbs?|carbohydrates?|glucose\s+tablets?|bolus|correction|doses?)\b[^.;!?]{0,60}\b(?:will|would|should|could|might|may|can)\b/i;
+// A question that proposes a treatment: "Why not disconnect your pump?",
+// "Would a temporary target of 8 mmol/L suit your walk?"
+const SUGGESTION_QUESTION =
+  /^\W*(?:why not|how about|what about|would|could|should|shall|can|might|have you (?:tried|considered)|do you want to)\b[^?]*\?/i;
+// Wording tied to the reader's own situation rather than how the body works.
+const PERSONAL_SITUATION =
+  /\b(?:tonight|this (?:low|high|meal|evening|morning|afternoon|walk|run|reading|episode)|(?:the|your) walk|right now|now|next (?:step|meal|correction|bolus|dose|time)|before (?:bed(?:time)?|leaving|supper|dinner)|for (?:dinner|supper)|at (?:dinner|supper)|until (?:breakfast|lunch|morning|bedtime)|for you)\b/i;
+// A glucose number presented as the reader's goal.
+const GLUCOSE_GOAL =
+  /\b(?:goal|aim(?:ing)?\s+for|to aim for|should aim)\b[^.;!?]{0,60}\d+(?:[.,]\d+)?\s*(?:mmol\s*\/\s*l|mg\s*\/\s*dl)|\d+(?:[.,]\d+)?\s*(?:mmol\s*\/\s*l|mg\s*\/\s*dl)[^.;!?]{0,60}\b(?:goal|aim(?:ing)?\s+for|to aim for|should aim)\b/i;
+// A label followed by an amount or setting: "Next correction: half a unit."
+const LABELLED_ACTION =
+  /\b(?:next (?:correction|meal|bolus|dose|time)|for (?:the|your) (?:walk|run|workout|exercise|next \w+)|tonight|this low)\s*:/i;
 // "insulin needs" is a noun ("Illness can raise your insulin needs").
 const INSULIN_NEEDS_NOUN = /\binsulin\s+(?:needs|requirements?)\b/gi;
 
@@ -172,9 +196,13 @@ function clauseGivesInstruction(clause: string, masked: string) {
     startsAsInstruction(masked) ||
     /\bgo ahead and\b/i.test(masked) ||
     STRONG_BACK_REFERENCE.test(masked) ||
-    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(masked)) ||
+    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(clause)) ||
     YOUR_TREATMENT_NEEDS.test(unmasked) ||
-    QUANTITY_OUTCOME.test(unmasked)
+    QUANTITY_OUTCOME.test(unmasked) ||
+    GLUCOSE_GOAL.test(clause) ||
+    LABELLED_ACTION.test(clause) ||
+    (TREATMENT_TOPIC.test(clause) &&
+      (SUGGESTION_QUESTION.test(clause) || PERSONAL_SITUATION.test(masked)))
   );
 }
 

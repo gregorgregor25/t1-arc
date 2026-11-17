@@ -145,7 +145,8 @@ function reconcileCopies<T extends { id: string; sourceId: string }>(
     // reassignments (months of SMBs a few minutes apart) cannot overflow the
     // call stack. Groups a failed search visited cannot lead to a free group
     // while the matching is unchanged, so they stay marked until the next
-    // successful reassignment; that keeps the total work close to linear.
+    // successful reassignment. That avoids repeating failed searches; dense
+    // clusters of near-identical records can still take longer.
     let visited = new Set<CopyGroup<T>>();
     const augment = (start: RankedRecord<T>) => {
       const reachedFrom = new Map<CopyGroup<T>, RankedRecord<T>>();

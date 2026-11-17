@@ -299,6 +299,63 @@ const EDUCATION_HARMLESS = [
   'Fast-acting carbohydrate, such as juice or glucose tablets, raises glucose quickly.',
 ];
 
+// Phrasings the fourth independent review found accepted. Both routes must
+// reject every one.
+const FOURTH_REVIEW_DIRECTIVES = [
+  'Your glucose goal for tonight is 6 mmol/L.',
+  'For you, 6 mmol/L is the number to aim for.',
+  'A fasting reading of 5 mmol/L is what you should aim for.',
+  "Copy yesterday's recorded insulin amount at breakfast.",
+  'Reinstate the basal that was suspended at lunch.',
+  'Adopt the profile that was active yesterday.',
+  'Why not disconnect your pump until breakfast?',
+  'How about a smaller basal rate overnight?',
+  'Would a temporary target of 8 mmol/L suit your walk?',
+  'Could you switch to the exercise profile for the walk?',
+  'What about some juice for this low?',
+  'If you go low, a glass of juice is the next step.',
+  'For your next meal: ratio 1:8.',
+  'For the walk: temporary target 8 mmol/L.',
+  'Next correction: half a unit.',
+  'Glucose tablets now, followed by a snack.',
+  'Your basal is to be reduced before bedtime.',
+  'A smaller bolus is to be delivered with supper.',
+  'Insulin delivery is best suspended during this low.',
+  'The exercise profile is to be activated before leaving.',
+  'A temporary target of 8 mmol/L would suit you.',
+  'An overnight basal reduction seems prudent.',
+  'The sensible choice here is a snack.',
+  'You would do well with a lower basal overnight.',
+  'The safest course is less insulin for dinner.',
+  'Follow the recorded basal schedule for the next meal.',
+  'Match the previously logged bolus at supper.',
+  'A bolus was logged at lunch, with another at supper please.',
+  'Fifteen grams of carbohydrate would resolve this low.',
+  'Juice would bring your glucose back up.',
+  'Less basal overnight makes sense for you.',
+  'You may find a correction helpful right now.',
+  'It is time for a smaller bolus at dinner.',
+  'The pump should remain disconnected until lunch.',
+];
+
+const FOURTH_REVIEW_HARMLESS = [
+  'The recorded bolus amount is 3.5 U.',
+  'The logged carbohydrate amount is 24 g.',
+  'The reported basal rate is 0.6 U/h.',
+  'No bolus data is available before Tuesday.',
+  'The pump data may be incomplete after midnight.',
+  'The two recorded basal rates are identical.',
+  'The basal profile is absent from this export.',
+  'Insulin data is incomplete for two nights.',
+  'Coverage for basal delivery is 62%.',
+];
+
+const FOURTH_REVIEW_EDUCATION_HARMLESS = [
+  'More insulin can increase glucose uptake into muscle cells.',
+  'Glucagon raises glucose by releasing stored glucose from the liver.',
+  'Rapid-acting insulin usually starts working within about 15 minutes.',
+];
+
 describe('treatment directive filter', () => {
   it('has the regression coverage the safety review asked for', () => {
     expect(DIRECTIVES.length).toBeGreaterThanOrEqual(40);
@@ -407,6 +464,28 @@ describe('treatment directive filter', () => {
   });
 
   it.each(EDUCATION_HARMLESS)('allows descriptive physiology in education: %s', (sentence) => {
+    expect(parseTarvisGeneralEducationAnswer(JSON.stringify({
+      kind: 'explanation', headline: 'How insulin works', answer: sentence, limitations: [],
+    })).answer.answer).toBe(sentence);
+  });
+
+  it.each(FOURTH_REVIEW_DIRECTIVES)('blocks it in a personal answer (fourth review): %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(true);
+    expect(() => parsePersonal(sentence)).toThrow(/safe evidence boundary/i);
+  });
+
+  it.each(FOURTH_REVIEW_DIRECTIVES)('blocks it in a general education answer (fourth review): %s', (sentence) => {
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify({
+      kind: 'explanation', headline: 'How boluses work', answer: sentence, limitations: [],
+    }))).toThrow(/safety boundary|safe evidence boundary/i);
+  });
+
+  it.each(FOURTH_REVIEW_HARMLESS)('allows a record attribute, absence or coverage note: %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(false);
+    expect(parsePersonal(sentence).answer).toBe(sentence);
+  });
+
+  it.each(FOURTH_REVIEW_EDUCATION_HARMLESS)('allows general physiology in education (fourth review): %s', (sentence) => {
     expect(parseTarvisGeneralEducationAnswer(JSON.stringify({
       kind: 'explanation', headline: 'How insulin works', answer: sentence, limitations: [],
     })).answer.answer).toBe(sentence);
