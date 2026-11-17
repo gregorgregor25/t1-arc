@@ -55,11 +55,19 @@ internal data class GlucoseAlarmEpisode(
   val heldHighKind: GlucoseAlarmKind? = null,
   val heldHighStartedAt: Long? = null,
   /**
-   * Elapsed time the user chose a snooze. Null for the automatic pause after a
-   * logged hypo treatment and for snoozes saved before this was recorded; only
-   * a user snooze with a known start can carry into urgent low.
+   * Elapsed time the user chose a snooze. Null when no user snooze is known
+   * (none chosen, or saved before this was recorded); only a user snooze with
+   * a known start can carry into urgent low.
    */
   val snoozedAtElapsed: Long? = null,
+  /**
+   * When the user's own snooze ends. Kept apart from [snoozeUntilElapsed],
+   * which the automatic pause after a logged hypo treatment can lengthen, so
+   * that pause never wipes out or extends a user snooze carried into urgent
+   * low. Null for snoozes saved before this was recorded: then
+   * [snoozeUntilElapsed] is the user's own end.
+   */
+  val userSnoozeUntilElapsed: Long? = null,
 )
 
 internal data class GlucoseAlarmDecision(
@@ -278,7 +286,7 @@ internal object GlucoseAlarmPolicy {
       kind == GlucoseAlarmKind.URGENT_LOW && it.kind == GlucoseAlarmKind.LOW && sameSource && previousSameBoot
     }?.let { low ->
       val startedAt = low.snoozedAtElapsed ?: return@let null
-      val until = low.snoozeUntilElapsed ?: return@let null
+      val until = low.userSnoozeUntilElapsed ?: low.snoozeUntilElapsed ?: return@let null
       minOf(until, startedAt + URGENT_LOW_MAX_SNOOZE_MS).takeIf { it > elapsedNow }
     }
     val snoozed = (same && previousSameBoot && (previous?.snoozeUntilElapsed ?: 0L) > elapsedNow) || carriedSnoozeUntil != null
@@ -306,6 +314,16 @@ internal object GlucoseAlarmPolicy {
       carriedSnoozeUntilWall = carriedSnoozeUntil?.let { wallNow + (it - elapsedNow) },
       carriedSnoozedAtElapsed = carriedSnoozeUntil?.let { previous?.snoozedAtElapsed })
   }
+
+  /**
+   * The low episode after the automatic pause that follows a logged hypo
+   * treatment. The alert is held until [untilElapsed]; a user snooze already
+   * running keeps its own start and end, so it still carries into urgent low
+   * exactly as the user chose it.
+   */
+  fun episodeAfterHypoPause(current: GlucoseAlarmEpisode, untilElapsed: Long, untilWall: Long, bootCount: Int) =
+    current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, bootCount = bootCount,
+      userSnoozeUntilElapsed = current.snoozedAtElapsed?.let { current.userSnoozeUntilElapsed ?: current.snoozeUntilElapsed })
 
   fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long, kind: GlucoseAlarmKind = GlucoseAlarmKind.LOW): Long {
     val duration = untilWall - wallNow

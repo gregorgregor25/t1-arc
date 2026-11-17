@@ -217,7 +217,7 @@ internal object T1ArcGlucoseAlarmEngine {
           if (e.isNull("snoozeUntilWall")) null else e.getLong("snoozeUntilWall"), e.getInt("bootCount"),
           e.optLongOrNull("excursionStartedAt"),
           GlucoseAlarmKind.parse(e.optString("heldHighKind", "")), e.optLongOrNull("heldHighStartedAt"),
-          e.optLongOrNull("snoozedAtElapsed"))
+          e.optLongOrNull("snoozedAtElapsed"), e.optLongOrNull("userSnoozeUntilElapsed"))
       }.getOrNull() }
       loaded = true
     }
@@ -239,7 +239,8 @@ internal object T1ArcGlucoseAlarmEngine {
       .put("excursionStartedAt", current.excursionStartedAt ?: JSONObject.NULL)
       .put("heldHighKind", current.heldHighKind?.wire ?: JSONObject.NULL)
       .put("heldHighStartedAt", current.heldHighStartedAt ?: JSONObject.NULL)
-      .put("snoozedAtElapsed", current.snoozedAtElapsed ?: JSONObject.NULL))
+      .put("snoozedAtElapsed", current.snoozedAtElapsed ?: JSONObject.NULL)
+      .put("userSnoozeUntilElapsed", current.userSnoozeUntilElapsed ?: JSONObject.NULL))
     GlucoseAlarmStore.write(context, data)
   }
 
@@ -395,7 +396,7 @@ internal object T1ArcGlucoseAlarmEngine {
         heldHighStartedAt = decision.heldHighStartedAt,
         // A snoozed low deepening into urgent low keeps its (capped) snooze.
         snoozeUntilElapsed = decision.carriedSnoozeUntilElapsed, snoozeUntilWall = decision.carriedSnoozeUntilWall,
-        snoozedAtElapsed = decision.carriedSnoozedAtElapsed)
+        snoozedAtElapsed = decision.carriedSnoozedAtElapsed, userSnoozeUntilElapsed = decision.carriedSnoozeUntilElapsed)
       persist(context)
     } else if (old.kind != decision.kind || old.excursionStartedAt != decision.excursionStartedAt ||
       old.heldHighKind != decision.heldHighKind || old.heldHighStartedAt != decision.heldHighStartedAt) {
@@ -485,7 +486,7 @@ internal object T1ArcGlucoseAlarmEngine {
       val elapsed = SystemClock.elapsedRealtime()
       val untilElapsed = GlucoseAlarmPolicy.snoozeUntil(System.currentTimeMillis(), elapsed, until.toLong(), old.kind)
       episode = old.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = until.toLong(), snoozedAtElapsed = elapsed,
-        bootCount = boot(context))
+        userSnoozeUntilElapsed = untilElapsed, bootCount = boot(context))
       persist(context)
       stopPlaybackLocked(context)
       notificationFingerprint = null
@@ -498,7 +499,8 @@ internal object T1ArcGlucoseAlarmEngine {
   fun cancelSnooze(context: Context, id: String): Map<String, Any?> {
     synchronized(lock) {
       val old = currentEpisode(context, id)
-      episode = old.copy(snoozeUntilElapsed = 0L, snoozeUntilWall = null, snoozedAtElapsed = null)
+      episode = old.copy(snoozeUntilElapsed = 0L, snoozeUntilWall = null, snoozedAtElapsed = null,
+        userSnoozeUntilElapsed = null)
       persist(context)
     }
     reconcile(context)
@@ -555,9 +557,9 @@ internal object T1ArcGlucoseAlarmEngine {
         if (current?.kind == GlucoseAlarmKind.LOW && (current.snoozeUntilElapsed ?: 0L) < untilElapsed) {
           // An already sounding low is snoozed to the same end, so it is checked
           // again (and can sound again) when the pause ends.
-          // This automatic pause is not a user snooze: it never carries into urgent low.
-          episode = current.copy(snoozeUntilElapsed = untilElapsed, snoozeUntilWall = untilWall, snoozedAtElapsed = null,
-            bootCount = boot(context))
+          // This automatic pause is not a user snooze: it never carries into
+          // urgent low, but a user snooze already running still does.
+          episode = GlucoseAlarmPolicy.episodeAfterHypoPause(current, untilElapsed, untilWall, boot(context))
           if (activePlaybackEpisode == current.id) stopPlaybackLocked(context)
         }
         persist(context)

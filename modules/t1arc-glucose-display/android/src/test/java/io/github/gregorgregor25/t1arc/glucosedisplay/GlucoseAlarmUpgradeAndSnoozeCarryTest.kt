@@ -119,6 +119,31 @@ class GlucoseAlarmUpgradeAndSnoozeCarryTest {
     assertTrue(evaluate(2.8, paused).shouldNotify)
   }
 
+  @Test fun `a hypo-treatment pause after a user snooze keeps the user snooze for urgent low`() {
+    // Snoozed 10 minutes for a low 2 minutes ago, then a logged treatment pauses low for 20 minutes.
+    val snoozed = snoozedLow(snoozedAgo = 2 * minute, length = 10 * minute)
+    val paused = GlucoseAlarmPolicy.episodeAfterHypoPause(snoozed, elapsed + 20 * minute, now + 20 * minute, 2)
+    assertEquals(elapsed - 2 * minute, paused.snoozedAtElapsed)
+    assertEquals(elapsed + 8 * minute, paused.userSnoozeUntilElapsed)
+    assertEquals(elapsed + 20 * minute, paused.snoozeUntilElapsed)
+    // Five minutes later the reading falls to urgent low: still within the user's own snooze.
+    val urgent = evaluate(2.8, paused, monotonic = elapsed + 5 * minute, wall = now + 5 * minute,
+      lowPause = elapsed + 20 * minute)
+    assertFalse(urgent.shouldNotify)
+    assertEquals(elapsed + 8 * minute, urgent.carriedSnoozeUntilElapsed)
+    // After the user's snooze ends, urgent low sounds although the automatic low pause is still running.
+    assertTrue(evaluate(2.8, paused, monotonic = elapsed + 8 * minute, wall = now + 8 * minute,
+      lowPause = elapsed + 20 * minute).shouldNotify)
+  }
+
+  @Test fun `a hypo-treatment pause without a user snooze is still not carried`() {
+    val sounded = GlucoseAlarmEpisode("low", GlucoseAlarmKind.LOW, source, now - 5 * minute,
+      lastNotifiedElapsed = elapsed - minute, bootCount = 2)
+    val paused = GlucoseAlarmPolicy.episodeAfterHypoPause(sounded, elapsed + 15 * minute, now + 15 * minute, 2)
+    assertNull(paused.userSnoozeUntilElapsed); assertNull(paused.snoozedAtElapsed)
+    assertTrue(evaluate(2.8, paused, lowPause = elapsed + 15 * minute).shouldNotify)
+  }
+
   @Test fun `a snooze from another boot or another source is not carried`() {
     val low = snoozedLow(snoozedAgo = 5 * minute, length = 15 * minute)
     assertTrue(GlucoseAlarmPolicy.evaluate(config, GlucoseAlarmObservation(2.8, now), low, source, now, elapsed, 3, 12 * 60)
