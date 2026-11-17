@@ -79,6 +79,17 @@ describe('one meal recorded by several sources', () => {
     expect(ids(result)).toEqual(['glooko:meal:1', 'nightscout:meal:b']);
   });
 
+  it('does not strand a meal copy when the closest match would block another pair', () => {
+    const result = reconcileContextSources([
+      meal('glooko:meal:a', 'glooko-export', at, 20),
+      meal('glooko:meal:b', 'glooko-export', at + 2 * minute, 20),
+      meal('nightscout:meal:early', 'nightscout', at - 110_000, 20),
+      meal('nightscout:meal:late', 'nightscout', at + 10_000, 20),
+    ]);
+    expect(ids(result)).toEqual(['glooko:meal:a', 'glooko:meal:b']);
+    expect(grams(result)).toBe(40);
+  });
+
   it('matches within 2 minutes and 0.5 g, and keeps meals just outside', () => {
     const glooko = meal('glooko:meal:1', 'glooko-export', at, 30);
     const count = (offset: number, carbs: number) =>

@@ -65,8 +65,8 @@ interface CopyRules<T> {
  * already absorbed) and that record has not yet absorbed a copy from the same
  * source. So one canonical record absorbs at most one copy from each lower
  * source, and two genuine records close together in one source both stay.
- * Matching is greedy by time difference, closest first, so each copy goes to
- * the nearest record it can belong to. Apart from the returned order, which
+ * Matching is one-to-one and keeps as many matches as possible, preferring
+ * the closest records when there is a choice. Apart from the returned order, which
  * follows the input, the result does not depend on input order.
  */
 function reconcileCopies<T extends { id: string; sourceId: string }>(
@@ -112,16 +112,57 @@ function reconcileCopies<T extends { id: string; sourceId: string }>(
         pairs.push({ copy, group, distance: Math.min(...distances) });
       }
     }
-    pairs.sort(
-      (left, right) =>
-        left.distance - right.distance ||
-        timeOf(left.group.canonical.record) - timeOf(right.group.canonical.record) ||
-        left.group.canonical.record.id.localeCompare(right.group.canonical.record.id) ||
-        left.copy.record.id.localeCompare(right.copy.record.id),
-    );
-    const absorbed = new Set<RankedRecord<T>>();
+    const compare = (
+      left: { copy: RankedRecord<T>; group: CopyGroup<T>; distance: number },
+      right: { copy: RankedRecord<T>; group: CopyGroup<T>; distance: number },
+    ) =>
+      left.distance - right.distance ||
+      timeOf(left.group.canonical.record) - timeOf(right.group.canonical.record) ||
+      left.group.canonical.record.id.localeCompare(right.group.canonical.record.id) ||
+      left.copy.record.id.localeCompare(right.copy.record.id);
+    pairs.sort(compare);
+    const options = new Map<RankedRecord<T>, CopyGroup<T>[]>();
     for (const { copy, group } of pairs) {
-      if (absorbed.has(copy) || group.absorbedRanks.has(rank)) continue;
+      const list = options.get(copy) ?? [];
+      list.push(group);
+      options.set(copy, list);
+    }
+    // One-to-one matching: closest pairs first, then augmenting paths so a
+    // copy is never stranded when moving another copy to its second-nearest
+    // record would let both be matched. This keeps the largest possible
+    // number of matches, so totals never rise because of match order.
+    const groupHolder = new Map<CopyGroup<T>, RankedRecord<T>>();
+    const copyGroup = new Map<RankedRecord<T>, CopyGroup<T>>();
+    const assign = (copy: RankedRecord<T>, group: CopyGroup<T>) => {
+      groupHolder.set(group, copy);
+      copyGroup.set(copy, group);
+    };
+    for (const { copy, group } of pairs) {
+      if (copyGroup.has(copy) || groupHolder.has(group)) continue;
+      assign(copy, group);
+    }
+    const augment = (copy: RankedRecord<T>, visited: Set<CopyGroup<T>>): boolean => {
+      for (const group of options.get(copy) ?? []) {
+        if (visited.has(group)) continue;
+        visited.add(group);
+        const holder = groupHolder.get(group);
+        if (holder === undefined || augment(holder, visited)) {
+          assign(copy, group);
+          return true;
+        }
+      }
+      return false;
+    };
+    const unmatched = copies
+      .filter((copy) => !copyGroup.has(copy) && options.has(copy))
+      .sort(
+        (left, right) =>
+          timeOf(left.record) - timeOf(right.record) ||
+          left.record.id.localeCompare(right.record.id),
+      );
+    for (const copy of unmatched) augment(copy, new Set());
+    const absorbed = new Set<RankedRecord<T>>();
+    for (const [copy, group] of copyGroup) {
       absorbed.add(copy);
       group.absorbedRanks.add(rank);
       group.members.push(copy.record);

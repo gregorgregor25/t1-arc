@@ -227,6 +227,22 @@ describe('one delivery recorded by several sources', () => {
     ).toEqual({ 'nightscout:bolus:a': 'glooko:a', 'nightscout:bolus:b': 'glooko:b' });
   });
 
+  it('does not strand a copy when the closest match would block another pair', () => {
+    // Glooko 12:00 and 12:02; Nightscout 11:58:10 and 12:00:10. Pairing the
+    // closest records first would leave 11:58:10 unmatched and count three.
+    const noon = Date.parse('2026-11-12T12:00:00Z');
+    const result = reconcileBolusSources([
+      bolus('glooko:a', 'glooko-export', noon, 1),
+      bolus('glooko:b', 'glooko-export', noon + 2 * minute, 1),
+      bolus('nightscout:bolus:early', 'nightscout', noon - 110_000, 1),
+      bolus('nightscout:bolus:late', 'nightscout', noon + 10_000, 1),
+    ]);
+    expect(ids(result.boluses)).toEqual(['glooko:a', 'glooko:b']);
+    expect(
+      Object.fromEntries(result.hidden.map(({ record, keptId }) => [record.id, keptId])),
+    ).toEqual({ 'nightscout:bolus:early': 'glooko:a', 'nightscout:bolus:late': 'glooko:b' });
+  });
+
   it('counts an SMB sent locally and to Nightscout once, and keeps separate SMBs', () => {
     const smb = (id: string, sourceId: string, timestamp: number): BolusDelivery => ({
       ...bolus(id, sourceId, timestamp, 0.4),
