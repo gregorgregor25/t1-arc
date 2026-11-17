@@ -133,3 +133,22 @@ export function deviceAgeChips(
     return chip ? [chip] : [];
   });
 }
+
+/**
+ * True on the last expected day of the current sensor, or after it. Only used
+ * to bring the existing "Record sensor change" action forward on Today; it is
+ * not a reminder and creates no notification or alert. Without a chosen
+ * expected life nothing is assumed.
+ */
+export function sensorChangeDue(
+  chips: readonly DeviceAgeChip[],
+  now: number,
+  expectedSensorLife?: ExpectedSensorLifeDays | null,
+): boolean {
+  if (expectedSensorLife === null || expectedSensorLife === undefined) return false;
+  const sensor = chips.find((chip) => chip.kind === 'sensor');
+  if (!sensor) return false;
+  const elapsed = now - sensor.startedAt;
+  if (!Number.isFinite(elapsed) || elapsed < 0) return false;
+  return Math.floor(elapsed / DAY) + 1 >= expectedSensorLife;
+}

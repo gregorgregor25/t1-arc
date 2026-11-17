@@ -1,7 +1,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { AskTarvisButton } from './AskTarvisButton';
 import { FOOD_LOG_SOURCE_ID } from '@/data/food/foodLogRepository';
-import { MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
+import { isManualMeterReadingEvent, MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
+import { contextNoteDisplayTitle } from '@/domain/contextNotes';
 import { createTarvisPeriodEntry } from '@/domain/tarvisEntry';
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import {
@@ -440,7 +441,13 @@ function Inspector({
           RECORDED NEAR THIS TIME
         </Text>
         {contextEvents.length ? contextEvents.map((event) => {
-          const icon: keyof typeof Ionicons.glyphMap = event.kind === "meal"
+          // A finger-prick meter reading is a manual record, not a sensor
+          // value: it is listed here by name and never plotted on the chart.
+          const meterReading = isManualMeterReadingEvent(event);
+          const title = event.kind === "note" ? contextNoteDisplayTitle(event, regional) : event.title;
+          const icon: keyof typeof Ionicons.glyphMap = meterReading
+            ? "eyedrop-outline"
+            : event.kind === "meal"
             ? "restaurant-outline"
             : event.kind === "activity"
               ? "walk-outline"
@@ -465,10 +472,10 @@ function Inspector({
               </View>
               <View style={styles.contextCopy}>
                 <Text numberOfLines={1} style={[styles.contextTitle, { color: colors.text }]}>
-                  {event.title}
+                  {title}
                 </Text>
                 <Text style={[styles.contextTime, { color: colors.textTertiary }]}>
-                  {formatTime(event.start)} · {event.kind === "note" ? "Note" : event.kind.charAt(0).toUpperCase() + event.kind.slice(1)}
+                  {formatTime(event.start)} · {meterReading ? "Meter reading (not from your sensor)" : event.kind === "note" ? "Note" : event.kind.charAt(0).toUpperCase() + event.kind.slice(1)}
                   {event.kind === "meal" && event.carbsGrams !== undefined
                     ? ` · ${formatRegionalNumber(event.carbsGrams, regional.locale)} g carbs`
                     : ""}
@@ -476,7 +483,7 @@ function Inspector({
               </View>
               {canEdit ? (
                 <Pressable
-                  accessibilityLabel={`Edit ${event.title}`}
+                  accessibilityLabel={`Edit ${title}`}
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => onEditContext?.(event)}

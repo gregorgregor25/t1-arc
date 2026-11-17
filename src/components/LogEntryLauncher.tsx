@@ -1,5 +1,4 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   Modal,
   Pressable,
@@ -13,9 +12,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/theme/theme";
-import { FLOATING_BUTTON_SIZE } from "@/theme/tokens";
-
-import { SurfaceSheen } from "./SurfaceSheen";
+import {
+  FLOATING_BUTTON_SIZE,
+  MIN_TOUCH_TARGET,
+  PREFERRED_TOUCH_TARGET,
+  typeScale,
+} from "@/theme/tokens";
 
 export type LogEntryKind =
   | "food"
@@ -28,21 +30,54 @@ export type LogEntryKind =
   | "medication"
   | "insulin"
   | "ketone"
+  | "meter-glucose"
   | "sensor-start"
   | "note";
 
-const OPTIONS: {
+export interface LogEntryOption {
   kind: LogEntryKind;
   label: string;
   detail: string;
   icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { kind: 'hypo-treatment', label: 'Treating a hypo', detail: 'What you took, amount and time', icon: 'heart-outline' },
+}
+
+/** The prominent first choice: a hypo treatment, logged in two taps. */
+export const LOG_SHEET_HYPO_OPTION: LogEntryOption = {
+  kind: 'hypo-treatment',
+  label: 'Treating a hypo',
+  detail: 'What you took, amount and time',
+  icon: 'heart-outline',
+};
+
+/** The three most used entry types, shown as large buttons. */
+export const LOG_SHEET_PRIMARY_OPTIONS: readonly LogEntryOption[] = [
   {
     kind: "food",
     label: "Food",
     detail: "Meal, snack, barcode or quick carbs",
     icon: "restaurant-outline",
+  },
+  {
+    kind: "insulin",
+    label: "Insulin dose",
+    detail: "Record a point dose already delivered",
+    icon: "water-outline",
+  },
+  {
+    kind: "ketone",
+    label: "Ketones",
+    detail: "Blood meter or urine strip reading",
+    icon: "flask-outline",
+  },
+];
+
+/** Everything else, under "More". */
+export const LOG_SHEET_MORE_OPTIONS: readonly LogEntryOption[] = [
+  {
+    kind: "meter-glucose",
+    label: "Meter reading",
+    detail: "A finger-prick reading from your glucose meter",
+    icon: "eyedrop-outline",
   },
   {
     kind: "activity",
@@ -57,30 +92,6 @@ const OPTIONS: {
     icon: "moon-outline",
   },
   {
-    kind: "weight",
-    label: "Weight",
-    detail: "Record a measurement",
-    icon: "scale-outline",
-  },
-  {
-    kind: "medication",
-    label: "Medication",
-    detail: "Name and optional amount",
-    icon: "medical-outline",
-  },
-  {
-    kind: "insulin",
-    label: "Insulin dose",
-    detail: "Record a point dose already delivered",
-    icon: "water-outline",
-  },
-  {
-    kind: "ketone",
-    label: "Ketones",
-    detail: "Blood meter or urine strip reading",
-    icon: "flask-outline",
-  },
-  {
     kind: "note",
     label: "Note",
     detail: "Illness, stress, travel or anything else",
@@ -93,9 +104,35 @@ const OPTIONS: {
     icon: "radio-outline",
   },
   { kind: 'site-change', label: 'Pump / sensor site', detail: 'Record a location and view recent sites', icon: 'body-outline' },
+  {
+    kind: "medication",
+    label: "Medication",
+    detail: "Name and optional amount",
+    icon: "medical-outline",
+  },
+  {
+    kind: "weight",
+    label: "Weight",
+    detail: "Record a measurement",
+    icon: "scale-outline",
+  },
   { kind: 'lab-result', label: 'Lab result', detail: 'HbA1c or another result from your check-up', icon: 'flask-outline' },
 ];
 
+/** Every entry type the sheet offers, in display order. */
+export function logSheetOptions(): readonly LogEntryOption[] {
+  return [LOG_SHEET_HYPO_OPTION, ...LOG_SHEET_PRIMARY_OPTIONS, ...LOG_SHEET_MORE_OPTIONS];
+}
+
+/** Spoken label for an entry button, for example "Log insulin dose". */
+export function logEntryAccessibilityLabel(option: LogEntryOption) {
+  return `Log ${option.label.toLowerCase()}`;
+}
+
+/**
+ * The Today "Log" button: a labelled pill so its purpose does not depend on
+ * recognising the plus icon.
+ */
 export function FloatingLogButton({
   onPress,
   style,
@@ -103,7 +140,7 @@ export function FloatingLogButton({
   onPress(): void;
   style?: StyleProp<ViewStyle>;
 }) {
-  const { colors, dark, radius } = useAppTheme();
+  const { colors } = useAppTheme();
 
   return (
     <Pressable
@@ -114,38 +151,36 @@ export function FloatingLogButton({
       style={({ pressed }) => [
         styles.floatingButton,
         {
-          backgroundColor: dark ? colors.surfaceElevated : colors.surface,
-          borderColor: `${colors.primary}70`,
-          borderRadius: radius.lg,
-          opacity: pressed ? 0.76 : 1,
-          shadowColor: colors.surfaceShadow,
-          transform: [{ scale: pressed ? 0.96 : 1 }],
+          backgroundColor: colors.primary,
+          opacity: pressed ? 0.82 : 1,
+          shadowColor: colors.shadow,
+          transform: [{ scale: pressed ? 0.97 : 1 }],
         },
         style,
       ]}
     >
-      <LinearGradient
-        colors={
-          dark
-            ? [`${colors.primary}20`, "rgba(255,255,255,0)"]
-            : [`${colors.primary}14`, "rgba(255,255,255,0.36)"]
-        }
-        end={{ x: 1, y: 1 }}
-        pointerEvents="none"
-        start={{ x: 0, y: 0 }}
-        style={[StyleSheet.absoluteFill, { borderRadius: radius.lg }]}
-      />
-      <SurfaceSheen radius={radius.lg} />
       <Ionicons
         accessibilityElementsHidden
-        color={colors.primaryStrong}
+        color={colors.onPrimary}
+        importantForAccessibility="no-hide-descendants"
         name="add"
-        size={29}
+        size={24}
       />
+      <Text
+        maxFontSizeMultiplier={1.4}
+        style={[styles.floatingLabel, { color: colors.onPrimary }]}
+      >
+        Log
+      </Text>
     </Pressable>
   );
 }
 
+/**
+ * Log sheet: "Treating a hypo" first, then Food, Insulin dose and Ketones,
+ * then every other entry type under "More". All existing types stay one tap
+ * away; nothing here calculates or suggests a dose.
+ */
 export function LogEntryLauncher({
   onChoose,
   onClose,
@@ -156,139 +191,185 @@ export function LogEntryLauncher({
   visible: boolean;
 }) {
   const { colors, radius } = useAppTheme();
+  const hypo = LOG_SHEET_HYPO_OPTION;
 
   return (
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="fullScreen"
       statusBarTranslucent
+      transparent
       visible={visible}
     >
-      <SafeAreaView
-        accessibilityViewIsModal
-        edges={["top", "bottom"]}
-        style={[styles.safeArea, { backgroundColor: colors.background }]}
-      >
-        <LinearGradient
-          colors={[colors.backgroundGlow, colors.background, colors.background]}
-          end={{ x: 0.82, y: 0.72 }}
-          locations={[0, 0.42, 1]}
-          pointerEvents="none"
-          start={{ x: 0.02, y: 0 }}
-          style={StyleSheet.absoluteFill}
+      <View style={styles.backdropContainer}>
+        <Pressable
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          onPress={onClose}
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]}
         />
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
+        <SafeAreaView
+          accessibilityViewIsModal
+          edges={["bottom"]}
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderTopLeftRadius: radius.xl,
+              borderTopRightRadius: radius.xl,
+            },
+          ]}
+        >
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={[styles.grabber, { backgroundColor: colors.border }]}
+          />
+          <View style={styles.header}>
             <Text
               accessibilityRole="header"
               style={[styles.title, { color: colors.text }]}
             >
-              Log something
+              Log
             </Text>
+            <Pressable
+              accessibilityLabel="Close logging options"
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.closeButton,
+                {
+                  backgroundColor: pressed ? colors.surfaceMuted : colors.surfaceElevated,
+                  borderColor: colors.border,
+                  borderRadius: radius.pill,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.textSecondary}
+                importantForAccessibility="no-hide-descendants"
+                name="close"
+                size={24}
+              />
+            </Pressable>
           </View>
-          <Pressable
-            accessibilityLabel="Close logging options"
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={onClose}
-            style={({ pressed }) => [
-              styles.closeButton,
-              {
-                backgroundColor: colors.surfaceElevated,
-                borderColor: colors.surfaceBorder,
-                borderRadius: radius.pill,
-                opacity: pressed ? 0.68 : 1,
-              },
-            ]}
-          >
-            <Ionicons
-              accessibilityElementsHidden
-              color={colors.textSecondary}
-              name="close"
-              size={24}
-            />
-          </Pressable>
-        </View>
 
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.options}>
-            {OPTIONS.map((option) => (
-              <Pressable
-                accessibilityHint={option.detail}
-                accessibilityLabel={`Log ${option.label.toLowerCase()}`}
-                accessibilityRole="button"
-                key={option.kind}
-                onPress={() => onChoose(option.kind)}
-                style={({ pressed }) => [
-                  styles.option,
-                  {
-                    borderColor: colors.surfaceBorder,
-                    borderRadius: radius.lg,
-                    opacity: pressed ? 0.72 : 1,
-                    shadowColor: colors.surfaceShadow,
-                    transform: [{ scale: pressed ? 0.985 : 1 }],
-                  },
-                ]}
-              >
-                <LinearGradient
-                  colors={[
-                    colors.surfaceGradientStart,
-                    colors.surfaceGradientMiddle,
-                    colors.surfaceGradientEnd,
-                  ]}
-                  end={{ x: 0.94, y: 1 }}
-                  locations={[0, 0.5, 1]}
-                  pointerEvents="none"
-                  start={{ x: 0.02, y: 0 }}
-                  style={[StyleSheet.absoluteFill, { borderRadius: radius.lg }]}
-                />
-                <SurfaceSheen radius={radius.lg} />
-                <View
-                  accessibilityElementsHidden
-                  style={[
-                    styles.optionIcon,
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <Pressable
+              accessibilityHint={hypo.detail}
+              accessibilityLabel={logEntryAccessibilityLabel(hypo)}
+              accessibilityRole="button"
+              onPress={() => onChoose(hypo.kind)}
+              style={({ pressed }) => [
+                styles.hypoButton,
+                {
+                  backgroundColor: `${colors.low}1F`,
+                  borderColor: colors.low,
+                  borderRadius: radius.lg,
+                  opacity: pressed ? 0.78 : 1,
+                },
+              ]}
+            >
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.low}
+                importantForAccessibility="no-hide-descendants"
+                name={hypo.icon}
+                size={28}
+              />
+              <View style={styles.optionCopy}>
+                <Text style={[styles.hypoLabel, { color: colors.text }]}>
+                  {hypo.label}
+                </Text>
+                <Text style={[styles.optionDetail, { color: colors.textSecondary }]}>
+                  {hypo.detail}
+                </Text>
+              </View>
+              <Ionicons
+                accessibilityElementsHidden
+                color={colors.textSecondary}
+                importantForAccessibility="no-hide-descendants"
+                name="chevron-forward"
+                size={21}
+              />
+            </Pressable>
+
+            <View style={styles.primaryRow}>
+              {LOG_SHEET_PRIMARY_OPTIONS.map((option) => (
+                <Pressable
+                  accessibilityHint={option.detail}
+                  accessibilityLabel={logEntryAccessibilityLabel(option)}
+                  accessibilityRole="button"
+                  key={option.kind}
+                  onPress={() => onChoose(option.kind)}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
                     {
-                      backgroundColor: `${colors.primary}16`,
-                      borderColor: `${colors.primary}28`,
+                      backgroundColor: pressed ? colors.surfaceMuted : colors.surfaceElevated,
+                      borderColor: colors.border,
+                      borderRadius: radius.lg,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    accessibilityElementsHidden
+                    color={colors.primary}
+                    importantForAccessibility="no-hide-descendants"
+                    name={option.icon}
+                    size={26}
+                  />
+                  <Text style={[styles.primaryLabel, { color: colors.text }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text
+              accessibilityRole="header"
+              style={[styles.moreHeading, { color: colors.textSecondary }]}
+            >
+              More
+            </Text>
+            <View style={styles.moreGrid}>
+              {LOG_SHEET_MORE_OPTIONS.map((option) => (
+                <Pressable
+                  accessibilityHint={option.detail}
+                  accessibilityLabel={logEntryAccessibilityLabel(option)}
+                  accessibilityRole="button"
+                  key={option.kind}
+                  onPress={() => onChoose(option.kind)}
+                  style={({ pressed }) => [
+                    styles.moreButton,
+                    {
+                      backgroundColor: pressed ? colors.surfaceMuted : colors.background,
+                      borderColor: colors.border,
                       borderRadius: radius.md,
                     },
                   ]}
                 >
                   <Ionicons
-                    color={colors.primary}
+                    accessibilityElementsHidden
+                    color={colors.textSecondary}
+                    importantForAccessibility="no-hide-descendants"
                     name={option.icon}
-                    size={22}
+                    size={20}
                   />
-                </View>
-                <View style={styles.optionCopy}>
-                  <Text style={[styles.optionLabel, { color: colors.text }]}>
+                  <Text style={[styles.moreLabel, { color: colors.text }]}>
                     {option.label}
                   </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.optionDetail,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    {option.detail}
-                  </Text>
-                </View>
-                <Ionicons
-                  accessibilityElementsHidden
-                  color={colors.textTertiary}
-                  name="chevron-forward"
-                  size={21}
-                />
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -296,95 +377,142 @@ export function LogEntryLauncher({
 const styles = StyleSheet.create({
   floatingButton: {
     position: "absolute",
-    width: FLOATING_BUTTON_SIZE,
-    height: FLOATING_BUTTON_SIZE,
-    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: FLOATING_BUTTON_SIZE,
+    paddingLeft: 18,
+    paddingRight: 22,
+    borderRadius: FLOATING_BUTTON_SIZE / 2,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
+    gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 16,
     elevation: 9,
   },
-  safeArea: {
-    flex: 1,
+  floatingLabel: {
+    fontSize: typeScale.title,
+    lineHeight: 24,
+    fontWeight: "700",
   },
-  header: {
+  backdropContainer: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheet: {
     width: "100%",
     maxWidth: 760,
-    minHeight: 88,
+    maxHeight: "92%",
     alignSelf: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
+  },
+  grabber: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 10,
+  },
+  header: {
     paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 8,
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 16,
   },
-  headerCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
   title: {
-    maxWidth: 530,
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "600",
-    letterSpacing: -0.55,
+    flex: 1,
+    fontSize: typeScale.headline,
+    lineHeight: 30,
+    fontWeight: "700",
   },
   closeButton: {
-    width: 44,
-    height: 44,
+    width: PREFERRED_TOUCH_TARGET,
+    height: PREFERRED_TOUCH_TARGET,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
   },
   content: {
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
     paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 28,
+    paddingTop: 4,
+    paddingBottom: 24,
+    gap: 12,
   },
-  options: {
-    gap: 9,
-  },
-  option: {
+  hypoButton: {
     minHeight: 72,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderWidth: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.13,
-    shadowRadius: 14,
-    elevation: 4,
+    gap: 14,
   },
-  optionIcon: {
-    width: 42,
-    height: 42,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
+  hypoLabel: {
+    fontSize: typeScale.title,
+    lineHeight: 23,
+    fontWeight: "700",
   },
   optionCopy: {
     flex: 1,
     minWidth: 0,
   },
-  optionLabel: {
-    fontSize: 15,
+  optionDetail: {
+    marginTop: 2,
+    fontSize: typeScale.footnote,
+    lineHeight: 18,
+  },
+  primaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  primaryButton: {
+    flexGrow: 1,
+    flexBasis: 96,
+    minHeight: 88,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  primaryLabel: {
+    fontSize: typeScale.body,
+    lineHeight: 20,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  moreHeading: {
+    marginTop: 6,
+    fontSize: typeScale.callout,
     lineHeight: 20,
     fontWeight: "700",
   },
-  optionDetail: {
-    marginTop: 1,
-    fontSize: 13,
-    lineHeight: 18,
+  moreGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  moreButton: {
+    flexGrow: 1,
+    flexBasis: 150,
+    minHeight: Math.max(MIN_TOUCH_TARGET, 52),
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  moreLabel: {
+    flexShrink: 1,
+    fontSize: typeScale.body,
+    lineHeight: 20,
+    fontWeight: "600",
   },
 });

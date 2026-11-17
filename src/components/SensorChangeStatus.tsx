@@ -13,9 +13,11 @@ import { useAppTheme } from '@/theme/theme';
 import { ManualContextCard } from './ManualContextCard';
 
 /** Small inline context alongside glucose, without changing the value, freshness or alerts. */
-export function SensorChangeStatus({ sourceId, onRecord }: {
+export function SensorChangeStatus({ sourceId, onRecord, showRecordAction = true }: {
   sourceId?: string;
   onRecord(): void;
+  /** Today shows the action only near sensor end (see DeviceAgeChips); the Log sheet always has it. */
+  showRecordAction?: boolean;
 }) {
   const { colors, radius } = useAppTheme();
   const { demoMode, deleteManualContext, now, ownerIdentity, repository, revision } = useDataContext();
@@ -75,7 +77,7 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
           <Ionicons name="create-outline" size={18} color={colors.textSecondary} accessibilityElementsHidden />
         </Pressable>
       ) : null}
-      <Pressable accessibilityRole="button" onPress={onRecord}
+      {showRecordAction ? <Pressable accessibilityRole="button" onPress={onRecord}
         accessibilityLabel="Record sensor change"
         accessibilityHint="Opens a form to record when you changed your sensor. Nothing is saved until you confirm. This does not start a sensor or change alerts."
         style={({ pressed }) => [styles.action, {
@@ -85,7 +87,7 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
         }]}>
         <Ionicons name="add-outline" size={20} color={colors.primary} accessibilityElementsHidden />
         <Text style={[styles.actionLabel, { color: colors.primary }]}>Record sensor change</Text>
-      </Pressable>
+      </Pressable> : null}
       <ManualContextCard editingEvent={editingEvent} glucoseSourceId={sourceId}
         initialTimestamp={now} onEditEnd={() => setEditingEvent(undefined)} showLauncher={false} />
     </View>
@@ -93,7 +95,7 @@ export function SensorChangeStatus({ sourceId, onRecord }: {
 }
 
 const styles = StyleSheet.create({
-  container: { marginTop: 12, gap: 8 },
+  container: { gap: 8 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48, paddingHorizontal: 8 },
   copy: { flex: 1, gap: 2 },
   title: { fontSize: 14, fontWeight: '600' },

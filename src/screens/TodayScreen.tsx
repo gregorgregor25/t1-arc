@@ -39,7 +39,9 @@ import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualCont
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
-import { addDays, dayRange } from "@/domain/time";
+import { addDays, dayRange, formatDate } from "@/domain/time";
+import { connectionSettingsTarget } from "@/domain/connectionSummary";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
@@ -178,6 +180,16 @@ export function TodayScreen() {
     }
   }
 
+  function checkGlucoseConnection() {
+    // Opens the settings page of the source the card's reading came from,
+    // or source health when that source has no page of its own (AAPS).
+    const target = cardReading ? connectionSettingsTarget(cardReading.sourceId) : undefined;
+    navigation.navigate(
+      "Sources",
+      target ? sourceSettingsRouteParams(target) : { ...sourceSettingsRouteParams(), panel: "source-health" },
+    );
+  }
+
   function addFromTimeline(timestamp: number, kind: "meal" | "note") {
     setTimelineActionError(undefined);
     setEditingContext(undefined);
@@ -269,6 +281,7 @@ export function TodayScreen() {
     <View style={styles.screen}>
       <AppScreen
         title="Today"
+        subtitle={formatDate(today)}
         quietHeader
         bottomClearance={FLOATING_BUTTON_CLEARANCE}
         refreshing={syncing}
@@ -299,11 +312,24 @@ export function TodayScreen() {
                 source: undefined,
               })
             }
+            onCheckConnection={checkGlucoseConnection}
+            onLogHypoTreatment={() => chooseLogEntry("hypo-treatment")}
+            onLogMeterReading={() => chooseLogEntry("meter-glucose")}
           />
         )}
-        <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
-        <DeviceAgeChips />
-        <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
+        {/* Checks shrink to chips under Now until they need attention. */}
+        <View style={styles.chips}>
+          <SensorChangeStatus
+            onRecord={() => chooseLogEntry('sensor-start')}
+            showRecordAction={false}
+            sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)}
+          />
+          <DeviceAgeChips onRecordSensorChange={() => chooseLogEntry('sensor-start')} />
+          <ConnectionSummary
+            insulinThrough={insulinThrough}
+            sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]}
+          />
+        </View>
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
             {latest.error ? (
@@ -334,6 +360,7 @@ export function TodayScreen() {
           insulinProvenance={insulinProvenance}
           insulinThrough={insulinThrough}
           range={dayRange(today, now)}
+          gmi={<GmiCard variant="inline" />}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {
               focus: "glucose",
@@ -350,7 +377,6 @@ export function TodayScreen() {
           }
         />
 
-        <GmiCard />
         <View style={styles.timeline}>
           {selectedTimeline.error ? (
             <ErrorCard
@@ -452,6 +478,10 @@ export function TodayScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  chips: {
+    marginTop: 12,
+    gap: 10,
   },
   latestError: {
     marginTop: 12,

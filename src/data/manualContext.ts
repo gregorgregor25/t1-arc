@@ -8,7 +8,12 @@ import { contextNoteCategoryLabel } from "@/domain/contextNotes";
 import { sensorModel, sensorSelection } from "@/domain/sensorModels";
 import { observationDescription, validatePersonalObservation, type PersonalObservation, type BodyLocation } from '@/domain/personalObservations';
 import { addDays, toDateKey, zonedDateTimeToTimestamp } from '@/domain/time';
-import { formatRegionalNumber } from "@/domain/regionalFormat";
+import {
+  formatGlucose,
+  formatRegionalNumber,
+  glucoseToMmolL,
+  glucoseUnitLabel,
+} from "@/domain/regionalFormat";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import {
   decodeManualKetoneDetail,
@@ -22,6 +27,13 @@ import {
 export const MANUAL_CONTEXT_SOURCE_ID = "t1arc-manual";
 
 const MANUAL_KETONE_FUTURE_TOLERANCE_MS = 60_000;
+
+/** Stored title of a hand-entered meter (fingerstick) reading. */
+export const MANUAL_METER_READING_TITLE = "Meter reading";
+/** Canonical range, matching the context-note glucose column and backups. */
+const METER_READING_MIN_MMOL_L = 1;
+const METER_READING_MAX_MMOL_L = 40;
+export type MeterReadingUnit = "mmolL" | "mgDl";
 
 interface DraftBase {
   timestamp: number;
@@ -64,6 +76,18 @@ export type ManualContextDraft =
       kind: "ketone";
       ketoneType: "urine";
       value: ManualUrineKetoneLevel;
+    })
+  | (DraftBase & {
+      /**
+       * A blood glucose meter (fingerstick) reading typed in by the user. It
+       * is a record only: it is saved as a context note with a canonical
+       * mmol/L value and never enters the CGM glucose readings used by alarms,
+       * the current glucose card, statistics, widgets or the watch.
+       */
+      kind: "meter-glucose";
+      glucoseMmolL: number;
+      /** Unit the user typed the value in, kept for provenance. */
+      enteredUnit: MeterReadingUnit;
     })
   | (DraftBase & {
       kind: "sensor-start";
@@ -127,8 +151,42 @@ function validatedManualKetoneReading(
   return { ketoneType: "urine", value: draft.value };
 }
 
+/** Validates and rounds a meter reading to the stored canonical precision. */
+export function validatedMeterReadingMmolL(value: number): number {
+  if (
+    !Number.isFinite(value) ||
+    value < METER_READING_MIN_MMOL_L ||
+    value > METER_READING_MAX_MMOL_L
+  ) {
+    const regional = getRuntimeRegionalDefaults();
+    const bound = (mmolL: number) =>
+      formatGlucose(mmolL, regional, { withUnit: true });
+    throw new Error(
+      `A meter reading must be between ${bound(METER_READING_MIN_MMOL_L)} and ${bound(METER_READING_MAX_MMOL_L)}.`,
+    );
+  }
+  return Math.round(value * 100) / 100;
+}
+
+/** Converts a typed meter value in the user's unit to canonical mmol/L. */
+export function meterReadingMmolLFromInput(
+  value: number,
+  unit: MeterReadingUnit,
+): number {
+  return validatedMeterReadingMmolL(glucoseToMmolL(value, unit));
+}
+
+function meterReadingText(glucoseMmolL: number, unit: MeterReadingUnit) {
+  return formatGlucose(glucoseMmolL, {
+    locale: getRuntimeRegionalDefaults().locale,
+    glucoseUnit: unit,
+  });
+}
+
 function defaultTitle(draft: ManualContextDraft) {
   switch (draft.kind) {
+    case "meter-glucose":
+      return `${MANUAL_METER_READING_TITLE} · ${meterReadingText(validatedMeterReadingMmolL(draft.glucoseMmolL), draft.enteredUnit)}`;
     case 'hypo-treatment': return 'Hypo treatment';
     case 'food-incomplete': return 'Some food was not logged';
     case 'lab-result': return 'Laboratory result';
@@ -176,6 +234,39 @@ export function manualKetoneDraftFromEvent(
 
 export function isManualKetoneEvent(event: HealthContextEvent) {
   return manualKetoneDraftFromEvent(event) !== undefined;
+}
+
+type ManualMeterReadingDraft = Extract<ManualContextDraft, { kind: "meter-glucose" }>;
+
+/**
+ * A meter reading saved in T1 Arc: a manual note carrying a canonical glucose
+ * value. Imported meter checks (for example from Glooko) are not manual and
+ * are not editable here.
+ */
+export function manualMeterReadingDraftFromEvent(
+  event: HealthContextEvent,
+): ManualMeterReadingDraft | undefined {
+  if (
+    event.kind !== "note" ||
+    event.origin !== "manual" ||
+    event.sourceId !== MANUAL_CONTEXT_SOURCE_ID ||
+    event.glucoseMmolL === undefined ||
+    event.sensorStarted === true ||
+    event.observation !== undefined
+  ) {
+    return undefined;
+  }
+  const unit = getRuntimeRegionalDefaults().glucoseUnit;
+  return {
+    kind: "meter-glucose",
+    timestamp: event.start,
+    glucoseMmolL: event.glucoseMmolL,
+    enteredUnit: unit === "mgDl" ? "mgDl" : "mmolL",
+  };
+}
+
+export function isManualMeterReadingEvent(event: HealthContextEvent) {
+  return manualMeterReadingDraftFromEvent(event) !== undefined;
 }
 
 function optionalText(
@@ -275,6 +366,11 @@ export function manualContextDraftFromEvent(
           draft = ketone;
           break;
         }
+        const meter = manualMeterReadingDraftFromEvent(event);
+        if (meter) {
+          // The title is always derived from the value; there is no label.
+          return meter;
+        }
       }
       draft = {
         kind: "note",
@@ -296,13 +392,21 @@ export function createManualContextEvent(
   if (draft.kind === "ketone") {
     assertManualKetoneTimestamp(draft.timestamp);
   }
+  if (
+    draft.kind === "meter-glucose" &&
+    draft.timestamp > Date.now() + MANUAL_KETONE_FUTURE_TOLERANCE_MS
+  ) {
+    throw new Error("Meter readings cannot be dated in the future.");
+  }
   if (draft.kind === "sensor-start" && draft.timestamp > Date.now()) {
     throw new Error("A sensor change cannot be dated in the future.");
   }
   const recordedAt = options.recordedAt ?? Date.now();
   const id = options.id ?? createLocalId(draft.kind, draft.timestamp);
   const title =
-    draft.kind === "ketone" || draft.kind === "sensor-start"
+    draft.kind === "ketone" ||
+    draft.kind === "sensor-start" ||
+    draft.kind === "meter-glucose"
       ? defaultTitle(draft)
       : optionalText(draft.title, 120, "Label") || defaultTitle(draft);
   const base = {
@@ -411,6 +515,20 @@ export function createManualContextEvent(
         category: "other",
         detail: encodeManualKetoneDetail(validatedManualKetoneReading(draft)),
       };
+    case "meter-glucose": {
+      if (draft.enteredUnit !== "mmolL" && draft.enteredUnit !== "mgDl") {
+        throw new Error("Choose the unit shown on your meter.");
+      }
+      const glucoseMmolL = validatedMeterReadingMmolL(draft.glucoseMmolL);
+      const entered = meterReadingText(glucoseMmolL, draft.enteredUnit);
+      return {
+        ...base,
+        kind: "note",
+        category: "other",
+        glucoseMmolL,
+        detail: `Blood glucose meter (fingerstick) reading entered by you: ${entered}. Kept separate from sensor (CGM) readings: it is not used for alarms, the current glucose display, time in range, GMI or other CGM statistics. Entered in ${glucoseUnitLabel(draft.enteredUnit)}.`,
+      };
+    }
     case "sensor-start": {
       const selection = sensorSelection(draft.sensorModelId, draft.sensorWarmupMinutes);
       const model = sensorModel(selection.modelId);

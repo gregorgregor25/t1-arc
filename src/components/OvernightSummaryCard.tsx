@@ -79,7 +79,7 @@ export function OvernightSummaryCard() {
           onPress={dismiss}
           style={({ pressed }) => [styles.dismiss, { borderRadius: radius.pill, opacity: pressed ? 0.6 : 1 }]}
         >
-          <Ionicons accessibilityElementsHidden color={colors.textSecondary} name="close" size={18} />
+          <Text style={[styles.dismissText, { color: colors.primary }]}>Hide</Text>
         </Pressable>
       </View>
       {text.lines.map((line) => (
@@ -96,7 +96,8 @@ const styles = StyleSheet.create({
   copy: { flex: 1, gap: 2 },
   title: { fontSize: 17, lineHeight: 22, fontWeight: "800" },
   period: { fontSize: 13, lineHeight: 18 },
-  dismiss: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  line: { fontSize: 13, lineHeight: 19 },
+  dismiss: { minWidth: 48, minHeight: 44, paddingHorizontal: 8, alignItems: "center", justifyContent: "center" },
+  dismissText: { fontSize: 15, fontWeight: "700" },
+  line: { fontSize: 15, lineHeight: 22 },
   footer: { fontSize: 12, lineHeight: 17, marginTop: 4 },
 });

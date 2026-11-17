@@ -28,9 +28,12 @@ export function contextNoteDisplayTitle(
 ) {
   const glucoseMmolL =
     event.glucoseMmolL ?? legacyContextNoteGlucoseMmolL(event.title);
-  return glucoseMmolL === undefined
-    ? event.title
-    : `Blood glucose check · ${formatGlucose(glucoseMmolL, regional)}`;
+  if (glucoseMmolL === undefined) return event.title;
+  // Hand-entered fingerstick readings are labelled as meter readings so they
+  // are never mistaken for sensor (CGM) values. Imported checks keep the
+  // wording their source used.
+  const label = event.origin === 'manual' ? 'Meter reading' : 'Blood glucose check';
+  return `${label} · ${formatGlucose(glucoseMmolL, regional)}`;
 }
 
 function asciiDigits(value: string) {

@@ -11,6 +11,7 @@ import {
 import {
   deviceAgeChips,
   EXPECTED_SENSOR_LIFE_OPTIONS,
+  sensorChangeDue,
   type DeviceAgeChip,
   type ExpectedSensorLifeDays,
 } from "@/domain/deviceAge";
@@ -21,9 +22,11 @@ import { useAppTheme } from "@/theme/theme";
 
 /**
  * Read-only ages from recorded sensor and site changes. No reminders or
- * notifications are created; nothing is shown without a record.
+ * notifications are created; nothing is shown without a record. On the last
+ * expected sensor day the existing "Record sensor change" action is offered
+ * here too (it is always available in the Log sheet).
  */
-export function DeviceAgeChips() {
+export function DeviceAgeChips({ onRecordSensorChange }: { onRecordSensorChange?(): void } = {}) {
   const { colors, radius } = useAppTheme();
   const { defaults: regional } = useRegionalProfile();
   const { demoMode, now, ownerIdentity, repository, revision } = useDataContext();
@@ -55,6 +58,7 @@ export function DeviceAgeChips() {
   const notes = !demoMode && snapshot?.owner === ownerIdentity ? snapshot.notes : [];
   const chips = deviceAgeChips(notes, now, regional, sensorLife);
   if (!chips.length) return null;
+  const showSensorChange = Boolean(onRecordSensorChange) && sensorChangeDue(chips, now, sensorLife);
 
   function chooseSensorLife(days: ExpectedSensorLifeDays | null) {
     setSensorLife(days);
@@ -88,7 +92,6 @@ export function DeviceAgeChips() {
           accessibilityRole="button"
           accessibilityLabel={chip.accessibilityLabel}
           accessibilityHint="Shows the record this age was calculated from"
-          hitSlop={{ top: 4, bottom: 4 }}
           onPress={() => showSource(chip)}
           style={({ pressed }) => [
             styles.chip,
@@ -99,12 +102,27 @@ export function DeviceAgeChips() {
           <Text style={[styles.label, { color: colors.text }]}>{chip.label}</Text>
         </Pressable>
       ))}
+      {showSensorChange && onRecordSensorChange ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Record sensor change"
+          accessibilityHint="Opens a form to record when you changed your sensor. Nothing is saved until you confirm. This does not start a sensor or change alerts."
+          onPress={onRecordSensorChange}
+          style={({ pressed }) => [
+            styles.chip,
+            { backgroundColor: pressed ? colors.surfaceMuted : colors.surface, borderColor: colors.primary, borderRadius: radius.pill },
+          ]}
+        >
+          <Ionicons accessibilityElementsHidden color={colors.primary} name="add-outline" size={17} />
+          <Text style={[styles.label, { color: colors.primary }]}>Record sensor change</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  chip: { minHeight: 36, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, borderWidth: StyleSheet.hairlineWidth },
-  label: { fontSize: 13, fontWeight: "700" },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: { minHeight: 44, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderWidth: StyleSheet.hairlineWidth },
+  label: { flexShrink: 1, fontSize: 14, fontWeight: "700" },
 });
