@@ -188,6 +188,68 @@ const AMBIGUOUS = [
   'Bolus at 12:30: 4.0 U (source: AAPS).',
 ];
 
+// Phrasings found by the second independent review, plus close variants.
+const REVIEW_DIRECTIVES = [
+  'A 2 U correction is indicated.',
+  'Proceed with 3 U.',
+  'You logged 3 U at lunch; repeat this dose at dinner.',
+  'You logged 30 g at 13:00, so repeat that amount at dinner.',
+  'AAPS delivered 0.4 U at 08:00 - do that again before lunch.',
+  'Bolus 3 units now.',
+  'A 2 U correction would bring you back into range.',
+  'Set a temp target of 8.',
+  "You'll want to have 15 g of glucose.",
+  'Dose 4u.',
+  'Up your ratio to 1:8.',
+  'Suspend the pump.',
+  '2U should do it.',
+  'Resume insulin delivery.',
+  'Go with 2 units.',
+  'Turn the pump off for an hour.',
+  'A further 1.5 U is warranted.',
+  'Bump the basal to 1.2 U/h.',
+  'Pause insulin for 30 minutes.',
+  'Dial in 2 U.',
+  'Lower basal by 10% overnight.',
+  'Glucose tablets, 15 g, right away.',
+  'Try 4 U for that meal next time.',
+  'Cover the pizza with 6 U.',
+  'Program a 2 U bolus.',
+  'Cut the morning basal to 0.7 U/h.',
+  'Give 1 U.',
+  'Your next bolus: 4 U.',
+  '3 U for dinner.',
+  'A 1 U correction is justified.',
+  'An extra 10 g of carbs is advised.',
+  'Restart the basal at 0.8 U/h.',
+];
+
+const REVIEW_EDUCATION_DIRECTIVES = [
+  'Up your ratio to 1:8.',
+  'Resume insulin delivery.',
+  'Pause insulin for 30 minutes.',
+  'Bump the basal overnight.',
+  'Proceed with a correction.',
+  'Turn off the pump.',
+  'Dose 4u before meals.',
+  'Suspend the pump.',
+  'Restart the basal after exercise.',
+  'Insulin explains a lot; repeat the bolus if glucose stays high.',
+];
+
+const REVIEW_HARMLESS = [
+  'Your mean glucose was the same on both days.',
+  'The pump was off from 12:00 until 12:30.',
+  'Time in range was 68% yesterday, the same as the day before.',
+  'AAPS resumed insulin delivery at 03:40.',
+  'The bolus wizard calculated 3.2 U at 12:30.',
+  'Glooko imported 12 bolus records for Monday.',
+  'You entered 20 g of carbs at 10:15.',
+  'Insulin on board peaked at 3.1 U around 13:00.',
+  'Basal delivery was paused from 03:10 to 03:40.',
+  'You took 2 U at 08:00; glucose was 9.1 mmol/L at 09:00.',
+];
+
 describe('treatment directive filter', () => {
   it('has the regression coverage the safety review asked for', () => {
     expect(DIRECTIVES.length).toBeGreaterThanOrEqual(40);
@@ -261,5 +323,21 @@ describe('treatment directive filter', () => {
     expect(() => parseTarvisAnswer(JSON.stringify({
       headline: 'Records', answer: 'You logged 30 g carbs at 13:00.', confidence: 'moderate', evidenceIds: ['current-glucose'], limitations: ['You should lower your target.'],
     }), packet)).toThrow(/safe evidence boundary/i);
+  });
+
+  it.each(REVIEW_DIRECTIVES)('blocks a directive found by the second review: %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(true);
+    expect(() => parsePersonal(sentence)).toThrow(/safe evidence boundary/i);
+  });
+
+  it.each(REVIEW_EDUCATION_DIRECTIVES)('blocks it in a general education answer too: %s', (sentence) => {
+    expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify({
+      kind: 'explanation', headline: 'How boluses work', answer: sentence, limitations: [],
+    }))).toThrow(/safety boundary|safe evidence boundary/i);
+  });
+
+  it.each(REVIEW_HARMLESS)('allows a descriptive comparison or recorded state: %s', (sentence) => {
+    expect(containsTreatmentDirective(sentence)).toBe(false);
+    expect(parsePersonal(sentence).answer).toBe(sentence);
   });
 });

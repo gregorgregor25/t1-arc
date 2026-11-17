@@ -75,15 +75,18 @@ const INHERENT_TREATMENT_ACTION =
 // habit, never a record. Past forms such as "took", "logged" or "set by AAPS"
 // are handled by the masks below.
 const BASE_TREATMENT_VERB =
-  /\b(?:take|inject|administer|give|bolus|pre-?bolus|correct|eat|drink|consume|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|resume|cancel|cut|switch|top up|treat|use|cover|enter|log|start|apply|put|go|split|spread|delay|move|extend|avoid|leave|hold|run|do|make|get|grab|pop|dial|programme|program|press|deliver|send|bump|drop|tweak|boost|limit|bring|keep|aim|wait)\b/i;
+  /\b(?:take|inject|administer|give|bolus|pre-?bolus|correct|eat|drink|consume|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|resume|cancel|cut|switch|top up|treat|use|cover|enter|log|start|apply|put|go|split|spread|delay|move|extend|avoid|leave|hold|run|do|make|get|grab|pop|dial|programme|program|press|deliver|send|bump|drop|tweak|boost|limit|bring|keep|aim|wait|repeat|turn|pause|restart|proceed|dose)\b|\bup\s+(?:your|the)\b/i;
 const TREATMENT_GERUND_FORM =
   /\b(?:taking|injecting|administering|giving|bolusing|pre-?bolusing|correcting|eating|drinking|consuming|having|adding|increasing|decreasing|raising|lowering|reducing|changing|adjusting|setting|doubling|halving|skipping|stopping|suspending|cutting|switching|topping|treating|using|covering|splitting|delaying|extending|dialling|dialing|bumping|tweaking|boosting|limiting)\b/i;
 // Modal, advice, recommendation, timing and judgement wording.
 const DIRECTIVE_MARKER =
-  /\b(?:should|shouldn't|must|mustn't|need|needs|needed|ought|have to|has to|had to|had better|could|couldn't|can|can't|cannot|may|might|would|wouldn't|will|won't|shall|let's|lets|recommend\w*|suggest|suggests|suggestion|advis\w*|advice|consider\w*|try|trying|want|wants|worth|best|better|ideal\w*|optimal|appropriate|right|proper|help|helps|helpful|go ahead|make sure|remember|forget|plan|time to|important|wise|sensible|prefer\w*|please|required|require|requires|necessary|essential|option|alternative|approach|strategy|idea|next time|in future|in the future|going forward|from now on|tonight|tomorrow|next (?:meal|bolus|dose|time|breakfast|lunch|dinner|snack|correction)|before (?:your|the) next|instead|if you|when you|now|right away|straight away|immediately|enough|too|off|wrong|incorrect|insufficient|excessive|aggressive|don't|do not|just|simply|is to|are to|to be)\b|'(?:ll|d)\b/i;
-// A recorded event: a past-tense verb, a record noun or "there was/were".
+  /\b(?:should|shouldn't|must|mustn't|need|needs|needed|ought|have to|has to|had to|had better|could|couldn't|can|can't|cannot|may|might|would|wouldn't|will|won't|shall|let's|lets|recommend\w*|suggest|suggests|suggestion|advis\w*|advice|consider\w*|try|trying|want|wants|worth|best|better|ideal\w*|optimal|appropriate|right|proper|help|helps|helpful|go ahead|make sure|remember|forget|plan|time to|important|wise|sensible|prefer\w*|please|required|require|requires|necessary|essential|option|alternative|approach|strategy|idea|next time|in future|in the future|going forward|from now on|tonight|tomorrow|next (?:meal|bolus|dose|time|breakfast|lunch|dinner|snack|correction)|before (?:your|the) next|instead|if you|when you|now|right away|straight away|immediately|enough|too|off|wrong|incorrect|insufficient|excessive|aggressive|don't|do not|just|simply|is to|are to|to be|indicated|warranted|justified|called for|advised|advisable|recommended|preferred|go with|go for|do it|do the trick)\b|'(?:ll|d)\b/i;
+// A recorded event: an explicit past-tense record verb, a record noun or
+// "there was/were". Only listed verbs count: a generic "-ed" ending also
+// matches judgement words ("indicated", "warranted") and imperatives such as
+// "Proceed".
 const RECORD_MARKER =
-  /\b(?:was|were|had|been|took|ate|gave|ran|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are))\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b|\b\w{3,}ed\b/i;
+  /\b(?:was|were|had|been|took|ate|gave|ran|rose|fell|showed|shows|show|lists|listed|contains|contained|includes|included|totals?|totalled|totaled|averaged|records?|recorded|entr(?:y|ies)|logs|logged|history|there (?:was|were|is|are)|delivered|entered|imported|received|injected|bolused|corrected|counted|calculated|estimated|reported|stored|synced|uploaded|started|ended|stopped|finished|resumed|suspended|paused|changed|switched|cancelled|canceled|replaced|noted|added|increased|decreased|reduced|raised|lowered|treated|covered|peaked|dropped|measured|appeared|occurred|happened|followed|preceded|expired)\b|\b(?:aaps|loop|pump|system|algorithm|automation)\s+(?:set|cut|ran)\b/i;
 const NOUN_MODIFIER =
   "(?:meal|correction|extended|combo|combination|dual|square|wave|manual|automatic|automated|small|large|big|single|first|second|third|last|previous|recorded|logged|earlier|later|overnight|basal|insulin|carb|sharp|steep|gradual|slight|total|\\d+(?:[.,]\\d+)?\\s*(?:u|g|units?|%)?)";
 const NOUN_VERB =
@@ -103,13 +106,23 @@ const DESCRIPTIVE_MASKS: readonly RegExp[] = [
   /\b(?:you|we|they|records|which|that|these|those)\s+(?:have|had)\b(?!\s+to\b)/gi,
   /\b(?:profile|pump)\s+(?:switch|suspend|stop|start)\w*/gi,
   /\binsulin\s+use\b/gi,
+  // A recorded state: "The pump was off from 12:00".
+  /\b(?:was|were|been|being|went|is|are|stayed|remained)\s+(?:switched\s+|turned\s+)?off\b/gi,
   /\b(?:records?|data|readings?|entries|logs?|export|report|sensor|chart|coverage)\s+(?:may|might|can|cannot|can't|could|won't|wouldn't)\s+(?:not\s+)?(?:include|show|cover|contain|reflect|miss|capture|list|prove|establish|identify|confirm|tell|explain|be (?:incomplete|missing|partial|delayed|duplicated|approximate|estimated|complete|available))\b/gi,
 ];
 
 const IMPERATIVE_START =
-  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial)\b/i;
+  /^\W*(?:(?:please|then|now|so|just|also|instead|first|next|next time|simply|ideally|perhaps|maybe|and|or|but)\s*,?\s+)*(?:take|inject|give|bolus|pre-?bolus|correct|eat|drink|have|add|increase|decrease|raise|lower|reduce|change|adjust|set|double|halve|skip|stop|suspend|cut|switch|treat|cover|do|repeat|try|go|aim|dial|dose|resume|restart|pause|bump|boost|tweak|turn|proceed|program|programme|deliver|bring|keep|cancel|drop)\b|^\W*up\s+(?:your|the)\b/i;
+// "Same again" or "repeat" points back at an earlier treatment on its own.
+const STRONG_BACK_REFERENCE = /\b(?:same again|repeat(?!ed\b)\w*)\b/i;
+// "The same" or "as before" is a comparison unless instruction wording joins
+// it: "Your mean glucose was the same" passes; "You could do the same tonight"
+// does not.
 const BACK_REFERENCE =
-  /\b(?:the same|same again|same amount|again|repeat\w*|that amount|that much|as much|as before|like last time|like before)\b/i;
+  /\b(?:the same|same amount|again|that amount|that much|as much|as before|like last time|like before)\b/i;
+// Clause boundaries inside one sentence. A recorded clause must not shelter
+// an instruction after it: "You logged 3 U at lunch; repeat this dose".
+const CLAUSE_BOUNDARY = /;|\s[-–—]\s|,\s*(?=(?:so|then|and then|but|now|next time)\b)/i;
 
 function maskDescriptiveForms(sentence: string) {
   return DESCRIPTIVE_MASKS.reduce((text, mask) => text.replace(mask, " "), sentence);
@@ -130,17 +143,32 @@ function isRecordedEventDescription(sentence: string, masked: string) {
   return true;
 }
 
-function sentenceIsTreatmentDirective(sentence: string) {
-  if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(sentence))) return true;
-  const masked = maskDescriptiveForms(sentence);
+function backReferenceInstruction(masked: string) {
+  return (
+    STRONG_BACK_REFERENCE.test(masked) ||
+    (BACK_REFERENCE.test(masked) && DIRECTIVE_MARKER.test(masked))
+  );
+}
+
+function clauseIsTreatmentDirective(clause: string) {
+  if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(clause))) return true;
+  const masked = maskDescriptiveForms(clause);
   if (INHERENT_TREATMENT_ACTION.test(masked)) return true;
-  const topical = sentence.replace(RANGE_WORDING, " ");
+  const topical = clause.replace(RANGE_WORDING, " ");
   if (!TREATMENT_TOPIC.test(topical) && !PROHIBITED_TREATMENT_OUTPUT.test(topical)) {
-    // A sentence with no treatment word can still give the instruction by
+    // A clause with no treatment word can still give the instruction by
     // pointing back at an earlier one: "Do the same tonight."
-    return IMPERATIVE_START.test(masked) || BACK_REFERENCE.test(masked);
+    return IMPERATIVE_START.test(masked) || backReferenceInstruction(masked);
   }
-  return !isRecordedEventDescription(sentence, masked);
+  return !isRecordedEventDescription(clause, masked);
+}
+
+function sentenceIsTreatmentDirective(sentence: string) {
+  if (clauseIsTreatmentDirective(sentence)) return true;
+  // Each later clause is checked on its own as well, so a recorded first
+  // clause cannot make an instruction after it look like a record.
+  const clauses = sentence.split(CLAUSE_BOUNDARY).map((clause) => clause.trim()).filter(Boolean);
+  return clauses.length > 1 && clauses.some(clauseIsTreatmentDirective);
 }
 
 /**
@@ -152,10 +180,16 @@ function sentenceIsTreatmentDirective(sentence: string) {
 function containsEducationTreatmentDirective(text: string) {
   const normalised = text.replace(/[‘’]/g, "'");
   if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised))) return true;
-  return splitSentences(normalised).some((sentence) => {
-    const masked = maskDescriptiveForms(sentence);
-    return IMPERATIVE_START.test(masked) || /\bgo ahead and\b/i.test(masked);
-  });
+  return splitSentences(normalised)
+    .flatMap((sentence) => [sentence, ...sentence.split(CLAUSE_BOUNDARY)])
+    .some((clause) => {
+      const masked = maskDescriptiveForms(clause.trim());
+      return (
+        IMPERATIVE_START.test(masked) ||
+        /\bgo ahead and\b/i.test(masked) ||
+        STRONG_BACK_REFERENCE.test(masked)
+      );
+    });
 }
 
 /**
