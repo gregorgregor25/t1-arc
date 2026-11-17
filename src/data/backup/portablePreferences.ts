@@ -69,6 +69,14 @@ export function restorableGlucoseAlarmConfiguration(
   return { configuration, notices };
 }
 
+function disarmed(configuration: GlucoseAlarmConfiguration): GlucoseAlarmConfiguration {
+  return { ...configuration, enabled: false, audioEnabled: false };
+}
+
+function commonAlertChoicesNotRestored(reason: string) {
+  return `The low, high and missing-reading choices in this backup could not be combined with the other alarm choices on this phone. ${reason} This phone’s own alarm choices were kept and switched off. Check them in alert settings.`;
+}
+
 export interface PortablePreferenceAdapter {
   getDisplayStatus(): Promise<{
     lockScreenVisible: boolean;
@@ -111,9 +119,20 @@ export interface PortablePreferenceAdapter {
     reviewHour: number;
     reviewMinute: number;
   }): Promise<unknown>;
+  /**
+   * Saves this phone's current alarm choices with both master switches (alerts
+   * and sound) off, changing nothing else. Runs before anything is restored.
+   */
+  disarmGlucoseAlarms(): Promise<unknown>;
+  /**
+   * Restores the older common alert choices, switched off. When the backup also
+   * carries full alarm choices they replace the native choices in one save
+   * later, so the common choices are not merged into native first.
+   */
   setGlucoseAlerts(
     settings: PortablePreferences['glucoseAlerts'],
-  ): Promise<unknown>;
+    options: { fullAlarmChoicesFollow: boolean },
+  ): Promise<{ notices: string[] } | void>;
   setThemePreference(
     mode: NonNullable<PortablePreferences['themeMode']>,
   ): Promise<unknown>;
@@ -225,27 +244,37 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
     setAodSize: (size) => T1ArcGlucoseDisplay.setAodSizeAsync(size),
     setWeeklyReviewEnabled: setWeeklyReviewNotificationEnabled,
     setWeeklyReviewTiming,
-    setGlucoseAlerts: async (settings) => {
+    disarmGlucoseAlarms: async () => {
+      // An additive restore does not pass through the full-erasure epoch, and
+      // the native ownership fence deliberately ignores legacy enable/disable
+      // calls. Switch the native owner off explicitly, on its own, so no
+      // later validation or restore failure can leave it armed.
       const configuration = await nativeAlarmConfiguration();
+      if (configuration) await saveGlucoseAlarmConfiguration(disarmed(configuration));
+    },
+    setGlucoseAlerts: async (settings, { fullAlarmChoicesFollow }) => {
+      const notices: string[] = [];
+      const configuration = fullAlarmChoicesFollow ? undefined : await nativeAlarmConfiguration();
       if (configuration) {
         const veryHighConflicts = configuration.veryHighThresholdMmolL !== null &&
           configuration.veryHighThresholdMmolL <= settings.highThresholdMmolL;
-        // An additive restore does not pass through the full-erasure epoch.
-        // Explicitly disarm the native owner before writing legacy preferences;
-        // its ownership fence deliberately ignores legacy enable/disable calls.
-        await saveGlucoseAlarmConfiguration({
+        const merged = disarmed({
           ...configuration,
           ...settings,
-          enabled: false,
-          audioEnabled: false,
           ...(veryHighConflicts ? {
             veryHighEnabled: false,
             veryHighThresholdMmolL: null,
           } : {}),
         });
+        // Validate the combination as a whole. If it does not fit, the
+        // phone keeps its own (already switched off) choices.
+        const error = validateGlucoseAlarmConfiguration(merged);
+        if (error) notices.push(commonAlertChoicesNotRestored(error));
+        else await saveGlucoseAlarmConfiguration(merged);
       }
       await saveGlucoseAlertPreferences({ ...settings, enabled: false });
       await resetGlucoseAlertState();
+      return { notices };
     },
     setThemePreference: saveThemePreference,
     setStepGoal: saveStepGoal,
@@ -263,6 +292,16 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
         settings,
         new Set(status.customSounds.map((sound) => sound.id)),
       );
+      // The complete restored choices are validated together and saved in
+      // one step, with both master switches off.
+      const error = validateGlucoseAlarmConfiguration(configuration);
+      if (error) {
+        return {
+          notices: [
+            `The alarm choices in this backup could not be restored. ${error} Alarms on this phone are switched off. Check them in alert settings.`,
+          ],
+        };
+      }
       await saveGlucoseAlarmConfiguration(configuration);
       return {
         notices: [
@@ -368,14 +407,22 @@ async function restoreValidatedPortablePreferences(
 ): Promise<PortablePreferenceRestoreOutcome> {
   const includedGroups = getIncludedPortablePreferenceGroups(safe);
   const notices: string[] = [];
-  // Disarm alarms first. A later preference failure must never mean the
-  // restore has silently left the prior native audible owner running.
+  // Switch alarms off first, before anything is merged or validated. A later
+  // preference failure must never leave the prior native audible owner running.
+  await destination.disarmGlucoseAlarms();
+  const fullAlarmChoices =
+    includedGroups.includes('glucoseAlarms') && safe.glucoseAlarms !== null
+      ? safe.glucoseAlarms
+      : null;
   if (includedGroups.includes('glucoseAlerts')) {
-    await destination.setGlucoseAlerts(safe.glucoseAlerts);
+    const result = await destination.setGlucoseAlerts(safe.glucoseAlerts, {
+      fullAlarmChoicesFollow: fullAlarmChoices !== null,
+    });
+    if (result) notices.push(...result.notices);
   }
   // Full alarm choices (version 7 and later) always arrive switched off.
-  if (includedGroups.includes('glucoseAlarms') && safe.glucoseAlarms !== null) {
-    notices.push(...(await destination.setGlucoseAlarms(safe.glucoseAlarms)).notices);
+  if (fullAlarmChoices) {
+    notices.push(...(await destination.setGlucoseAlarms(fullAlarmChoices)).notices);
   }
   await destination.setGlucoseAppearance(safe.glucoseAppearance);
   await destination.setAodPosition(safe.glanceableDisplay.aodPosition);

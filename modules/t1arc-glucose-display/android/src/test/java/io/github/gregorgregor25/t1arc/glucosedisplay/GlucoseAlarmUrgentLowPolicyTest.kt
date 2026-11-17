@@ -49,7 +49,8 @@ class GlucoseAlarmUrgentLowPolicyTest {
     assertFalse(decision.keepPrevious); assertTrue(decision.shouldNotify)
   }
 
-  @Test fun `a snoozed low cannot hold back an urgent low`() {
+  @Test fun `a low snooze with no recorded start cannot hold back an urgent low`() {
+    // Older saved snoozes and the hypo-treatment pause record no start; see GlucoseAlarmUpgradeAndSnoozeCarryTest.
     val snoozed = episode(GlucoseAlarmKind.LOW).copy(snoozeUntilElapsed = elapsed + 60 * minute)
     assertTrue(evaluate(2.8, snoozed).shouldNotify)
   }
@@ -196,16 +197,5 @@ class GlucoseAlarmUrgentLowPolicyTest {
     }
   }
 
-  // Upgrading older saved choices
-
-  @Test fun `older choices gain urgent low following the low switch`() {
-    assertEquals(true to 3.0, GlucoseAlarmPolicy.migratedUrgentLow(true, 3.9))
-    assertEquals(false to 3.0, GlucoseAlarmPolicy.migratedUrgentLow(false, 3.9))
-    val belowDefault = GlucoseAlarmPolicy.migratedUrgentLow(true, 3.0)
-    assertTrue(belowDefault.first); assertEquals(2.8, belowDefault.second, 1e-9)
-    val low = GlucoseAlarmPolicy.migratedUrgentLow(true, 2.5)
-    assertTrue(low.first); assertEquals(2.3, low.second, 1e-9)
-    assertEquals(false to 2.0, GlucoseAlarmPolicy.migratedUrgentLow(true, 2.1))
-    assertEquals(false to 2.0, GlucoseAlarmPolicy.migratedUrgentLow(true, 2.0))
-  }
+  // Upgrading older saved choices: see GlucoseAlarmUpgradeAndSnoozeCarryTest.
 }

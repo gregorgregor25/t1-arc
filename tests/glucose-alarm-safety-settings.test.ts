@@ -20,8 +20,11 @@ import {
   glucoseAlarmSnoozeOptions,
   glucoseAlarmSnoozeUntil,
   hypoTreatmentPauseNotice,
+  glucoseAlarmSilenceExplanation,
   maxGlucoseAlarmSnoozeMinutes,
-  migratedUrgentLow,
+  suggestedUrgentLowThreshold,
+  urgentLowOfferApplies,
+  urgentLowLevelLabel,
   type GlucoseAlarmConfiguration,
   type GlucoseAlarmStatus,
   upgradeGlucoseAlarmConfiguration,
@@ -78,28 +81,28 @@ describe('quiet alarm defaults', () => {
 });
 
 describe('upgrading older alarm choices', () => {
-  it('matches the native urgent-low upgrade rule', () => {
-    expect(migratedUrgentLow(true, 3.9)).toEqual({ enabled: true, thresholdMmolL: 3 });
-    expect(migratedUrgentLow(false, 3.9)).toEqual({ enabled: false, thresholdMmolL: 3 });
-    expect(migratedUrgentLow(true, 3)).toEqual({ enabled: true, thresholdMmolL: 2.8 });
-    expect(migratedUrgentLow(true, 2.5)).toEqual({ enabled: true, thresholdMmolL: 2.3 });
-    expect(migratedUrgentLow(true, 2.1)).toEqual({ enabled: false, thresholdMmolL: 2 });
-    expect(migratedUrgentLow(true, Number.NaN)).toEqual({ enabled: false, thresholdMmolL: 2 });
+  it('suggests the same urgent-low level as the native upgrade', () => {
+    expect(suggestedUrgentLowThreshold(3.9)).toBe(3);
+    expect(suggestedUrgentLowThreshold(3)).toBe(2.8);
+    expect(suggestedUrgentLowThreshold(2.5)).toBe(2.3);
+    expect(suggestedUrgentLowThreshold(2.1)).toBeUndefined();
+    expect(suggestedUrgentLowThreshold(Number.NaN)).toBeUndefined();
   });
 
-  it('upgrades version 1 without changing the master or sound switch', () => {
-    for (const [enabled, audioEnabled] of [[false, false], [true, false], [true, true]] as const) {
-      const upgraded = upgradeGlucoseAlarmConfiguration(v1({ ...defaults, enabled, audioEnabled, lowSound: CUSTOM }));
+  it('upgrades version 1 with urgent low off and existing behaviour unchanged', () => {
+    for (const [enabled, audioEnabled, lowEnabled] of [[false, false, true], [true, false, true], [true, true, true], [true, true, false]] as const) {
+      const upgraded = upgradeGlucoseAlarmConfiguration(v1({ ...defaults, enabled, audioEnabled, lowEnabled, lowSound: CUSTOM, repeatMinutes: 0 }));
       expect(upgraded).toMatchObject({
-        schemaVersion: 2, enabled, audioEnabled, urgentLowEnabled: true, urgentLowThresholdMmolL: 3,
-        urgentLowSound: CUSTOM, highPersistMinutes: 0, hypoTreatmentSnoozeMinutes: 15,
+        schemaVersion: 2, enabled, audioEnabled, lowEnabled, urgentLowEnabled: false, urgentLowThresholdMmolL: 3,
+        urgentLowSound: CUSTOM, highPersistMinutes: 0, hypoTreatmentSnoozeMinutes: 0, repeatMinutes: 0,
       });
       expect(validateGlucoseAlarmConfiguration(upgraded)).toBeUndefined();
     }
   });
 
-  it('leaves urgent low off when low alerts were off', () => {
-    expect(upgradeGlucoseAlarmConfiguration(v1({ ...defaults, lowEnabled: false }))).toMatchObject({ urgentLowEnabled: false, lowEnabled: false });
+  it('keeps the suggested level ready below a low level at or under 3.0', () => {
+    expect(upgradeGlucoseAlarmConfiguration(v1({ ...defaults, lowThresholdMmolL: 3 }))).toMatchObject({ urgentLowEnabled: false, urgentLowThresholdMmolL: 2.8 });
+    expect(upgradeGlucoseAlarmConfiguration(v1({ ...defaults, lowThresholdMmolL: 2.1 }))).toMatchObject({ urgentLowEnabled: false, urgentLowThresholdMmolL: 2 });
   });
 
   it('drops unknown fields and rejects invalid choices', () => {
@@ -109,9 +112,46 @@ describe('upgrading older alarm choices', () => {
     expect(upgradeGlucoseAlarmConfiguration(null)).toBeUndefined();
   });
 
-  it('seeds urgent low from older in-app alert choices without turning on sound', () => {
+  it('keeps urgent low off when seeding from older in-app alerts that were on', () => {
     const seeded = glucoseAlarmConfigurationFromLegacy({ ...DEFAULT_GLUCOSE_ALERT_PREFERENCES, enabled: true, lowThresholdMmolL: 3 });
-    expect(seeded).toMatchObject({ enabled: true, audioEnabled: false, urgentLowEnabled: true, urgentLowThresholdMmolL: 2.8 });
+    expect(seeded).toMatchObject({
+      enabled: true, audioEnabled: false, urgentLowEnabled: false, urgentLowThresholdMmolL: 2.8, hypoTreatmentSnoozeMinutes: 0,
+    });
+  });
+
+  it('keeps the new-install default when older in-app alerts were never turned on', () => {
+    const seeded = glucoseAlarmConfigurationFromLegacy({ ...DEFAULT_GLUCOSE_ALERT_PREFERENCES, enabled: false });
+    expect(seeded).toMatchObject({ enabled: false, audioEnabled: false, urgentLowEnabled: true, urgentLowThresholdMmolL: 3, hypoTreatmentSnoozeMinutes: 15 });
+  });
+
+  it('offers urgent low only while it is off and a valid level fits below low', () => {
+    const upgraded = upgradeGlucoseAlarmConfiguration(v1())!;
+    expect(urgentLowOfferApplies(upgraded)).toBe(true);
+    expect(urgentLowOfferApplies({ ...upgraded, urgentLowEnabled: true })).toBe(false);
+    expect(urgentLowOfferApplies({ ...upgraded, lowThresholdMmolL: 2.1, urgentLowThresholdMmolL: 2 })).toBe(false);
+    expect(urgentLowLevelLabel(3)).toBe('3.0 mmol/L (54 mg/dL)');
+    expect(urgentLowLevelLabel(2.8)).toBe('2.8 mmol/L (50 mg/dL)');
+  });
+});
+
+describe('urgent low explanations', () => {
+  it('says that urgent low reminds within 30 minutes even when reminders are Never', () => {
+    expect(glucoseAlarmSilenceExplanation('urgentLow')).toMatch(/at least every 30 minutes[\s\S]*even if reminders are set to Never/);
+    for (const kind of ['low', 'high', 'veryHigh', 'stale'] as const) {
+      expect(glucoseAlarmSilenceExplanation(kind)).toMatch(/your repeat setting controls reminders/);
+      expect(glucoseAlarmSilenceExplanation(kind)).not.toMatch(/30 minutes/);
+    }
+  });
+
+  it('explains the urgent low override, the offer and the snooze carry-over in settings', () => {
+    const read = (path: string) => readFileSync(path, 'utf8');
+    const card = read('src/components/GlucoseAlertSettingsCard.tsx');
+    expect(card).toMatch(/even if reminders are set to Never/);
+    expect(card).toContain('Add an urgent low alert at');
+    expect(card).toMatch(/cannot be quietened by the night schedule/);
+    expect(card).toMatch(/snoozed low becomes urgent low/);
+    const host = read('src/components/GlucoseAlarmHost.tsx');
+    expect(host).toContain('glucoseAlarmSilenceExplanation(');
   });
 });
 

@@ -2,6 +2,7 @@ import T1ArcGlucoseDisplay, { type GlucoseAlertChannelStatus } from '../../../mo
 import {
   glucoseAlarmConfigurationFromLegacy,
   isGlucoseAlarmSoundId,
+  legacyAlertsPredateUrgentLow,
   maxGlucoseAlarmSnoozeMinutes,
   upgradeGlucoseAlarmConfiguration,
   validateGlucoseAlarmConfiguration,
@@ -22,13 +23,28 @@ export function glucoseAlarmSupportAvailable() {
     typeof T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync === 'function';
 }
 
+export interface GlucoseAlarmSettingsLoad {
+  configuration: GlucoseAlarmConfiguration;
+  /** The saved choices predate urgent low, so settings may offer it once. */
+  upgradedFromEarlierChoices: boolean;
+}
+
 export async function loadGlucoseAlarmConfiguration(): Promise<GlucoseAlarmConfiguration> {
+  return (await loadGlucoseAlarmSettings()).configuration;
+}
+
+export async function loadGlucoseAlarmSettings(): Promise<GlucoseAlarmSettingsLoad> {
   const native = await T1ArcGlucoseDisplay.getGlucoseAlarmConfigurationAsync?.();
   if (native !== null && native !== undefined) {
-    // An older native build may still return version 1 choices.
+    // An older native build may still return version 1 choices; a newer one
+    // upgrades in memory and says so with upgradedFromVersion.
     const upgraded = upgradeGlucoseAlarmConfiguration(native);
     if (!upgraded) throw new Error(validateGlucoseAlarmConfiguration(native) ?? 'The alarm choices could not be read.');
-    return upgraded;
+    const raw = native as unknown as Record<string, unknown>;
+    return {
+      configuration: upgraded,
+      upgradedFromEarlierChoices: raw.schemaVersion === 1 || raw.upgradedFromVersion === 1,
+    };
   }
   // This is only an editing seed. No save, native ownership update or audio
   // arming may happen merely because settings or a headless runtime loaded.
@@ -43,12 +59,15 @@ export async function loadGlucoseAlarmConfiguration(): Promise<GlucoseAlarmConfi
   // A newly created channel must not revive a category that the user had
   // explicitly blocked in Android. The editing form can re-enable it only
   // through another deliberate category toggle before the first native save.
-  return glucoseAlarmConfigurationFromLegacy({
-    ...legacy,
-    lowEnabled: legacy.lowEnabled && !blocked('low'),
-    highEnabled: legacy.highEnabled && !blocked('high'),
-    staleEnabled: legacy.staleEnabled && !blocked('stale'),
-  });
+  return {
+    configuration: glucoseAlarmConfigurationFromLegacy({
+      ...legacy,
+      lowEnabled: legacy.lowEnabled && !blocked('low'),
+      highEnabled: legacy.highEnabled && !blocked('high'),
+      staleEnabled: legacy.staleEnabled && !blocked('stale'),
+    }),
+    upgradedFromEarlierChoices: legacyAlertsPredateUrgentLow(legacy),
+  };
 }
 
 /** Fills fields that an older native build does not report yet. */

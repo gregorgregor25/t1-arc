@@ -123,17 +123,39 @@ export function isGlucoseAlarmSoundId(value: unknown): value is string {
     (value === 'pulse' || value === 'notes' || /^custom:[a-f0-9-]{36}$/.test(value));
 }
 
+/** Lowest urgent-low level the settings accept. */
+const MIN_URGENT_LOW_MMOL_L = 2;
+const MG_DL_PER_MMOL_L = 18.0182;
+
 /**
- * Mirrors the native upgrade. Urgent low follows the existing low switch at
- * 3.0 mmol/L, or 0.2 mmol/L below a low threshold that is already at or
- * under 3.0. It stays off when that would fall below 2.0 mmol/L.
+ * Mirrors the native GlucoseAlarmPolicy.suggestedUrgentLowThreshold. The level
+ * offered to someone whose choices predate urgent low: 3.0 mmol/L, or 0.2 mmol/L
+ * below a low level already at or under 3.0. Undefined when no level of at
+ * least 2.0 mmol/L fits below the low level.
  */
-export function migratedUrgentLow(lowEnabled: boolean, lowThresholdMmolL: number): { enabled: boolean; thresholdMmolL: number } {
+export function suggestedUrgentLowThreshold(lowThresholdMmolL: number): number | undefined {
+  if (!Number.isFinite(lowThresholdMmolL)) return undefined;
   const threshold = lowThresholdMmolL > DEFAULT_URGENT_LOW_MMOL_L
     ? DEFAULT_URGENT_LOW_MMOL_L
     : Math.round((lowThresholdMmolL - 0.2) * 10) / 10;
-  if (!Number.isFinite(threshold) || threshold < 2 || threshold >= lowThresholdMmolL) return { enabled: false, thresholdMmolL: 2 };
-  return { enabled: lowEnabled, thresholdMmolL: threshold };
+  return threshold >= MIN_URGENT_LOW_MMOL_L && threshold < lowThresholdMmolL ? threshold : undefined;
+}
+
+/** True while urgent low is off and a valid level fits below the chosen low level. */
+export function urgentLowOfferApplies(configuration: GlucoseAlarmConfiguration): boolean {
+  return !configuration.urgentLowEnabled && suggestedUrgentLowThreshold(configuration.lowThresholdMmolL) !== undefined;
+}
+
+/** "3.0 mmol/L (54 mg/dL)": both units, as used in the urgent low wording. */
+export function urgentLowLevelLabel(thresholdMmolL: number): string {
+  return `${thresholdMmolL.toFixed(1)} mmol/L (${Math.round(thresholdMmolL * MG_DL_PER_MMOL_L)} mg/dL)`;
+}
+
+/** What "Silence this alert" means for the active alert, including the urgent low repeat override. */
+export function glucoseAlarmSilenceExplanation(kind: GlucoseAlarmKind): string {
+  return kind === 'urgentLow'
+    ? `Silencing is not a recovery. While urgent low lasts it reminds you again at least every ${URGENT_LOW_MAX_SNOOZE_MINUTES} minutes, even if reminders are set to Never or a longer interval. A new low or very high alert is separate.`
+    : 'Silencing is not a recovery. If the alert remains unresolved, your repeat setting controls reminders. A new urgent low, low or very high alert is separate.';
 }
 
 export function validateGlucoseAlarmConfiguration(value: unknown): string | undefined {
@@ -166,9 +188,11 @@ export function validateGlucoseAlarmConfiguration(value: unknown): string | unde
 
 /**
  * Accepts version 1 or 2 choices and returns version 2, or undefined when
- * invalid. Version 1 gains quiet defaults: urgent low per migratedUrgentLow,
- * no high delay and a 15-minute low pause after a logged hypo treatment. The
- * master switch and the sound switch are never changed.
+ * invalid. Mirrors the native upgrade: existing alarms behave exactly as
+ * before. Urgent low stays off (settings offer it once; only the user can add
+ * it), with the suggested level kept ready; there is no high delay and no
+ * automatic low pause after a logged hypo treatment. The master switch and the
+ * sound switch are never changed.
  */
 export function upgradeGlucoseAlarmConfiguration(value: unknown): GlucoseAlarmConfiguration | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -176,15 +200,14 @@ export function upgradeGlucoseAlarmConfiguration(value: unknown): GlucoseAlarmCo
   let candidate: Record<string, unknown> = config;
   if (config.schemaVersion === 1) {
     const lowThreshold = typeof config.lowThresholdMmolL === 'number' ? config.lowThresholdMmolL : Number.NaN;
-    const urgent = migratedUrgentLow(config.lowEnabled === true, lowThreshold);
     candidate = {
       ...config,
       schemaVersion: 2,
-      urgentLowEnabled: urgent.enabled,
-      urgentLowThresholdMmolL: urgent.thresholdMmolL,
+      urgentLowEnabled: false,
+      urgentLowThresholdMmolL: suggestedUrgentLowThreshold(lowThreshold) ?? MIN_URGENT_LOW_MMOL_L,
       urgentLowSound: config.lowSound,
       highPersistMinutes: 0,
-      hypoTreatmentSnoozeMinutes: DEFAULT_GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES,
+      hypoTreatmentSnoozeMinutes: 0,
     };
   }
   if (validateGlucoseAlarmConfiguration(candidate)) return undefined;
@@ -193,13 +216,25 @@ export function upgradeGlucoseAlarmConfiguration(value: unknown): GlucoseAlarmCo
   return result as unknown as GlucoseAlarmConfiguration;
 }
 
-/** Seeds the editing form only. Calling this must never persist or arm audio. */
+/** Older in-app alerts that were turned on predate urgent low, like version 1 native choices. */
+export function legacyAlertsPredateUrgentLow(legacy: GlucoseAlertPreferences): boolean {
+  return legacy.enabled;
+}
+
+/**
+ * Seeds the editing form only. Calling this must never persist or arm audio.
+ * Older in-app alerts that were on keep behaving as before (urgent low off,
+ * no automatic low pause); otherwise this is a new install and the quiet
+ * defaults apply, with urgent low ready for when alerts are turned on.
+ */
 export function glucoseAlarmConfigurationFromLegacy(legacy: GlucoseAlertPreferences): GlucoseAlarmConfiguration {
-  const urgent = migratedUrgentLow(legacy.lowEnabled, legacy.lowThresholdMmolL);
+  const suggested = suggestedUrgentLowThreshold(legacy.lowThresholdMmolL);
+  const existing = legacyAlertsPredateUrgentLow(legacy);
   return {
     ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION,
-    urgentLowEnabled: urgent.enabled,
-    urgentLowThresholdMmolL: urgent.thresholdMmolL,
+    urgentLowEnabled: !existing && suggested !== undefined,
+    urgentLowThresholdMmolL: suggested ?? MIN_URGENT_LOW_MMOL_L,
+    hypoTreatmentSnoozeMinutes: existing ? 0 : DEFAULT_GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES,
     enabled: legacy.enabled,
     lowEnabled: legacy.lowEnabled,
     lowThresholdMmolL: legacy.lowThresholdMmolL,

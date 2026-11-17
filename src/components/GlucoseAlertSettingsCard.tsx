@@ -7,13 +7,14 @@ import { AppState, PermissionsAndroid, Platform, StyleSheet, Switch, Text, TextI
 
 import T1ArcGlucoseDisplay from '../../modules/t1arc-glucose-display';
 import {
-  getGlucoseAlarmStatus, importGlucoseAlarmSound, loadGlucoseAlarmConfiguration, openGlucoseAlarmExactAlarmSettings,
+  getGlucoseAlarmStatus, importGlucoseAlarmSound, loadGlucoseAlarmSettings, openGlucoseAlarmExactAlarmSettings,
   previewGlucoseAlarmSound, saveGlucoseAlarmConfiguration, stopGlucoseAlarmPreview,
 } from '@/data/glucoseAlerts/glucoseAlarms';
+import { dismissUrgentLowOffer, loadUrgentLowOffer, noteAlarmChoicesPredateUrgentLow } from '@/data/glucoseAlerts/urgentLowOffer';
 import {
   GLUCOSE_ALARM_HIGH_PERSIST_MINUTES, GLUCOSE_ALARM_HYPO_TREATMENT_SNOOZE_MINUTES, URGENT_LOW_MAX_SNOOZE_MINUTES,
   type GlucoseAlarmConfiguration, type GlucoseAlarmKind, type GlucoseAlarmStatus,
-  validateGlucoseAlarmConfiguration,
+  suggestedUrgentLowThreshold, urgentLowLevelLabel, urgentLowOfferApplies, validateGlucoseAlarmConfiguration,
 } from '@/domain/glucoseAlarms';
 import { formatGlucose, glucoseToMmolL, glucoseUnitLabel } from '@/domain/regionalFormat';
 import { normalizeRegionalNumberInput } from '@/domain/regionalNumberInput';
@@ -34,7 +35,7 @@ const KINDS: { kind: GlucoseAlarmKind; label: string; enabled: 'urgentLowEnabled
 ];
 const REPEAT_MINUTES = [0, 5, 10, 15, 20, 30, 60, 120] as const;
 const KIND_DETAIL: Record<GlucoseAlarmKind, string> = {
-  urgentLow: `Takes priority over low. Not quietened by the night schedule or a logged hypo treatment, and it can be snoozed for up to ${URGENT_LOW_MAX_SNOOZE_MINUTES} minutes. Suggested level: 3.0 mmol/L (54 mg/dL).`,
+  urgentLow: `Takes priority over low. Not quietened by the night schedule or a logged hypo treatment. It can be snoozed for up to ${URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every ${URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts, even if reminders are set to Never. On a new install it is ready at 3.0 mmol/L (54 mg/dL) but nothing sounds until you allow T1 Arc alerts and save.`,
   low: 'Uses the glucose threshold you choose below.',
   high: 'Uses the glucose threshold you choose below.',
   veryHigh: 'Uses the glucose threshold you choose below.',
@@ -51,6 +52,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState<string>();
   const [message, setMessage] = useState<{ text: string; error?: boolean }>();
+  const [urgentLowOffer, setUrgentLowOffer] = useState(false);
   const dirty = useRef(false);
   const mounted = useRef(true);
   const configurationRefreshGeneration = useRef(0);
@@ -73,8 +75,13 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
     const configurationGeneration = ++configurationRefreshGeneration.current;
     const statusGeneration = ++statusRefreshGeneration.current;
     try {
-      const [next, nextStatus] = await Promise.all([loadGlucoseAlarmConfiguration(), getGlucoseAlarmStatus()]);
+      const [settings, nextStatus] = await Promise.all([loadGlucoseAlarmSettings(), getGlucoseAlarmStatus()]);
+      const next = settings.configuration;
+      // Choices saved before urgent low existed keep it off; offer it once instead.
+      if (settings.upgradedFromEarlierChoices) await noteAlarmChoicesPredateUrgentLow().catch(() => undefined);
+      const offer = await loadUrgentLowOffer();
       if (!mounted.current) return;
+      setUrgentLowOffer(offer);
       if (statusGeneration === statusRefreshGeneration.current && !statusMutationPending.current) setStatus(nextStatus);
       if (configurationGeneration === configurationRefreshGeneration.current && !dirty.current) {
         setConfiguration(next);
@@ -169,10 +176,26 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       const nextStatus = await saveGlucoseAlarmConfiguration(next);
       if (!mounted.current) return;
       dirty.current = false; setConfiguration(next); setStatus(nextStatus);
+      if (next.urgentLowEnabled && urgentLowOffer) { setUrgentLowOffer(false); void dismissUrgentLowOffer().catch(() => undefined); }
       setMessage({ text: next.enabled ? 'Alert choices saved on this phone.' : 'T1 Arc glucose alerts are off.' });
     } catch (error) {
       if (mounted.current) setMessage({ error: true, text: error instanceof Error ? error.message : 'Alert choices could not be saved.' });
     } finally { statusMutationPending.current = false; if (mounted.current) setBusy(false); }
+  }
+
+  /** Fills in the form only; urgent low starts once the user saves. */
+  function addUrgentLow() {
+    if (!configuration || busy) return;
+    const threshold = suggestedUrgentLowThreshold(configuration.lowThresholdMmolL);
+    if (threshold === undefined) return;
+    edit({ urgentLowEnabled: true, urgentLowThresholdMmolL: threshold });
+    setThresholds(current => ({ ...current, urgentLow: formatGlucose(threshold, regional, { withUnit: false }) }));
+    setMessage({ text: 'Urgent low added to your choices. Save alert choices to start using it.' });
+  }
+
+  function declineUrgentLow() {
+    setUrgentLowOffer(false);
+    void dismissUrgentLowOffer().catch(() => undefined);
   }
 
   async function play(soundId: string) {
@@ -246,6 +269,17 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
         <View style={styles.copy}><Text style={[styles.title, { color: colors.text }]}>Glucose alerts</Text><Text style={[styles.body, { color: colors.textSecondary }]}>Choose glucose levels, sounds and quiet hours. Changes take effect when you save.</Text></View>
       </View>
       <Text style={[styles.body, { color: colors.text }]}>T1 Arc’s alarms are a back-up. Keep your sensor maker’s alarms, or your AAPS alarms, turned on as well.</Text>
+      {urgentLowOffer && urgentLowOfferApplies(configuration) ? (() => {
+        const level = suggestedUrgentLowThreshold(configuration.lowThresholdMmolL);
+        return level === undefined ? null : <View style={[styles.offer, { borderColor: colors.border, borderRadius: radius.md }]}>
+          <Text style={[styles.heading, { color: colors.text }]}>Add an urgent low alert at {urgentLowLevelLabel(level)}</Text>
+          <Text style={[styles.body, { color: colors.textSecondary }]}>Your saved alert choices predate urgent low, so it is off and nothing about your current alerts has changed. If you add it, urgent low cannot be quietened by the night schedule or a logged hypo treatment. It reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts, even if reminders are set to Never, and it can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes. If a snoozed low becomes urgent low, your snooze continues for at most {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes from when you snoozed.</Text>
+          <AlarmChoices>
+            <AlarmAction label="Add urgent low alert" primary disabled={busy} onPress={addUrgentLow} />
+            <AlarmAction label="Not now" disabled={busy} onPress={declineUrgentLow} />
+          </AlarmChoices>
+        </View>;
+      })() : null}
       <SettingSwitch label="Allow T1 Arc alerts" detail="Uses the selected glucose source on this phone." value={configuration.enabled} disabled={busy} onChange={enabled => edit({ enabled })} />
       <SettingSwitch label="Allow alarm sounds" detail="Uses Android’s alarm audio, including while the ringer is on vibrate. Saving can sound an alert if glucose is already outside your levels." value={configuration.audioEnabled} disabled={busy || !configuration.enabled} onChange={audioEnabled => edit({ audioEnabled })} />
       {KINDS.map(item => (
@@ -297,7 +331,7 @@ export function GlucoseAlertSettingsCard({ connected }: { connected: boolean }) 
       <View style={[styles.section, { borderColor: colors.border }]}>
         <Text style={[styles.heading, { color: colors.text }]}>Repeat while unresolved</Text>
         <AlarmChoices>{REPEAT_MINUTES.map(repeatMinutes => <AlarmAction key={repeatMinutes} label={repeatMinutes === 0 ? 'Never' : repeatMinutes >= 60 ? `${repeatMinutes / 60} ${repeatMinutes === 60 ? 'hour' : 'hours'}` : `${repeatMinutes} min`} selected={configuration.repeatMinutes === repeatMinutes} disabled={busy} onPress={() => edit({ repeatMinutes })} />)}</AlarmChoices>
-        <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose. Urgent low can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts.</Text>
+        <Text style={[styles.foot, { color: colors.textSecondary }]}>Snooze controls appear with an active alert: 5, 10, 15, 20 or 30 minutes, 1 hour, or a clock time you choose. Urgent low can be snoozed for up to {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes and reminds you at least every {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes while it lasts, even if reminders are set to Never or a longer interval. If a snoozed low becomes urgent low, the snooze continues for at most {URGENT_LOW_MAX_SNOOZE_MINUTES} minutes from when you snoozed.</Text>
       </View>
       {status?.audioArmed ? <Text style={[styles.body, { color: colors.textSecondary }]}>Alarm sounds are armed with your saved choices.</Text> : null}
       {status?.readinessIssues.map(issue => <Text key={issue} style={[styles.body, { color: colors.warning }]}>{issue}</Text>)}
@@ -319,6 +353,6 @@ function SettingSwitch({ label, detail, value, disabled, onChange }: { label: st
 const styles = StyleSheet.create({
   card: { gap: 16 }, header: { flexDirection: 'row', alignItems: 'flex-start', gap: 13 }, copy: { flex: 1 }, icon: { width: 45, height: 45, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 19, lineHeight: 25, fontWeight: '800' }, heading: { fontSize: 16, lineHeight: 22, fontWeight: '800' }, body: { fontSize: 13, lineHeight: 20 }, foot: { fontSize: 12, lineHeight: 18 }, label: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  section: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 16, gap: 10 }, settingRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  section: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 16, gap: 10 }, offer: { borderWidth: 1, padding: 14, gap: 10 }, settingRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 14 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }, input: { minHeight: 44, minWidth: 86, paddingHorizontal: 10, paddingVertical: 7, fontSize: 16, lineHeight: 22, borderWidth: 1, textAlign: 'center', fontVariant: ['tabular-nums'] }, unit: { fontSize: 12, lineHeight: 18 },
 });

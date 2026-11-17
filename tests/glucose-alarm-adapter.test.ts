@@ -4,6 +4,7 @@ import {
   getGlucoseAlarmStatus,
   importGlucoseAlarmSound,
   loadGlucoseAlarmConfiguration,
+  loadGlucoseAlarmSettings,
   saveGlucoseAlarmConfiguration,
   snoozeGlucoseAlarm,
 } from '@/data/glucoseAlerts/glucoseAlarms';
@@ -46,6 +47,29 @@ describe('native alarm adapter', () => {
     expect(config.audioEnabled).toBe(false);
     expect(mocks.saveConfig).not.toHaveBeenCalled();
     expect(mocks.preview).not.toHaveBeenCalled();
+  });
+
+  it('reports choices that predate urgent low so settings can offer it once', async () => {
+    const v2 = { ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, urgentLowEnabled: false };
+    mocks.getConfig.mockResolvedValue({ ...v2, upgradedFromVersion: 1 });
+    const upgraded = await loadGlucoseAlarmSettings();
+    expect(upgraded.upgradedFromEarlierChoices).toBe(true);
+    expect(upgraded.configuration).toEqual(v2);
+    mocks.getConfig.mockResolvedValue(v2);
+    expect((await loadGlucoseAlarmSettings()).upgradedFromEarlierChoices).toBe(false);
+    // An older native build still returns version 1 itself.
+    const v1: Record<string, unknown> = { ...DEFAULT_GLUCOSE_ALARM_CONFIGURATION, schemaVersion: 1 };
+    for (const key of ['urgentLowEnabled', 'urgentLowThresholdMmolL', 'urgentLowSound', 'highPersistMinutes', 'hypoTreatmentSnoozeMinutes']) delete v1[key];
+    mocks.getConfig.mockResolvedValue(v1);
+    const older = await loadGlucoseAlarmSettings();
+    expect(older.upgradedFromEarlierChoices).toBe(true);
+    expect(older.configuration.urgentLowEnabled).toBe(false);
+    // Older in-app alerts that were on also predate urgent low; never-used ones do not.
+    mocks.getConfig.mockResolvedValue(null);
+    expect((await loadGlucoseAlarmSettings()).upgradedFromEarlierChoices).toBe(true);
+    mocks.legacy.mockResolvedValue({ ...DEFAULT_GLUCOSE_ALERT_PREFERENCES, enabled: false });
+    expect((await loadGlucoseAlarmSettings()).upgradedFromEarlierChoices).toBe(false);
+    expect(mocks.saveConfig).not.toHaveBeenCalled();
   });
 
   it('treats the native configuration as authoritative', async () => {

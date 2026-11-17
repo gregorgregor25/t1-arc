@@ -48,6 +48,18 @@ internal data class GlucoseAlarmEpisode(
   val bootCount: Int,
   /** Wall time the reading first went beyond the high threshold; null means createdAt. */
   val excursionStartedAt: Long? = null,
+  /**
+   * A high that was still waiting out its delay when readings stopped. It is
+   * kept beside a missing-reading alert, never shown or sounded by itself.
+   */
+  val heldHighKind: GlucoseAlarmKind? = null,
+  val heldHighStartedAt: Long? = null,
+  /**
+   * Elapsed time the user chose a snooze. Null for the automatic pause after a
+   * logged hypo treatment and for snoozes saved before this was recorded; only
+   * a user snooze with a known start can carry into urgent low.
+   */
+  val snoozedAtElapsed: Long? = null,
 )
 
 internal data class GlucoseAlarmDecision(
@@ -60,6 +72,13 @@ internal data class GlucoseAlarmDecision(
   val pending: Boolean = false,
   val pendingUntilWall: Long? = null,
   val excursionStartedAt: Long? = null,
+  /** An unconfirmed high carried by a missing-reading alert; see [GlucoseAlarmEpisode.heldHighKind]. */
+  val heldHighKind: GlucoseAlarmKind? = null,
+  val heldHighStartedAt: Long? = null,
+  /** A snoozed low that deepened into urgent low: the new episode starts with this capped snooze. */
+  val carriedSnoozeUntilElapsed: Long? = null,
+  val carriedSnoozeUntilWall: Long? = null,
+  val carriedSnoozedAtElapsed: Long? = null,
 )
 
 internal object GlucoseAlarmPolicy {
@@ -68,6 +87,8 @@ internal object GlucoseAlarmPolicy {
   const val URGENT_LOW_MAX_SNOOZE_MS = 30 * 60_000L
   const val URGENT_LOW_MAX_REPEAT_MINUTES = 30
   const val FUTURE_ALLOWANCE_MS = 120_000L
+  /** Normal re-evaluation cadence while an alert or a waiting high is active. */
+  const val CHECK_INTERVAL_MS = 60_000L
   const val DEFAULT_URGENT_LOW_MMOL = 3.0
   const val DEFAULT_HYPO_TREATMENT_SNOOZE_MINUTES = 15
   val PERSIST_MINUTES = setOf(0, 5, 10, 15, 20, 30)
@@ -113,14 +134,65 @@ internal object GlucoseAlarmPolicy {
     else config.repeatMinutes
 
   /**
-   * Older saved choices had no urgent-low level. It follows the user's existing
-   * low switch (the master switch and sound choice are unchanged), at 3.0 mmol/L
-   * or just below a low threshold that is already at or under 3.0.
+   * The urgent-low level offered to someone whose saved choices predate urgent
+   * low: 3.0 mmol/L, or 0.2 mmol/L below a low level already at or under 3.0.
+   * Null when no level of at least 2.0 mmol/L fits below the low level.
    */
-  fun migratedUrgentLow(lowEnabled: Boolean, lowThreshold: Double): Pair<Boolean, Double> {
+  fun suggestedUrgentLowThreshold(lowThreshold: Double): Double? {
+    if (!lowThreshold.isFinite()) return null
     val threshold = if (lowThreshold > DEFAULT_URGENT_LOW_MMOL) DEFAULT_URGENT_LOW_MMOL
       else ((lowThreshold - 0.2) * 10).roundToInt() / 10.0
-    return if (threshold < 2.0 || threshold >= lowThreshold) false to 2.0 else lowEnabled to threshold
+    return threshold.takeIf { it >= 2.0 && it < lowThreshold }
+  }
+
+  /**
+   * Version 1 choices (saved before urgent low, the high delay and the hypo
+   * pause existed) are upgraded so existing alarms behave exactly as before:
+   * urgent low stays off (settings offer it; only the user can add it), there
+   * is no high delay and no automatic low pause. The master switch and the
+   * sound switch are never changed.
+   */
+  fun upgradeVersion1(fields: Map<String, Any?>): Map<String, Any?> {
+    val low = (fields["lowThresholdMmolL"] as? Number)?.toDouble() ?: return fields
+    return fields + mapOf(
+      "schemaVersion" to 2.0,
+      "urgentLowEnabled" to false,
+      "urgentLowThresholdMmolL" to (suggestedUrgentLowThreshold(low) ?: 2.0),
+      "urgentLowSound" to fields["lowSound"],
+      "highPersistMinutes" to 0.0,
+      "hypoTreatmentSnoozeMinutes" to 0.0,
+    )
+  }
+
+  private data class HeldHigh(val kind: GlucoseAlarmKind, val startedAt: Long)
+
+  /**
+   * A same-source high that has not been confirmed yet: still inside its delay
+   * and never notified, or one already carried by a missing-reading alert.
+   */
+  private fun heldHigh(config: GlucoseAlarmPolicyConfig, previous: GlucoseAlarmEpisode): HeldHigh? {
+    if (config.highPersistMinutes <= 0) return null
+    val held = when {
+      previous.kind == GlucoseAlarmKind.STALE -> {
+        val kind = previous.heldHighKind ?: return null
+        HeldHigh(kind, previous.heldHighStartedAt ?: return null)
+      }
+      previous.kind in DELAYABLE && previous.lastNotifiedElapsed == null ->
+        HeldHigh(previous.kind, previous.excursionStartedAt ?: previous.createdAt)
+      else -> return null
+    }
+    return held.takeIf { it.kind in DELAYABLE && categoryEnabled(config, it.kind) }
+  }
+
+  /**
+   * Next wake-up while a high waits out its delay. A deadline that has already
+   * been reached is never scheduled again straight away: it has just been
+   * evaluated, so the normal cadence follows.
+   */
+  fun pendingCheckElapsed(pendingUntilWall: Long?, wallNow: Long, elapsedNow: Long): Long {
+    val cadence = elapsedNow + CHECK_INTERVAL_MS
+    val remaining = pendingUntilWall?.let { it - wallNow }?.takeIf { it > 0L } ?: return cadence
+    return minOf(cadence, elapsedNow + remaining)
   }
 
   fun evaluate(
@@ -140,18 +212,30 @@ internal object GlucoseAlarmPolicy {
       observation.timestamp > wallNow + FUTURE_ALLOWANCE_MS || wallNow - observation.timestamp > STALE_MS ||
       !observation.mmolL.isFinite() || observation.mmolL !in 0.5..40.0
     if (missing) {
-      // A lost feed is never evidence that a preceding excursion recovered.
-      val retained = previous?.takeIf { sameSource && it.kind != GlucoseAlarmKind.STALE && categoryEnabled(config, it.kind) }
+      val sourcePrevious = previous?.takeIf { sameSource }
+      // Missing data can neither confirm nor end a high that is still waiting.
+      val held = sourcePrevious?.let { heldHigh(config, it) }
+      // A lost feed is never evidence that a preceding (notified) excursion recovered.
+      val retained = sourcePrevious?.takeIf { held == null && it.kind != GlucoseAlarmKind.STALE && categoryEnabled(config, it.kind) }
       if (retained != null) {
-        val start = retained.excursionStartedAt ?: retained.createdAt
-        // A high still waiting out its delay stays hidden; missing data cannot confirm it.
-        val pending = retained.kind in DELAYABLE && config.highPersistMinutes > 0 && retained.lastNotifiedElapsed == null
-        return GlucoseAlarmDecision(retained.kind, true, false, true, true, pending,
-          if (pending) start + config.highPersistMinutes * 60_000L else null, start)
+        return GlucoseAlarmDecision(retained.kind, true, false, true, true,
+          excursionStartedAt = retained.excursionStartedAt ?: retained.createdAt)
       }
-      if (!config.staleEnabled) return GlucoseAlarmDecision(null, true, false, true, false)
-      return notificationDecision(config, GlucoseAlarmKind.STALE, previous, sameSource,
-        true, wallNow, elapsedNow, bootCount, minuteOfDay, lowPausedUntilElapsed)
+      if (config.staleEnabled) {
+        // The missing-reading alert is evaluated on its own. An unconfirmed
+        // high never hides it; the high is carried separately until readings return.
+        return notificationDecision(config, GlucoseAlarmKind.STALE, previous, sameSource,
+          true, wallNow, elapsedNow, bootCount, minuteOfDay, lowPausedUntilElapsed)
+          .copy(heldHighKind = held?.kind, heldHighStartedAt = held?.startedAt)
+      }
+      if (held != null) {
+        // Hidden: no notification and no sound. Once the delay has passed
+        // there is no deadline left to wait for, only the normal cadence.
+        val deadline = held.startedAt + config.highPersistMinutes * 60_000L
+        return GlucoseAlarmDecision(held.kind, true, false, true, sourcePrevious?.kind == held.kind, true,
+          deadline.takeIf { it > wallNow }, held.startedAt)
+      }
+      return GlucoseAlarmDecision(null, true, false, true, false)
     }
     val value = requireNotNull(observation).mmolL
     val oldKind = previous?.takeIf { sameSource }?.kind
@@ -188,7 +272,16 @@ internal object GlucoseAlarmPolicy {
     val same = sameSource && previous != null &&
       (previous.kind == kind || (previous.kind == GlucoseAlarmKind.URGENT_LOW && kind == GlucoseAlarmKind.LOW))
     val previousSameBoot = previous?.bootCount == bootCount
-    val snoozed = same && previousSameBoot && (previous?.snoozeUntilElapsed ?: 0L) > elapsedNow
+    // A user snooze on a low that deepens into urgent low is respected, but
+    // never for longer than urgent low allows: 30 minutes from when it started.
+    val carriedSnoozeUntil = previous?.takeIf {
+      kind == GlucoseAlarmKind.URGENT_LOW && it.kind == GlucoseAlarmKind.LOW && sameSource && previousSameBoot
+    }?.let { low ->
+      val startedAt = low.snoozedAtElapsed ?: return@let null
+      val until = low.snoozeUntilElapsed ?: return@let null
+      minOf(until, startedAt + URGENT_LOW_MAX_SNOOZE_MS).takeIf { it > elapsedNow }
+    }
+    val snoozed = (same && previousSameBoot && (previous?.snoozeUntilElapsed ?: 0L) > elapsedNow) || carriedSnoozeUntil != null
     val repeatMinutes = effectiveRepeatMinutes(config, kind)
     val repeatDue = same && repeatMinutes > 0 && previousSameBoot &&
       previous?.lastNotifiedElapsed != null && elapsedNow - previous.lastNotifiedElapsed >= repeatMinutes * 60_000L
@@ -200,13 +293,18 @@ internal object GlucoseAlarmPolicy {
     val inheritedStart = previous?.takeIf {
       same || (sameSource && it.kind in DELAYABLE && kind in DELAYABLE)
     }?.let { it.excursionStartedAt ?: it.createdAt }
+      // A high held through a gap in readings keeps its original start.
+      ?: previous?.takeIf { sameSource && it.kind == GlucoseAlarmKind.STALE && kind in DELAYABLE }?.heldHighStartedAt
     val start = (inheritedStart ?: wallNow).coerceAtMost(wallNow)
     val delayMs = if (kind in DELAYABLE) config.highPersistMinutes.coerceAtLeast(0) * 60_000L else 0L
     val alreadyNotified = same && previous?.lastNotifiedElapsed != null
     val pending = delayMs > 0 && !alreadyNotified && wallNow - start < delayMs
     return GlucoseAlarmDecision(kind, missing, !pending && !snoozed && !paused && (first || repeatDue || snoozeExpired),
       silentAtNight(kind) && isNight(config, minuteOfDay), same, pending,
-      if (pending) start + delayMs else null, start)
+      if (pending) start + delayMs else null, start,
+      carriedSnoozeUntilElapsed = carriedSnoozeUntil,
+      carriedSnoozeUntilWall = carriedSnoozeUntil?.let { wallNow + (it - elapsedNow) },
+      carriedSnoozedAtElapsed = carriedSnoozeUntil?.let { previous?.snoozedAtElapsed })
   }
 
   fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long, kind: GlucoseAlarmKind = GlucoseAlarmKind.LOW): Long {
