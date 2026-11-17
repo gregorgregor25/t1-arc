@@ -62,34 +62,7 @@
           "barcodeScannerEnabled": true
         }
       ],
-      [
-        "expo-font",
-        {
-          "android": {
-            "fonts": [
-              {
-                "fontFamily": "Atkinson Hyperlegible",
-                "fontDefinitions": [
-                  {
-                    "path": "./assets/fonts/AtkinsonHyperlegible-Regular.ttf",
-                    "weight": 400
-                  },
-                  {
-                    "path": "./assets/fonts/AtkinsonHyperlegible-Bold.ttf",
-                    "weight": 700
-                  }
-                ]
-              }
-            ]
-          },
-          "ios": {
-            "fonts": [
-              "./assets/fonts/AtkinsonHyperlegible-Regular.ttf",
-              "./assets/fonts/AtkinsonHyperlegible-Bold.ttf"
-            ]
-          }
-        }
-      ],
+      "expo-font",
       [
         "expo-splash-screen",
         {

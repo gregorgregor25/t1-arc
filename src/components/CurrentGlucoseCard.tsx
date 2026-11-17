@@ -320,7 +320,7 @@ export function CurrentGlucoseCard({
               maxFontSizeMultiplier={1.3}
               style={[
                 styles.value,
-                { color: staleMode ? colors.textSecondary : lowMode ? valueTone : colors.text },
+                { color: staleMode ? colors.textSecondary : valueTone },
                 staleMode && {
                   textDecorationColor: colors.textSecondary,
                   textDecorationLine: 'line-through',
