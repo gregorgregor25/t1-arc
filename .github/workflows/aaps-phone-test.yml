@@ -5,6 +5,7 @@ on:
     branches:
       - codex/aaps-local-source
       - codex/aaps-overnight
+      - codex/app-redesign
 
 # This workflow receives no production environment or signing secrets. Its
 # artifact must be re-signed with the installed phone's key before installation.
