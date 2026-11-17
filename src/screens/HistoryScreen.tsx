@@ -318,6 +318,12 @@ export function HistoryScreen() {
       comparison: { ...comparison, request: `history:${Date.now()}` },
     });
   }, [comparison, navigation]);
+  const historyMenuActions = useMemo(
+    () => comparison && compareLabel
+      ? [{ label: 'Compare periods', detail: compareLabel, icon: 'git-compare-outline' as const, onPress: openComparison }]
+      : [],
+    [compareLabel, comparison, openComparison],
+  );
   const foodHistory = useFoodLogs(range, rangeSelectionKey);
   const selectDailySummaryDate = useCallback((date: DateKey) => {
     setExplicitSelection(undefined);
@@ -390,7 +396,7 @@ export function HistoryScreen() {
         title="History"
         refreshing={syncing}
         onRefresh={() => void refreshData()}
-        trailing={<AppMenuButton />}
+        trailing={<AppMenuButton screenActions={historyMenuActions} />}
       >
         {activeSelection ? (
           <View style={[styles.selectionHeader, { backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>

@@ -37,7 +37,8 @@ import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualCont
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
-import { dayRange } from "@/domain/time";
+import { addDays, dayRange } from "@/domain/time";
+import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
 import { useAapsCardSnapshot } from "@/hooks/useAapsCardSnapshot";
@@ -234,8 +235,18 @@ export function TodayScreen() {
       detail: 'Large glucose, arrow and age on a dim black screen',
       icon: 'moon-outline' as const,
       onPress: () => setBedsideVisible(true),
+    }, {
+      label: 'Compare periods',
+      detail: 'Last 7 complete days with the 7 days before',
+      icon: 'git-compare-outline' as const,
+      onPress: () => navigation.navigate("Insights", {
+        comparison: {
+          ...insightComparisonForHistoryView(7, addDays(today, -1), addDays(today, -1)),
+          request: `today:${Date.now()}`,
+        },
+      }),
     }],
-    [],
+    [navigation, today],
   );
   const insulinThrough = todayTimeline.data
     ? laggingDataStamps(
