@@ -1,3 +1,4 @@
+import { safeNormalize } from "./textNormalise";
 import type { TarvisAnswer, TarvisRetrospectiveEvidencePacket } from "./types";
 import { NICE_TYPE_1_EXERCISE_KNOWLEDGE } from "./reviewedKnowledge";
 
@@ -331,8 +332,7 @@ function normaliseConnectorText(
   // Optional framing must not force filler. Only an exact empty value bypasses
   // prose checks; nonempty text retains the same closed vocabulary and guards.
   if (value === "" && slot !== "closing") return "";
-  const text = value
-    .normalize("NFKC")
+  const text = safeNormalize(value, "NFKC")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u2010-\u2015]/g, "-")
     .trim()
@@ -445,8 +445,8 @@ function connectorEchoesUntrustedData(
 ) {
   const needle = text.toLowerCase();
   return (
-    untrustedQuestion.normalize("NFKC").toLowerCase().includes(needle) ||
-    JSON.stringify(packet).normalize("NFKC").toLowerCase().includes(needle)
+    safeNormalize(untrustedQuestion, "NFKC").toLowerCase().includes(needle) ||
+    safeNormalize(JSON.stringify(packet), "NFKC").toLowerCase().includes(needle)
   );
 }
 

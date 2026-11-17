@@ -17,8 +17,7 @@ import {
 import { estimateTarvisCostUsd } from "./cost";
 import { TARVIS_PROVIDERS, TarvisModelUnavailableError, type TarvisProvider } from "./providers";
 import { assertTarvisProviderReady, fetchTarvisProviderResponse, TarvisProviderError } from "./providerTransport";
-import { classifyTarvisSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
-import { safetyQuestionWithImmediateContext } from "./safetyContext";
+import { classifyTarvisTurnSafety, TARVIS_QUESTION_MAX_LENGTH } from "./safety";
 import { TARVIS_SYSTEM_PROMPT } from "./prompt";
 import {
   TarvisConversationTurn,
@@ -46,6 +45,7 @@ import {
   parseTarvisGeneralEducationAnswerOrBoundary,
   TARVIS_GENERAL_EDUCATION_PROMPT,
   tarvisGeneralEducationTextConfig,
+  treatmentBoundaryResult,
 } from "./generalEducation";
 import { modelSafeTarvisHistory } from "./modelConversationPrivacy";
 import {
@@ -288,12 +288,15 @@ function trimHistory(history: TarvisConversationTurn[]) {
     }));
 }
 
+function providerWithheldAnswer(body: OpenAiResponseBody) {
+  return body.incomplete_details?.reason === "content_filter" ||
+    body.output?.some(item => item.content?.some(part => part.type === "refusal"));
+}
+
 function extractOutputText(body: OpenAiResponseBody) {
+  if (providerWithheldAnswer(body)) throw new Error("The provider declined this request.");
   for (const item of body.output ?? []) {
     for (const content of item.content ?? []) {
-      if (content.type === "refusal" && content.refusal) {
-        throw new Error(content.refusal);
-      }
       if (content.type === "output_text" && content.text) {
         return content.text;
       }
@@ -321,12 +324,7 @@ export async function askTarvis(
       `Keep the question under ${formatTarvisNumber(MAX_QUESTION_LENGTH, { maximumFractionDigits: 0 })} characters.`,
     );
   }
-  const safety = classifyTarvisSafety(
-    safetyQuestionWithImmediateContext(
-      prompt,
-      options.safetyHistory ?? history,
-    ),
-  );
+  const safety = classifyTarvisTurnSafety(prompt, options.safetyHistory ?? history);
   if (safety.kind !== "allow") {
     return {
       answer: safety.answer,
@@ -542,9 +540,18 @@ export async function askTarvis(
     await saveTarvisUsage(usage, writeLease);
     knownUsage = usage;
     connectionLease.assertCurrent();
+    if (providerWithheldAnswer(body)) {
+      return {
+        answer: treatmentBoundaryResult().answer,
+        answerSource: "local",
+        modelRequestSent: true,
+        usage,
+        requestMetrics: knownRequestMetrics,
+      };
+    }
     if (body.status === "incomplete") {
       throw new Error(
-        body.incomplete_details?.reason
+        body.incomplete_details?.reason === "max_output_tokens" || body.incomplete_details?.reason === "output limit"
           ? `${providerConfig.label} returned an incomplete answer (${body.incomplete_details.reason}).`
           : `${providerConfig.label} returned an incomplete answer.`,
       );
@@ -652,12 +659,7 @@ export async function planTarvisEvidenceRequest(
     );
   }
   if (
-    classifyTarvisSafety(
-      safetyQuestionWithImmediateContext(
-        prompt,
-        options.safetyHistory ?? [],
-      ),
-    ).kind !== "allow"
+    classifyTarvisTurnSafety(prompt, options.safetyHistory ?? []).kind !== "allow"
   ) {
     throw new Error("A safety-critical question cannot enter evidence planning.");
   }
@@ -809,7 +811,7 @@ export async function planTarvisEvidenceRequest(
     connectionLease.assertCurrent();
     if (body.status === "incomplete") {
       throw new Error(
-        body.incomplete_details?.reason
+        body.incomplete_details?.reason === "max_output_tokens" || body.incomplete_details?.reason === "output limit"
           ? `${providerConfig.label} returned an incomplete evidence plan (${body.incomplete_details.reason}).`
           : `${providerConfig.label} returned an incomplete evidence plan.`,
       );

@@ -582,9 +582,14 @@ const INDIRECT_DOSE_FRAMES: readonly RegExp[] = [
 /** "U?": a bare capital U asks for units (the sentence split has already removed the "?"). */
 const BARE_UNIT_QUESTION = /^\W*U\W*$/;
 
+// The remaining text has already had record lookups removed. A choice or
+// future treatment frame can refer back to a therapy named in another clause.
+const TREATMENT_CHOICE = /\b(?:pick|choose|choosing|vote|green light|pretend|choisir|elijo|elegir|prochain|manana)\b|\b(?:what would (?:aaps|the pump|the loop)|(?:my|your|her|his|their) (?:next|plan for))\b/i;
+
 export function requestsDoseIntent(text: string, context: string) {
   const gated = DOSE_CONTEXT.test(context);
   const strictlyGated = STRICT_DOSE_CONTEXT.test(context);
+  if (strictlyGated && TREATMENT_CHOICE.test(text)) return true;
   if (gated && UNCHECKED_SCRIPT.test(context)) return true;
   return doseCheckUnits(text).some(({ text: unit, whole }) => {
     if (DIRECT_FRAMES.some((pattern) => pattern.test(unit))) return true;
@@ -602,6 +607,7 @@ export function requestsDoseIntent(text: string, context: string) {
 }
 
 const TYPO_FIXES: readonly [RegExp, string][] = [
+  [/\beye ess eff\b/gi, "ISF"],
   [/\b(?:inslin|insuln|insulen|insuline|insilin|insullin|insolin|insulin's|insulina)\b/gi, "insulin"],
   [/\b(?:mch|mutch|muhc|mich)\b/gi, "much"],
   [/\b(?:howmuch)\b/gi, "how much"],
@@ -655,7 +661,8 @@ export function normaliseDoseWording(text: string) {
 /** The refusal headline the preflight shows; used to recognise a refused turn in the history. */
 export const TREATMENT_REFUSAL_HEADLINE = "I can review the records, but not set treatment";
 
-const FOLLOW_UP_MAX_LENGTH = 120;
+export const HOSTED_TREATMENT_BOUNDARY_HEADLINE = "I can explain, but not recommend treatment";
+const SHORT_FOLLOW_UP_MAX_LENGTH = 120;
 /** "yes", "go on", "just tell me": agreeing to the refused request. */
 const BARE_AGREEMENT =
   /^\W*(?:(?:ok(?:ay)?|so|well|but|and|then)\W+)*(?:yes|yeah|yep|yup|ya|sure|ok(?:ay)?|go\s+on(?:\s+then)?|go\s+ahead|please|do\s+it|just\s+(?:tell|say|give)(?:\s+me)?(?:\s+(?:anyway|a\s+number|the\s+number|roughly))?|tell\s+me\s+anyway|come\s+on|fine|alright|correct|exactly|right|that's\s+right|roughly|approximately|ballpark|a\s+rough\s+(?:idea|number|guess)|best\s+guess|your\s+best\s+guess|guess|estimate)(?:\W+(?:then|please|anyway|thanks|mate))*\W*$/i;
@@ -798,12 +805,13 @@ export function isDoseFollowUp(
   previousWasRefusal: (previousQuestion: string) => boolean,
   isRecordQuestion: (question: string) => boolean = () => false,
 ) {
-  if (!history.length || question.length > FOLLOW_UP_MAX_LENGTH) return false;
+  if (!history.length) return false;
   const { user, assistant } = previousExchange(history);
   if (!user) return false;
+  const refused = assistant?.startsWith(TREATMENT_REFUSAL_HEADLINE) ||
+    assistant?.startsWith(HOSTED_TREATMENT_BOUNDARY_HEADLINE) || previousWasRefusal(user);
+  if (!refused && question.length > SHORT_FOLLOW_UP_MAX_LENGTH) return false;
   const text = normaliseDoseWording(normaliseSafetyText(question));
-  const refused =
-    (assistant !== undefined && assistant.startsWith(TREATMENT_REFUSAL_HEADLINE)) || previousWasRefusal(user);
   if (refused) return BARE_AGREEMENT.test(text) || !isNewTopicAfterRefusal(text, isRecordQuestion);
   if (FOLLOW_UP_SHOW_MORE.test(text)) return false;
   if (!DOSE_TOPIC_TURN.test(user)) return false;

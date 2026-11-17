@@ -67,7 +67,6 @@ const OWNER = [
   "How many carbs have I entered today?",
   "What were my carbs for each of the last 7 days?",
 ];
-const OWNER_CANONICAL = OWNER.slice(0, 7);
 
 /** Ordinary follow-ups after a record card, a glucose answer or with no history (M-B). */
 const ORDINARY = [
@@ -580,7 +579,7 @@ function educationBlocks(answer: string) {
 }
 
 describe("round 5: the owner's questions", () => {
-  it.each(OWNER_CANONICAL)("answers %s on the phone", (question) => {
+  it.each(OWNER)("answers %s on the phone", (question) => {
     const result = plan(question);
     expect(isLocal(result), result.kind).toBe(true);
   });

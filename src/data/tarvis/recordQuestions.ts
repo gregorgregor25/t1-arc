@@ -190,6 +190,8 @@ const RECORD_PERIOD_PHRASES = [
   String.raw`\byesterday(?:'s)?\b`,
 ];
 const RECORD_INSULIN_PHRASES = [
+  String.raw`\b(?:of\s+the\s+boluses\s+that|(?:the\s+)?ones\s+i\s+entered|my\s+own\s+boluses|what\s+did\s+they\s+total)\b`,
+  String.raw`\bhas\s+aaps\s+(?:given|delivered)\s+me\b`,
   String.raw`\bratio\s+of\s+(?:basal\s+to\s+bolus(?:es)?|bolus(?:es)?\s+to\s+basal|smbs?\s+to\s+(?:entered\s+|other\s+|manual\s+)?bolus(?:es)?)\b`,
   String.raw`\b(?:basal|bolus(?:es)?)\s*(?:\/|vs|versus|to|and)\s*(?:basal|bolus(?:es)?)(?:\s+(?:split|ratio|totals?|breakdown))?\b`,
   String.raw`\bsplit\s+(?:in)?to\b|\bsplit\s+between\b|\bbroken\s+down\b|\bbreak\s*down\b|\bbreakdown\b|\bsplit\b`,
@@ -204,7 +206,7 @@ const RECORD_CARB_PHRASES = [
   String.raw`\b(?:did\s+)?i\s+(?:eat|ate|eaten|enter|entered|log|logged|record|recorded|had)\b|\b(?:entered|logged|recorded|eaten|stored)\b`,
 ];
 const RECORD_PER_DAY_PHRASES = [
-  String.raw`\beach\s+of\s+the\b`,
+  String.raw`\b(?:for\s+)?each\s+of\s+the\b`,
   String.raw`\beach\s+day\b|\bevery\s+day\b|\bper\s+day\b|\bby\s+day\b|\bday\s+by\s+day\b|\bdaily\b|\ba\s+day\b`,
 ];
 const RECORD_AMOUNT_PHRASES = [
@@ -272,7 +274,8 @@ const INSULIN_AGAINST_CARBS =
   /\b(?:insulin|units?|bolus(?:es)?|basal|smbs?|doses?)\b[^.?!;\n]{0,40}?\b(?:vs|versus|against|per|for|to\s+cover|to\s+match)\s+(?:(?:the|my|each|every|a|an|one|1|today's|yesterday's|those|these)\s+)?(?:\w+\s+){0,2}?(?:carbs?|carbohydrates?|grams?|g|meals?|food)\b|\b(?:carbs?|carbohydrates?|grams?|g)\b[^.?!;\n]{0,40}?\b(?:vs|versus|against|per|for)\s+(?:(?:the|my|each|every|a|an|one|1)\s+)?(?:units?|insulin|bolus(?:es)?|doses?)\b/i;
 
 function parseInsulinBreakdown(text: string): InsulinBreakdownQuestion | undefined {
-  if (!BREAKDOWN_PART.test(text) || !BREAKDOWN_AMOUNT.test(text) || GLUCOSE_OUTCOME.test(text)) return undefined;
+  const deliveredInsulin = /\bunits\s+of\s+insulin\s+did\s+aaps\s+(?:give|deliver)\s+me\b/i.test(text);
+  if ((!deliveredInsulin && !BREAKDOWN_PART.test(text)) || !BREAKDOWN_AMOUNT.test(text) || GLUCOSE_OUTCOME.test(text)) return undefined;
   if (INSULIN_AGAINST_CARBS.test(text)) return undefined;
   if (!fullyExplainedBy(text, BREAKDOWN_GRAMMAR)) return undefined;
   const periods = recordPeriods(text);

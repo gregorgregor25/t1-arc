@@ -109,7 +109,7 @@ function mapLeetspeak(text: string) {
   });
 }
 
-function safeNormalize(text: string, form: "NFKC" | "NFKD" | "NFC") {
+export function safeNormalize(text: string, form: "NFKC" | "NFKD" | "NFC") {
   try {
     return typeof text.normalize === "function" ? text.normalize(form) : text;
   } catch {

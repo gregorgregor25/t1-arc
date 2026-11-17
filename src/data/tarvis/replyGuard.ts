@@ -19,7 +19,7 @@
  */
 import { safetyTextReadings } from "./textNormalise";
 
-const NUMBER_WORD = String.raw`(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|eighteen|twenty|thirty|forty|fifty|sixty|eighty|half)`;
+const NUMBER_WORD = String.raw`(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|half)`;
 const AMOUNT = String.raw`(?:\d+(?:[.,]\d+)?|${NUMBER_WORD})`;
 const INSULIN_NAME = String.raw`(?:lantus|levemir|tresiba|toujeo|abasaglar|basaglar|semglee|novorapid|novolog|humalog|fiasp|lyumjev|apidra|admelog|trurapi|insulatard|humulin|actrapid)`;
 /** Settings a reply must not give a value for or a direction to. */
@@ -137,10 +137,25 @@ function withoutUnitDefinition(sentence: string) {
   return masked !== sentence && !ANY_AMOUNT.test(masked) ? masked : sentence;
 }
 
+// A general explanation can describe how therapy works. Pair the subject
+// with a decision, or a direction addressed to a person, in either order.
+const CHOICE = /\b(?:my|our|best|better)\s+(?:pick|vote|bet|choice|preference)\b|\b(?:gets?|has)\s+my\s+vote\b/i;
+const PERSONAL_FRAME = /\b(?:you|your|yours|yourself)\b/i;
+const ADJUSTABLE_THERAPY = new RegExp(String.raw`\b(?:${SETTING}|bolus(?:es)?|doses?|units?|pen clicks?)\b`, "i");
+const DIRECTION_OR_AMOUNT = /\b(?:higher|lower|stronger|weaker|gentler|further|up|down|earlier|later|extra|fewer|units?|percent|quarter|half)\b|\d\s*%/i;
+
+// Hosted prose is requested as plain text. A table can distribute its
+// condition, unit and treatment across cells with no complete sentence.
+const TABLE_ROW = /\|[^\n|]*\|/;
+
 function sentenceBreaksRules(original: string) {
   const sentence = withoutUnitDefinition(original);
   const deferred = TEAM_DEFERRAL.test(sentence) && !/\d/.test(sentence);
   return (
+    (TREATMENT_TOPIC.test(sentence) && (
+      CHOICE.test(sentence) ||
+      (!deferred && ADJUSTABLE_THERAPY.test(sentence) && PERSONAL_FRAME.test(sentence) && DIRECTION_OR_AMOUNT.test(sentence))
+    )) ||
     EDUCATION_RULES.some((rule) => rule.test(sentence)) ||
     (!deferred && DEFERRABLE_RULES.some((rule) => rule.test(sentence))) ||
     (!deferred && TREATMENT_TOPIC.test(sentence) && ENDORSEMENT.test(sentence))
@@ -156,7 +171,7 @@ function sentenceGivesTreatment(sentence: string) {
 }
 
 function readingGivesTreatment(answer: string, rest: string) {
-  if (ANSWER_WORD_ONLY.test(answer)) return true;
+  if (TABLE_ROW.test(answer) || TABLE_ROW.test(rest) || ANSWER_WORD_ONLY.test(answer)) return true;
   if (sentencesOf(answer).some(sentenceGivesTreatment)) return true;
   // Headline and limitations get the sentence rules, but not the short-sentence ones.
   return sentencesOf(rest).some(sentenceBreaksRules);
@@ -193,7 +208,7 @@ const PERSONAL_RULES: readonly RegExp[] = [
 ];
 
 function personalReadingGivesTreatment(text: string) {
-  if (ANSWER_WORD_ONLY.test(text)) return true;
+  if (TABLE_ROW.test(text) || ANSWER_WORD_ONLY.test(text)) return true;
   return sentencesOf(text).some((sentence) => {
     if (PERSONAL_RULES.some((rule) => rule.test(sentence))) return true;
     const plain = sentence.replace(NAMES_WITH_DIGITS, " ");

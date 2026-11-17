@@ -1,5 +1,5 @@
 import { evidenceIds } from "./evidencePacket";
-import { personalReplyGivesTreatment } from "./replyGuard";
+import { educationReplyGivesTreatment, personalReplyGivesTreatment } from "./replyGuard";
 import { normaliseSafetyText } from "./textNormalise";
 import { TarvisAnswer, TarvisModelEvidencePacket, TarvisUsage } from "./types";
 
@@ -141,7 +141,7 @@ function maskDescriptiveForms(sentence: string) {
 function splitSentences(text: string) {
   return text
     // Semicolons stay inside a sentence so "...; do the same" keeps its topic.
-    .split(/(?<=[.!?])\s+|\n+/)
+    .split(/[.!?](?=\s)|\n+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }
@@ -381,7 +381,8 @@ export function parseTarvisAnswer(
     : visibleCopy;
   if (
     (generalEducation
-      ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
+      ? educationReplyGivesTreatment({ headline, answer, limitations }) ||
+        PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
         EDUCATION_AMOUNT_DIRECTIVE.test(treatmentCopy) ||
         containsEducationTreatmentDirective(treatmentCopy)
       : containsTreatmentDirective(treatmentCopy)) ||

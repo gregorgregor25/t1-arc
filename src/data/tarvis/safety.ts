@@ -11,6 +11,7 @@ import {
   withoutHistoryOnlySentences,
 } from "./doseIntent";
 import { safetyTextReadings } from "./textNormalise";
+import { safetyQuestionWithImmediateContext } from "./safetyContext";
 import { parseRecordQuestion } from "./recordQuestions";
 
 export type TarvisSafetyDecision =
@@ -1778,6 +1779,12 @@ export function classifyTarvisSafety(question: string): TarvisSafetyDecision {
   return urgentDecisionInsideLongPrompt(question) ?? edges;
 }
 
+/** Shared by the coordinator and both provider entry points. Urgent decisions always win. */
+export function classifyTarvisTurnSafety(question: string, history: TarvisConversationTurn[]) {
+  const decision = classifyTarvisSafety(safetyQuestionWithImmediateContext(question, history));
+  return decision.kind === "allow" ? classifyTarvisFollowUpSafety(question, history) : decision;
+}
+
 /**
  * A short reply that continues a refused dose request or proposes an amount
  * after a dose or record topic ("yes", "so 6 then", "same again", "so 2 more
@@ -1787,6 +1794,7 @@ export function classifyTarvisFollowUpSafety(
   question: string,
   history: readonly TarvisConversationTurn[],
 ): TarvisSafetyDecision {
+  if (question.length > TARVIS_QUESTION_MAX_LENGTH) return { kind: "allow" };
   const refusedBefore = (previous: string) => classifyTarvisSafety(previous).kind === "treatment-advice";
   const isRecordQuestion = (text: string) => parseRecordQuestion(text) !== undefined;
   return isDoseFollowUp(question, history, refusedBefore, isRecordQuestion)

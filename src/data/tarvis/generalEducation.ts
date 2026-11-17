@@ -1,5 +1,5 @@
+import { HOSTED_TREATMENT_BOUNDARY_HEADLINE } from "./doseIntent";
 import { parseTarvisAnswer } from "./guardrails";
-import { educationReplyGivesTreatment } from "./replyGuard";
 import { normaliseSafetyText } from "./textNormalise";
 import type { TarvisAnswer } from "./types";
 import { TARVIS_VOICE_GUIDANCE } from "./voice";
@@ -30,7 +30,7 @@ You cannot browse or verify current clinical guidance. Do not invent citations, 
 
 Choose explanation for a relevant, safe general answer. Choose boundary for diagnosis, medical advice, treatment or dosing requests. Choose off-topic only for requests unrelated to health, nutrition or diabetes. Do not refuse health questions just because they use unfamiliar terminology. For urgent, boundary or off-topic, leave headline and answer empty and limitations empty; the app supplies the message.
 
-Return the requested JSON only, with plain text and no Markdown. Never include evidence IDs or pretend you analysed app records.`;
+Use impersonal descriptions for treatment concepts. Leave out worked treatment examples, choices for the reader, tables and schedules. Return the requested JSON only, with plain text and no Markdown. Never include evidence IDs or pretend you analysed app records.`;
 
 export function tarvisGeneralEducationTextConfig() {
   return {
@@ -125,11 +125,11 @@ const SAFETY_BOUNDARY_ERRORS = [
 ];
 
 /** The standard boundary answer shown in place of a refused or withheld explanation. */
-function treatmentBoundaryResult(): { answer: TarvisAnswer; acceptedHostedAnswer: boolean } {
+export function treatmentBoundaryResult(): { answer: TarvisAnswer; acceptedHostedAnswer: boolean } {
   return {
     acceptedHostedAnswer: false,
     answer: {
-      headline: "I can explain, but not recommend treatment",
+      headline: HOSTED_TREATMENT_BOUNDARY_HEADLINE,
       responseKind: "safety-boundary",
       answer: "I can help you understand health concepts and your recorded patterns, but I can't diagnose, recommend treatment or provide doses or pump-setting changes. Please discuss individual medical decisions with your healthcare team.",
       confidence: "high",
@@ -215,12 +215,7 @@ export function parseTarvisGeneralEducationAnswer(text: string): {
   if (
     PERSONAL_RECORD_CLAIM.test(copy) ||
     DOSING_OR_MEDICATION_INSTRUCTION.test(copy.replace(UNIT_DEFINITION, " ")) ||
-    claimsGlucoseMeasureEstablishesClinicalSeverity(copy) ||
-    educationReplyGivesTreatment({
-      headline: parsed.headline,
-      answer: parsed.answer,
-      limitations: parsed.limitations as string[],
-    })
+    claimsGlucoseMeasureEstablishesClinicalSeverity(copy)
   ) {
     throw new Error("Tarv1s returned an explanation outside its safety boundary. Please try again.");
   }
