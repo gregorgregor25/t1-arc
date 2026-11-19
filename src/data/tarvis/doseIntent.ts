@@ -58,6 +58,10 @@ const FIRST_PERSON_PLAN = String.raw`\bi(?:'ll|\s+will|'d|\s+would|'m\s+(?:going
  * setting, carbohydrate or treatment topic.
  */
 const GATED_FRAMES: readonly RegExp[] = [
+  // A history opener still supplies the treatment context for a later
+  // pronoun or terse request, such as "... and should it be higher".
+  /\b(?:should|must|ought\s+to|needs?\s+to)\s+(?:it|that|this|they|those|these)\s+be\s+(?:higher|lower|more|less|stronger|weaker|increased|decreased|changed)\b/i,
+  /^\W*(?:insulin|basal|bolus|correction|carbs?|carbohydrates?)\s+(?:needed|required|necessary)\W*$/i,
   new RegExp(String.raw`\b${MODAL_I}${FRAME_FILLER}${VERB_PHRASE}`, "i"),
   new RegExp(String.raw`${FIRST_PERSON_PLAN}${FRAME_FILLER}${VERB_PHRASE}`, "i"),
   // "am I ok to bolus", "is it safe to take more", "ok to stack", "fine for me to correct".

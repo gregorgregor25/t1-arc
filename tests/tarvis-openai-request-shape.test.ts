@@ -811,6 +811,23 @@ describe("Tarv1s direct model-request shape", () => {
     },
   );
 
+  it.each([
+    "basal today and should it be higher",
+    "carbs today and insulin needed",
+  ])("keeps mixed record and treatment requests out of both provider entry points: %s", async (question) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const result = await askTarvis(question, undefined, [], { epoch: 1 });
+    expect(result.modelRequestSent).toBe(false);
+    expect(result.answerSource).toBe("local");
+    await expect(planTarvisEvidenceRequest(
+      question,
+      buildTarvisEvidencePlanningOptions(question, Date.now()),
+      { epoch: 1 },
+    )).rejects.toThrow(/safety-critical/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mocks.loadApiKey).not.toHaveBeenCalled();
+  });
+
   it("uses a closed claim menu and local copy for retrospective interpretation", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       response(

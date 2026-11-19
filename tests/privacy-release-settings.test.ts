@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createLibreDraftRetention } from '@/screens/settings/libreDraftRetention';
 
 const source = ts.createSourceFile(
   'SettingsPages.tsx',
@@ -31,6 +32,20 @@ function enclosingConditions(node: ts.Node) {
 }
 
 describe('release backup settings', () => {
+  it('clears the unsaved Libre sign-in before reopening the form after a successful erase', () => {
+    const resetForm = vi.fn(() => expect(retention.read()).toBeUndefined());
+    const retention = createLibreDraftRetention(resetForm);
+    const draft = { email: 'tester@example.invalid', password: 'sample input', topLevelDomain: 'io' as const };
+    retention.write(draft);
+    expect(retention.read()).toEqual(draft);
+    retention.clearAfterErase();
+    expect(resetForm).toHaveBeenCalledOnce();
+    expect(retention.read()).toBeUndefined();
+    const controls = componentInstances('LocalDataControlCard')[0]!.getText(source);
+    expect(controls).toContain('onErased={() => libreDraft?.clearAfterErase()}');
+    expect(controls).toContain('hasUnsavedSignIn={Boolean(libreDraft?.read())}');
+  });
+
   it('keeps the whole earlier-test migration disclosure development-only', () => {
     const cards = componentInstances('MaintainerMigrationCard');
     expect(cards).toHaveLength(1);

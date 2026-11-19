@@ -57,6 +57,19 @@ class AapsTreatmentPolicyTest {
     assertEquals("Activity", result["reason"])
   }
 
+  @Test fun targetUnitAliasesAreNormalizedAndUnknownUnitsRemainInspectable() {
+    mapOf("mmol" to "mmol", "MMOL/L" to "mmol", "mmol/L" to "mmol", "mg/dL" to "mg/dl", "MG/DL" to "mg/dl", "unknown" to "unknown").forEach { (input, expected) ->
+      val result = sanitize(row(
+        "eventType" to "Temporary Target", "timestamp" to time, "duration" to 60,
+        "targetBottom" to 8.0, "targetTop" to 8.0, "units" to input,
+      ))!!
+      assertEquals(expected, result["units"])
+      assertEquals(8.0, result["targetBottom"] as Double, 0.0)
+    }
+    val missing = sanitize(row("eventType" to "Temporary Target", "timestamp" to time, "targetBottom" to 8.0))!!
+    assertFalse(missing.containsKey("units"))
+  }
+
   @Test fun profileSwitchesUseCreatedAtAndKeepPercentageAndTimeShift() {
     // AAPS's xDrip+ profile-switch JSON has no date or timestamp field.
     val created = java.time.Instant.ofEpochMilli(time).toString()

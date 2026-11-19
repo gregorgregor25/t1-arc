@@ -18,6 +18,8 @@ import { toDateKey } from '@/domain/time';
 import { THERAPY_STATE_PAYLOAD_MARKERS } from '@/domain/therapyStates';
 import { hevyWorkoutDetail } from '@/data/hevy/mapping';
 import { parseHevyWorkout } from '@/data/hevy/validation';
+import { nightscoutBasalPercentOfProfile } from '@/data/nightscout/basalPercentage';
+import { NIGHTSCOUT_SOURCE_ID } from '@/data/nightscout/types';
 import { mergeHevyHealthConnectActivities } from '@/data/hevy/contextMerge';
 import { healthConnectSourceDisplayName } from '@/data/healthConnect/healthConnectSourcePolicy';
 import {
@@ -51,6 +53,7 @@ import {
 } from './HealthRecordStore';
 import { openT1ArcDatabase, withT1ArcTransaction } from './t1arcDatabase';
 import { createBoundedInsert } from './boundedInsert';
+import { readTherapyStatePredecessors } from './therapyStatePredecessors';
 import {
   HealthConnectContextPreference,
   selectHealthConnectContext,
@@ -214,7 +217,10 @@ function basalFromRow(row: BasalRow): BasalDelivery {
     rateUnitsPerHour: row.rate_units_per_hour,
     units: row.units,
     deliveryType: row.delivery_type ?? undefined,
-    percentage: row.percentage ?? undefined,
+    // Existing Nightscout rows and portable backups store the signed change.
+    percentage: row.source_id === NIGHTSCOUT_SOURCE_ID
+      ? nightscoutBasalPercentOfProfile(row.percentage)
+      : row.percentage ?? undefined,
     unitsEstimated: row.units_estimated === 1,
     importedAt: row.imported_at_ms,
     sourceFile: row.source_file ?? undefined,
@@ -774,7 +780,7 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       .sort((left, right) => left.start - right.start);
   }
 
-  async getTherapyStateRecords(range: TimeRange): Promise<ImportRawRecord[]> {
+  async getTherapyStateRecords(range: TimeRange, includePreceding = false): Promise<ImportRawRecord[]> {
     if (range.end <= range.start) return [];
     const database = await this.getDatabase();
     const rows = await database.getAllAsync<{
@@ -801,7 +807,7 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
       range.end,
       ...THERAPY_STATE_PAYLOAD_MARKERS.map((marker) => `%${marker}%`),
     );
-    return rows
+    const records = rows
       .filter((row) => isTherapyStateCandidate(row.source_id, row.record_kind, row.payload_json))
       .map((row) => ({
         id: row.id,
@@ -813,6 +819,11 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
         payloadJson: row.payload_json,
         importedAt: row.last_seen_at_ms,
       }));
+    const preceding = includePreceding
+      ? await readTherapyStatePredecessors(database, range.start)
+      : [];
+    return [...preceding, ...records]
+      .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
   }
 
   async getDailyInsulinTotals(range: TimeRange) {
@@ -1502,7 +1513,10 @@ export class SqliteHealthRecordStore implements HealthRecordStore {
           delivery.rateUnitsPerHour,
           delivery.units,
           delivery.deliveryType ?? null,
-          delivery.percentage ?? null,
+          // Keep the on-disk representation compatible with earlier backups.
+          delivery.sourceId === NIGHTSCOUT_SOURCE_ID && delivery.percentage !== undefined
+            ? delivery.percentage - 100
+            : delivery.percentage ?? null,
           delivery.unitsEstimated ? 1 : 0,
           delivery.importedAt ?? batch.importedAt,
           delivery.sourceFile ?? null,

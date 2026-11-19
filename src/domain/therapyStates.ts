@@ -1,5 +1,6 @@
-import { MG_DL_PER_MMOL_L, type TimeRange } from './models';
+import { type TimeRange } from './models';
 import { parseExternalAbsoluteTimestamp } from './externalTimestamp';
+import { temporaryTargetRange } from './temporaryTargets';
 
 /**
  * Typed therapy-state intervals recorded by AAPS (or another Nightscout
@@ -135,7 +136,7 @@ export const THERAPY_STATE_PAYLOAD_MARKERS = [
   'Activity',
 ] as const;
 
-/** How far before a period a state may have started and still be active in it. */
+/** Read recent records this far back, plus earlier starts and ends for ongoing states. */
 export const THERAPY_STATE_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
 
 /** Longer recorded durations are treated as "until changed". */
@@ -200,19 +201,6 @@ export function temporaryTargetReason(value: unknown): TemporaryTargetReason | u
   return 'other';
 }
 
-/**
- * AAPS uploads targets in mg/dL to Nightscout but in the user's unit to
- * xDrip+. Without a unit, values below 30 can only be mmol/L.
- */
-function targetMmolL(value: unknown, units: string) {
-  const parsed = numeric(value);
-  if (parsed === undefined || parsed <= 0) return undefined;
-  const mmol = /mmol/i.test(units) || (!/mg/i.test(units) && parsed < 30)
-    ? parsed
-    : parsed / MG_DL_PER_MMOL_L;
-  return mmol >= 2 && mmol <= 25 ? Math.round(mmol * 100) / 100 : undefined;
-}
-
 const RUNNING_MODES: Record<string, LoopRunningMode> = {
   CLOSED_LOOP: 'closed-loop',
   CLOSED_LOOP_LGS: 'closed-loop-lgs',
@@ -266,13 +254,14 @@ export function therapyStateEventFromTreatment(
     return { ...base, kind: 'temporary-target', isEnd: true };
   }
   if (/^temporary target$/i.test(eventType)) {
-    const units = text(treatment.units, 12);
-    const low = targetMmolL(treatment.targetBottom, units);
-    const high = targetMmolL(treatment.targetTop, units);
+    const target = temporaryTargetRange(treatment.targetBottom, treatment.targetTop, treatment.units, source.sourceId);
     const reasonText = text(treatment.reason, 40) || undefined;
+    const hasRecordedTarget =
+      (treatment.targetBottom !== undefined && treatment.targetBottom !== null) ||
+      (treatment.targetTop !== undefined && treatment.targetTop !== null);
     // A zero duration, or neither a target nor a reason (AAPS's xDrip+
     // cancel shape), cancels the running target.
-    if (duration === 0 || (low === undefined && high === undefined && !reasonText)) {
+    if (duration === 0 || (!hasRecordedTarget && !reasonText)) {
       return { ...base, kind: 'temporary-target', isEnd: true };
     }
     return {
@@ -282,8 +271,8 @@ export function therapyStateEventFromTreatment(
       programmedDurationMs: boundedDuration(duration),
       targetReason: temporaryTargetReason(reasonText),
       reasonText,
-      targetLowMmolL: low ?? high,
-      targetHighMmolL: high ?? low,
+      targetLowMmolL: target?.targetLowMmolL,
+      targetHighMmolL: target?.targetHighMmolL,
     };
   }
   if (/^profile switch$/i.test(eventType)) {
@@ -563,7 +552,7 @@ export function resolveTherapyStateIntervals(
   return intervals.sort((left, right) => left.start - right.start || left.id.localeCompare(right.id));
 }
 
-/** Intervals that overlap `range`, from raw records read with {@link THERAPY_STATE_LOOKBACK_MS}. */
+/** Resolve the recent records and their predecessors, then keep intervals that overlap the requested period. */
 export function therapyStatesForRange(
   records: readonly TherapyStateRawRecord[],
   range: TimeRange,

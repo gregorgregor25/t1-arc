@@ -50,8 +50,10 @@ function signedHours(hours: number) {
   })} h`;
 }
 
-export function formatTherapyTarget(state: Pick<TherapyStateInterval, 'targetLowMmolL' | 'targetHighMmolL'>) {
-  const regional = getRuntimeRegionalDefaults();
+export function formatTherapyTarget(
+  state: Pick<TherapyStateInterval, 'targetLowMmolL' | 'targetHighMmolL'>,
+  regional: Parameters<typeof formatGlucose>[1] = getRuntimeRegionalDefaults(),
+) {
   const low = state.targetLowMmolL;
   const high = state.targetHighMmolL;
   if (low === undefined || high === undefined) return undefined;

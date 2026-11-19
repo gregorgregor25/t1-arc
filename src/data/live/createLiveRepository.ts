@@ -16,6 +16,7 @@ import { MedtrumConnection } from '@/data/medtrum/types';
 import { LibreLinkUpCredentials } from '@/data/libreLinkUp/types';
 import { NightscoutGlucoseSource } from '@/data/nightscout/NightscoutGlucoseSource';
 import { NightscoutTreatmentImporter } from '@/data/nightscout/NightscoutTreatmentImporter';
+import { saveNightscoutTreatmentSyncAt } from '@/data/nightscout/secureStore';
 import { NightscoutConnection } from '@/data/nightscout/types';
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
@@ -50,12 +51,19 @@ export function createLiveRepository(
   const glucoseHistory = new SqliteGlucoseHistoryStore(writeLease);
   const notificationSource = new NotificationGlucoseSource(glucoseHistory);
   const glucoseSources: GlucoseSource[] = [notificationSource, new AapsGlucoseSource(glucoseHistory)];
-  const nightscoutHealthRecords = sourceWriteLeases.nightscout
-    ? healthRecords.withSourceWriteLease(sourceWriteLeases.nightscout)
+  const nightscoutWriteLease = sourceWriteLeases.nightscout;
+  const nightscoutHealthRecords = nightscoutWriteLease
+    ? healthRecords.withSourceWriteLease(nightscoutWriteLease)
     : undefined;
-  const nightscoutTreatments = nightscout && nightscoutHealthRecords
+  const nightscoutTreatments = nightscout && nightscoutHealthRecords && nightscoutWriteLease
     ? gateNightscoutTreatments(
-        new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords),
+        new NightscoutTreatmentImporter(
+          nightscout,
+          nightscoutHealthRecords,
+          fetch,
+          Date.now,
+          (at) => saveNightscoutTreatmentSyncAt(at, nightscoutWriteLease),
+        ),
         () => loadNightscoutImportPolicy(writeLease),
       )
     : undefined;

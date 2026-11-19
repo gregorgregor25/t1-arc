@@ -40,6 +40,25 @@ function aapsBolus(overrides: Partial<NightscoutTreatment> = {}): NightscoutTrea
 }
 
 describe('Nightscout treatments uploaded by AAPS', () => {
+  it.each([
+    ['-100', 0], [-25, 75], [0, 100], [12.5, 112.5],
+    [undefined, undefined], [-101, undefined], ['invalid', undefined],
+  ] as const)('reads the profile percentage from a signed change of %s', (percent, expected) => {
+    const treatment = { date: T0, eventType: 'Temp Basal', rate: 0.6, duration: 30, percent };
+    const result = normalizeNightscoutTreatments([treatment], []);
+    expect(result.basal[0]?.percentage).toBe(expected);
+    expect(result.basal[0]?.units).toBeCloseTo(0.3);
+    expect(JSON.parse(result.rawRecords[0]!.payloadJson).percent).toBe(percent);
+  });
+
+  it('retains a percent-only basal as source evidence without inferring delivered units', () => {
+    const result = normalizeNightscoutTreatments([
+      { date: T0, eventType: 'Temp Basal', duration: 30, percent: -25 },
+    ], []);
+    expect(result.basal).toEqual([]);
+    expect(JSON.parse(result.rawRecords[0]!.payloadJson).percent).toBe(-25);
+  });
+
   it('labels SMBs and keeps AAPS provenance on every record', () => {
     const normalized = normalizeNightscoutTreatments(
       [

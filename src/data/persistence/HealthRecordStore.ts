@@ -13,6 +13,7 @@ import {
 } from '@/domain/therapyStates';
 import { selectRetainedGlookoSources } from '@/data/glooko/glookoSourceRetention';
 import { isManualInsulinDelivery } from '@/data/manualInsulin';
+import { selectTherapyStatePredecessors } from './therapyStatePredecessors';
 
 export interface StoredRecordBounds {
   earliest?: number;
@@ -239,9 +240,11 @@ export interface HealthRecordStore {
   /**
    * Stored Nightscout and on-phone AAPS treatments that can start or end a
    * therapy state (temporary target, profile switch, running mode, pump
-   * suspension, exercise), with timestamps in `range`.
+   * suspension, exercise), with timestamps in `range`. With `includePreceding`,
+   * also keep the preceding valid state or end per route and kind so an
+   * until-changed state can begin before the recent history window.
    */
-  getTherapyStateRecords?(range: TimeRange): Promise<ImportRawRecord[]>;
+  getTherapyStateRecords?(range: TimeRange, includePreceding?: boolean): Promise<ImportRawRecord[]>;
   hasImportSourcePayload(sourceId: string): Promise<boolean>;
   writeImport(
     batch: ImportBatch,
@@ -391,15 +394,23 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
       );
   }
 
-  async getTherapyStateRecords(range: TimeRange) {
-    return [...this.rawRecords.values()]
+  async getTherapyStateRecords(range: TimeRange, includePreceding = false) {
+    if (range.end <= range.start) return [];
+    const candidates = [...this.rawRecords.values()]
       .filter(
         (record) =>
-          isTherapyStateCandidate(record.sourceId, record.recordKind, record.payloadJson) &&
+          (THERAPY_STATE_SOURCE_IDS as readonly string[]).includes(record.sourceId) &&
+          isRevisableRawRecordKind(record.recordKind) &&
           record.timestamp !== undefined &&
-          record.timestamp >= range.start &&
           record.timestamp < range.end,
-      )
+      );
+    return [
+      ...candidates.filter((record) => record.timestamp! >= range.start &&
+        isTherapyStateCandidate(record.sourceId, record.recordKind, record.payloadJson)),
+      ...(includePreceding
+        ? selectTherapyStatePredecessors(candidates.filter((record) => record.timestamp! < range.start))
+        : []),
+    ]
       .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
   }
 

@@ -117,7 +117,7 @@ export class ImportedInsulinSource implements InsulinSource {
     const records = await this.store.getTherapyStateRecords({
       start: range.start - THERAPY_STATE_LOOKBACK_MS,
       end: range.end,
-    });
+    }, true);
     return therapyStatesForRange(records, range, this.clock());
   }
 

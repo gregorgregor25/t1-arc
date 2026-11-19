@@ -29,7 +29,7 @@ import type {
   DailyMetricRecord,
 } from "@/domain/dailyHealthMetrics";
 import type { ActivityEvent, HealthContextEvent } from "@/domain/models";
-import { contextNoteDisplayTitle } from "@/domain/contextNotes";
+import { contextNoteDisplayTitle, contextNoteDisplayDetail } from "@/domain/contextNotes";
 import { formatStrengthWorkoutSet } from "@/domain/strengthWorkoutPresentation";
 import { dayRange, formatDate } from "@/domain/time";
 import { summarizeWorkoutHeartRate } from "@/domain/workoutHeartRate";
@@ -217,7 +217,7 @@ function contextEventDetail(event: HealthContextEvent) {
     return `${formatRegionalNumber(Math.round(event.durationMinutes), regional.locale, { maximumFractionDigits: 0 })} min`;
   }
   return event.kind === "note"
-    ? (event.detail ?? "Recorded context")
+    ? (contextNoteDisplayDetail(event, regional) ?? "Recorded context")
     : "Recorded event";
 }
 

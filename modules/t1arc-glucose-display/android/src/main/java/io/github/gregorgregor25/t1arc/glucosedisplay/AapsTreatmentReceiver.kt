@@ -194,7 +194,13 @@ internal object AapsTreatmentPolicy {
     textLimits.forEach { (key, limit) -> text(row[key], limit)?.let { out[key] = it } }
     booleans.forEach { key -> (row[key] as? Boolean)?.let { out[key] = it } }
     (row["type"] as? String)?.takeIf { it in setOf("NORMAL", "SMB", "PRIMING") }?.let { out["type"] = it }
-    (row["units"] as? String)?.takeIf { it == "mg/dl" || it == "mmol" }?.let { out["units"] = it }
+    text(row["units"], 12)?.let { units ->
+      out["units"] = when (units.lowercase()) {
+        "mg/dl" -> "mg/dl"
+        "mmol", "mmol/l" -> "mmol"
+        else -> units
+      }
+    }
     number(row["pumpId"])?.takeIf { it >= 0.0 && it % 1.0 == 0.0 && it <= MAX_SAFE_INTEGER }
       ?.let { out["pumpId"] = it.toLong() }
 

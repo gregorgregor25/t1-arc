@@ -4,6 +4,8 @@ import {
   MG_DL_PER_MMOL_L,
 } from './models';
 import { formatGlucose } from './regionalFormat';
+import { temporaryTargetRange } from './temporaryTargets';
+import { formatTherapyTarget } from './therapyStatePresentation';
 
 export const CONTEXT_NOTE_CATEGORY_LABELS: Record<
   ContextNoteCategory,
@@ -20,6 +22,37 @@ export const CONTEXT_NOTE_CATEGORY_LABELS: Record<
 
 export function contextNoteCategoryLabel(category: ContextNoteCategory) {
   return CONTEXT_NOTE_CATEGORY_LABELS[category];
+}
+
+/** Present imported target text in the current unit, including older saved notes. */
+export function contextNoteDisplayDetail(
+  event: ContextNoteEvent,
+  regional: Parameters<typeof formatGlucose>[1],
+) {
+  if (
+    event.origin !== 'imported' ||
+    !['nightscout', 'aaps-local'].includes(event.sourceId) ||
+    !/^temporary target$/i.test(event.title) ||
+    !event.detail
+  ) {
+    return event.detail;
+  }
+
+  // Only rewrite the exact segment produced by the treatment importer. Keep
+  // source notes, provenance and the original stored numeric precision intact.
+  return event.detail
+    .split(' · ')
+    .map((part) => {
+      const match = part.match(
+        /^target (\d+(?:\.\d+)?)(?: to (\d+(?:\.\d+)?))? (.{1,12}) as recorded$/i,
+      );
+      if (!match) return part;
+      const range = temporaryTargetRange(match[1], match[2], match[3]!, event.sourceId);
+      return range
+        ? `recorded target ${formatTherapyTarget(range, regional)}`
+        : 'target value unavailable';
+    })
+    .join(' · ');
 }
 
 export function contextNoteDisplayTitle(

@@ -57,6 +57,7 @@ import {
   runLibreVerification,
 } from "@/screens/libreSetupVerification";
 import { useAppTheme } from "@/theme/theme";
+import type { LibreDraftRetention } from "./libreDraftRetention";
 
 type TestState =
   | { kind: "idle" }
@@ -66,16 +67,7 @@ type TestState =
 
 type LibreCredentialLoadState = "loading" | "ready" | "unavailable";
 
-/**
- * Unsaved LibreLinkUp sign-in typed on this page, kept in memory by the
- * Settings screen so it survives moving between Settings pages (as it did
- * before the redesign). Never written to storage; cleared once the sign-in is
- * verified and saved, removed, or when Settings closes.
- */
-export interface LibreDraftRetention {
-  read(): LibreLinkUpCredentials | undefined;
-  write(draft: LibreLinkUpCredentials | undefined): void;
-}
+/** Temporary form input can survive navigation between Settings pages. */
 export const LibreDraftRetentionContext = createContext<LibreDraftRetention | null>(null);
 
 function emptyLibreDraft(

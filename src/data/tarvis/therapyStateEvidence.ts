@@ -269,6 +269,7 @@ export function therapyStateLoadRange(range: TimeRange): TimeRange {
 
 interface WindowStats {
   range: TimeRange;
+  recordIds: string[];
   observedMinutes: number;
   coveragePercent: number;
   averageMmolL: number | null;
@@ -284,6 +285,7 @@ function windowStats(timeline: TimelineData, range: TimeRange): WindowStats {
   const stats = calculateGlucoseStats(readings, range);
   return {
     range,
+    recordIds: readings.map(({ id }) => id),
     observedMinutes: stats.observedMinutes,
     coveragePercent: stats.coveragePercent,
     averageMmolL: stats.averageMmolL,
@@ -335,6 +337,20 @@ function pool(windows: readonly WindowStats[]): PooledStats {
 
 function overlaps(left: TimeRange, right: TimeRange) {
   return left.start < right.end && right.start < left.end;
+}
+
+/** One continuous active period can be described by several source records. */
+function activeWindows(ranges: readonly TimeRange[]): TimeRange[] {
+  const merged: TimeRange[] = [];
+  for (const range of [...ranges].sort((left, right) => left.start - right.start)) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
 }
 
 /**
@@ -418,6 +434,13 @@ function statsSentence(stats: PooledStats) {
 function sourceSummary(states: readonly TherapyStateInterval[]) {
   const names = new Set(states.map(therapyStateSourceNote));
   return [...names].join("; ");
+}
+
+function stateRecordRange(states: readonly TherapyStateInterval[], range: TimeRange): TimeRange {
+  return {
+    start: states.reduce((earliest, state) => Math.min(earliest, state.start), range.start),
+    end: range.end,
+  };
 }
 
 export interface TherapyStateAnswerResult {
@@ -533,8 +556,8 @@ function buildTherapyStateList({
     id: "therapy-state-intervals",
     label: `Recorded ${label}`,
     description: `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded interval${states.length === 1 ? "" : "s"} from ${sourceSummary(states)}.`,
-    range,
-    recordIds: [...new Set(states.flatMap(therapyStateRecordIds))].slice(0, 200),
+    range: stateRecordRange(states, range),
+    recordIds: [...new Set(states.flatMap(therapyStateRecordIds))],
     examples: states.slice(0, 5).map((state) => ({
       id: state.source.rawRecordId,
       kind: "source-record",
@@ -612,8 +635,8 @@ export function buildTherapyStateAnswer({
     id: "therapy-state-intervals",
     label: `Recorded ${label}`,
     description: `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded interval${states.length === 1 ? "" : "s"} from ${sourceSummary(states)}.`,
-    range,
-    recordIds: [...new Set(states.flatMap(therapyStateRecordIds))].slice(0, 200),
+    range: stateRecordRange(states, range),
+    recordIds: [...new Set(states.flatMap(therapyStateRecordIds))],
     examples: states.slice(0, 5).map((state) => ({
       id: state.source.rawRecordId,
       kind: "source-record",
@@ -624,12 +647,13 @@ export function buildTherapyStateAnswer({
     })),
   };
 
-  const stateWindows = matching.map(({ clipped }) => windowStats(timeline, clipped));
+  const intervals = activeWindows(matching.map(({ clipped }) => clipped));
+  const stateWindows = intervals.map((window) => windowStats(timeline, window));
   const during = pool(stateWindows);
   const familyStates = allStates.filter((state) => sameFamily(state, query));
   const loadRange = timeline.range;
   const comparisonCandidates = matchedWindows(
-    matching.map(({ clipped }) => clipped),
+    intervals,
     familyStates,
     loadRange,
     asOf,
@@ -637,6 +661,9 @@ export function buildTherapyStateAnswer({
   const usableComparison = comparisonCandidates.filter(
     (window) => window.coveragePercent >= MIN_WINDOW_COVERAGE_PERCENT,
   );
+  const comparisonDays = new Set(
+    usableComparison.map(({ range: window }) => toDateKey(window.start)),
+  ).size;
   const without = pool(usableComparison);
 
   const listed = states
@@ -671,15 +698,12 @@ export function buildTherapyStateAnswer({
       label: `Glucose while ${label} were active`,
       description: `Readings inside the recorded intervals; coverage ${percent(during.coveragePercent)}. Mean and time in range are weighted by observed time across the intervals.`,
       range,
-      recordIds: timeline.glucose
-        .filter((reading) => matching.some(({ clipped }) => reading.timestamp >= clipped.start && reading.timestamp < clipped.end))
-        .map(({ id }) => id)
-        .slice(0, 500),
+      recordIds: [...new Set(stateWindows.flatMap(({ recordIds }) => recordIds))],
       examples: [],
     });
     if (usableComparison.length >= MIN_MATCHED_WINDOWS) {
       lines.push(
-        `At the same clock times on ${formatTarvisNumber(usableComparison.length, { maximumFractionDigits: 0 })} other days with ${withoutLabel(query)} recorded, ${statsSentence(without)}. Glucose coverage in those windows: ${percent(without.coveragePercent)}.`,
+        `At the same clock times on ${formatTarvisNumber(comparisonDays, { maximumFractionDigits: 0 })} other day${comparisonDays === 1 ? "" : "s"} with ${withoutLabel(query)} recorded, ${statsSentence(without)}. Glucose coverage in those windows: ${percent(without.coveragePercent)}.`,
       );
       confidence =
         during.coveragePercent >= 90 && without.coveragePercent >= 90 && usableComparison.length >= 5
@@ -690,7 +714,7 @@ export function buildTherapyStateAnswer({
         label: "Glucose at matched times without the setting",
         description: `${formatTarvisNumber(usableComparison.length, { maximumFractionDigits: 0 })} same-clock-time windows on other days in the ${formatTarvisNumber(COMPARISON_POOL_DAYS, { maximumFractionDigits: 0 })} days to the end of the period, each with at least ${percent(MIN_WINDOW_COVERAGE_PERCENT)} glucose coverage and none of these settings recorded. Mean and time in range are weighted by observed time.`,
         range: loadRange,
-        recordIds: [],
+        recordIds: [...new Set(usableComparison.flatMap(({ recordIds }) => recordIds))],
         examples: [],
       });
     } else {

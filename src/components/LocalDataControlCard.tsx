@@ -50,7 +50,10 @@ function VaultFact({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function LocalDataControlCard({ onErased }: { onErased(): void }) {
+export function LocalDataControlCard({ hasUnsavedSignIn, onErased }: {
+  hasUnsavedSignIn: boolean;
+  onErased(): void;
+}) {
   const { colors, radius } = useAppTheme();
   const {
     eraseAllLocalHealthData,
@@ -99,7 +102,7 @@ export function LocalDataControlCard({ onErased }: { onErased(): void }) {
     glookoSyncing ||
     glookoReportSyncing ||
     !summary ||
-    (!hasStoredData && !hasSavedConfiguration);
+    (!hasStoredData && !hasSavedConfiguration && !hasUnsavedSignIn);
 
   async function erase() {
     setErasing(true);

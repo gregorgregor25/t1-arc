@@ -19,7 +19,7 @@ import {
 import { formatShortDate, formatTime, toDateKey } from "@/domain/time";
 import { buildDataCompletenessReport } from "@/domain/dataCompleteness";
 import { isManualKetoneEvent } from "@/data/manualContext";
-import { contextNoteDisplayTitle } from "@/domain/contextNotes";
+import { contextNoteDisplayTitle, contextNoteDisplayDetail } from "@/domain/contextNotes";
 import { sensorWarmupEvidence } from './sensorWarmupEvidence';
 import { formatGlucose, formatWeight } from "@/domain/regionalFormat";
 import { glucoseMeetsThreshold } from "@/domain/glucoseRanges";
@@ -435,7 +435,7 @@ function contextPreview(event: HealthContextEvent): EvidenceRecordPreview {
         ? "Recorded medication event"
         : `${formatTarvisNumber(event.amount, { maximumFractionDigits: 2 })}${event.unit ? ` ${event.unit}` : ""}`;
   } else if (event.kind === "note") {
-    secondary = event.detail ?? `${event.category} note`;
+    secondary = contextNoteDisplayDetail(event, getRuntimeRegionalDefaults()) ?? `${event.category} note`;
   }
   return {
     id: event.id,

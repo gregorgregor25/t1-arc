@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import T1ArcGlucoseDisplay from "../../../modules/t1arc-glucose-display";
@@ -48,7 +48,7 @@ import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
 
 import { GlucoseSourcePage } from "./GlucoseSourcePage";
-import { LibreSettingsPage } from "./LibreSettingsPage";
+import { LibreDraftRetentionContext, LibreSettingsPage } from "./LibreSettingsPage";
 import { SettingsDisclosure } from "./SettingsDisclosure";
 import type { SettingsPageProps } from "./settingsPageTypes";
 
@@ -367,6 +367,7 @@ function HealthDataPage({
 
 function BackupPrivacyPage({ expanded, toggle, onDataChanged }: SettingsPageProps) {
   const { colors } = useAppTheme();
+  const libreDraft = useContext(LibreDraftRetentionContext);
   return (
     <View style={styles.sections}>
       <Text style={[styles.intro, { color: colors.textSecondary }]}>
@@ -403,9 +404,10 @@ function BackupPrivacyPage({ expanded, toggle, onDataChanged }: SettingsPageProp
         onToggle={() => toggle("privacy-device")}
         title="Device data controls"
       >
-        {/* Each source page reads its saved sign-in when opened, so nothing
-            else needs resetting here after an erase. */}
-        <LocalDataControlCard onErased={() => undefined} />
+        <LocalDataControlCard
+          hasUnsavedSignIn={Boolean(libreDraft?.read())}
+          onErased={() => libreDraft?.clearAfterErase()}
+        />
       </SettingsDisclosure>
     </View>
   );

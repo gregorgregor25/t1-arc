@@ -42,6 +42,18 @@ const UNIT_DEFINITION =
 const AMOUNT_VERDICT =
   /\b(?:safe|right|correct|reasonable)\s+amount\b|\b(?:that|this|it)(?:'s|\s+is|\s+would\s+be|\s+sounds|\s+seems|\s+looks)\s+(?:like\s+)?(?:too\s+(?:much|little|many|few)|plenty(?!\s+of\s+(?:time|data|records?|readings?|days?|nights?|information))|not\s+enough(?!\s+(?:data|records?|readings?|days?|nights?|information|coverage))|enough(?:\s+(?:insulin|units?|carbs?|to\s+(?:cover|take|bring|fix|treat)))?\W*$|fine\s+to\s+take\b|a\s+safe\b)|\b(?:fine|ok(?:ay)?|safe|alright)\s+to\s+(?:take|bolus|inject|correct|disconnect|suspend|skip|stack|eat|leave|have)\b|\b(?:that|this|the|your)\s+(?:amount|dose|number|figure|bolus|correction|plan|setting|ratio|split|basal)\s+(?:sounds|seems|looks|is)\s+(?:about\s+)?(?:right|correct|ok(?:ay)?|fine|reasonable|good|safe|sensible|spot\s+on)\b|^\W*(?:yes|yep|yeah)\b[^.?!\n]{0,30}\b(?:sounds|looks|seems)\s+(?:right|fine|good|ok(?:ay)?|correct|reasonable)\b/i;
 
+// An indirect question can recommend treatment in the middle of a sentence.
+// Keep the action next to the suggestion frame, so explaining a recorded
+// suspension or asking why it occurred remains descriptive.
+const INDIRECT_TREATMENT_SUGGESTION = new RegExp(
+  String.raw`\b(?:why\s+not|how\s+about|what\s+about)\s+(?:(?:you|we)\s+)?(?:try(?:ing)?\s+)?(?:(?:disconnect(?:ing)?|suspend(?:ing)?|stop(?:ping)?|paus(?:e|ing))\s+(?:your\s+|the\s+)?pump\b|(?:tak(?:e|ing)|inject(?:ing)?|us(?:e|ing)|giv(?:e|ing)|reduc(?:e|ing)|lower(?:ing)?|rais(?:e|ing)|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|chang(?:e|ing)|set(?:ting)?|eat(?:ing)?|drink(?:ing)?)\b[^.?!\n]{0,60}\b(?:${TREATMENT_WORD})\b|(?:pre-?bolus(?:ing)?|bolus(?:ing)?)\b)`,
+  'i',
+);
+// Without a named subject, the checker cannot establish what the model is
+// endorsing. Apply to each sentence, including a verdict after safe prose.
+const UNGROUNDED_ENDORSEMENT =
+  /^\W*(?:that|this|it)(?:'s|\s+is|\s+sounds|\s+seems|\s+looks)\s+(?:about\s+|quite\s+|perfectly\s+)?(?:right|correct|reasonable|fine|ok(?:ay)?|good|safe|sensible|spot\s+on)\W*$/i;
+
 /** Rules for every sentence of an education reply. */
 const EDUCATION_RULES: readonly RegExp[] = [
   // Ratios: "1:8", "one to eight", "8 g per unit", "1 unit per 10 grams", "2.5 mmol/L per unit", "0.5 U/h".
@@ -158,6 +170,8 @@ function sentenceBreaksRules(original: string) {
   const sentence = withoutUnitDefinition(original);
   const deferred = TEAM_DEFERRAL.test(sentence) && !/\d/.test(sentence);
   return (
+    INDIRECT_TREATMENT_SUGGESTION.test(sentence) ||
+    UNGROUNDED_ENDORSEMENT.test(sentence) ||
     (TREATMENT_TOPIC.test(sentence) && (
       CHOICE.test(sentence) ||
       (!deferred && ADJUSTABLE_THERAPY.test(sentence) && PERSONAL_FRAME.test(sentence) && DIRECTION_OR_AMOUNT.test(sentence))
@@ -216,6 +230,7 @@ const PERSONAL_RULES: readonly RegExp[] = [
 function personalReadingGivesTreatment(text: string) {
   if (TABLE_ROW.test(text) || ANSWER_WORD_ONLY.test(text)) return true;
   return sentencesOf(text).some((sentence) => {
+    if (INDIRECT_TREATMENT_SUGGESTION.test(sentence) || UNGROUNDED_ENDORSEMENT.test(sentence)) return true;
     if (PERSONAL_RULES.some((rule) => rule.test(sentence))) return true;
     const plain = sentence.replace(NAMES_WITH_DIGITS, " ");
     return BARE_AMOUNT_SENTENCE.test(plain) && !/\b(?:was|were|had|recorded|logged)\b/i.test(plain);

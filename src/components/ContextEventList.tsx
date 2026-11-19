@@ -16,11 +16,12 @@ import { HealthContextEvent, TimelineData } from "@/domain/models";
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "@/domain/contextNotes";
 import { mealNutritionSummary } from "@/domain/mealNutrition";
 import { toDateKey } from "@/domain/time";
 import { rangeSpansMultipleDates } from "@/domain/timelinePresentation";
-import { formatRegionalNumber, formatWeight } from "@/domain/regionalFormat";
+import { formatGlucose, formatRegionalNumber, formatWeight } from "@/domain/regionalFormat";
 import { useAppTheme } from "@/theme/theme";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 
@@ -29,7 +30,7 @@ import { healthMetricIntervalPresentation } from "./healthMetrics/presentation";
 
 function eventPresentation(
   event: HealthContextEvent,
-  regional: Parameters<typeof formatWeight>[1],
+  regional: Parameters<typeof formatWeight>[1] & Parameters<typeof formatGlucose>[1],
 ) {
   const ketone = manualKetoneDraftFromEvent(event);
   if (ketone) {
@@ -85,7 +86,7 @@ function eventPresentation(
               ? ("radio-outline" as const)
               : ("document-text-outline" as const),
         detail: event.detail
-          ? `${contextNoteCategoryLabel(event.category)} · ${event.detail}`
+          ? `${contextNoteCategoryLabel(event.category)} · ${contextNoteDisplayDetail(event, regional)}`
           : contextNoteCategoryLabel(event.category),
       };
   }

@@ -28,11 +28,8 @@ import {
 import { type SourceReloadOptions, useDataContext } from "@/providers/DataProvider";
 import { OnboardingScreen } from "@/screens/OnboardingScreen";
 import { SettingsHome } from "@/screens/settings/SettingsHome";
-import {
-  LibreDraftRetentionContext,
-  type LibreDraftRetention,
-} from "@/screens/settings/LibreSettingsPage";
-import type { LibreLinkUpCredentials } from "@/data/libreLinkUp/types";
+import { LibreDraftRetentionContext } from "@/screens/settings/LibreSettingsPage";
+import { createLibreDraftRetention } from "@/screens/settings/libreDraftRetention";
 import {
   alarmKindFromPanel,
   SettingsPageContent,
@@ -58,16 +55,12 @@ export function SourcesScreen({
   const { colors, radius } = useAppTheme();
   const { refreshData, reloadSources, syncing } = useDataContext();
   const scrollViewRef = useRef<ScrollView | null>(null);
-  // Unsaved LibreLinkUp sign-in, kept only while Settings stays open.
-  const [libreDraftRetention] = useState<LibreDraftRetention>(() => {
-    let draft: LibreLinkUpCredentials | undefined;
-    return {
-      read: () => draft,
-      write: (next) => {
-        draft = next;
-      },
-    };
-  });
+  // An erase can finish after navigation back to Libre. Remount its form so
+  // input and outstanding credential reads from before the erase are discarded.
+  const [librePageGeneration, setLibrePageGeneration] = useState(0);
+  const [libreDraftRetention] = useState(() =>
+    createLibreDraftRetention(() => setLibrePageGeneration((current) => current + 1)),
+  );
   // Earlier links named the combined "Display and alerts" page; it now opens
   // "Phone, widget and car", which holds the same display controls.
   const activePage = resolveSettingsRequest(
@@ -271,7 +264,7 @@ export function SourcesScreen({
         <LibreDraftRetentionContext.Provider value={libreDraftRetention}>
         <SettingsPageContent
           expanded={expandedSetting}
-          key={activePage}
+          key={activePage === "libre" ? `libre-${librePageGeneration}` : activePage}
           onDataChanged={showChangedPersonalData}
           openPage={showPage}
           openScreen={openScreen}

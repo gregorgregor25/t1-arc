@@ -5,6 +5,7 @@ import type {
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "@/domain/contextNotes";
 import {
   ActivityEvent,
@@ -1359,7 +1360,7 @@ function rankedContextDetail(event: RankedReviewContextEvent) {
     return `${formatManualKetoneTitle(ketone)} · manually entered`;
   }
   return `${contextNoteCategoryLabel(event.category)} · ${
-    event.detail ?? "no additional detail recorded"
+    contextNoteDisplayDetail(event, getRuntimeRegionalDefaults()) ?? "no additional detail recorded"
   }`;
 }
 

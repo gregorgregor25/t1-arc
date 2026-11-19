@@ -41,6 +41,7 @@ When AAPS is selected, the AAPS card shows **Fill insulin and carb history from 
 - While AAPS is selected, the regular refresh, the older-history backfill and the Nightscout connection check all read treatments only. Connecting Nightscout then succeeds without a Nightscout glucose reading.
 - Withdrawn records (`isValid: false`) and priming boluses are kept as raw evidence but not counted. A temporary basal ends when the next one starts or is cancelled. Large ranges are read page by page rather than cut off at 5,000 records.
 - Nightscout carries temporary basals only. Without a pump export for the same period, scheduled basal is missing from the daily total, and Today says so.
+- Today checks when the current Nightscout connection last fetched and saved its recent treatment history successfully. An unchanged response refreshes that time. Downloading older history does not. Disconnecting or erasing the connection clears the saved time.
 
 ### Counting each record once
 
@@ -74,6 +75,8 @@ Effective profile switches and the profile's internal schedule are not read. Glo
 - A re-sent record replaces the stored copy when it is newer, so a target cancelled early shows its real end. Before this change the stored copy kept the original duration.
 - The same record from Nightscout and from the phone is kept once: same kind, starts within 2 minutes, same reason, target, percentage or mode. Nightscout's copy is preferred; the other stays listed as a duplicate and both raw records can be opened from the evidence.
 - Times are stored as exact instants and shown in local time, so a target across a clock change keeps its real length.
+- Target values follow the glucose unit in Settings, including on previously imported timeline entries. mmol/L uses one decimal place and mg/dL uses whole numbers. The source record keeps the original values and units.
+- A state that began before the displayed period can still appear in it. Overlapping pump and loop suspension records stay individually inspectable. Their shared minutes and glucose readings count once in the combined summary.
 - Closed loop and a 100% profile with no end are the ordinary background state and are not listed as notable.
 
 ### Where they appear
@@ -86,7 +89,7 @@ Effective profile switches and the profile's internal schedule are not read. Glo
 
 - Nightscout records can arrive late, and none arrive while AAPS is offline.
 - The phone broadcast covers only the last 24 hours, carries no running modes or temporary basals, and Android usually cannot confirm its sender. Answers say when an interval came only from an unverified sender.
-- Known issue, not changed here: AAPS uploads a temporary basal's `percent` as the rate minus 100, so a percentage read from that field is offset by 100.
+- AAPS and Nightscout record a temporary basal's `percent` as the change from the profile rate. T1 Arc reads it as a percentage of the profile rate, including for earlier imports and restored backups. For example, a recorded change of −25 means 75% of the profile rate. The raw record retains −25. T1 Arc estimates delivered units from the reported absolute rate and duration. A percentage alone cannot establish delivered units. [AAPS upload format](https://github.com/nightscout/AndroidAPS/blob/c20c229/plugins/sync/src/commonMain/kotlin/app/aaps/plugins/sync/nsclientV3/extensions/TemporaryBasalExtension.kt)
 
 ## Provenance and retention
 

@@ -56,7 +56,7 @@ export interface BasalDelivery {
   units: number;
   /** Glooko's delivery label, for example Scheduled. */
   deliveryType?: string;
-  /** Present for percentage-based temporary basal rows. */
+  /** Percentage of the profile rate for a temporary basal (100 means unchanged). */
   percentage?: number;
   /** True when units were derived from rate x duration, not reported directly. */
   unitsEstimated?: boolean;

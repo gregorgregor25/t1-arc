@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { normalizeAapsLocalTreatments } from '@/data/aaps/localAapsTreatments';
+import { MG_DL_PER_MMOL_L } from '@/domain/models';
 import { normalizeNightscoutTreatments } from '@/data/nightscout/NightscoutTreatmentImporter';
 import { MemoryHealthRecordStore } from '@/data/persistence/HealthRecordStore';
 import {
@@ -88,8 +89,8 @@ describe('therapy-state parsing per route', () => {
       start: T0,
       targetReason: 'activity',
       programmedDurationMs: 90 * MINUTE,
-      targetLowMmolL: 7.77,
-      targetHighMmolL: 7.77,
+      targetLowMmolL: 140 / MG_DL_PER_MMOL_L,
+      targetHighMmolL: 140 / MG_DL_PER_MMOL_L,
     });
   });
 

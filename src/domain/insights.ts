@@ -22,6 +22,7 @@ import {
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "./contextNotes";
 import { manualKetoneDraftFromEvent } from "@/data/manualContext";
 import { formatManualKetoneTitle } from "@/data/manualKetones";
@@ -1127,7 +1128,7 @@ function contextPreview(event: HealthContextEvent): EvidenceRecordPreview {
           ? `${regionalNumber(ketone.value)} mmol/L · manually entered blood ketone reading`
           : `${ketone.value === "negative" ? "Negative" : ketone.value === "trace" ? "Trace" : ketone.value} · manually entered urine ketone strip result`
         : event.detail
-          ? `${contextNoteCategoryLabel(event.category)} · ${event.detail}`
+          ? `${contextNoteCategoryLabel(event.category)} · ${contextNoteDisplayDetail(event, getRuntimeRegionalDefaults())}`
           : contextNoteCategoryLabel(event.category);
       break;
   }
@@ -1174,6 +1175,7 @@ export function buildContextEventEvidence(
   const nearbyContext = data.context.filter(
     (candidate) =>
       candidate.id !== event.id &&
+      (event.kind === "weight" || candidate.kind !== "weight") &&
       candidate.start < range.end &&
       (candidate.end ?? candidate.start) >= range.start,
   );
@@ -1203,7 +1205,7 @@ export function buildContextEventEvidence(
           ? contextNoteDisplayTitle(event, getRuntimeRegionalDefaults())
           : event.title
     } · nearby records`,
-    description: `${regionalNumber(glucose.length, 0)} glucose, ${regionalNumber(boluses.length + basal.length, 0)} insulin, and ${regionalNumber(nearbyContext.length, 0)} other context records in the loaded time window. Proximity is shown for inspection and does not establish cause`,
+    description: `${regionalNumber(glucose.length, 0)} glucose, ${regionalNumber(boluses.length + basal.length, 0)} insulin, and ${regionalNumber(nearbyContext.length, 0)} other context record${nearbyContext.length === 1 ? '' : 's'} in the loaded time window. Proximity is shown for inspection and does not establish cause`,
     range,
     recordIds: [
       event.id,

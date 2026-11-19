@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react';
 
 import { loadAapsLocalTreatmentRoute } from '@/data/aaps/localAapsTreatments';
 import { AAPS_LOCAL_SOURCE_ID } from '@/data/aaps/types';
-import { NIGHTSCOUT_SOURCE_ID } from '@/data/nightscout/types';
+import { loadNightscoutTreatmentSyncAt } from '@/data/nightscout/secureStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
 
 /**
  * When each therapy-state route last worked, as read from this phone's
- * records. Import batches are written only after a successful sync or
- * receive, so their `importedAt` is evidence that the route delivered data.
+ * records. Nightscout records each successful current-window treatment poll,
+ * even when it returns the same content-addressed import.
  */
 export interface TherapyStateRouteTimes {
-  /** Last successful Nightscout treatment sync that stored new content. */
+  /** Last successful current-window Nightscout treatment poll. */
   nightscoutTreatmentSyncAt?: number;
   /** Last batch of AAPS treatments received on this phone. */
   aapsLocalTreatmentsReceivedAt?: number;
@@ -32,7 +32,7 @@ export function useTherapyStateRouteTimes(
     let active = true;
     const store = new SqliteHealthRecordStore();
     void Promise.all([
-      store.getLatestImport(NIGHTSCOUT_SOURCE_ID).catch(() => undefined),
+      loadNightscoutTreatmentSyncAt().catch(() => undefined),
       store.getLatestImport(AAPS_LOCAL_SOURCE_ID).catch(() => undefined),
       loadAapsLocalTreatmentRoute().catch(() => false),
     ]).then(([nightscout, local, routeOn]) => {
@@ -40,7 +40,7 @@ export function useTherapyStateRouteTimes(
       setState({
         owner: ownerIdentity,
         times: {
-          nightscoutTreatmentSyncAt: nightscout?.importedAt,
+          nightscoutTreatmentSyncAt: nightscout,
           aapsLocalTreatmentsReceivedAt: local?.importedAt,
           aapsLocalTreatmentRouteOn: routeOn,
         },
