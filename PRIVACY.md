@@ -10,7 +10,7 @@ build must review the exact build, hosting, support and store configuration.
 
 ## Local storage
 
-The development glucose alarm engine stores its configuration, episode state,
+The glucose alarm engine stores its configuration, episode state,
 snooze deadlines and imported audio names in Android Keystore-backed encrypted
 storage. User-selected audio is copied into private app storage and is not sent
 to a server or Tarv1s. Android system backup remains disabled. User-created
@@ -22,7 +22,7 @@ are never included. A missing custom sound falls back to a built-in sound after
 restore. Users should still check and test alarms on a replacement phone. Full local-data erasure disables
 the alarm owner and removes its private audio copies. Hiding lock-screen values
 redacts alarm notification content without acknowledging the alert or stopping
-its audio. See [glucose alarms](docs/GLUCOSE_ALARMS.md) for development limitations.
+its audio. See [glucose alarms](docs/GLUCOSE_ALARMS.md) for limitations.
 
 Manual cycle periods, flow, symptoms and notes are stored in the encrypted local
 health database. They are included in user-created encrypted portable backups
@@ -84,6 +84,17 @@ The optional independent-APK watch installer communicates with the selected
 watch on the local network. Pairing codes are temporary; its ADB identity is
 kept in Android secure storage. Connections close after setup. Disabling watch
 debugging does not stop normal paired-watch glucose delivery.
+
+The optional AAPS local source reads the status broadcast that AndroidAPS sends
+on the same phone: glucose, trend, IOB and COB. This route uses no network
+connection, and T1 Arc sends nothing back to AAPS or the pump. Readings are
+kept in T1 Arc's encrypted local storage with their AAPS provenance. A separate
+switch, off by default, also accepts AAPS's xDrip+ treatment broadcasts
+(insulin, carbohydrate and settings records). Android cannot confirm who sent
+them, so they are labelled as unverified and held in Keystore-encrypted storage
+until saved. Any other app on the phone that listens for the same broadcasts
+also receives what AAPS sends; that is how AAPS shares them. See
+[AAPS local source](docs/AAPS_LOCAL_SOURCE.md).
 
 ## Record exports and shared summaries
 

@@ -1,6 +1,11 @@
 # AAPS phone test build
 
-The `codex/aaps-local-source` branch builds a phone APK in GitHub Actions. The
+This is a maintainer procedure for testing changes on a phone before a release.
+The AAPS local source itself ships in public releases from 1.8.0; ordinary
+users install the APK from GitHub Releases instead.
+
+The branches listed in `.github/workflows/aaps-phone-test.yml` build a phone APK
+in GitHub Actions. The
 workflow runs the repository quality checks, makes an ARM64 release APK, and
 uploads it as a seven-day Actions artifact. It does not create a tag, GitHub
 Release, or production deployment. The `production` environment remains
@@ -29,6 +34,8 @@ Wear OS companion receives the same glucose protocol and does not need an
 update for this phone-only test. The phone test APK omits the optional
 companion installer asset; it does not alter the installed watch app.
 
-This branch build is for device verification of AAPS broadcasts and local
-phone/watch delivery. The final signed APK is kept local and is not uploaded
-to a GitHub Release.
+This branch build is for device verification before a release. The final
+signed APK is kept local and is not uploaded to a GitHub Release. Give a test
+build a version suffix (for example `1.8.0-aaps.1`) so it never checks for
+public updates, and an even version code above both the installed build and
+the latest public release.

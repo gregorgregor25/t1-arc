@@ -1,5 +1,7 @@
 # AAPS local source
 
+Available from T1 Arc 1.8.0. It has been tested with the AAPS build named below on one Pixel phone; other AAPS versions have not been tested.
+
 T1 Arc can read the local status broadcast from AndroidAPS. This route is for the phone running AAPS and T1 Arc together: Juggluco receives the sensor over Bluetooth and sends glucose to AAPS through the existing xDrip broadcast; AAPS sends its status broadcast to T1 Arc. T1 Arc only reads. It does not configure the sensor, AAPS, Pod or pump, deliver insulin, or send treatments back to AAPS.
 
 The implementation targets the `info.nightscout.androidaps.status` broadcast in AAPS **4.0.0-dev-e, build c20c229 (30 October 2026)**. The source code for that build exposes glucose in mg/dL with its own measurement timestamp, trend and delta, and AAPS-calculated IOB and COB. COB `-1` means unavailable; zero is a valid estimate. IOB may be negative. AAPS status updates have a separate receipt time and do not always contain every field. T1 Arc stores them with provenance rather than turning estimates into doses, meals, or pump events.

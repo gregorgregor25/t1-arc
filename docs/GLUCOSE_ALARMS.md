@@ -1,8 +1,8 @@
-# Local glucose alarms (development build)
+# Local glucose alarms
 
-This phone-only feature is being developed on `codex/aaps-local-source`. It does
-not change AAPS, the sensor connection, insulin delivery or the Wear companion
-protocol. It evaluates the glucose source already selected in T1 Arc.
+T1 Arc 1.8.0 adds optional glucose alarms on the phone. They do not change
+AAPS, the sensor connection, insulin delivery or the Wear companion protocol.
+They evaluate the glucose source already selected in T1 Arc.
 
 **T1 Arc's alarms are a back-up.** Keep your sensor maker's alarms, or your AAPS
 alarms, turned on as well. T1 Arc never calculates insulin doses, suggests
@@ -206,8 +206,9 @@ The built-in sounds are original listening concepts. Neither their waveform,
 volume ramp nor this implementation has been clinically validated to wake a
 person during hypoglycaemia. Silent automated tests and a muted emulator do not
 prove audible speaker output, overnight waking, Bluetooth routing or screen-off
-reliability on a particular phone. Those checks require an explicitly approved
-device test before relying on this development feature overnight.
+reliability on a particular phone. Test the alarms on your own phone, at the
+volume you will use, before relying on them overnight, and keep your sensor
+maker's or AAPS alarms on as well.
 
 ## Data and verification
 
