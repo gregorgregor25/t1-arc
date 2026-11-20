@@ -51,6 +51,47 @@ describe('therapy-state list questions', () => {
     expect(parseTherapyStateQuestion('Any lows during my temp targets this week?')?.mode).toBeUndefined();
   });
 
+  it('marks a question about one named state as latest, and keeps periods and plurals as they were', () => {
+    expect(parseTherapyStateQuestion('What was my glucose during my last temporary target?')).toEqual({
+      family: 'temporary-target', reason: undefined, latest: true,
+    });
+    expect(parseTherapyStateQuestion('When was my most recent activity temp target?')).toEqual({
+      family: 'temporary-target', reason: 'activity', mode: 'list', latest: true,
+    });
+    expect(parseTherapyStateQuestion('When did I last use a temp target?')?.latest).toBe(true);
+    expect(parseTherapyStateQuestion('When was the last time I used a temp target?')?.latest).toBe(true);
+    expect(parseTherapyStateQuestion('How did my glucose go during my last activity mode?')).toEqual({
+      family: 'temporary-target', reason: 'activity', latest: true,
+    });
+    expect(parseTherapyStateQuestion('How was my glucose during my temp targets last week?')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Show my last temp targets')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Any temp targets in the last 3 days?')?.latest).toBeUndefined();
+  });
+
+  it.each([
+    'What was my glucose during my last temporary target?',
+    'When did I last use a temp target?',
+  ])('reads "%s" as a record, not as last week', (question) => {
+    const asOf = Date.parse('2030-11-19T15:00:00Z');
+    const plan = coordinateTarvisRequest({ question, asOf });
+    expect(plan.kind).toBe('therapy-state');
+    if (plan.kind === 'therapy-state') {
+      expect(plan.query.latest).toBe(true);
+      expect(plan.range.end).toBe(asOf);
+      expect(plan.range.end - plan.range.start).toBeGreaterThan(28 * DAY);
+    }
+  });
+
+  it('keeps an explicit period alongside "my last"', () => {
+    const asOf = Date.parse('2030-11-19T15:00:00Z');
+    const plan = coordinateTarvisRequest({ question: 'What was my glucose during my last temp target yesterday?', asOf });
+    expect(plan.kind).toBe('therapy-state');
+    if (plan.kind === 'therapy-state') {
+      expect(plan.query.latest).toBe(true);
+      expect(plan.range.end - plan.range.start).toBeLessThanOrEqual(DAY);
+    }
+  });
+
   it('does not claim setting requests', () => {
     expect(parseTherapyStateQuestion('What percentage should I use?')).toBeUndefined();
     expect(parseTherapyStateQuestion('Should I set any temp target tonight?')).toBeUndefined();
@@ -122,6 +163,59 @@ describe('therapy-state list answers', () => {
     expect(containsTreatmentDirective(listed.answer.answer)).toBe(false);
     expect(listed.answer.answer).toContain('usual 100% profile');
     expect(listed.answer.answer).not.toMatch(/Profile switch,/);
+  });
+
+  it('totals the time within the period, counting overlapping records once', () => {
+    const suspensions = timeline(loaded, [
+      // Starts before the period: only the hour inside it counts.
+      state({ id: 's-early', kind: 'loop-mode', loopMode: 'suspended-by-user', endBasis: 'cancelled', start: range.start - HOUR, end: range.start + HOUR }),
+      // Two records of the same 30 minutes, e.g. from two sources.
+      state({ id: 's-a', kind: 'loop-mode', loopMode: 'suspended-by-user', endBasis: 'cancelled', start: Date.parse('2030-11-18T03:00:00Z'), end: Date.parse('2030-11-18T03:30:00Z') }),
+      state({ id: 's-b', kind: 'loop-mode', loopMode: 'suspended-by-pump', endBasis: 'cancelled', start: Date.parse('2030-11-18T03:10:00Z'), end: Date.parse('2030-11-18T03:30:00Z') }),
+    ]);
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'loop-mode', group: 'suspended', mode: 'list' }, range, timeline: suspensions, asOf,
+    });
+    expect(answer.answer.split('\n')[0]).toBe('3 recorded in 16 Nov 2030 to 19 Nov 2030, through 15:00, 1 h 30 min in total:');
+  });
+
+  it('describes only the most recent record when the question names one', () => {
+    const data = timeline(loaded, [
+      state({ id: 'tt-1', targetReason: 'activity', targetLowMmolL: 8, targetHighMmolL: 8, start: Date.parse('2030-11-17T17:00:00Z'), end: Date.parse('2030-11-17T18:00:00Z'), programmedDurationMs: HOUR }),
+      state({ id: 'tt-2', targetReason: 'eating-soon', targetLowMmolL: 4.5, targetHighMmolL: 4.5, start: Date.parse('2030-11-18T11:30:00Z'), end: Date.parse('2030-11-18T12:30:00Z'), programmedDurationMs: HOUR }),
+    ]);
+    const listed = buildTherapyStateAnswer({ query: { family: 'temporary-target', mode: 'list', latest: true }, range, timeline: data, asOf });
+    const lines = listed.answer.answer.split('\n');
+    expect(lines[0]).toBe('The most recent of 2 recorded in 16 Nov 2030 to 19 Nov 2030, through 15:00:');
+    expect(lines.filter((line) => line.startsWith('• '))).toHaveLength(1);
+    expect(listed.answer.answer).toContain('Mon 18 Nov 11:30: Eating soon temporary target');
+    expect(listed.evidence[0]!.recordIds).toEqual(['tt-2']);
+
+    const glucose = buildTherapyStateAnswer({ query: { family: 'temporary-target', latest: true }, range, timeline: data, asOf });
+    expect(glucose.answer.headline).toBe('Glucose during the latest of your temporary targets');
+    expect(glucose.answer.answer.split('\n')[0]).toMatch(/^The most recent of 2 temporary targets AAPS recorded in .*, 1 h long:$/);
+    expect(glucose.answer.answer).not.toContain('17 Nov');
+    expect(glucose.evidence[0]!.recordIds).toEqual(['tt-2']);
+
+    // One record in the period: no "most recent of 1".
+    const single = timeline(loaded, [data.therapyStates![1]!]);
+    const one = buildTherapyStateAnswer({ query: { family: 'temporary-target', mode: 'list', latest: true }, range, timeline: single, asOf });
+    expect(one.answer.answer.split('\n')[0]).toBe('1 recorded in 16 Nov 2030 to 19 Nov 2030, through 15:00, 1 h in total:');
+    const oneGlucose = buildTherapyStateAnswer({ query: { family: 'temporary-target', latest: true }, range, timeline: single, asOf });
+    expect(oneGlucose.answer.answer.split('\n')[0]).toMatch(/^AAPS recorded one in .*, 1 h long:$/);
+    expect(oneGlucose.answer.answer).not.toMatch(/most recent of|glucose during these periods/);
+  });
+
+  it('says when a listed total includes a record with no recorded end', () => {
+    const open = state({
+      id: 's-open', kind: 'loop-mode', loopMode: 'suspended-by-user', endBasis: 'open',
+      start: Date.parse('2030-11-19T12:00:00Z'), end: asOf + DAY,
+    });
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'loop-mode', group: 'suspended', mode: 'list' }, range, timeline: timeline(loaded, [open]), asOf,
+    });
+    expect(answer.answer.split('\n')[0]).toContain('3 h in total');
+    expect(answer.answer).toContain('At least one had no recorded end');
   });
 
   it('marks a record that started before the period', () => {

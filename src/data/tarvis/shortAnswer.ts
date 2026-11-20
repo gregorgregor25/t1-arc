@@ -234,7 +234,9 @@ function meaningLine(line: TarvisEvidenceLineData | undefined, limitations: read
 const NUMBER_VALUE = /^([-−]?\d[\d.,\s]*)\s*(%|mmol\/L|mg\/dL|U|g|events?|readings?)?$/i;
 
 function parseHeadlineValue(headline: string) {
-  const match = /^([^:]{2,70}):\s*(.{1,40})$/.exec(headline.trim());
+  // A space must follow the colon, so a clock time ("through 10:07") is never
+  // read as "label: value" with "07" as the answer.
+  const match = /^([^:]{2,70}):\s+(.{1,40})$/.exec(headline.trim());
   if (!match) return undefined;
   const value = NUMBER_VALUE.exec(match[2]!.trim());
   if (!value) return undefined;

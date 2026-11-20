@@ -53,6 +53,24 @@ describe("Tarv1s general explanations", () => {
     "What caused the low was your walk.",
     "Whether a person was unable to treat it themselves and needed another person to administer carbohydrates matters. To treat a low, administer carbohydrates.",
     "You have gastroparesis.",
+    // Insulin-on-board wording must not excuse a dose or timing direction.
+    "Earlier boluses can help with meal spikes.",
+    "You might benefit from earlier boluses.",
+    "Your insulin from earlier boluses is fine, so use earlier boluses for your breakfast.",
+    "Your insulin from earlier boluses could be higher.",
+    "Insulin from earlier boluses can help with meal spikes.",
+    "Insulin with a stronger ratio leaves less active from earlier boluses.",
+    "Insulin and bigger corrections working from earlier doses flatten highs.",
+    "Insulin given as larger boluses remaining from earlier doses clears highs faster.",
+    "Taking insulin from earlier boluses flattens the breakfast spike.",
+    "Insulin still acting from earlier boluses means you can skip the correction.",
+    "With insulin active from earlier boluses, bolus earlier for breakfast.",
+    "Flatter mornings with insulin on board come from earlier boluses.",
+    "Stack corrections even when insulin from earlier boluses is still working.",
+    "Ignore the insulin on board from earlier boluses and correct anyway.",
+    "Subtract the insulin still acting from earlier boluses from your correction.",
+    "Delay your meal bolus while insulin is active from earlier corrections.",
+    "Insulin still acting from earlier boluses means a second correction is unnecessary.",
   ])("rejects unsafe or invented personal prose: %s", (copy) => {
     expect(() => parseTarvisGeneralEducationAnswer(JSON.stringify(explanation(copy)))).toThrow();
   });

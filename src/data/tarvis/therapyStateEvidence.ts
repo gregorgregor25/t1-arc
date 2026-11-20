@@ -84,6 +84,11 @@ export type TherapyStateQuery = (
    * glucose wording. The answer lists the records and compares nothing.
    */
   mode?: "list";
+  /**
+   * The question names one state, "my last temporary target": the answer
+   * describes only the most recent matching record in the period.
+   */
+  latest?: true;
 };
 
 const GLUCOSE_OUTCOME =
@@ -94,6 +99,11 @@ const STATE_LIST_REQUEST =
 // suspended?" ask whether a state was recorded, not how glucose went.
 const RECORD_PRESENCE_REQUEST =
   /\b(?:any|were there|did i (?:use|have|set|run|start|turn on|activate|switch|change)|did (?:the|my) (?:loop|pump|pod) (?:suspend|stop|disconnect)|(?:was|were) (?:my|the) (?:loop|pump|pod)|have i (?:used|had|set|run|started|switched))\b/i;
+// "my last temp target", "the most recent loop suspension", "when did I last
+// use a temp target": one state, singular. Plurals ("my last temp targets")
+// and periods ("last week", "the last 3 days") do not match.
+const LATEST_SINGLE_STATE =
+  /\b(?:(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\s+(?:(?:activity|exercise|eating[\s-]+soon|hypo|\d{2,3}\s*%)\s+)?(?:temp(?:orary)?[\s-]+target|tt|activity[\s-]+mode|eating[\s-]+soon(?:[\s-]+mode)?|hypo[\s-]+mode|profile\s+switch|loop\s+suspension)(?![\w-])|did\s+i\s+last\s+(?:use|set|have|run|start|turn\s+on|activate|switch)\b|(?:the\s+)?last\s+time\s+(?:i|my\s+(?:loop|pump|pod))\b)/i;
 const SETTING_ADVICE_REQUEST =
   /\b(?:should|shall|recommend\w*|suggest\w*|advis\w*|what (?:percentage|percent|target|profile) (?:should|to|do)|which (?:percentage|percent|target|profile) (?:should|to|is best)|too (?:low|high|much|little|aggressive))\b/i;
 
@@ -120,7 +130,8 @@ export function parseTherapyStateQuestion(question: string): TherapyStateQuery |
   if (!glucoseOutcome && !listRequest) return undefined;
   const query = therapyStateFamily(question.toLowerCase());
   if (!query) return undefined;
-  return listRequest ? { ...query, mode: "list" } : query;
+  const latest = LATEST_SINGLE_STATE.test(question) ? { latest: true as const } : {};
+  return listRequest ? { ...query, mode: "list", ...latest } : { ...query, ...latest };
 }
 
 function therapyStateFamily(text: string): TherapyStateQuery | undefined {
@@ -253,7 +264,9 @@ export function rangeForTherapyStateQuestion(
 ): { range: TimeRange } | { issue: string } {
   const issue = retrospectiveTemporalIssue(question, asOf);
   if (issue) return { issue };
-  if (!TIME_WORDS.test(question)) {
+  // "my last temp target" names a record, not a period: "last" is no time word.
+  const periodText = question.replace(new RegExp(LATEST_SINGLE_STATE.source, "gi"), " ");
+  if (!TIME_WORDS.test(periodText)) {
     return { range: multiDayRange(toDateKey(asOf), COMPARISON_POOL_DAYS, asOf) };
   }
   return { range: rangeForRetrospectiveEventQuestion(question, asOf) };
@@ -503,10 +516,11 @@ function buildTherapyStateList({
   const periodText = formatTarvisCompactPeriod(range);
   const effectiveEnd = Math.min(range.end, asOf);
   const allStates = timeline.therapyStates ?? [];
-  const states = allStates
+  const inPeriod = allStates
     .filter((state) => matchesQuery(state, query))
     .filter((state) => state.start < effectiveEnd && state.end > range.start)
     .sort((left, right) => left.start - right.start);
+  const states = query.latest ? inPeriod.slice(-1) : inPeriod;
   const limitations = [
     "Therapy states come from AAPS records T1 Arc has stored. Nightscout uploads can arrive late or be missing while AAPS is offline.",
   ];
@@ -530,8 +544,23 @@ function buildTherapyStateList({
   }
 
   const shown = states.slice(0, MAX_LIST_MODE_STATES);
+  // Time within the period, with overlapping records counted once. A profile
+  // stays in force until changed, so a total would not answer anything useful.
+  const total =
+    query.family === "profile-switch"
+      ? ""
+      : `, ${elapsed(
+          activeWindows(
+            states.map((state) => ({
+              start: Math.max(state.start, range.start),
+              end: Math.min(state.end, effectiveEnd),
+            })),
+          ).reduce((sum, window) => sum + (window.end - window.start), 0),
+        )} in total`;
   const lines = [
-    `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded in ${periodText}:`,
+    query.latest && inPeriod.length > 1
+      ? `The most recent of ${formatTarvisNumber(inPeriod.length, { maximumFractionDigits: 0 })} recorded in ${periodText}:`
+      : `${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} recorded in ${periodText}${total}:`,
     ...shown.map((state) => {
       const before = state.start < range.start ? " (started before this period)" : "";
       return `• ${localStart(state.start)}: ${therapyStateLabel(state)} recorded, ${listedLength(state, asOf)}${before}`;
@@ -539,6 +568,9 @@ function buildTherapyStateList({
   ];
   if (states.length > shown.length) {
     lines.push(`• and ${formatTarvisNumber(states.length - shown.length, { maximumFractionDigits: 0 })} more, listed in the evidence.`);
+  }
+  if (total && states.some((state) => state.endBasis === "open")) {
+    lines.push("At least one had no recorded end, so its length was measured up to the end of the records read.");
   }
   if (
     query.family === "profile-switch" &&
@@ -599,7 +631,7 @@ export function buildTherapyStateAnswer({
   const period = `the requested period (${formatTarvisCompactPeriod(range)})`;
   const effectiveEnd = Math.min(range.end, asOf);
   const allStates = timeline.therapyStates ?? [];
-  const matching = allStates
+  const inPeriod = allStates
     .filter((state) => matchesQuery(state, query))
     .filter((state) => state.start < effectiveEnd && state.end > range.start)
     .map((state) => ({
@@ -607,6 +639,10 @@ export function buildTherapyStateAnswer({
       clipped: { start: Math.max(state.start, range.start), end: Math.min(state.end, effectiveEnd) },
     }))
     .filter(({ clipped }) => clipped.end > clipped.start);
+  const matching =
+    query.latest && inPeriod.length
+      ? [inPeriod.reduce((latest, item) => (item.state.start >= latest.state.start ? item : latest))]
+      : inPeriod;
   const anyRecords = allStates.some(
     (state) => state.start < effectiveEnd && state.end > range.start,
   );
@@ -670,7 +706,11 @@ export function buildTherapyStateAnswer({
     .slice(-MAX_LISTED_STATES)
     .map((state) => `• ${describeTherapyState(state, true)}`);
   const lines: string[] = [
-    `AAPS recorded ${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} ${label} in ${period}, ${duration(during.totalMinutes)} in total:`,
+    query.latest && inPeriod.length > 1
+      ? `The most recent of ${formatTarvisNumber(inPeriod.length, { maximumFractionDigits: 0 })} ${label} AAPS recorded in ${period}, ${duration(during.totalMinutes)} long:`
+      : states.length === 1
+        ? `AAPS recorded one in ${period}, ${duration(during.totalMinutes)} long:`
+        : `AAPS recorded ${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} ${label} in ${period}, ${duration(during.totalMinutes)} in total:`,
     ...listed,
   ];
   if (states.length > MAX_LISTED_STATES) {
@@ -687,11 +727,11 @@ export function buildTherapyStateAnswer({
   const evidence: EvidenceReference[] = [stateEvidence];
   if (!duringUsable) {
     lines.push(
-      `Glucose readings covered ${percent(during.coveragePercent)} of that time, so T1 Arc is not summarising glucose during these periods.`,
+      `Glucose readings covered ${percent(during.coveragePercent)} of that time, so T1 Arc is not summarising glucose during ${states.length === 1 ? "it" : "these periods"}.`,
     );
   } else {
     lines.push(
-      `While they were active, ${statsSentence(during)}. Glucose coverage: ${percent(during.coveragePercent)} of ${duration(during.totalMinutes)}.`,
+      `While ${states.length === 1 ? "it was" : "they were"} active, ${statsSentence(during)}. Glucose coverage: ${percent(during.coveragePercent)} of ${duration(during.totalMinutes)}.`,
     );
     evidence.push({
       id: "therapy-state-glucose-during",
@@ -729,7 +769,7 @@ export function buildTherapyStateAnswer({
   }
   return {
     answer: {
-      headline: `Glucose during ${label}`,
+      headline: query.latest ? `Glucose during the latest of your ${label}` : `Glucose during ${label}`,
       answer: lines.join("\n"),
       confidence,
       evidenceIds: evidence.map(({ id }) => id),

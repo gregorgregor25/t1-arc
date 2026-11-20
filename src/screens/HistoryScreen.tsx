@@ -647,7 +647,7 @@ export function HistoryScreen() {
                 { color: colors.textSecondary },
               ]}
             >
-              Pump-state timing is available for{" "}
+              Your Glooko report has pump-state timing for{" "}
               {formatDate(toDateKey(pumpStateCoverage.start), {
                 day: "numeric",
                 month: "short",

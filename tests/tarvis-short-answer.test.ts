@@ -102,6 +102,20 @@ describe("short answer first", () => {
     expect(model.value).toEqual({ text: "7.4", unit: "mmol/L", tone: "glucose", mmolL: 7.4 });
   });
 
+  it("never reads a clock time in the headline as the answer value", () => {
+    const text = ["5 recorded in 22 Oct 2026 to 20 Nov 2026, through 10:07:", "• Change A", "• Change B"].join("\n");
+    const model = buildTarvisShortAnswer({
+      ...local,
+      answer: answer({ headline: "Loop or pump suspensions, 22 Oct 2026 to 20 Nov 2026, through 10:07", answer: text }),
+      asOf,
+      settings,
+    });
+    expect(model.value).toBeUndefined();
+    expect(model.label).toBe("Loop or pump suspensions, 22 Oct 2026 to 20 Nov 2026, through 10:07");
+    expect(model.headline).toBe("5 recorded in 22 Oct 2026 to 20 Nov 2026, through 10:07:");
+    expect(model.listItems).toEqual(["Change A", "Change B"]);
+  });
+
   it("names rolling whole-day windows and falls back to exact dates", () => {
     expect(tarvisShortPeriod({ start: asOf - 14 * DAY, end: asOf }, asOf, settings)).toBe("last 14 days");
     expect(tarvisShortPeriod({ start: asOf - DAY, end: asOf }, asOf, settings)).toBe("last 24 hours");
