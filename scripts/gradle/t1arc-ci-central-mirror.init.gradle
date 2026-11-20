@@ -1,0 +1,48 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+// Installed only by the CI dependency-download retry and removed at job end.
+def mirrorCentral = { repositories ->
+    repositories.withType(MavenArtifactRepository).each { repository ->
+        def source = repository.url
+        if (source?.scheme != 'https' ||
+            !(source.host in ['repo.maven.apache.org', 'repo1.maven.org']) ||
+            !(source.path in ['/maven2', '/maven2/']) ||
+            !(source.port in [-1, 443]) ||
+            source.userInfo != null || source.query != null || source.fragment != null ||
+            !repository.authentication.empty) {
+            return
+        }
+        // Gradle 9.3.1 exposes this provider without creating default credentials.
+        // Skip credentialed repositories and implementations we cannot inspect.
+        try {
+            if (repository.configuredCredentials.present) return
+        } catch (Exception ignored) {
+            return
+        }
+        // Updating the existing repository retains its order and content filters.
+        repository.url = 'https://maven-central.storage-download.googleapis.com/maven2/'
+    }
+}
+
+gradle.beforeSettings { settings ->
+    settings.pluginManagement.resolutionStrategy.eachPlugin {
+        mirrorCentral(settings.pluginManagement.repositories)
+    }
+}
+
+gradle.settingsEvaluated { settings ->
+    gradle.beforeProject { project ->
+        project.buildscript.configurations.configureEach { configuration ->
+            configuration.incoming.beforeResolve {
+                mirrorCentral(settings.pluginManagement.repositories)
+                mirrorCentral(project.buildscript.repositories)
+            }
+        }
+        project.configurations.configureEach { configuration ->
+            configuration.incoming.beforeResolve {
+                mirrorCentral(settings.dependencyResolutionManagement.repositories)
+                mirrorCentral(project.repositories)
+            }
+        }
+    }
+}
