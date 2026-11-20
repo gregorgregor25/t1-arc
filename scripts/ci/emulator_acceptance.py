@@ -4,12 +4,14 @@
 Run by .github/workflows/emulator-acceptance.yml inside a booted emulator.
 It drives the app with adb and uiautomator only, connects no data source,
 saves one invented sensor-change record and keeps the emulator offline, so no
-personal data, accounts or usage counts are involved. Screenshots, screen layouts, logcat and a Markdown summary are
-written to RESULTS_DIR and uploaded as the run's artifact.
+personal data, accounts or usage counts are involved. Screenshots, screen
+layouts, logcat and a Markdown summary are written to RESULTS_DIR and uploaded
+as the run's artifact.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,11 +24,18 @@ from pathlib import Path
 from typing import Callable
 
 PACKAGE = "io.github.gregorgregor25.t1arc"
-# Bottom tabs present in both the previous and the new release.
-SHARED_TABS = ("History", "Health")
-# Text Today shows for a recorded sensor change while its warm-up runs, in both releases.
-SENSOR_RECORD_LABELS = ("Dexcom G6 warming up", "Readings expected from")
+# Bottom tab labels used by recent releases ("Insights" became "Tarv1s").
+TAB_NAMES = ("Today", "History", "Health", "Tarv1s", "Insights")
+# The invented record: a Dexcom G6 sensor change. With no glucose source
+# connected, Today shows a recorded sensor change only while its warm-up runs;
+# a G6 warms up for two hours, far longer than this check takes.
+SENSOR_MODEL = "Dexcom G6"
+SENSOR_WARMUP_MINUTES = 120
+SENSOR_TITLE = f"{SENSOR_MODEL} warming up"
+SENSOR_DETAIL_PREFIX = "Readings expected from"
 BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
+TIME_AT_END = re.compile(r"(\d{1,2}):(\d{2})(?: ([ap]m))?$")
+COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def require_env(name: str, default: str | None = None) -> str:
@@ -38,6 +47,9 @@ def require_env(name: str, default: str | None = None) -> str:
 
 RELEASE_TAG = require_env("RELEASE_TAG")
 PREVIOUS_TAG = require_env("PREVIOUS_TAG")
+# The same tag twice reinstalls one release over itself: a test of this
+# check, not an upgrade.
+UPGRADE = RELEASE_TAG != PREVIOUS_TAG
 RESULTS = Path(require_env("RESULTS_DIR", "emulator-results"))
 NEW_APK = Path("apks/new") / f"T1-Arc-{RELEASE_TAG}.apk"
 OLD_APK = Path("apks/old") / f"T1-Arc-{PREVIOUS_TAG}.apk"
@@ -62,15 +74,65 @@ def version_tuple(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
 
 
+def clock_minutes(text: str) -> int | None:
+    """Minutes after midnight for a time such as '3:06 pm' or '15:06' ending normalised text."""
+    match = TIME_AT_END.search(text)
+    if not match:
+        return None
+    hour, minute, half = int(match.group(1)), int(match.group(2)), match.group(3)
+    if minute > 59 or (half and not 1 <= hour <= 12) or (not half and hour > 23):
+        return None
+    if half:
+        hour = hour % 12 + (12 if half == "pm" else 0)
+    return hour * 60 + minute
+
+
 def read_build_record(tag: str, folder: str) -> dict:
-    path = Path("apks") / folder / f"T1-Arc-{tag}.apk.build.json"
-    record = json.loads(path.read_text(encoding="utf-8-sig"))
-    for key in ("version", "versionCode", "sourceCommit", "applicationId"):
-        if key not in record:
-            raise SystemExit(f"{path} has no {key}.")
-    if record["applicationId"] != PACKAGE:
-        raise SystemExit(f"{path} names {record['applicationId']}, not {PACKAGE}.")
+    """The build record attached to a release, checked against its tag and its APK."""
+    apk = Path("apks") / folder / f"T1-Arc-{tag}.apk"
+    path = apk.with_name(f"{apk.name}.build.json")
+    try:
+        record = json.loads(path.read_text(encoding="utf-8-sig"))
+        digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+    except (OSError, ValueError) as error:
+        raise CheckFailed(f"The {tag} release files could not be read: {error}.") from error
+    if not isinstance(record, dict):
+        raise CheckFailed(f"{path.name} is not a JSON object.")
+    problems = []
+    if record.get("version") != tag[1:]:
+        problems.append(f"version is {record.get('version')!r}, not {tag[1:]!r}")
+    code = record.get("versionCode")
+    if type(code) is not int or code < 1:
+        problems.append(f"versionCode {code!r} is not a positive whole number")
+    commit = record.get("sourceCommit")
+    if not isinstance(commit, str) or not COMMIT.fullmatch(commit):
+        problems.append("sourceCommit is not a full commit hash")
+    if record.get("applicationId") != PACKAGE:
+        problems.append(f"applicationId is {record.get('applicationId')!r}")
+    if record.get("apk") != apk.name:
+        problems.append(f"apk is {record.get('apk')!r}, not {apk.name!r}")
+    if record.get("sha256") != digest:
+        problems.append("its sha256 does not match the downloaded APK")
+    if problems:
+        raise CheckFailed(f"{path.name}: " + "; ".join(problems) + ".")
     return record
+
+
+def check_release_files() -> tuple[dict, dict, str]:
+    new = read_build_record(RELEASE_TAG, "new")
+    old = read_build_record(PREVIOUS_TAG, "old")
+    if UPGRADE and (version_tuple(new["version"]) <= version_tuple(old["version"])
+                    or new["versionCode"] <= old["versionCode"]):
+        raise CheckFailed(
+            f"{RELEASE_TAG} ({new['version']}, code {new['versionCode']}) is not newer than "
+            f"{PREVIOUS_TAG} ({old['version']}, code {old['versionCode']})."
+        )
+
+    def describe(tag: str, record: dict) -> str:
+        return f"{tag} is {record['version']} ({record['versionCode']}) from {record['sourceCommit'][:12]}"
+
+    described = [describe(RELEASE_TAG, new)] + ([describe(PREVIOUS_TAG, old)] if UPGRADE else [])
+    return new, old, "; ".join(described) + ". Each APK matches the SHA-256 in its build record."
 
 
 class Device:
@@ -166,6 +228,10 @@ class Device:
             time.sleep(2)
         return None
 
+    def node_bounds(self, node: ET.Element) -> tuple[int, int, int, int] | None:
+        bounds = BOUNDS.fullmatch(node.get("bounds", ""))
+        return tuple(int(value) for value in bounds.groups()) if bounds else None  # type: ignore[return-value]
+
     def locate(self, root: ET.Element, label: str, *, exact: bool = True, lowest: bool = False) -> tuple[int, int] | None:
         want = normalise(label)
         points: list[tuple[int, int]] = []
@@ -174,10 +240,10 @@ class Device:
                 value = normalise(node.get(attribute, ""))
                 if not value or not (value == want or (not exact and want in value)):
                     continue
-                bounds = BOUNDS.fullmatch(node.get("bounds", ""))
+                bounds = self.node_bounds(node)
                 if not bounds:
                     continue
-                x1, y1, x2, y2 = (int(value) for value in bounds.groups())
+                x1, y1, x2, y2 = bounds
                 x, y = (x1 + x2) // 2, (y1 + y2) // 2
                 if x2 > x1 and y2 > y1 and 0 <= x < self.width and 0 <= y < self.height:
                     points.append((x, y))
@@ -185,6 +251,54 @@ class Device:
         if not points:
             return None
         return max(points, key=lambda point: point[1]) if lowest else points[0]
+
+    def labelled_clock(self, root: ET.Element, label: str) -> int | None:
+        """The time at the end of the first text or description starting with label."""
+        want = normalise(label)
+        for node in root.iter("node"):
+            for attribute in ("content-desc", "text"):
+                value = normalise(node.get(attribute, ""))
+                if value.startswith(want):
+                    return clock_minutes(value)
+        return None
+
+    def selected_tab(self, root: ET.Element) -> str | None:
+        """The bottom tab Android reports as selected, if any."""
+        for node in root.iter("node"):
+            if node.get("selected") != "true":
+                continue
+            bounds = self.node_bounds(node)
+            if not bounds or bounds[1] < self.height * 0.75:
+                continue
+            description = node.get("content-desc", "")
+            for tab in TAB_NAMES:
+                if description == tab or description.endswith(f", {tab}"):
+                    return tab
+        return None
+
+    def screen_content(self, root: ET.Element) -> frozenset[str]:
+        """Text above the bottom tabs, to tell one screen from another."""
+        texts = set()
+        for node in root.iter("node"):
+            bounds = self.node_bounds(node)
+            if not bounds or bounds[3] > self.height * 0.88:
+                continue
+            for attribute in ("text", "content-desc"):
+                value = normalise(node.get(attribute, ""))
+                if value:
+                    texts.add(value)
+        return frozenset(texts)
+
+    def sensor_record(self, root: ET.Element) -> tuple[str, str] | None:
+        """The invented record's title and reading-time detail, when Today shows both."""
+        title = detail = None
+        for node in root.iter("node"):
+            value = normalise(node.get("text", ""))
+            if value == normalise(SENSOR_TITLE):
+                title = value
+            elif value.startswith(normalise(SENSOR_DETAIL_PREFIX) + " "):
+                detail = value
+        return (title, detail) if title and detail else None
 
     def wait_for(self, labels: tuple[str, ...], timeout: int, *, exact: bool = True, name: str = "wait") -> tuple[str, ET.Element]:
         deadline = time.monotonic() + timeout
@@ -201,17 +315,31 @@ class Device:
                 raise CheckFailed(f"Did not see {' or '.join(repr(label) for label in labels)} within {timeout} s.")
             time.sleep(2)
 
-    def wait_for_all(self, labels: tuple[str, ...], timeout: int, *, name: str) -> ET.Element:
+    def wait_for_tab(self, tab: str, timeout: int, *, name: str) -> ET.Element:
         deadline = time.monotonic() + timeout
         while True:
             root = self.layout()
-            if root is not None and all(self.locate(root, label) for label in labels):
+            if root is not None and self.selected_tab(root) == tab:
                 return root
             self.assert_healthy()
             if time.monotonic() > deadline:
                 self.screenshot(f"{name}-timeout")
                 self.layout(f"{name}-timeout")
-                raise CheckFailed(f"Did not see all of {', '.join(labels)} within {timeout} s.")
+                raise CheckFailed(f"The {tab} tab was not shown as selected within {timeout} s.")
+            time.sleep(2)
+
+    def wait_for_sensor_record(self, timeout: int, *, name: str) -> tuple[str, str]:
+        deadline = time.monotonic() + timeout
+        while True:
+            root = self.layout()
+            record = self.sensor_record(root) if root is not None else None
+            if record:
+                return record
+            self.assert_healthy()
+            if time.monotonic() > deadline:
+                self.screenshot(f"{name}-timeout")
+                self.layout(f"{name}-timeout")
+                raise CheckFailed(f"Today did not show {SENSOR_TITLE!r} with its reading time within {timeout} s.")
             time.sleep(2)
 
     def tap_point(self, point: tuple[int, int]) -> None:
@@ -282,17 +410,34 @@ class Device:
         self.shell(f"am force-stop {PACKAGE}", check=False)
         time.sleep(1)
 
-    def go_offline(self) -> str:
-        for command in ("cmd connectivity airplane-mode enable", "svc wifi disable", "svc data disable"):
-            self.shell(command, check=False)
-        time.sleep(4)
-        ping = self.run("shell", "ping -c 1 -W 3 8.8.8.8", timeout=30, check=False)
+    def network_state(self) -> tuple[str, str]:
+        airplane = self.shell("settings get global airplane_mode_on", check=False).strip()
         state = self.shell("dumpsys connectivity", check=False)
         match = re.search(r"Active default network: (\S+)", state)
-        default_network = match.group(1) if match else "unknown"
+        return airplane or "unknown", match.group(1) if match else "unknown"
+
+    def go_offline(self) -> str:
+        """Switch every network off and prove it; an unknown state fails."""
+        failures = []
+        for command in ("cmd connectivity airplane-mode enable", "svc wifi disable", "svc data disable"):
+            completed = self.run("shell", command, timeout=60, check=False)
+            if completed.returncode != 0:
+                failures.append(f"'{command}' exited with {completed.returncode}")
+        deadline = time.monotonic() + 45
+        while True:
+            airplane, default_network = self.network_state()
+            if airplane == "1" and default_network == "none":
+                break
+            if time.monotonic() > deadline:
+                raise CheckFailed(
+                    f"The network did not switch off (airplane mode setting {airplane!r}, default network "
+                    f"{default_network!r})" + (f"; {'; '.join(failures)}" if failures else "") + "."
+                )
+            time.sleep(2)
+        ping = self.run("shell", "ping -c 1 -W 3 8.8.8.8", timeout=30, check=False)
         if ping.returncode == 0:
             raise CheckFailed("The emulator still reached the internet after switching the network off.")
-        return f"no internet route (default network: {default_network})"
+        return "airplane mode on, no default network, and a test ping to 8.8.8.8 failed"
 
     def reboot(self) -> None:
         self.run("reboot", timeout=60, check=False)
@@ -313,12 +458,14 @@ class Device:
 
 
 class Acceptance:
-    def __init__(self, device: Device, new_record: dict, old_record: dict) -> None:
+    def __init__(self, device: Device, new_record: dict, old_record: dict, results: list[Result]) -> None:
         self.device = device
         self.new = new_record
         self.old = old_record
-        self.results: list[Result] = []
+        self.results = results
         self.tab_points: dict[str, tuple[int, int]] = {}
+        # The invented record as Today showed it before the update.
+        self.sensor: tuple[str, str] | None = None
 
     def check(self, name: str, action: Callable[[], str | None], *, prerequisite: bool = True) -> bool:
         if not prerequisite:
@@ -354,7 +501,7 @@ class Acceptance:
         device.screenshot(f"{prefix}-setup")
         device.layout(f"{prefix}-setup")
         device.tap("Explore the demo first", root)
-        root = device.wait_for_all(SHARED_TABS, 180, name=f"{prefix}-today")
+        root = device.wait_for_tab("Today", 180, name=f"{prefix}-today")
         device.screenshot(f"{prefix}-today")
         device.layout(f"{prefix}-today")
         self.remember_tabs(root)
@@ -362,31 +509,39 @@ class Acceptance:
         return "Skipped the tour, chose the demo and reached Today."
 
     def remember_tabs(self, root: ET.Element) -> None:
-        for tab in ("Today", "History", "Health", "Tarv1s", "Insights"):
+        for tab in TAB_NAMES:
             point = self.device.locate(root, tab, lowest=True)
             if point and point[1] > self.device.height * 0.75:
                 self.tab_points[tab] = point
 
     def open_main_tabs(self, prefix: str) -> str:
+        """Open each tab, proving it became the selected tab with its own screen."""
         device = self.device
+        if "Today" not in self.tab_points:
+            raise CheckFailed("The Today tab was not found on screen.")
+        today = device.wait_for_tab("Today", 30, name=f"{prefix}-tabs-start")
+        today_content = device.screen_content(today)
         visited = []
-        for tab in ("History", "Health", "Tarv1s", "Insights"):
+        for tab in TAB_NAMES[1:]:
             point = self.tab_points.get(tab)
             if point is None:
                 continue
             device.tap_point(point)
-            time.sleep(4)
-            device.assert_healthy()
+            root = device.wait_for_tab(tab, 30, name=f"{prefix}-{tab.lower()}")
             device.screenshot(f"{prefix}-{tab.lower()}")
+            device.layout(f"{prefix}-{tab.lower()}")
+            content = device.screen_content(root)
+            if not content or content == today_content:
+                raise CheckFailed(f"{tab} was selected, but the screen above the tabs still showed Today.")
+            device.assert_healthy()
             visited.append(tab)
-        if "Today" not in self.tab_points:
-            raise CheckFailed("The Today tab was not found on screen.")
         device.tap_point(self.tab_points["Today"])
-        device.wait_for_all(SHARED_TABS, 60, name=f"{prefix}-back-today")
+        device.wait_for_tab("Today", 60, name=f"{prefix}-back-today")
         device.assert_healthy()
         if len(visited) < 3:
             raise CheckFailed(f"Only found these tabs: {', '.join(visited) or 'none'}.")
-        return "Opened " + ", ".join(visited) + " and returned to Today."
+        return ("Opened " + ", ".join(visited) + "; each became the selected tab with its own screen. "
+                "Returned to Today.")
 
     def check_about(self, prefix: str) -> str:
         device = self.device
@@ -406,7 +561,7 @@ class Acceptance:
             raise CheckFailed("About reports local changes in the source revision.")
         device.back()
         device.back()
-        device.wait_for_all(SHARED_TABS, 60, name=f"{prefix}-after-about")
+        device.wait_for_tab("Today", 60, name=f"{prefix}-after-about")
         return f"About shows {version_text} and the clean source revision {revision}."
 
     def record_sensor_change(self, prefix: str) -> str:
@@ -414,34 +569,45 @@ class Acceptance:
         device = self.device
         root = device.scroll_to("Record sensor change")
         device.tap("Record sensor change", root)
-        device.wait_for(("Sensor model:", "Choose your sensor"), 45, exact=False, name=f"{prefix}-sensor-form")
+        _, root = device.wait_for(("Sensor model:", "Choose your sensor"), 45, exact=False, name=f"{prefix}-sensor-form")
         device.screenshot(f"{prefix}-sensor-form")
         device.layout(f"{prefix}-sensor-form")
+        started = device.labelled_clock(root, "Change time, currently")
         root = device.scroll_to("Sensor model:", exact=False)
         device.tap("Sensor model:", root, exact=False)
-        # A model with a known warm-up: with no glucose source connected, Today
-        # shows a recorded sensor change only while its warm-up is running.
-        # Dexcom G6 warms up for two hours, far longer than this check takes.
-        root = device.scroll_to("Dexcom G6")
-        device.tap("Dexcom G6", root)
+        root = device.scroll_to(SENSOR_MODEL)
+        device.tap(SENSOR_MODEL, root)
         root = device.scroll_to("Save new sensor", max_y=0.97)
         device.tap("Save new sensor", root)
-        device.wait_for(SENSOR_RECORD_LABELS, 60, exact=False, name=f"{prefix}-sensor-saved")
+        title, detail = device.wait_for_sensor_record(60, name=f"{prefix}-sensor-saved")
         device.screenshot(f"{prefix}-sensor-saved")
+        device.layout(f"{prefix}-sensor-saved")
         device.assert_healthy()
-        return "Saved a sensor change (Dexcom G6, two-hour warm-up) and saw it on Today."
+        ends = clock_minutes(detail)
+        if started is None or ends is None:
+            raise CheckFailed(f"Could not read the recorded start time or the time in {detail!r}.")
+        if (ends - started) % (24 * 60) != SENSOR_WARMUP_MINUTES:
+            raise CheckFailed(f"Today shows {detail!r}, which is not {SENSOR_WARMUP_MINUTES} minutes after the recorded start.")
+        self.sensor = (title, detail)
+        return (f"Saved a {SENSOR_MODEL} sensor change. Today shows {title!r} and {detail!r}, "
+                f"{SENSOR_WARMUP_MINUTES} minutes after the recorded start.")
 
     def expect_sensor_record(self, prefix: str) -> str:
         device = self.device
-        for _ in range(5):
+        if self.sensor is None:
+            raise CheckFailed("No sensor change was saved before the update.")
+        for _ in range(6):
             root = device.layout()
-            if root is not None:
-                for label in SENSOR_RECORD_LABELS:
-                    if device.locate(root, label, exact=False):
-                        device.screenshot(f"{prefix}-sensor-record")
-                        device.layout(f"{prefix}-sensor-record")
-                        device.scroll_to_top()
-                        return f"Today shows the sensor change saved before the update ({label!r})."
+            record = device.sensor_record(root) if root is not None else None
+            if record:
+                device.screenshot(f"{prefix}-sensor-record")
+                device.layout(f"{prefix}-sensor-record")
+                device.scroll_to_top()
+                title, detail = record
+                saved_title, saved_detail = self.sensor
+                if title != saved_title or clock_minutes(detail) != clock_minutes(saved_detail):
+                    raise CheckFailed(f"Today shows {title!r} / {detail!r}, not the saved {saved_title!r} / {saved_detail!r}.")
+                return f"Today still shows {title!r} with {detail!r}, as saved before the update."
             device.swipe_up()
         device.screenshot(f"{prefix}-sensor-record-missing")
         device.layout(f"{prefix}-sensor-record-missing")
@@ -455,7 +621,7 @@ class Acceptance:
         if label != "History":
             device.screenshot(f"{prefix}-tour-again")
             raise CheckFailed("The first-run tour appeared again, so saved app state was not kept.")
-        root = device.wait_for_all(SHARED_TABS, 120, name=f"{prefix}-relaunch")
+        root = device.wait_for_tab("Today", 120, name=f"{prefix}-relaunch")
         device.screenshot(f"{prefix}-today")
         self.remember_tabs(root)
         device.assert_healthy()
@@ -481,8 +647,9 @@ class Acceptance:
             prerequisite=ready,
         )
         device.force_stop()
+        target = f"Update to {self.new['version']}" if UPGRADE else f"Reinstall {self.new['version']}"
         updated = self.check(
-            f"Update to {self.new['version']} installs over it, keeping app data",
+            f"{target} installs over it, keeping app data",
             lambda: (device.install(NEW_APK, replace=True), self.expect_installed(self.new))[1],
             prerequisite=ready,
         )
@@ -524,8 +691,10 @@ class Acceptance:
 
         def restart() -> str:
             device.reboot()
+            # Airplane mode should survive a restart; prove it before the app opens.
+            network = device.go_offline()
             device.clear_logcat()
-            return self.relaunch_to_today("restart")
+            return f"{self.relaunch_to_today('restart')} After the restart: {network}."
 
         self.check("Cold launch after the emulator restarts", restart, prerequisite=ready)
         self.check("No crash or freeze after a clean install", self.no_problems, prerequisite=installed)
@@ -538,15 +707,17 @@ class Acceptance:
         return "No T1 Arc crash or not-responding report in the logs."
 
 
-def write_summary(acceptance: Acceptance, device_facts: dict[str, str]) -> None:
+def write_summary(results: list[Result], device_facts: dict[str, str]) -> None:
+    path = (f"{PREVIOUS_TAG} to {RELEASE_TAG}" if UPGRADE
+            else f"{RELEASE_TAG} reinstalled over itself (a test of this check, not an upgrade)")
     lines = [
         f"## Emulator acceptance: T1 Arc {RELEASE_TAG}",
         "",
         f"- Emulator: Android {device_facts['release']} (API {device_facts['sdk']}), "
         f"{device_facts['abi']} with ARM64 apps allowed: {device_facts['arm64']}.",
         f"- Network: {device_facts['network']}.",
-        f"- Update path: {PREVIOUS_TAG} to {RELEASE_TAG}. No data source is connected; the only record is",
-        "  an invented sensor change that this check saves before updating.",
+        f"- Update path: {path}. No data source is connected; the only record is",
+        f"  an invented {SENSOR_MODEL} sensor change that this check saves before updating.",
     ]
     apk_facts = RESULTS / "apks.txt"
     if apk_facts.exists():
@@ -554,7 +725,7 @@ def write_summary(acceptance: Acceptance, device_facts: dict[str, str]) -> None:
             key, _, value = line.partition("=")
             lines.append(f"- {key.replace('_', ' ')}: `{value}`")
     lines += ["", "| Check | Result | Detail |", "| --- | --- | --- |"]
-    for result in acceptance.results:
+    for result in results:
         detail = result.detail.replace("|", "\\|").replace("\n", " ")
         lines.append(f"| {result.name} | {result.status} | {detail} |")
     lines += [
@@ -570,8 +741,9 @@ def write_summary(acceptance: Acceptance, device_facts: dict[str, str]) -> None:
             {
                 "release": RELEASE_TAG,
                 "previous": PREVIOUS_TAG,
+                "upgrade": UPGRADE,
                 "device": device_facts,
-                "checks": [result.__dict__ for result in acceptance.results],
+                "checks": [result.__dict__ for result in results],
             },
             indent=2,
         ),
@@ -581,8 +753,6 @@ def write_summary(acceptance: Acceptance, device_facts: dict[str, str]) -> None:
 
 def main() -> int:
     RESULTS.mkdir(parents=True, exist_ok=True)
-    new_record = read_build_record(RELEASE_TAG, "new")
-    old_record = read_build_record(PREVIOUS_TAG, "old")
     device = Device(RESULTS)
     device.read_screen_size()
     abilist = device.prop("ro.product.cpu.abilist")
@@ -595,25 +765,31 @@ def main() -> int:
         "screen": f"{device.width}x{device.height}",
         "network": "not checked",
     }
-    acceptance = Acceptance(device, new_record, old_record)
+    results: list[Result] = []
+
+    def finish() -> int:
+        write_summary(results, facts)
+        print((RESULTS / "summary.md").read_text(encoding="utf-8"))
+        return 1 if any(result.status != "Pass" for result in results) else 0
+
+    try:
+        new_record, old_record, detail = check_release_files()
+    except CheckFailed as error:
+        results.append(Result("Release files match the requested tags", "Fail", str(error)))
+        return finish()
+    results.append(Result("Release files match the requested tags", "Pass", detail))
     if facts["arm64"] != "yes":
-        acceptance.results.append(
-            Result("Emulator can run ARM64 apps", "Fail", f"ABI list is {abilist}; choose another API level.")
-        )
-        write_summary(acceptance, facts)
-        return 1
+        results.append(Result("Emulator can run ARM64 apps", "Fail", f"ABI list is {abilist}; choose another API level."))
+        return finish()
     try:
         facts["network"] = device.go_offline()
     except CheckFailed as error:
-        acceptance.results.append(Result("Emulator is offline", "Fail", str(error)))
-        write_summary(acceptance, facts)
-        return 1
+        results.append(Result("Emulator is offline", "Fail", str(error)))
+        return finish()
+    acceptance = Acceptance(device, new_record, old_record, results)
     acceptance.update_flow()
     acceptance.clean_flow()
-    write_summary(acceptance, facts)
-    failed = [result for result in acceptance.results if result.status != "Pass"]
-    print((RESULTS / "summary.md").read_text(encoding="utf-8"))
-    return 1 if failed else 0
+    return finish()
 
 
 if __name__ == "__main__":
