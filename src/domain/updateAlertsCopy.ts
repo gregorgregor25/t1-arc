@@ -6,6 +6,7 @@ export const UPDATE_ALERTS_COPY = {
     'Nothing downloads or installs automatically.',
   testBuildNote:
     'This is a test build, so T1 Arc does not check for updates automatically. A public release may not include features that only this build has.',
+  foundByDailyCheck: 'Found by the daily update check. Tap Check for updates to ask GitHub again.',
   loadError: 'Could not load this setting. Tap to retry.',
   saveErrorTitle: 'Setting not changed',
   saveErrorBody: 'Please try again.',

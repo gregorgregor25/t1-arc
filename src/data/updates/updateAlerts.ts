@@ -10,6 +10,7 @@ import {
   pendingUpdateFor,
   shouldNotify,
   UPDATE_CHECK_INTERVAL_MS,
+  withNotifiedVersionCode,
   type PendingUpdate,
   type UpdateAlertState,
 } from '@/domain/updateAlerts';
@@ -18,6 +19,7 @@ import { thisInstalledApp } from './installedApp';
 import {
   checkPublicRelease,
   OFFICIAL_PHONE_PACKAGE,
+  officialReleaseLinks,
   type InstalledAppIdentity,
   type PublicReleaseCheck,
 } from './publicRelease';
@@ -92,11 +94,17 @@ async function saveUpdateAlertState(state: UpdateAlertState): Promise<void> {
 }
 
 /** Serialises read-modify-write updates between runs and the switch. */
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const next = stateQueue.then(task);
+  stateQueue = next.catch(() => undefined);
+  return next;
+}
+
 function mutateState(
   expectedGeneration: number,
   update: (state: UpdateAlertState) => UpdateAlertState,
 ): Promise<UpdateAlertState | undefined> {
-  const next = stateQueue.then(async () => {
+  return enqueue(async () => {
     if (generation !== expectedGeneration) return undefined;
     const current = await loadUpdateAlertState();
     const updated = update(current);
@@ -104,18 +112,49 @@ function mutateState(
     if (updated !== current) await saveUpdateAlertState(updated);
     return updated;
   });
-  stateQueue = next.catch(() => undefined);
-  return next;
 }
 
 /** Forgets the pending release after any write already queued by an older run. */
 function clearPendingAfterQueuedWrites(): Promise<void> {
-  const next = stateQueue.then(async () => {
+  return enqueue(async () => {
     const current = await loadUpdateAlertState();
     if (current.pending) await saveUpdateAlertState({ ...current, pending: undefined });
   });
-  stateQueue = next.catch(() => undefined);
-  return next;
+}
+
+interface AnnouncementClaim {
+  versionCode: number;
+  previous: number | undefined;
+}
+
+/**
+ * Saves the release and, when it has not been announced yet, marks it as
+ * announced before any notification appears. A failed save therefore never
+ * leads to a second notification for the same version. Resolves with the
+ * claim when this run should show the notification.
+ */
+function savePendingAndClaim(
+  expectedGeneration: number,
+  pending: PendingUpdate,
+): Promise<AnnouncementClaim | undefined> {
+  return enqueue(async () => {
+    if (generation !== expectedGeneration) return undefined;
+    const current = await loadUpdateAlertState();
+    if (generation !== expectedGeneration) return undefined;
+    const announce = shouldNotify(current, pending.versionCode);
+    const marked = announce ? withNotifiedVersionCode(current, pending.versionCode) : current;
+    await saveUpdateAlertState({ ...marked, pending });
+    return announce ? { versionCode: pending.versionCode, previous: current.notifiedVersionCode } : undefined;
+  });
+}
+
+/** Removes a mark whose notification never appeared, so a later check can try again. */
+async function releaseClaim(claim: AnnouncementClaim): Promise<void> {
+  await enqueue(async () => {
+    const current = await loadUpdateAlertState();
+    if (current.notifiedVersionCode !== claim.versionCode) return;
+    await saveUpdateAlertState(withNotifiedVersionCode(current, claim.previous));
+  }).catch(() => undefined);
 }
 
 async function alertsAllowed(expectedGeneration: number) {
@@ -163,6 +202,19 @@ export async function getPendingUpdateAsync(
   }
   if ((await getUpdateAlertsSettingAsync()) !== 'enabled') return undefined;
   return pendingUpdateFor(await loadUpdateAlertState(), installedVersionCode(installed.buildNumber));
+}
+
+/** The release a daily check verified, in the form About shows. Makes no request. */
+export function releaseCheckFromPending(pending: PendingUpdate): PublicReleaseCheck {
+  const { releaseUrl, apkUrl } = officialReleaseLinks(pending.version);
+  return {
+    kind: 'available',
+    version: pending.version,
+    versionCode: pending.versionCode,
+    notes: pending.notes,
+    releaseUrl,
+    apkUrl,
+  };
 }
 
 /** True when this installation never checks automatically (test builds, other packages). */
@@ -219,6 +271,10 @@ async function run({
     return now + UPDATE_CHECK_INTERVAL_MS;
   }
   const nextCheck = now + UPDATE_CHECK_INTERVAL_MS;
+  // The switch may have been turned off while the attempt was being saved.
+  // Nothing is awaited between the final generation check and registering the
+  // request, so a switch-off from then on aborts it.
+  if (!(await alertsAllowed(startGeneration)) || generation !== startGeneration) return nextCheck;
   const controller = new AbortController();
   activeRequest = controller;
   let result: PublicReleaseCheck;
@@ -238,22 +294,26 @@ async function run({
   }
   // Unavailable, incompatible or failed checks change nothing; try again tomorrow.
   if (result.kind !== 'available' || result.versionCode <= installedCode) return nextCheck;
-
-  const pending: PendingUpdate = { version: result.version, versionCode: result.versionCode };
-  const saved = await mutateState(startGeneration, (current) => ({ ...current, pending }));
-  if (!saved || !shouldNotify(saved, pending.versionCode)) return nextCheck;
   // The switch may have moved during the request.
   if (!(await alertsAllowed(startGeneration))) return nextCheck;
+
+  const pending: PendingUpdate = { version: result.version, versionCode: result.versionCode, notes: result.notes };
+  // Stops here, without a notification, if the mark cannot be saved.
+  const claim = await savePendingAndClaim(startGeneration, pending);
+  if (!claim) return nextCheck;
+  if (generation !== startGeneration) {
+    await releaseClaim(claim);
+    return nextCheck;
+  }
   const shown = await notifier.show(pending.version).catch(() => false);
-  if (!shown) return nextCheck;
+  if (!shown) {
+    // Android did not show it, for example because notifications are off.
+    await releaseClaim(claim);
+    return nextCheck;
+  }
   if (generation !== startGeneration) {
     // Switched off while the alert was being shown.
     await notifier.cancel().catch(() => undefined);
-    return nextCheck;
   }
-  await mutateState(startGeneration, (current) => ({
-    ...current,
-    notifiedVersionCode: Math.max(current.notifiedVersionCode ?? 0, pending.versionCode),
-  }));
   return nextCheck;
 }

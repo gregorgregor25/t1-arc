@@ -17,9 +17,14 @@ export function isPublicReleaseVersion(version: string | null | undefined): bool
   return typeof version === 'string' && PUBLIC_VERSION.test(version);
 }
 
+/** The release check trims release notes to this length. */
+export const MAX_RELEASE_NOTES_LENGTH = 4_000;
+
 export interface PendingUpdate {
   version: string;
   versionCode: number;
+  /** Release notes as verified by the check, so About can show them without another request. */
+  notes: string;
 }
 
 export interface UpdateAlertState {
@@ -84,6 +89,19 @@ export function isUpdateAlertState(value: unknown): value is UpdateAlertState {
       (typeof pending === 'object' &&
         pending !== null &&
         isPublicReleaseVersion(pending.version as string) &&
-        isVersionCode(pending.versionCode)))
+        isVersionCode(pending.versionCode) &&
+        typeof pending.notes === 'string' &&
+        pending.notes.length <= MAX_RELEASE_NOTES_LENGTH))
   );
+}
+
+/** The same state with a different (or no) announced version. */
+export function withNotifiedVersionCode(
+  state: UpdateAlertState,
+  versionCode: number | undefined,
+): UpdateAlertState {
+  const next = { ...state };
+  if (versionCode === undefined) delete next.notifiedVersionCode;
+  else next.notifiedVersionCode = versionCode;
+  return next;
 }

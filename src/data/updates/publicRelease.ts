@@ -1,3 +1,5 @@
+import { MAX_RELEASE_NOTES_LENGTH } from "@/domain/updateAlerts";
+
 export const OFFICIAL_REPOSITORY = "https://github.com/gregorgregor25/t1-arc";
 export const OFFICIAL_PHONE_PACKAGE = "io.github.gregorgregor25.t1arc";
 const LATEST_RELEASE_API = "https://api.github.com/repos/gregorgregor25/t1-arc/releases/latest";
@@ -12,6 +14,21 @@ export type PublicReleaseCheck =
   | { kind: "available"; version: string; versionCode: number; notes: string; releaseUrl: string; apkUrl: string }
   | { kind: "current"; message: string }
   | { kind: "unavailable" | "incompatible" | "error"; message: string };
+
+export interface OfficialReleaseLinks {
+  apk: string;
+  downloadBase: string;
+  releaseUrl: string;
+  apkUrl: string;
+}
+
+/** Where an official public release and its phone APK live, for a version such as 1.7.22. */
+export function officialReleaseLinks(version: string): OfficialReleaseLinks {
+  const tag = `v${version}`;
+  const apk = `T1-Arc-${tag}.apk`;
+  const downloadBase = `${OFFICIAL_REPOSITORY}/releases/download/${tag}`;
+  return { apk, downloadBase, releaseUrl: `${OFFICIAL_REPOSITORY}/releases/tag/${tag}`, apkUrl: `${downloadBase}/${apk}` };
+}
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -75,9 +92,7 @@ export async function checkPublicRelease(
       return { kind: "unavailable", message: "No supported public release was found. Drafts and prereleases are not offered as updates." };
     }
     const version = tag.slice(1);
-    const apk = `T1-Arc-${tag}.apk`;
-    const base = `${OFFICIAL_REPOSITORY}/releases/download/${tag}`;
-    const releaseUrl = `${OFFICIAL_REPOSITORY}/releases/tag/${tag}`;
+    const { apk, downloadBase: base, releaseUrl, apkUrl } = officialReleaseLinks(version);
     const assets = Array.isArray(release.assets) ? release.assets.map(object) : [];
     const hasAsset = (name: string) => assets.some((asset) => asset.name === name &&
       asset.state === "uploaded" && isExactUrl(asset.browser_download_url, `${base}/${name}`));
@@ -101,9 +116,9 @@ export async function checkPublicRelease(
         : "There is no newer public build for this installation. Your installed build may be ahead of the public release." };
     }
     return {
-      kind: "available", version, versionCode: Number(metadata.versionCode), releaseUrl, apkUrl: `${base}/${apk}`,
+      kind: "available", version, versionCode: Number(metadata.versionCode), releaseUrl, apkUrl,
       notes: typeof release.body === "string" && release.body.trim()
-        ? release.body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, 4_000)
+        ? release.body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_RELEASE_NOTES_LENGTH)
         : "Release notes are available on GitHub.",
     };
   } catch {

@@ -7,6 +7,7 @@ import {
   automaticChecksUnsupported,
   getPendingUpdateAsync,
   getUpdateAlertsSettingAsync,
+  releaseCheckFromPending,
   setUpdateAlertsEnabledAsync,
 } from "@/data/updates/updateAlerts";
 import { UPDATE_ALERTS_COPY } from "@/domain/updateAlertsCopy";
@@ -16,38 +17,43 @@ export function AppUpdateCard({ installed }: { installed: InstalledAppIdentity }
   const { colors, radius } = useAppTheme();
   const { applicationId, version, buildNumber } = installed;
   const [result, setResult] = useState<PublicReleaseCheck>();
+  // A release the daily check already verified, shown until "Check for updates" runs.
+  const [found, setFound] = useState<PublicReleaseCheck>();
   const [checking, setChecking] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => { request.current?.abort(); }, []);
 
-  const check = useCallback(async () => {
-    if (request.current && !request.current.signal.aborted) return;
-    const controller = new AbortController();
-    request.current = controller;
-    setChecking(true);
-    setShowNotes(false);
-    const next = await checkPublicRelease({ applicationId, version, buildNumber }, { signal: controller.signal });
-    if (!controller.signal.aborted) {
-      setResult(next);
-      setChecking(false);
-      request.current = null;
-    }
-  }, [applicationId, version, buildNumber]);
-
   // Opened from the update notification, or a daily check already found a
-  // newer release: show its details without another tap.
+  // newer release: show what that check verified. This makes no request, so
+  // reopening About never adds to the once-a-day check.
   useEffect(() => {
     let active = true;
     getPendingUpdateAsync({ applicationId, version, buildNumber })
       .then((pending) => {
-        if (active && pending) void check();
+        if (active && pending) setFound(releaseCheckFromPending(pending));
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [applicationId, version, buildNumber, check]);
+  }, [applicationId, version, buildNumber]);
+
+  async function check() {
+    if (request.current && !request.current.signal.aborted) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setChecking(true);
+    setShowNotes(false);
+    const next = await checkPublicRelease(installed, { signal: controller.signal });
+    if (!controller.signal.aborted) {
+      setResult(next);
+      setChecking(false);
+      request.current = null;
+    }
+  }
+
+  const shown = result ?? found;
 
   async function open(url: string) {
     try { await Linking.openURL(url); }
@@ -66,15 +72,16 @@ export function AppUpdateCard({ installed }: { installed: InstalledAppIdentity }
         {checking ? <ActivityIndicator color={colors.primary} /> : null}
         <Text style={[styles.buttonText, { color: colors.primary }]}>{checking ? "Checking GitHub…" : "Check for updates"}</Text>
       </Pressable>
-      {result ? <View accessibilityLiveRegion="polite" style={styles.result}>
-        <Text style={[styles.body, { color: colors.text }]}>{result.kind === "available" ? `Version ${result.version} is available.` : result.message}</Text>
-        {result.kind === "available" ? <>
+      {shown ? <View accessibilityLiveRegion="polite" style={styles.result}>
+        <Text style={[styles.body, { color: colors.text }]}>{shown.kind === "available" ? `Version ${shown.version} is available.` : shown.message}</Text>
+        {result ? null : <Text style={[styles.body, { color: colors.textSecondary }]}>{UPDATE_ALERTS_COPY.foundByDailyCheck}</Text>}
+        {shown.kind === "available" ? <>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: showNotes }} onPress={() => setShowNotes(!showNotes)} style={styles.link}>
             <Text style={[styles.buttonText, { color: colors.primary }]}>{showNotes ? "Hide release notes" : "What's changed"}</Text>
           </Pressable>
-          {showNotes ? <Text selectable style={[styles.body, { color: colors.textSecondary }]}>{result.notes}</Text> : null}
+          {showNotes ? <Text selectable style={[styles.body, { color: colors.textSecondary }]}>{shown.notes}</Text> : null}
           <Text style={[styles.body, { color: colors.textSecondary }]}>Create an encrypted backup first. Open the release on GitHub and download its phone APK. Android checks the signing key and asks before updating. Do not uninstall this app if Android rejects an update.</Text>
-          <Pressable accessibilityRole="link" onPress={() => void open(result.releaseUrl)} style={styles.link}>
+          <Pressable accessibilityRole="link" onPress={() => void open(shown.releaseUrl)} style={styles.link}>
             <Text style={[styles.buttonText, { color: colors.primary }]}>Open release and download</Text>
           </Pressable>
         </> : <Pressable accessibilityRole="link" onPress={() => void open(`${OFFICIAL_REPOSITORY}/releases`)} style={styles.link}>

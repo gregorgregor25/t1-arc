@@ -186,8 +186,10 @@ default unless they turn it off.
   T1 Arc shows one quiet notification for that version, if Android
   notifications are allowed. Tapping it opens **About T1 Arc** with the
   release notes. Nothing downloads or installs automatically.
-- **What is stored.** The time of the last check and the newest version
-  announced, in Android secure storage on the phone. They are not part of
+- **What is stored.** The time of the last check, the newest version
+  announced, and a newer release the check found with its public release
+  notes, so **About T1 Arc** can show them without asking GitHub again. They
+  are kept in Android secure storage on the phone and are not part of
   encrypted backups.
 - **Test builds.** Builds whose version has a suffix (for example
   `1.7.21-aaps.4`) and other Android packages never check automatically, so a

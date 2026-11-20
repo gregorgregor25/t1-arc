@@ -7,6 +7,7 @@ import {
   getPendingUpdateAsync,
   getUpdateAlertsSettingAsync,
   loadUpdateAlertState,
+  releaseCheckFromPending,
   runAutomaticUpdateCheckAsync,
   setUpdateAlertsEnabledAsync,
   UPDATE_ALERTS_SETTING_KEY,
@@ -22,12 +23,17 @@ import {
   pendingUpdateFor,
   shouldNotify,
   UPDATE_CHECK_INTERVAL_MS,
+  withNotifiedVersionCode,
 } from '@/domain/updateAlerts';
+import { isSafeNavigationLink } from '@/navigation/appLinks';
+import { sourceJumpFromRoute } from '@/navigation/sourceNavigation';
 
 const mocks = vi.hoisted(() => ({
   store: new Map<string, string>(),
   failReads: false,
   failWrites: false,
+  /** Runs before each write lands; return a promise to hold the write, or throw to fail it. */
+  beforeWrite: undefined as ((key: string, value: string) => Promise<void> | undefined) | undefined,
   show: vi.fn<(version: string) => Promise<boolean>>(),
   cancel: vi.fn<() => Promise<void>>(),
   check: vi.fn<(installed: unknown, options: { signal: AbortSignal }) => Promise<unknown>>(),
@@ -39,6 +45,7 @@ vi.mock('expo-secure-store', () => ({
     return mocks.store.get(key) ?? null;
   },
   setItemAsync: async (key: string, value: string) => {
+    await mocks.beforeWrite?.(key, value);
     if (mocks.failWrites) throw new Error('keystore unavailable');
     mocks.store.set(key, value);
   },
@@ -98,10 +105,26 @@ function storedState() {
   return JSON.parse(mocks.store.get(UPDATE_ALERTS_STATE_KEY) ?? 'null') as Record<string, unknown> | null;
 }
 
+/** Holds the first update-state write that matches, until `release` is called. */
+function holdStateWrite(matches: (value: string) => boolean) {
+  const gate = { held: false, release: () => undefined as void };
+  mocks.beforeWrite = (key, value) => {
+    if (key !== UPDATE_ALERTS_STATE_KEY || gate.held || !matches(value)) return undefined;
+    gate.held = true;
+    return new Promise<void>((resolve) => {
+      gate.release = resolve;
+    });
+  };
+  return gate;
+}
+
+const PENDING_96 = { version: '1.7.22', versionCode: 96, notes: 'Release notes' };
+
 beforeEach(() => {
   mocks.store.clear();
   mocks.failReads = false;
   mocks.failWrites = false;
+  mocks.beforeWrite = undefined;
   mocks.show.mockReset().mockResolvedValue(true);
   mocks.cancel.mockReset().mockResolvedValue(undefined);
   mocks.check.mockReset().mockResolvedValue(available());
@@ -129,10 +152,12 @@ describe('update alert rules', () => {
     expect(shouldNotify({ notifiedVersionCode: 96 }, 96)).toBe(false);
     expect(shouldNotify({ notifiedVersionCode: 96 }, 95)).toBe(false);
     expect(shouldNotify({ notifiedVersionCode: 96 }, 98)).toBe(true);
+    expect(withNotifiedVersionCode({ lastCheckedAt: NOW }, 96)).toEqual({ lastCheckedAt: NOW, notifiedVersionCode: 96 });
+    expect(withNotifiedVersionCode({ lastCheckedAt: NOW, notifiedVersionCode: 96 }, undefined)).toEqual({ lastCheckedAt: NOW });
   });
 
   it('keeps a pending release only while it is newer than the installation', () => {
-    const state = { pending: { version: '1.7.22', versionCode: 96 } };
+    const state = { pending: PENDING_96 };
     expect(pendingUpdateFor(state, 86)).toEqual(state.pending);
     expect(pendingUpdateFor(state, 96)).toBeUndefined();
     expect(pendingUpdateFor(state, undefined)).toBeUndefined();
@@ -141,10 +166,12 @@ describe('update alert rules', () => {
   });
 
   it('rejects malformed stored state', () => {
-    expect(isUpdateAlertState({ lastCheckedAt: NOW, notifiedVersionCode: 96, pending: { version: '1.7.22', versionCode: 96 } })).toBe(true);
+    expect(isUpdateAlertState({ lastCheckedAt: NOW, notifiedVersionCode: 96, pending: PENDING_96 })).toBe(true);
     for (const value of [
       null, [], 'x', { lastCheckedAt: 'yesterday' }, { notifiedVersionCode: 0 },
-      { pending: { version: '1.7.22-beta', versionCode: 96 } }, { pending: { version: '1.7.22' } }, { pending: null },
+      { pending: { ...PENDING_96, version: '1.7.22-beta' } }, { pending: { version: '1.7.22', notes: '' } }, { pending: null },
+      { pending: { version: '1.7.22', versionCode: 96 } }, { pending: { ...PENDING_96, notes: 7 } },
+      { pending: { ...PENDING_96, notes: 'x'.repeat(4_001) } },
     ]) {
       expect(isUpdateAlertState(value)).toBe(false);
     }
@@ -159,7 +186,7 @@ describe('automatic update check', () => {
     expect(first.check).toHaveBeenCalledTimes(1);
     expect(first.check.mock.calls[0]?.[0]).toEqual(PUBLIC);
     expect(mocks.show).toHaveBeenCalledWith('1.7.22');
-    expect(storedState()).toEqual({ lastCheckedAt: NOW, pending: { version: '1.7.22', versionCode: 96 }, notifiedVersionCode: 96 });
+    expect(storedState()).toEqual({ lastCheckedAt: NOW, pending: PENDING_96, notifiedVersionCode: 96 });
 
     // Same release the next day: checked again, not announced again.
     const second = run(NOW + DAY);
@@ -236,6 +263,74 @@ describe('automatic update check', () => {
     expect(storedState()).not.toHaveProperty('pending');
   });
 
+  it('sends nothing when switched off while the attempt is being saved', async () => {
+    const gate = holdStateWrite((value) => value.includes('lastCheckedAt'));
+    const attempt = run(NOW);
+    await settle();
+    expect(gate.held).toBe(true);
+    const off = setUpdateAlertsEnabledAsync(false, notifier);
+    await settle();
+    gate.release();
+    await Promise.all([attempt.done, off]);
+    expect(attempt.check).not.toHaveBeenCalled();
+    expect(mocks.show).not.toHaveBeenCalled();
+  });
+
+  it('shows nothing when switched off while the announcement is being saved', async () => {
+    const gate = holdStateWrite((value) => value.includes('"pending"'));
+    const attempt = run(NOW);
+    await settle();
+    expect(gate.held).toBe(true);
+    const off = setUpdateAlertsEnabledAsync(false, notifier);
+    await settle();
+    gate.release();
+    await Promise.all([attempt.done, off]);
+    expect(mocks.show).not.toHaveBeenCalled();
+    // Nothing is kept as pending or as announced.
+    expect(storedState()).toEqual({ lastCheckedAt: NOW });
+  });
+
+  it('saves the announcement before the notification appears', async () => {
+    let atShow: unknown;
+    mocks.show.mockImplementation(async () => {
+      atShow = storedState();
+      return true;
+    });
+    await run(NOW).done;
+    expect(atShow).toMatchObject({ notifiedVersionCode: 96, pending: PENDING_96 });
+  });
+
+  it('never announces a version twice when storage fails after the notification', async () => {
+    mocks.show.mockImplementation(async () => {
+      mocks.failWrites = true;
+      return true;
+    });
+    await run(NOW).done;
+    mocks.failWrites = false;
+    mocks.show.mockResolvedValue(true);
+    await run(NOW + DAY).done;
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing if the announcement cannot be saved, and never announces a version twice', async () => {
+    // Recording the attempt works; saving the release and its mark fails.
+    mocks.beforeWrite = (key, value) => {
+      if (key === UPDATE_ALERTS_STATE_KEY && value.includes('"pending"')) throw new Error('keystore full');
+      return undefined;
+    };
+    const first = run(NOW);
+    await first.done;
+    expect(first.check).toHaveBeenCalledTimes(1);
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(storedState()).toEqual({ lastCheckedAt: NOW });
+
+    mocks.beforeWrite = undefined;
+    await run(NOW + DAY).done;
+    await run(NOW + 2 * DAY).done;
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    expect(storedState()).toMatchObject({ notifiedVersionCode: 96 });
+  });
+
   it('removes the alert once the announced release is installed', async () => {
     await run(NOW).done;
     mocks.cancel.mockClear();
@@ -262,6 +357,11 @@ describe('automatic update check', () => {
     await run(NOW + DAY).done;
     expect(mocks.show).toHaveBeenCalledTimes(2);
     expect(storedState()).toMatchObject({ notifiedVersionCode: 96 });
+
+    // A later release that Android did not show keeps the earlier mark.
+    mocks.show.mockResolvedValueOnce(false);
+    await run(NOW + 2 * DAY, available('1.7.23', 98)).done;
+    expect(storedState()).toMatchObject({ notifiedVersionCode: 96, pending: { version: '1.7.23', versionCode: 98 } });
   });
 
   it('never reaches GitHub or throws when secure storage fails', async () => {
@@ -287,11 +387,21 @@ describe('automatic update check', () => {
 
   it('offers the pending release to About only while alerts are on and it is newer', async () => {
     await run(NOW).done;
-    expect(await getPendingUpdateAsync(PUBLIC)).toEqual({ version: '1.7.22', versionCode: 96 });
+    expect(await getPendingUpdateAsync(PUBLIC)).toEqual(PENDING_96);
     expect(await getPendingUpdateAsync({ ...PUBLIC, version: '1.7.22', buildNumber: '96' })).toBeUndefined();
     expect(await getPendingUpdateAsync({ ...PUBLIC, version: '1.7.21-aaps.4', buildNumber: '94' })).toBeUndefined();
     await setUpdateAlertsEnabledAsync(false, notifier);
     expect(await getPendingUpdateAsync(PUBLIC)).toBeUndefined();
+  });
+
+  it('gives About the details the daily check verified, without asking GitHub again', async () => {
+    await run(NOW).done;
+    for (let open = 0; open < 3; open += 1) {
+      const pending = await getPendingUpdateAsync(PUBLIC);
+      expect(pending).toEqual(PENDING_96);
+      expect(releaseCheckFromPending(pending!)).toEqual(available());
+    }
+    expect(mocks.check).not.toHaveBeenCalled();
   });
 
   it('reads invalid stored state as empty', async () => {
@@ -325,5 +435,21 @@ describe('update check opportunity hook', () => {
     expect(app.match(/^\s*noteUpdateCheckOpportunity\(\);/gm)).toHaveLength(2);
     expect(collector).toMatch(/^\s*noteUpdateCheckOpportunity\(\);/m);
     expect(collector).not.toMatch(/await\s+noteUpdateCheckOpportunity/);
+  });
+});
+
+describe('update notification link', () => {
+  it('opens Settings > About, which the app accepts as a link', () => {
+    const root = join(__dirname, '..');
+    const notice = readFileSync(
+      join(root, 'modules/t1arc-community-reminder/android/src/main/java/io/github/gregorgregor25/t1arc/communityreminder/UpdateNotice.kt'),
+      'utf8',
+    );
+    const navigator = readFileSync(join(root, 'src/navigation/AppNavigator.tsx'), 'utf8');
+    const link = /ABOUT_LINK = "([^"]+)"/.exec(notice)?.[1] ?? '';
+    expect(link).toBe('t1arc://sources/about');
+    expect(isSafeNavigationLink(link)).toBe(true);
+    expect(navigator).toContain('Sources: "sources/:source?"');
+    expect(sourceJumpFromRoute(link.slice('t1arc://sources/'.length))).toBe('about');
   });
 });
