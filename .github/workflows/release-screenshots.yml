@@ -1,0 +1,130 @@
+name: Release screenshots
+
+# Takes dark-mode screenshots of a published release APK on a disposable
+# Android emulator, using only the app's built-in demo (example) data. The
+# network is switched off and no account, data source or AI key is used, so no
+# personal data is involved. The unmodified PNGs and their screen layouts are
+# uploaded as the run's artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to photograph, for example v1.8.0
+        required: true
+        default: v1.8.0
+        type: string
+      api_level:
+        description: Emulator Android API level (an x86_64 image that can run ARM64 apps)
+        required: true
+        default: '35'
+        type: string
+  push:
+    branches:
+      - ci/release-screenshots
+    paths:
+      - .github/workflows/release-screenshots.yml
+      - scripts/ci/release_screenshots.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || 'v1.8.0' }}
+  API_LEVEL: ${{ inputs.api_level || '35' }}
+  EXPECTED_CERT_SHA256: 31babc04082806319b3eb1ed97f437c40d32b6e2eac4463eb485c4b681740f50
+  RESULTS_DIR: screenshot-results
+
+jobs:
+  screenshots:
+    name: Capture the screenshots on an emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the inputs
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tags must look like v1.8.0, not '$RELEASE_TAG'."
+            exit 1
+          fi
+          if [[ ! "$API_LEVEL" =~ ^[0-9]{2}$ ]]; then
+            echo "::error::The API level must be a two-digit number."
+            exit 1
+          fi
+
+      - name: Download the published APK and check its checksum and signer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p apks
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir apks \
+            --pattern "T1-Arc-$RELEASE_TAG.apk" \
+            --pattern "T1-Arc-$RELEASE_TAG.apk.sha256" \
+            --pattern "T1-Arc-$RELEASE_TAG.apk.build.json"
+          (cd apks && sha256sum -c "T1-Arc-$RELEASE_TAG.apk.sha256")
+          build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          certs=$("$build_tools/apksigner" verify --print-certs "apks/T1-Arc-$RELEASE_TAG.apk" \
+            | sed -n 's/^.*certificate SHA-256 digest: //p' | sort -u)
+          if [ "$certs" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::The APK is not signed with the production certificate only (found '$certs')."
+            exit 1
+          fi
+          mkdir -p "$RESULTS_DIR"
+          cp "apks/T1-Arc-$RELEASE_TAG.apk.build.json" "$RESULTS_DIR/apk.build.json"
+          echo "apk_sha256=$(sha256sum "apks/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)" > "$RESULTS_DIR/apk.txt"
+
+      - name: Enable hardware acceleration for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache the emulator system image
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+            /usr/local/lib/android/sdk/system-images/android-${{ env.API_LEVEL }}
+          key: emulator-image-api${{ env.API_LEVEL }}-google_apis-x86_64-v1
+
+      - name: Take the screenshots
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 6000M
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -wipe-data
+          script: python3 -I scripts/ci/release_screenshots.py
+
+      - name: Publish the summary
+        if: always()
+        run: |
+          if [ -f "$RESULTS_DIR/summary.md" ]; then
+            cat "$RESULTS_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The screenshot run did not produce a summary." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload screenshots, screen layouts and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-screenshots-${{ env.RELEASE_TAG }}-api${{ env.API_LEVEL }}
+          path: ${{ env.RESULTS_DIR }}
+          retention-days: 30
+          if-no-files-found: warn
