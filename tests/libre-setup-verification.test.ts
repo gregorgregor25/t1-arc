@@ -57,7 +57,7 @@ describe('Libre setup verification lifecycle', () => {
     );
 
     const source = readFileSync(
-      new URL('../src/screens/SourcesScreen.tsx', import.meta.url),
+      new URL('../src/screens/settings/LibreSettingsPage.tsx', import.meta.url),
       'utf8',
     );
     expect(source).toContain('accessibilityLabel={libreActionLabel}');

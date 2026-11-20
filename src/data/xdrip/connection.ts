@@ -22,7 +22,7 @@ export function normalizeXdripConnection(
   } catch {
     throw new XdripError(
       'invalid-connection',
-      'Enter a valid xDrip endpoint, such as 127.0.0.1:17580.',
+      'Enter the xDrip address, for example 127.0.0.1:17580.',
     );
   }
 
@@ -30,7 +30,7 @@ export function normalizeXdripConnection(
   if (!host) {
     throw new XdripError(
       'invalid-connection',
-      'The xDrip endpoint must include a host.',
+      'The xDrip address is incomplete. Enter it as shown in xDrip, for example 127.0.0.1:17580.',
     );
   }
   if (url.username || url.password) {
@@ -48,7 +48,7 @@ export function normalizeXdripConnection(
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new XdripError(
       'invalid-connection',
-      'The xDrip endpoint must use HTTPS, or local HTTP on this phone.',
+      'The xDrip address must start with https://, unless xDrip is on this phone.',
     );
   }
   if (url.protocol === 'http:' && !LOCAL_HTTP_HOSTS.has(host)) {

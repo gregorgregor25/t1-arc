@@ -177,8 +177,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   eyebrow: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1,
   },
@@ -189,8 +189,8 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   detail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   closeButton: {

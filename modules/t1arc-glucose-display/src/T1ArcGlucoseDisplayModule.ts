@@ -6,22 +6,47 @@ import {
   GlucoseAppearanceSettings,
   GlucoseAlertKind,
   GlucoseAlertChannelStatus,
+  GlucoseAlarmConfiguration,
+  GlucoseAlarmCustomSound,
+  GlucoseAlarmStatus,
   GlucoseDisplayHistoryPoint,
   GlucoseDisplayPublicationSnapshot,
+  AapsLocalReading,
+  AapsLocalStatus,
+  AapsLocalTreatment,
+  AapsTreatmentStatus,
   GlucoseDisplayStatus,
   GlucoseDisplayTrendOrigin,
   HomeWidgetStatus,
+  OnBoardEstimatePublication,
   WearCompanionStatus,
   WatchFaceDeviceStatus,
   WatchFaceId,
   WatchFaceResult,
 } from './T1ArcGlucoseDisplay.types';
 
-declare class T1ArcGlucoseDisplayModule extends NativeModule<
-  Record<string, never>
-> {
+declare class T1ArcGlucoseDisplayModule extends NativeModule<{
+  onAapsReading: (event: { changed: boolean }) => void;
+}> {
   getStatusAsync(): Promise<GlucoseDisplayStatus>;
   getPrivateGlucoseWriteEpochAsync(): Promise<number>;
+  getAapsLocalStatusAsync(): Promise<AapsLocalStatus>;
+  setLocalGlucoseSourceAsync(sourceId: string, writeEpoch: number): Promise<AapsLocalStatus>;
+  peekAapsReadingsAsync(limit: number): Promise<AapsLocalReading[]>;
+  acknowledgeAapsReadingsAsync(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
+  /** Absent from native builds made before AAPS treatment intake. */
+  getAapsTreatmentStatusAsync?(): Promise<AapsTreatmentStatus>;
+  peekAapsTreatmentsAsync?(limit: number): Promise<AapsLocalTreatment[]>;
+  acknowledgeAapsTreatmentsAsync?(ids: string[], selectionGeneration: number, writeEpoch: number): Promise<boolean>;
+  /** Absent from native builds made before the opt-in switch. Turning it off clears the queue. */
+  setAapsLocalTreatmentsEnabledAsync?(enabled: boolean, writeEpoch: number): Promise<AapsTreatmentStatus>;
+  updateSelectedGlucoseForWriteEpochAsync(
+    writeEpoch: number,
+    selectionGeneration: number,
+    snapshot: GlucoseDisplayPublicationSnapshot | null,
+    readings: GlucoseDisplayHistoryPoint[],
+    missingSourceLabel: string,
+  ): Promise<boolean>;
   getWearStatusAsync(): Promise<WearCompanionStatus>;
   getWatchFaceStatusAsync(): Promise<WatchFaceDeviceStatus[]>;
   installBundledWatchFaceAsync(nodeId: string, faceId: WatchFaceId): Promise<WatchFaceResult>;
@@ -36,6 +61,17 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<
   setAodPositionAsync(position: AodPosition): Promise<GlucoseDisplayStatus>;
   setAodSizeAsync(size: AodSize): Promise<GlucoseDisplayStatus>;
   setAndroidAutoEnabledAsync(enabled: boolean): Promise<GlucoseDisplayStatus>;
+  /** Absent from builds without insulin and carbs on board on glance surfaces. */
+  setOnBoardEstimatesVisibleAsync?(visible: boolean): Promise<GlucoseDisplayStatus>;
+  /**
+   * Stores or clears the Nightscout estimate shown beside Nightscout glucose.
+   * Resolves false when the epoch, selection or source no longer match.
+   */
+  updateOnBoardEstimateForWriteEpochAsync?(
+    writeEpoch: number,
+    selectionGeneration: number,
+    estimate: OnBoardEstimatePublication | null,
+  ): Promise<boolean>;
   setRegionalDisplayPreferencesAsync(
     glucoseUnit: 'mmolL' | 'mgDl',
     localeTag: string,
@@ -72,6 +108,18 @@ declare class T1ArcGlucoseDisplayModule extends NativeModule<
     timestampMs: number,
   ): Promise<boolean>;
   setGlucoseAlertMonitoringEnabledAsync?(enabled: boolean): Promise<boolean>;
+  getGlucoseAlarmConfigurationAsync?(): Promise<GlucoseAlarmConfiguration | null>;
+  saveGlucoseAlarmConfigurationAsync?(configuration: GlucoseAlarmConfiguration): Promise<GlucoseAlarmStatus>;
+  getGlucoseAlarmStatusAsync?(): Promise<GlucoseAlarmStatus>;
+  reconcileGlucoseAlarmAsync?(): Promise<boolean>;
+  snoozeGlucoseAlarmAsync?(episodeId: string, untilMs: number): Promise<GlucoseAlarmStatus>;
+  cancelGlucoseAlarmSnoozeAsync?(episodeId: string): Promise<GlucoseAlarmStatus>;
+  acknowledgeGlucoseAlarmAsync?(episodeId: string): Promise<GlucoseAlarmStatus>;
+  importGlucoseAlarmSoundAsync?(uri: string, displayName: string): Promise<GlucoseAlarmCustomSound>;
+  previewGlucoseAlarmSoundAsync?(soundId: string, volume: number): Promise<boolean>;
+  stopGlucoseAlarmPreviewAsync?(): Promise<boolean>;
+  openGlucoseAlarmExactAlarmSettingsAsync?(): Promise<boolean>;
+  pauseGlucoseLowAlarmAfterHypoTreatmentAsync?(treatedAtMs: number): Promise<{ pausedUntilMs: number | null; minutes: number }>;
   cancelGlucoseAlertsAsync(): Promise<boolean>;
   /** Earliest time a time-based alert change could be due, or null for none. */
   setNextAlertCheckAtAsync?(epochMs: number | null): Promise<boolean>;

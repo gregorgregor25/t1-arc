@@ -2,6 +2,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   LayoutChangeEvent,
   Modal,
   Pressable,
@@ -27,7 +29,7 @@ import type {
   DailyMetricRecord,
 } from "@/domain/dailyHealthMetrics";
 import type { ActivityEvent, HealthContextEvent } from "@/domain/models";
-import { contextNoteDisplayTitle } from "@/domain/contextNotes";
+import { contextNoteDisplayTitle, contextNoteDisplayDetail } from "@/domain/contextNotes";
 import { formatStrengthWorkoutSet } from "@/domain/strengthWorkoutPresentation";
 import { dayRange, formatDate } from "@/domain/time";
 import { summarizeWorkoutHeartRate } from "@/domain/workoutHeartRate";
@@ -55,6 +57,9 @@ import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
 import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { MetricPreferencesSheet } from "./MetricPreferencesSheet";
+import { PageSheet } from "./history/PageSheet";
+import { ListGroup, ListRow } from "./ui";
+import { groupRemainingHealthMetrics, healthPriorityIds } from "./healthMetrics/healthLayout";
 
 import { SectionCard } from "./SectionCard";
 import {
@@ -212,7 +217,7 @@ function contextEventDetail(event: HealthContextEvent) {
     return `${formatRegionalNumber(Math.round(event.durationMinutes), regional.locale, { maximumFractionDigits: 0 })} min`;
   }
   return event.kind === "note"
-    ? (event.detail ?? "Recorded context")
+    ? (contextNoteDisplayDetail(event, regional) ?? "Recorded context")
     : "Recorded event";
 }
 
@@ -966,7 +971,7 @@ function StepGoalEditor({
             styles.goalInput,
             {
               backgroundColor: colors.surfaceMuted,
-              borderColor: colors.border,
+              borderColor: colors.controlBorder,
               borderRadius: radius.md,
               color: colors.text,
             },
@@ -1730,6 +1735,7 @@ export function HealthMetricCards({
   const [selectedId, setSelectedId] = useState<string>();
   const display = useDisplayPreferences();
   const [editingMetrics, setEditingMetrics] = useState(false);
+  const [editMenuVisible, setEditMenuVisible] = useState(false);
   const [draftVisibleIds, setDraftVisibleIds] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState<number>();
   useEffect(() => {
@@ -2611,16 +2617,40 @@ export function HealthMetricCards({
   const visible = availableDefinitions.filter((definition) => !display.preferences.hiddenHealthMetrics.includes(definition.id));
   const selected = visible.find((definition) => definition.id === selectedId);
 
+  const priorityIds = healthPriorityIds(visible, display.preferences.glanceOrder);
+  const priorities = priorityIds.flatMap((id) => visible.filter((definition) => definition.id === id));
+  const groups = groupRemainingHealthMetrics(visible, priorityIds);
+  const hiddenCount = display.preferences.hiddenHealthMetrics.length;
+  const openVisibilityChoices = () => {
+    setDraftVisibleIds(definitions.filter(definition => !display.preferences.hiddenHealthMetrics.includes(definition.id)).map(({ id }) => id));
+    setEditMenuVisible(false);
+    setEditingMetrics(true);
+  };
+  const showAllFromEditSheet = () => {
+    void display.save({ hiddenHealthMetrics: [] }).then((saved) => {
+      if (!saved) return;
+      setEditMenuVisible(false);
+      AccessibilityInfo.announceForAccessibility("All health sections are shown.");
+    });
+  };
+  // Same rule as before the redesign: the header and Edit appear when there
+  // is something to show or something hidden to bring back.
+  const showEditHeader = availableDefinitions.length > 0 || hiddenCount > 0;
+
   return (
     <>
-      {availableDefinitions.length > 0 || display.preferences.hiddenHealthMetrics.length > 0 ? (
-        <View style={styles.preferencesHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Choose health sections to show" disabled={display.loading} accessibilityState={{ disabled: display.loading }} onPress={() => {
-            setDraftVisibleIds(definitions.filter(definition => !display.preferences.hiddenHealthMetrics.includes(definition.id)).map(({ id }) => id));
-            setEditingMetrics(true);
-          }} style={({ pressed }) => [styles.preferencesAction, { opacity: pressed || display.loading ? 0.5 : 1 }]}>
+      {showEditHeader ? (
+        <View style={styles.prioritiesHeader}>
+          <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>{priorities.length ? "Your priorities" : "Health records"}</Text>
+          <Pressable
+            accessibilityHint="Choose which health sections to show, show hidden sections or set your daily step goal"
+            accessibilityLabel="Edit Health view"
+            accessibilityRole="button"
+            onPress={() => setEditMenuVisible(true)}
+            style={({ pressed }) => [styles.preferencesAction, { opacity: pressed ? 0.6 : 1 }]}
+          >
             <Ionicons accessibilityElementsHidden name="options-outline" size={18} color={colors.primary} />
-            <Text style={[styles.preferencesText, { color: colors.primary }]}>Edit view</Text>
+            <Text style={[styles.preferencesText, styles.editLabel, { color: colors.primary }]}>Edit</Text>
           </Pressable>
         </View>
       ) : null}
@@ -2636,7 +2666,7 @@ export function HealthMetricCards({
         </SectionCard>
       ) : null}
       <View style={styles.cards}>
-        {visible.map((definition) => (
+        {priorities.map((definition) => (
           <MetricCard
             definition={definition}
             key={definition.id}
@@ -2645,6 +2675,73 @@ export function HealthMetricCards({
           />
         ))}
       </View>
+      {groups.length > 0 ? (
+        <View style={styles.groups}>
+          <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>Everything else</Text>
+          {groups.map((group) => (
+            <ListGroup key={group.id} label={group.label}>
+              {group.metrics.map((definition) => (
+                <ListRow
+                  accessibilityHint={`Opens daily and seven-day ${definition.label} details`}
+                  detail={definition.status}
+                  key={definition.id}
+                  onPress={() => setSelectedId(definition.id)}
+                  title={definition.label}
+                  value={definition.primary}
+                />
+              ))}
+            </ListGroup>
+          ))}
+        </View>
+      ) : null}
+      <PageSheet
+        closeLabel="Close Health view options"
+        onClose={() => setEditMenuVisible(false)}
+        subtitle="Hidden sections still keep their records."
+        title="Edit Health view"
+        visible={editMenuVisible}
+      >
+        <ListGroup label="Sections">
+          <ListRow
+            accessibilityHint="Choose which health sections to show"
+            detail={hiddenCount > 0 ? `${formatRegionalNumber(hiddenCount, regional.locale, { maximumFractionDigits: 0 })} hidden` : "All sections shown"}
+            disabled={display.loading}
+            onPress={openVisibilityChoices}
+            title="Edit view"
+          />
+          {hiddenCount > 0 ? (
+            <ListRow
+              accessibilityLabel={display.saving ? "Show all sections. Working, please wait." : undefined}
+              disabled={display.saving}
+              onPress={showAllFromEditSheet}
+              showChevron={false}
+              title="Show all sections"
+              trailing={display.saving ? (
+                <ActivityIndicator
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  importantForAccessibility="no-hide-descendants"
+                />
+              ) : undefined}
+            />
+          ) : null}
+        </ListGroup>
+        {display.error ? (
+          <Text accessibilityLiveRegion="polite" style={[styles.preferencesText, { color: colors.warning }]}>
+            {display.error} Please try again.
+          </Text>
+        ) : null}
+        <Text style={[styles.preferencesText, { color: colors.textSecondary }]}>
+          The four large cards follow the priorities you chose for Today at a glance, skipping measures with no records.
+        </Text>
+        {dataMode === "live" ? (
+          <StepGoalEditor
+            goal={stepGoal}
+            key={`edit:${stepGoal ?? "unset"}:${regional.locale}`}
+            onChange={setStepGoal}
+          />
+        ) : null}
+      </PageSheet>
       <MetricDetailModal
         definition={selected}
         goal={stepGoal}
@@ -2674,7 +2771,10 @@ export function HealthMetricCards({
 }
 
 const styles = StyleSheet.create({
-  preferencesHeader: { alignItems: "flex-end" },
+  prioritiesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+  groupHeading: { flexShrink: 1, fontSize: 18, lineHeight: 24, fontWeight: "700" },
+  editLabel: { fontWeight: "700" },
+  groups: { marginTop: 16, gap: 8 },
   preferencesAction: { minHeight: 48, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   preferencesText: { fontSize: 14, lineHeight: 22, flexShrink: 1 },
   cards: { gap: 9 },
@@ -2725,8 +2825,8 @@ const styles = StyleSheet.create({
   dayLabels: { height: 18, flexDirection: "row", alignItems: "flex-end" },
   dayLabel: {
     flex: 1,
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "700",
     textAlign: "center",
   },
@@ -2790,7 +2890,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   secondaryReading: { minWidth: "45%", flexGrow: 1 },
-  secondaryLabel: { fontSize: 10, lineHeight: 15 },
+  secondaryLabel: { fontSize: 12, lineHeight: 17 },
   secondaryValue: {
     marginTop: 2,
     fontSize: 15,
@@ -2813,9 +2913,9 @@ const styles = StyleSheet.create({
   stackedDetailCopy: { flex: 0 },
   fullWidthTime: { width: "100%" },
   leftAlignedReading: { textAlign: "left" },
-  weekLabel: { fontSize: 11, lineHeight: 16, textTransform: "capitalize" },
+  weekLabel: { fontSize: 12, lineHeight: 17, textTransform: "capitalize" },
   weekValue: { marginTop: 3, fontSize: 25, lineHeight: 31, fontWeight: "800" },
-  weekSummaryKind: { marginTop: 1, fontSize: 9, lineHeight: 13 },
+  weekSummaryKind: { marginTop: 1, fontSize: 12, lineHeight: 16 },
   recordedDays: { fontSize: 12, lineHeight: 18, fontWeight: "800" },
   selectedDay: {
     minHeight: 68,
@@ -2830,7 +2930,7 @@ const styles = StyleSheet.create({
   },
   selectedDayCopy: { flex: 1, minWidth: 0 },
   selectedDayDate: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
-  selectedDayHint: { marginTop: 2, fontSize: 9, lineHeight: 13 },
+  selectedDayHint: { marginTop: 2, fontSize: 12, lineHeight: 16 },
   selectedDayValue: {
     fontSize: 17,
     lineHeight: 22,
@@ -2852,7 +2952,7 @@ const styles = StyleSheet.create({
   },
   exactDateRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 9 },
   exactMarker: { width: 6, height: 6, borderRadius: 3 },
-  exactDate: { fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  exactDate: { fontSize: 12, lineHeight: 17, fontWeight: "700" },
   exactValue: {
     fontSize: 12,
     lineHeight: 17,
@@ -2860,14 +2960,14 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   intradayTitle: { fontSize: 16, lineHeight: 22, fontWeight: "800" },
-  intradayIntro: { marginTop: 4, fontSize: 11, lineHeight: 17 },
+  intradayIntro: { marginTop: 4, fontSize: 13, lineHeight: 19 },
   intradayState: {
     minHeight: 76,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
   },
-  intradayStateText: { fontSize: 11, lineHeight: 17, textAlign: "center" },
+  intradayStateText: { fontSize: 13, lineHeight: 19, textAlign: "center" },
   intradayList: { marginTop: 16, borderTopWidth: StyleSheet.hairlineWidth },
   intradayRow: {
     minHeight: 68,
@@ -2885,15 +2985,15 @@ const styles = StyleSheet.create({
   },
   intradayEnd: {
     marginTop: 1,
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontVariant: ["tabular-nums"],
   },
   intradayCopy: { flex: 1, minWidth: 0 },
   intradayLabel: { fontSize: 12, lineHeight: 17, fontWeight: "700" },
-  intradayDetail: { marginTop: 2, fontSize: 10, lineHeight: 15 },
-  intradaySource: { marginTop: 3, fontSize: 9, lineHeight: 13 },
-  intradayCaveat: { paddingTop: 11, fontSize: 10, lineHeight: 15 },
+  intradayDetail: { marginTop: 2, fontSize: 12, lineHeight: 17 },
+  intradaySource: { marginTop: 3, fontSize: 12, lineHeight: 16 },
+  intradayCaveat: { paddingTop: 11, fontSize: 12, lineHeight: 17 },
   intradayWorkoutGroup: { borderBottomWidth: StyleSheet.hairlineWidth },
   intradayWorkoutTrigger: {
     minHeight: 76,
@@ -2911,9 +3011,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 7,
   },
-  workoutTimelineEnd: { fontSize: 11, lineHeight: 16 },
-  workoutTimelineDetail: { fontSize: 11, lineHeight: 17 },
-  workoutSource: { fontSize: 11, lineHeight: 16 },
+  workoutTimelineEnd: { fontSize: 12, lineHeight: 17 },
+  workoutTimelineDetail: { fontSize: 12, lineHeight: 18 },
+  workoutSource: { fontSize: 13, lineHeight: 18 },
   workoutAffordance: {
     minHeight: 30,
     borderWidth: StyleSheet.hairlineWidth,
@@ -2922,7 +3022,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  workoutAffordanceText: { fontSize: 11, lineHeight: 15, fontWeight: "800" },
+  workoutAffordanceText: { fontSize: 12, lineHeight: 16, fontWeight: "800" },
   workoutDetailPanel: {
     marginBottom: 14,
     width: "100%",
@@ -2936,7 +3036,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   workoutDetailTitle: { fontSize: 14, lineHeight: 19, fontWeight: "800" },
-  workoutDetailCount: { marginTop: 1, fontSize: 11, lineHeight: 16 },
+  workoutDetailCount: { marginTop: 1, fontSize: 12, lineHeight: 17 },
   workoutDescription: { marginTop: 10, fontSize: 12, lineHeight: 18 },
   workoutHeartRate: {
     marginTop: 12,
@@ -2957,14 +3057,14 @@ const styles = StyleSheet.create({
   },
   workoutHeartRateReading: { minWidth: 105, flexGrow: 1 },
   workoutHeartRateValue: { fontSize: 16, lineHeight: 22, fontWeight: "800" },
-  workoutHeartRateLabel: { marginTop: 1, fontSize: 11, lineHeight: 16 },
+  workoutHeartRateLabel: { marginTop: 1, fontSize: 12, lineHeight: 17 },
   workoutHeartRateSource: {
     marginTop: 10,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: "700",
   },
-  workoutHeartRateProvenance: { marginTop: 1, fontSize: 11, lineHeight: 16 },
+  workoutHeartRateProvenance: { marginTop: 1, fontSize: 13, lineHeight: 18 },
   workoutExerciseList: { marginTop: 11 },
   workoutExercise: { paddingVertical: 11 },
   workoutExerciseHeading: {
@@ -2979,8 +3079,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   workoutExerciseNumberText: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
   },
   workoutExerciseTitle: {
@@ -2989,7 +3089,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "800",
   },
-  workoutExerciseNotes: { marginTop: 6, fontSize: 11, lineHeight: 17 },
+  workoutExerciseNotes: { marginTop: 6, fontSize: 13, lineHeight: 19 },
   workoutSetList: { marginTop: 7, gap: 5 },
   workoutSetRow: {
     minHeight: 30,
@@ -3002,8 +3102,8 @@ const styles = StyleSheet.create({
   workoutSetLabel: {
     minWidth: 44,
     paddingTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   workoutSetValue: {
@@ -3014,7 +3114,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  workoutEmptySets: { marginTop: 7, fontSize: 11, lineHeight: 17 },
+  workoutEmptySets: { marginTop: 7, fontSize: 13, lineHeight: 19 },
   workoutProvenance: {
     marginTop: 6,
     paddingTop: 10,
@@ -3023,18 +3123,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  workoutProvenanceText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  workoutProvenanceText: { flex: 1, fontSize: 13, lineHeight: 18 },
   progressBlock: { marginTop: 20 },
   progressLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 7,
   },
-  progressText: { fontSize: 10, lineHeight: 15, fontWeight: "700" },
+  progressText: { fontSize: 12, lineHeight: 17, fontWeight: "700" },
   progressTrack: { height: 8, overflow: "hidden" },
   progressFill: { height: 8 },
   goalTitle: { fontSize: 16, lineHeight: 22, fontWeight: "800" },
-  goalDetail: { marginTop: 4, fontSize: 11, lineHeight: 17 },
+  goalDetail: { marginTop: 4, fontSize: 13, lineHeight: 19 },
   goalRow: { marginTop: 16, flexDirection: "row", gap: 9 },
   goalInput: {
     flex: 1,
@@ -3051,10 +3151,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   goalSaveText: { fontSize: 13, lineHeight: 18, fontWeight: "800" },
-  goalError: { marginTop: 8, fontSize: 11, lineHeight: 16 },
+  goalError: { marginTop: 8, fontSize: 13, lineHeight: 18 },
   goalRemove: {
     alignSelf: "flex-start",
-    minHeight: 40,
+    minHeight: 44,
     justifyContent: "center",
     marginTop: 6,
   },

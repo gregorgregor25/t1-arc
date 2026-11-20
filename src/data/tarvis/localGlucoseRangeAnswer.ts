@@ -44,11 +44,21 @@ import {
 } from "@/domain/models";
 import { toDateKey, zonedDateTimeToTimestamp } from "@/domain/time";
 import {
+  GLUCOSE_THRESHOLD_BOUNDARY_RULE,
+  glucoseMeetsThreshold,
+} from "@/domain/glucoseRanges";
+import {
   isEvidenceQueryVisualizationReference,
   type EvidenceQueryEvent,
   type EvidenceQueryVisualizationReference,
 } from "@/domain/evidenceQueryChart";
 import { formatTarvisRequestedPeriod, tarvisComparisonDurationNote } from "./timePresentation";
+import {
+  type TarvisTimeInRangeRowLabels,
+  type TarvisTimeInRangeWording,
+  tarvisTimeInRangeRowLabels,
+  tarvisTimeInRangeWording,
+} from "./timeInRangeWording";
 import {
   formatGlucose,
   glucoseFromMmolL,
@@ -184,7 +194,7 @@ const SAMPLE_STATISTIC_METRICS = new Set<SupportedMetric>([
 function metricAlgorithmVersion(metric: SupportedMetric) {
   if (metric === "glucose.mean") return GLUCOSE_MEAN_METRIC_VERSION;
   if (metric === "glucose.time_in_range") {
-    return "duration-forward-cap-12m-v1";
+    return `duration-forward-cap-12m-v1:${GLUCOSE_THRESHOLD_BOUNDARY_RULE}`;
   }
   if (metric.endsWith("_episodes")) {
     return GLUCOSE_EPISODE_DEFINITION_VERSION;
@@ -193,7 +203,7 @@ function metricAlgorithmVersion(metric: SupportedMetric) {
     return `${GLUCOSE_STATISTICS_VERSION}:${GMI_FORMULA_VERSION}:unique-timestamp-rounded-2dp`;
   }
   if (metric.endsWith("_readings")) {
-    return `${GLUCOSE_STATISTICS_VERSION}:threshold-count-unique-timestamp-v1`;
+    return `${GLUCOSE_STATISTICS_VERSION}:threshold-count-unique-timestamp-v1:${GLUCOSE_THRESHOLD_BOUNDARY_RULE}`;
   }
   return `${GLUCOSE_STATISTICS_VERSION}:${metric.split(".").at(-1)}-unique-timestamp-rounded-2dp`;
 }
@@ -434,17 +444,9 @@ function thresholdFor(
   return threshold ?? unsupported(`Missing ${role} threshold.`);
 }
 
+/** The shared History/Insights boundary rule; see glucoseMeetsThreshold. */
 function matchesThreshold(value: number, threshold: NormalizedThreshold) {
-  switch (threshold.operator) {
-    case "lt":
-      return value < threshold.value;
-    case "lte":
-      return value <= threshold.value;
-    case "gt":
-      return value > threshold.value;
-    case "gte":
-      return value >= threshold.value;
-  }
+  return glucoseMeetsThreshold(value, threshold.operator, threshold.value);
 }
 
 function observationIntervals(
@@ -542,10 +544,7 @@ function calculateRange(
         matchesThreshold(interval.mmolL, upper)
       ) {
         within += duration;
-      } else if (
-        interval.mmolL < lower.value ||
-        (interval.mmolL === lower.value && lower.operator === "gt")
-      ) {
+      } else if (!matchesThreshold(interval.mmolL, lower)) {
         below += duration;
       } else {
         above += duration;
@@ -886,6 +885,7 @@ function queryVisualizationFor(
         "Only readings from the requested time are counted; missing sensor time is left out.",
       lowerBoundMmolL: targetRange.minimum,
       upperBoundMmolL: targetRange.maximum,
+      boundaryRule: GLUCOSE_THRESHOLD_BOUNDARY_RULE,
     };
   }
   const eventMetric = selectedEventMetric;
@@ -956,6 +956,7 @@ function representativeReadings(readings: readonly GlucoseReading[]) {
 
 function metricPresentation(
   calculation: RangeCalculation,
+  rowLabels: TarvisTimeInRangeRowLabels = tarvisTimeInRangeRowLabels([]),
 ): TarvisEvidenceMetric[] {
   return calculation.metrics.flatMap((metric): TarvisEvidenceMetric[] => {
     const displayedGlucose = regionalGlucoseMetric(metric.value);
@@ -1070,21 +1071,21 @@ function metricPresentation(
         return [
           {
             id: "time-below-range",
-            label: "Time below range",
+            label: rowLabels.below,
             value: calculation.distribution?.belowPercent ?? null,
             decimals: 1,
             unit: "%",
           },
           {
             id: "time-in-range",
-            label: "Time in range",
+            label: rowLabels.inRange,
             value: calculation.distribution?.inRangePercent ?? null,
             decimals: 1,
             unit: "%",
           },
           {
             id: "time-above-range",
-            label: "Time above range",
+            label: rowLabels.above,
             value: calculation.distribution?.abovePercent ?? null,
             decimals: 1,
             unit: "%",
@@ -1116,6 +1117,13 @@ function metricCopy(
       case "glucose.gmi":
         return `the estimated glucose management indicator was ${formatTarvisFixedNumber(metric.value, 1)}% (derived from mean sensor glucose, not a laboratory HbA1c result)`;
       case "glucose.time_in_range": {
+        const wording = tarvisTimeInRangeWording(executable.intent.thresholds);
+        if (wording?.named) {
+          const share = timeInRangeShare(wording, metric.value, calculation);
+          return share === null
+            ? `time ${wording.phrase} is unavailable`
+            : `${formatTarvisFixedNumber(share, 1)}% of observed sensor time was ${wording.phrase}`;
+        }
         const lower = thresholdFor(executable.thresholds, "range_lower");
         const upper = thresholdFor(executable.thresholds, "range_upper");
         return `${formatTarvisFixedNumber(metric.value, 1)}% of observed sensor time was within ${regionalGlucoseRange(lower.value, upper.value)} range`;
@@ -1251,7 +1259,26 @@ function presentationKind(metrics: SupportedMetric[]) {
   }
 }
 
-function answerHeadline(calculation: RangeCalculation) {
+/** The share a named time-in-range answer leads with ("time below 3" leads with the share below). */
+function timeInRangeShare(
+  wording: TarvisTimeInRangeWording,
+  inRangePercent: number | null,
+  calculation: RangeCalculation,
+) {
+  switch (wording.share) {
+    case "inRange":
+      return inRangePercent;
+    case "below":
+      return calculation.distribution?.belowPercent ?? null;
+    case "above":
+      return calculation.distribution?.abovePercent ?? null;
+  }
+}
+
+function answerHeadline(
+  executable: ExecutableRangeIntent,
+  calculation: RangeCalculation,
+) {
   const first = calculation.metrics[0];
   if (!first || first.value === null) return "Glucose result unavailable";
   if (calculation.metrics.length > 1) return "Observed glucose results";
@@ -1270,8 +1297,14 @@ function answerHeadline(calculation: RangeCalculation) {
       return `Observed glucose coefficient of variation: ${formatTarvisFixedNumber(first.value, 1)}%`;
     case "glucose.gmi":
       return `Estimated glucose management indicator: ${formatTarvisFixedNumber(first.value, 1)}%`;
-    case "glucose.time_in_range":
+    case "glucose.time_in_range": {
+      const wording = tarvisTimeInRangeWording(executable.intent.thresholds);
+      if (wording?.named) {
+        const share = timeInRangeShare(wording, first.value, calculation);
+        return `${wording.title}: ${share === null ? "unavailable" : `${formatTarvisFixedNumber(share, 1)}%`}`;
+      }
       return `Observed time in range: ${formatTarvisFixedNumber(first.value, 1)}%`;
+    }
     case "glucose.low_episodes":
       return `Observed low-glucose events: ${formatTarvisNumber(first.value, { maximumFractionDigits: 0 })}`;
     case "glucose.high_episodes":
@@ -1593,7 +1626,7 @@ function executeLocalGlucoseRangeAnswer(
           ? noData
             ? "Glucose comparison incomplete"
             : "Observed glucose comparison"
-          : answerHeadline(current),
+          : answerHeadline(executable, current),
       answer: `${answerParts.join(". ")}.`,
       confidence: limited || noData || gmiInsufficient ? "limited" : "high",
       evidenceIds: evidence.map(({ id }) => id),
@@ -1619,7 +1652,10 @@ function executeLocalGlucoseRangeAnswer(
             : value.coveragePercent < SUFFICIENT_COVERAGE_PERCENT
               ? ("limited" as const)
               : ("sufficient" as const),
-        metrics: metricPresentation(value),
+        metrics: metricPresentation(
+          value,
+          tarvisTimeInRangeRowLabels(executable.intent.thresholds),
+        ),
       })),
     },
   };

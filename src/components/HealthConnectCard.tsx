@@ -1226,6 +1226,14 @@ export function HealthConnectCard({
                     overview.background.recordsRemoved
                       ? ` · ${regionalCount(overview.background.recordsRemoved)} removed items cleared`
                       : ''
+                  }${
+                    overview.background.recordsWritten !== undefined
+                      ? ` · ${regionalCount(overview.background.recordsWritten)} stored`
+                      : ''
+                  }${
+                    overview.background.durationMs !== undefined
+                      ? ` · took ${regionalCount(Math.max(1, Math.round(overview.background.durationMs / 1000)))} s`
+                      : ''
                   }${overview.background.failures ? ` · ${overview.background.failures} ${overview.background.failures === 1 ? 'area needs' : 'areas need'} attention` : ''}.`
                 : 'Automatic checks are ready and waiting for their first run.'}
             </Text>
@@ -1589,8 +1597,8 @@ const styles = StyleSheet.create({
     borderRadius: 99,
   },
   statusText: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.35,
     textTransform: 'uppercase',
@@ -1656,8 +1664,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   allowed: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     letterSpacing: 0.55,
     fontWeight: '900',
     marginTop: 1,
@@ -1794,8 +1802,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   syncPanelMode: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '900',
     letterSpacing: 0.45,
     marginTop: 2,

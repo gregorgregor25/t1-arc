@@ -4,14 +4,18 @@ import {
   PendingTarvisClarification,
   resolveTarvisClarificationReply,
   resolveTarvisCompoundIntents,
+  TarvisGlucoseTargetProfile,
   TarvisIntentHistoryEntry,
   TarvisIntentResolution,
   TarvisIntentV1,
 } from "./intent";
 import { resolveTarvisEvidenceRangeRequest } from "./evidenceRange";
 import { routeTarvisIntent } from "./onDeviceRouting";
-import { classifyTarvisSafety } from "./safety";
-import { safetyQuestionWithImmediateContext } from "./safetyContext";
+import {
+  classifyTarvisTurnSafety,
+  TARVIS_QUESTION_MAX_LENGTH,
+} from "./safety";
+import { formatTarvisNumber } from "./regionalNumberPresentation";
 import {
   classifyTarvisQuestion,
   isClearlyOffTopicTarvisQuestion,
@@ -36,12 +40,18 @@ import {
   selectTarvisReviewedKnowledge,
 } from "./reviewedKnowledge";
 import { reviewedKnowledgeFallback } from "./reviewedKnowledgeAnswerGuardrail";
+import {
+  parseTherapyStateQuestion,
+  rangeForTherapyStateQuestion,
+  type TherapyStateQuery,
+} from "./therapyStateEvidence";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import {
   buildTarvisEvidencePlanningOptions,
   type TarvisEvidencePlanningOptions,
 } from "./evidencePlanner";
 import { isTarvisTreatmentProfileQuestion } from "./treatmentProfileAnswer";
+import { parseRecordQuestion, type RecordQuestion } from "./recordQuestions";
 import type { TarvisHealthMetric } from '@/domain/tarvisEntry';
 
 const PERSONAL_ACTIVITY_GUIDANCE_REVIEW =
@@ -140,6 +150,17 @@ export type TarvisRequestPlan =
       kind: "treatment-profile";
     }
   | {
+      /** A question answered from stored records on the phone, with no AI request. */
+      kind: "record-question";
+      question: RecordQuestion;
+    }
+  | {
+      /** A recorded AAPS temporary target, profile switch or running mode. */
+      kind: "therapy-state";
+      query: TherapyStateQuery;
+      range: { start: number; end: number };
+    }
+  | {
       kind: "scoped-compound";
       intents: TarvisIntentV1[];
     }
@@ -183,6 +204,8 @@ export interface CoordinateTarvisRequestInput {
   conversationHistory?: TarvisConversationTurn[];
   intentHistory?: TarvisIntentHistoryEntry[];
   pendingClarification?: PendingTarvisClarification;
+  /** The user's own In range band, used only for "time in my range" questions. */
+  personalTargetProfile?: TarvisGlucoseTargetProfile;
 }
 
 function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
@@ -194,6 +217,16 @@ function scopeAnswer(scope: Exclude<TarvisScope, "in_scope">): TarvisAnswer {
     answer: credentialRequest
       ? "Tarv1s cannot retrieve or display passwords, API keys, tokens or other secrets. No AI provider request was made."
       : "Tarv1s answers questions about Type 1 diabetes, health, nutrition and your records in T1 Arc. It does not answer unrelated requests. No AI provider request was made.",
+    confidence: "high",
+    evidenceIds: [],
+    limitations: [],
+  };
+}
+
+function questionTooLongAnswer(): TarvisAnswer {
+  return {
+    headline: "That message is too long",
+    answer: `Please keep the question under ${formatTarvisNumber(TARVIS_QUESTION_MAX_LENGTH, { maximumFractionDigits: 0 })} characters. No records were read and no AI provider request was made.`,
     confidence: "high",
     evidenceIds: [],
     limitations: [],
@@ -246,12 +279,16 @@ export function coordinateTarvisRequest({
   conversationHistory = [],
   intentHistory = [],
   pendingClarification,
+  personalTargetProfile,
 }: CoordinateTarvisRequestInput): TarvisRequestPlan {
-  const safety = classifyTarvisSafety(
-    safetyQuestionWithImmediateContext(question, conversationHistory),
-  );
+  const safety = classifyTarvisTurnSafety(question, conversationHistory);
   if (safety.kind !== "allow") {
     return { kind: "answer", answer: safety.answer, source: "safety" };
+  }
+  // Same limit as the composer and the provider client; nothing longer is
+  // parsed locally or sent anywhere.
+  if (question.length > TARVIS_QUESTION_MAX_LENGTH) {
+    return { kind: "answer", answer: questionTooLongAnswer(), source: "scope" };
   }
 
   const scope = classifyTarvisQuestion(question, conversationHistory);
@@ -263,6 +300,26 @@ export function coordinateTarvisRequest({
   }
   if (scope === "in_scope" && isTarvisTreatmentProfileQuestion(question)) {
     return { kind: "treatment-profile" };
+  }
+  // Safety and scope have already run, so a request for advice never
+  // reaches this record lookup.
+  const recordQuestion = parseRecordQuestion(question);
+  if (recordQuestion) {
+    return { kind: "record-question", question: recordQuestion };
+  }
+  // Before the activity review: "during my Activity temp target" names a
+  // recorded AAPS state, not an activity to search for.
+  const therapyStateQuery = parseTherapyStateQuestion(question);
+  if (therapyStateQuery) {
+    const resolved = rangeForTherapyStateQuestion(question, asOf);
+    if ("issue" in resolved) {
+      return {
+        kind: "answer",
+        answer: unsupportedRangeAnswer(resolved.issue),
+        source: "evidence-range",
+      };
+    }
+    return { kind: "therapy-state", query: therapyStateQuery, range: resolved.range };
   }
   const dependentEducationFollowUp =
     isTarvisDependentFollowUp(question) && conversationHistory.length >= 2;
@@ -336,6 +393,7 @@ export function coordinateTarvisRequest({
       history: intentHistory,
       now: asOf,
       timezone: getRuntimeRegionalDefaults().timeZone,
+      personalTargetProfile,
     },
     pendingClarification,
   );
@@ -383,6 +441,7 @@ export function coordinateTarvisRequest({
   const compound = resolveTarvisCompoundIntents(resolution, {
     now: asOf,
     timezone: getRuntimeRegionalDefaults().timeZone,
+    personalTargetProfile,
   });
   if (compound) {
     const routes = compound.map((intent) => routeTarvisIntent({

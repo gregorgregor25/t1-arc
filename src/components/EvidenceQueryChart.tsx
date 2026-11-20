@@ -322,7 +322,7 @@ function TracePanels({
                         />
                         <SvgText
                           fill={colors.textTertiary}
-                          fontSize={8.5}
+                          fontSize={11}
                           x={LEFT + plotWidth + 6}
                           y={y(tick) + 3}
                         >
@@ -343,7 +343,7 @@ function TracePanels({
                         />
                         <SvgText
                           fill={colors.accent}
-                          fontSize={8.5}
+                          fontSize={11}
                           fontWeight="800"
                           textAnchor="end"
                           x={LEFT + plotWidth - 3}
@@ -402,7 +402,7 @@ function TracePanels({
                         />
                         <SvgText
                           fill={colors.textTertiary}
-                          fontSize={8.5}
+                          fontSize={11}
                           textAnchor={
                             index === 0
                               ? 'start'
@@ -419,8 +419,8 @@ function TracePanels({
                     ))}
                     <SvgText
                       fill={colors.textTertiary}
-                      fontSize={8}
-                      letterSpacing={0.45}
+                      fontSize={11}
+                      letterSpacing={0.2}
                       textAnchor="middle"
                       x={LEFT + plotWidth / 2}
                       y={bottom + 36}
@@ -735,11 +735,11 @@ function EventPanels({
                             {endX - startX > 26 ? (
                               <SvgText
                                 fill={colors.background}
-                                fontSize={8}
+                                fontSize={11}
                                 fontWeight="800"
                                 textAnchor="middle"
                                 x={(startX + endX) / 2}
-                                y={27}
+                                y={28}
                               >
                                 {index + 1}
                               </SvgText>
@@ -750,7 +750,7 @@ function EventPanels({
                       {ticks.map((tick, index) => (
                         <SvgText
                           fill={colors.textTertiary}
-                          fontSize={8.5}
+                          fontSize={11}
                           key={tick}
                           textAnchor={
                             index === 0
@@ -767,8 +767,8 @@ function EventPanels({
                       ))}
                       <SvgText
                         fill={colors.textTertiary}
-                        fontSize={8}
-                        letterSpacing={0.4}
+                        fontSize={11}
+                        letterSpacing={0.2}
                         textAnchor="middle"
                         x={LEFT + plotWidth / 2}
                         y={73}
@@ -953,8 +953,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   windowRange: {
-    fontSize: 10.5,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   coverageChip: {
@@ -966,9 +966,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   coverageText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    lineHeight: 14,
+    lineHeight: 16,
   },
   panelSpacing: {
     marginTop: 20,
@@ -995,8 +995,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   emptyDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 2,
   },
   noteRow: {
@@ -1007,8 +1007,8 @@ const styles = StyleSheet.create({
   },
   noteText: {
     flex: 1,
-    fontSize: 10.5,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   legendRow: {
     flexDirection: 'row',
@@ -1027,9 +1027,9 @@ const styles = StyleSheet.create({
     width: 22,
   },
   legendText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    lineHeight: 14,
+    lineHeight: 16,
   },
   thresholdRow: {
     alignItems: 'center',
@@ -1039,9 +1039,9 @@ const styles = StyleSheet.create({
   },
   thresholdText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    lineHeight: 16,
+    lineHeight: 18,
   },
   distributionCard: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1060,7 +1060,7 @@ const styles = StyleSheet.create({
     minWidth: 2,
   },
   segmentSymbol: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '900',
   },
   distributionLegend: {
@@ -1082,20 +1082,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   distributionSymbolText: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '900',
   },
   distributionLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   distributionValue: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
   },
   denominatorText: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 12,
   },
   eventCard: {
@@ -1129,17 +1129,17 @@ const styles = StyleSheet.create({
     width: 22,
   },
   eventIndexText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '900',
   },
   eventDetail: {
     flex: 1,
-    fontSize: 10.5,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
   },
   noEvents: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 6,
   },
   dataButton: {
@@ -1161,8 +1161,8 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   dataButtonDetail: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 1,
   },
 });

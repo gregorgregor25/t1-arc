@@ -53,6 +53,9 @@ vi.mock("@/providers/GlucoseAppearanceProvider", () => ({
   useGlucoseAppearance: () => ({ reload: vi.fn() }),
 }));
 vi.mock("@/theme/theme", () => ({ useAppTheme: vi.fn() }));
+vi.mock("@/hooks/useSystemBarInsets", () => ({
+  useSystemBarInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 vi.mock("@/components/SectionCard", () => ({ SectionCard: () => null }));
 
 function preferencePayload(version: 1 | 2 | 3 | 4) {
@@ -288,6 +291,16 @@ describe("committed encrypted backup restore reporting", () => {
     ).text;
     expect(secondMessage).toContain("inactive alerts");
     expect(secondMessage).not.toMatch(/theme|health goal/i);
+  });
+
+  it("adds alarm restore notices such as a replaced custom sound", () => {
+    const message = describeCommittedBackupRestore({
+      ...result,
+      preferenceNotice: "Alarm choices were restored switched off. The sound “Bell” is not on this phone, so low alerts use the built-in Steady pulse sound.",
+    } as never);
+    expect(message.tone).toBe("success");
+    expect(message.text).toContain("restored switched off");
+    expect(message.text).toContain("built-in Steady pulse sound");
   });
 
   it("reports failed preference restoration as partial, not wholesale failure", () => {

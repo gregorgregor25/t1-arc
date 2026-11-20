@@ -22,6 +22,7 @@ import {
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useDataContext } from "@/providers/DataProvider";
 import { TourArtwork } from "@/screens/onboarding/TourArtwork";
+import { TourSetupPanel } from "@/screens/onboarding/TourSetupPanel";
 import {
   LAST_ONBOARDING_TOUR_INDEX,
   ONBOARDING_TOUR_STEPS,
@@ -168,7 +169,8 @@ function OnboardingScreenContent({
   async function finish(destination: OnboardingFinishDestination) {
     if (finishingRef.current) return;
     if (mode === "replay") {
-      closeReplay();
+      if (destination === "Alerts") onComplete("Alerts");
+      else closeReplay();
       return;
     }
     finishingRef.current = true;
@@ -332,7 +334,7 @@ function OnboardingScreenContent({
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
             >
-              <TourArtwork step={step.id} />
+              {step.id === "setup" ? null : <TourArtwork step={step.id} />}
               <View style={styles.copyBlock}>
                 <Text style={[styles.eyebrow, { color: colors.accent }]}>
                   {step.eyebrow}
@@ -374,6 +376,14 @@ function OnboardingScreenContent({
                     The walkthrough uses illustrative example data, never your
                     health records.
                   </Text>
+                ) : null}
+                {step.id === "setup" ? (
+                  <View style={styles.setupPanel}>
+                    <TourSetupPanel
+                      onOpenAlerts={() => void finish("Alerts")}
+                      openAlertsBusy={finishing}
+                    />
+                  </View>
                 ) : null}
                 {error ? <InlineError message={error} /> : null}
               </View>
@@ -679,8 +689,8 @@ const styles = StyleSheet.create({
   },
   copyBlock: { paddingHorizontal: 2, paddingTop: 24 },
   eyebrow: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "900",
     letterSpacing: 1.35,
   },
@@ -707,9 +717,10 @@ const styles = StyleSheet.create({
     marginTop: 17,
   },
   tipText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  setupPanel: { marginTop: 17 },
   exampleNote: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     textAlign: "center",
     marginTop: 13,
     paddingHorizontal: 12,

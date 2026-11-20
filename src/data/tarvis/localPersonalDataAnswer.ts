@@ -33,7 +33,7 @@ import {
   summarizeInsulinByDay,
   summarizeInsulinRange,
 } from "@/domain/timelineInsulinSummary";
-import { toDateKey } from "@/domain/time";
+import { formatShortDate, toDateKey } from "@/domain/time";
 import { assessGlucoseTrend, presentTrend } from "@/domain/trend";
 import {
   mealNutrientIsPartial,
@@ -455,6 +455,46 @@ function insulinExamples(data: TimelineData, ids: Set<string>) {
   return representative(previews.sort((a, b) => a.timestamp - b.timestamp));
 }
 
+/**
+ * Says which part is missing when boluses are stored but timed basal is not,
+ * so the reply names exactly why a full total is not given.
+ */
+function missingInsulinPartSentence(
+  selected: Extract<PersonalMetric, `insulin.${string}`>,
+  boluses: readonly { units: number }[],
+  basalRecordCount: number,
+  dailyTotals: TimelineData["dailyInsulinTotals"],
+  requestedDateKeys: readonly string[],
+) {
+  if (selected === "insulin.bolus_total" || boluses.length === 0 || basalRecordCount > 0) {
+    return undefined;
+  }
+  const savedBasal = (dailyTotals ?? []).some(
+    (total) =>
+      total.basalUnits !== undefined &&
+      total.dateKey >= requestedDateKeys[0]! &&
+      total.dateKey <= requestedDateKeys[1]!,
+  );
+  if (savedBasal) return undefined;
+  const units = boluses.reduce((sum, { units }) => sum + units, 0);
+  const count = formatTarvisNumber(boluses.length, { maximumFractionDigits: 0 });
+  return `${count} bolus record${boluses.length === 1 ? " is" : "s are"} stored for this period (${formatTarvisFixedNumber(units, 2)} U). No basal records are stored, so a ${selected === "insulin.basal_total" ? "basal" : "full"} total is not available.`;
+}
+
+/** "Stored insulin records start on Sun 17 Nov." when the period starts earlier. */
+function storedInsulinStartSentence(
+  sources: readonly { dataFrom?: number }[],
+  range: TimelineData["range"],
+) {
+  const starts = sources
+    .map(({ dataFrom }) => dataFrom)
+    .filter((value): value is number => value !== undefined);
+  if (!starts.length) return undefined;
+  const earliest = Math.min(...starts);
+  if (earliest <= range.start) return undefined;
+  return `Stored insulin records start on ${formatShortDate(toDateKey(earliest))}.`;
+}
+
 function insulinResult(
   selected: Extract<PersonalMetric, `insulin.${string}`>,
   data: TimelineData,
@@ -602,6 +642,14 @@ function insulinResult(
             ? "I have daily basal summaries for some of these dates, but they do not cover the exact requested hours or every day. Ask for a specific calendar-day basal summary instead."
             : `I have a daily basal summary saved for ${requestedDateKeys[0]}, but it does not show how much basal was delivered during the specific hours requested. Ask "How much basal insulin on ${requestedDateKeys[0]}?" for the day-level amount.`
         : null;
+    const missingPart = missingInsulinPartSentence(
+      selected,
+      relevantBoluses,
+      relevantBasal.length,
+      data.dailyInsulinTotals,
+      requestedDateKeys,
+    );
+    const historyStart = storedInsulinStartSentence(sources, data.range);
     return {
       metric: selected,
       value: null,
@@ -609,11 +657,16 @@ function insulinResult(
       decimals: 1,
       status: "unavailable",
       label,
-      sentence:
+      sentence: [
         dailyBasalExplanation ??
-        (connected(sources)
-          ? `The available insulin records do not support a reliable ${label.toLowerCase()} total for this period.`
-          : "No insulin source is connected for this period."),
+          (connected(sources)
+            ? `The available insulin records do not support a reliable ${label.toLowerCase()} total for this period.`
+            : "No insulin source is connected for this period."),
+        missingPart,
+        historyStart,
+      ]
+        .filter(Boolean)
+        .join(" "),
       limitations: [
         "Missing insulin records were not treated as zero delivery.",
       ],

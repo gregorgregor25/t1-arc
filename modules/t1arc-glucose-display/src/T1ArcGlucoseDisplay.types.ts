@@ -1,4 +1,10 @@
 import { GlucoseAppearanceSettings } from '../../../src/domain/glucoseAppearance';
+export type {
+  GlucoseAlarmConfiguration,
+  GlucoseAlarmCustomSound,
+  GlucoseAlarmKind,
+  GlucoseAlarmStatus,
+} from '../../../src/domain/glucoseAlarms';
 
 export type GlucoseDisplayFreshness =
   'current' | 'delayed' | 'stale' | 'missing';
@@ -59,6 +65,11 @@ export interface GlucoseDisplayStatus {
   aodOverlayVisible: boolean;
   androidAutoEnabled: boolean;
   androidAutoProjected: boolean;
+  /**
+   * Whether insulin and carbs on board appear beside glucose on the
+   * notification and widget. Absent from builds without the setting.
+   */
+  onBoardEstimatesVisible?: boolean;
   aodLastEvent?: string;
   aodLastError?: string;
   latestMmolL?: number;
@@ -126,6 +137,81 @@ export interface GlucoseDisplayPublicationSnapshot {
   sourceLabel: string;
   sourceHasError: boolean;
   trendOrigin: GlucoseDisplayTrendOrigin;
+}
+
+export interface AapsLocalReading {
+  id: string;
+  receivedAt: number;
+  writeEpoch: number;
+  selectionGeneration: number;
+  glucoseMgdl?: number;
+  glucoseTimestamp?: number;
+  trend?: string;
+  rawTrend?: string;
+  deltaMgdl?: number;
+  avgDeltaMgdl?: number;
+  iobUnits?: number;
+  bolusIobUnits?: number;
+  basalIobUnits?: number;
+  cobGrams?: number;
+  futureCarbsGrams?: number;
+  displayUnits?: string;
+}
+
+/** A primitive field AAPS sent in its xDrip+ treatment broadcast, after native checks. */
+export type AapsLocalTreatmentValue = string | number | boolean;
+
+/**
+ * One treatment from the AAPS xDrip+ sync broadcast. Native code accepts only
+ * listed fields within plausible ranges; JS validates again before storing.
+ */
+export interface AapsLocalTreatment {
+  id: string;
+  receivedAt: number;
+  writeEpoch: number;
+  selectionGeneration: number;
+  /**
+   * True only when Android named the sender and it was AAPS. Android usually
+   * cannot name it, so most records are unverified. Absent means unverified.
+   */
+  senderVerified?: boolean;
+  treatment: Record<string, AapsLocalTreatmentValue>;
+}
+
+/**
+ * Insulin and carbs on board reported through Nightscout, for the glance
+ * surfaces. AAPS estimates are written natively and never sent this way.
+ * A missing value is omitted, never sent as zero.
+ */
+export interface OnBoardEstimatePublication {
+  provenance: 'nightscout';
+  iobUnits?: number;
+  cobGrams?: number;
+  /** When the looping system reported the estimate, in epoch ms. */
+  receivedAt: number;
+}
+
+export interface AapsTreatmentStatus {
+  supported: boolean;
+  bufferedCount: number;
+  droppedCount: number;
+  /**
+   * The user's opt-in to read AAPS's xDrip+ treatment broadcasts on this
+   * phone. Off by default; absent on builds without the switch means off.
+   */
+  localRouteEnabled?: boolean;
+}
+
+export interface AapsLocalStatus {
+  supported: boolean;
+  selectedSourceId?: string;
+  selectionGeneration: number;
+  writeEpoch: number;
+  lastReceivedAt?: number;
+  latestGlucoseTimestamp?: number;
+  latest?: AapsLocalReading;
+  bufferedCount: number;
+  droppedCount?: number;
 }
 
 export type { GlucoseAppearanceSettings };

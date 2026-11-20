@@ -31,6 +31,10 @@ export interface GlucoseTrendAssessment {
   windowMinutes?: number;
   supportingReadings: GlucoseReading[];
   reason?: string;
+  /** Inspectable source meaning, separate from the concise direction label. */
+  sourceDetail?: string;
+  /** The existing watch protocol has no distinct triple-arrow category. */
+  compatibilityNote?: string;
 }
 
 /**
@@ -51,10 +55,16 @@ export function assessGlucoseTrend(
     };
   }
   if (current.trend !== 'unknown') {
+    const tripleUp = current.trend === 'tripleUp';
+    const tripleDown = current.trend === 'tripleDown';
     return {
       direction: current.trend,
       origin: 'source',
       supportingReadings: [current],
+      ...(tripleUp || tripleDown ? {
+        sourceDetail: `Source reported ${tripleUp ? 'TripleUp' : 'TripleDown'} (a triple-${tripleUp ? 'up' : 'down'} arrow).`,
+        compatibilityNote: `The current watch companion shows a double-${tripleUp ? 'up' : 'down'} arrow for this source direction.`,
+      } : {}),
     };
   }
 

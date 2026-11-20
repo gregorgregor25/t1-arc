@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     showAlert: vi.fn(async () => true),
     cancelAlerts: vi.fn(async () => true),
     mirrorOwner: vi.fn(async () => true),
+    nativeReconcile: vi.fn(async () => false),
     nextAlertCheck: vi.fn(async (_epochMs: number | null) => true),
   };
 });
@@ -38,6 +39,7 @@ vi.mock('../modules/t1arc-glucose-display', () => ({
     showGlucoseAlertAsync: mocks.showAlert,
     cancelGlucoseAlertsAsync: mocks.cancelAlerts,
     setGlucoseAlertMonitoringEnabledAsync: mocks.mirrorOwner,
+    reconcileGlucoseAlarmAsync: mocks.nativeReconcile,
     setNextAlertCheckAtAsync: mocks.nextAlertCheck,
   },
 }));
@@ -87,7 +89,29 @@ describe('glucose alert operation serialization', () => {
     mocks.showAlert.mockReset().mockResolvedValue(true);
     mocks.cancelAlerts.mockReset().mockResolvedValue(true);
     mocks.mirrorOwner.mockReset().mockResolvedValue(true);
+    mocks.nativeReconcile.mockReset().mockResolvedValue(false);
     mocks.nextAlertCheck.mockReset().mockResolvedValue(true);
+  });
+
+  it('leaves all notification and episode state ownership with the configured native engine', async () => {
+    mocks.nativeReconcile.mockResolvedValue(true);
+    const result = await reconcileGlucoseAlerts(lowReading(), 'down', NOW);
+    expect(result.nativeOwned).toBe(true);
+    expect(result.notified).toBe(false);
+    // The native engine keeps its own exact timers, so the collector must not
+    // keep waking for a check the retired JS engine left behind.
+    expect(mocks.nextAlertCheck).toHaveBeenLastCalledWith(null);
+    expect(mocks.cancelAlerts).not.toHaveBeenCalled();
+    expect(mocks.showAlert).not.toHaveBeenCalled();
+    expect(mocks.setItem).not.toHaveBeenCalled();
+    expect(mocks.deleteItem).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to the old notification engine when native ownership cannot be checked', async () => {
+    mocks.nativeReconcile.mockRejectedValue(new Error('Native alarm store unavailable'));
+    await expect(reconcileGlucoseAlerts(lowReading(), 'down', NOW)).rejects.toThrow(/unavailable/);
+    expect(mocks.cancelAlerts).not.toHaveBeenCalled();
+    expect(mocks.showAlert).not.toHaveBeenCalled();
   });
 
   it('tells the native collector when the reading would turn stale', async () => {

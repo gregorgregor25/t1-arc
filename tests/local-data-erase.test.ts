@@ -94,6 +94,9 @@ vi.mock("@/data/hevy/repository", () => ({
 vi.mock("@/data/insights/insightReviewPreferences", () => ({
   clearInsightReviewPreferences: mocks.cleanup,
 }));
+vi.mock("@/data/todayCardPreferences", () => ({
+  clearTodayCardPreferences: mocks.cleanup,
+}));
 vi.mock("@/data/backup/backupStatus", () => ({
   clearBackupStatus: mocks.cleanup,
 }));
@@ -314,6 +317,7 @@ describe("local data erase", () => {
       );
     }
     expect(sql).toContain("DELETE FROM health_connect_preferences");
+    expect(sql).toContain("DELETE FROM aaps_status_observations");
     expect(
       sql.some((statement) =>
         statement.includes("INSERT INTO health_connect_preferences"),

@@ -12,6 +12,7 @@ import { FOOD_CATALOGUE_REGIONAL_CONTEXT_KEY } from './providerRetention';
 import { USDA_REFERENCE_CATALOG_INFO } from './usdaReferenceCatalog';
 import { canonicalFoodBarcode } from './barcodeIdentity';
 import { servingAmountFromRawPayload } from './servings';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const USDA_FDC_SEARCH_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 const USDA_FDC_DEFAULT_API_KEY = 'DEMO_KEY';
@@ -277,7 +278,7 @@ async function requestFoodDataCentral(
   if (!response.ok) {
     throw new FoodLookupError(
       'service',
-      `USDA FoodData Central returned HTTP ${response.status}.`,
+      serviceStatusMessage('USDA FoodData Central', response.status),
     );
   }
   try {

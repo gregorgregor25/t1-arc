@@ -387,4 +387,52 @@ class AdaptiveSyncCadenceTest {
     syncCompleted()
     return newer
   }
+
+  @Test fun aapsPushSourceDoesNotPollWithoutAnAlertCheck() {
+    assertEquals(AAPS_MAX_SYNC_DEFERRAL_MS, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, null))
+    assertEquals(AAPS_MAX_SYNC_DEFERRAL_MS, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, 0L))
+    // At most four collector wakes an hour, against 60 to 240 on the legacy
+    // cadence and up to 180 while a five-minute source is overdue.
+    assertEquals(4L, 60 * min / GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, null))
+  }
+
+  @Test fun aapsPushSourceStillWakesForDueAlertChecks() {
+    assertEquals(2 * min, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, t0 + 2 * min))
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, t0 + 1_000L))
+    assertEquals(15_000L, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, t0 - 30_000L))
+    assertEquals(60_000L, GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, t0 - 5 * min))
+    assertEquals(AAPS_MAX_SYNC_DEFERRAL_MS,
+      GlucoseSyncCadencePolicy.pushSourceDelayMs(t0, t0 + 40 * min))
+  }
+
+  @Test fun aapsWearHistoryMatchesTheSixHourWindowTheSyncPublishes() {
+    val hour = 60 * min
+    val published = listOf(
+      GlucoseHistoryPoint(5.0, t0 - 7 * hour),
+      GlucoseHistoryPoint(5.5, t0 - 6 * hour + 5 * min),
+      GlucoseHistoryPoint(6.0, t0 - 5 * hour),
+      GlucoseHistoryPoint(6.5, t0),
+    )
+    val widget = listOf(GlucoseHistoryPoint(6.0, t0 - 5 * hour))
+    assertEquals(
+      listOf(
+        GlucoseHistoryPoint(5.5, t0 - 6 * hour + 5 * min),
+        GlucoseHistoryPoint(6.0, t0 - 5 * hour),
+        GlucoseHistoryPoint(6.5, t0),
+        GlucoseHistoryPoint(7.0, t0 + 5 * min),
+      ),
+      aapsWearHistory(published, widget, 7.0, t0 + 5 * min),
+    )
+    // A corrected value replaces the point at the same time.
+    assertEquals(
+      listOf(
+        GlucoseHistoryPoint(5.5, t0 - 6 * hour + 5 * min),
+        GlucoseHistoryPoint(6.0, t0 - 5 * hour),
+        GlucoseHistoryPoint(6.7, t0),
+      ),
+      aapsWearHistory(published, widget, 6.7, t0),
+    )
+    // Nothing published yet: fall back to the widget history.
+    assertEquals(widget, aapsWearHistory(emptyList(), widget, 7.0, t0))
+  }
 }

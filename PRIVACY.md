@@ -10,6 +10,20 @@ build must review the exact build, hosting, support and store configuration.
 
 ## Local storage
 
+The glucose alarm engine stores its configuration, episode state,
+snooze deadlines and imported audio names in Android Keystore-backed encrypted
+storage. User-selected audio is copied into private app storage and is not sent
+to a server or Tarv1s. Android system backup remains disabled. User-created
+encrypted portable backups include the alarm choices (thresholds, enabled
+levels, sound choices, snooze-related and night-schedule settings) but never the
+alert or sound switches, so a restore leaves alarms off for review. Custom
+sounds appear only as an opaque ID and the name the user saw; the audio files
+are never included. A missing custom sound falls back to a built-in sound after
+restore. Users should still check and test alarms on a replacement phone. Full local-data erasure disables
+the alarm owner and removes its private audio copies. Hiding lock-screen values
+redacts alarm notification content without acknowledging the alert or stopping
+its audio. See [glucose alarms](docs/GLUCOSE_ALARMS.md) for limitations.
+
 Manual cycle periods, flow, symptoms and notes are stored in the encrypted local
 health database. They are included in user-created encrypted portable backups
 and removed by local health-data erasure. Cycle tracking can display existing
@@ -71,6 +85,41 @@ watch on the local network. Pairing codes are temporary; its ADB identity is
 kept in Android secure storage. Connections close after setup. Disabling watch
 debugging does not stop normal paired-watch glucose delivery.
 
+The optional AAPS local source reads the status broadcast that AndroidAPS sends
+on the same phone: glucose, trend, IOB and COB. This route uses no network
+connection, and T1 Arc sends nothing back to AAPS or the pump. Readings are
+kept in T1 Arc's encrypted local storage with their AAPS provenance. A separate
+switch, off by default, also accepts AAPS's xDrip+ treatment broadcasts
+(insulin, carbohydrate and settings records). Android cannot confirm who sent
+them, so they are labelled as unverified and held in Keystore-encrypted storage
+until saved. Any other app on the phone that listens for the same broadcasts
+also receives what AAPS sends; that is how AAPS shares them. See
+[AAPS local source](docs/AAPS_LOCAL_SOURCE.md).
+
+## Record exports and shared summaries
+
+Exports are made only when the user asks. **History → Share or export** and
+**Settings → Backup and privacy → Export records** can save glucose readings or
+insulin, carbohydrate and treatment records as CSV files, or a one-page clinic
+report as a self-contained HTML file (open it and print to PDF). **Copy summary
+as text** passes a text summary of the period on screen to Android's share
+sheet, which also offers Copy.
+
+These files and summaries are built on the phone from stored records. T1 Arc
+does not upload them. They are **not encrypted**: before each export or share,
+T1 Arc says so and asks the user to continue. Once saved or shared, a copy is
+outside T1 Arc's protection and the destination app's privacy practices apply.
+Erasing this device's data does not remove exported copies.
+
+CSV rows include local time with its UTC offset, the UTC time, the time zone,
+units, the source name, the source's record identifier and, where stored, the
+import time, source file name and row and source device identifier. They do not
+include provider credentials, tokens or Tarv1s conversations. The clinic report
+contains summary figures, charts drawn from readings, insulin and carbohydrate
+totals and the names of the data sources; it loads nothing from the network.
+Temporary files use the same private working directory and cleanup as other
+exports and are removed after saving or cancelling.
+
 ## Network flows chosen by the user
 
 T1 Arc has no maintainer data relay in the normal app path. A connection sends
@@ -98,12 +147,15 @@ data directly from the device to the service the user selected:
   The sign-in does not give T1 Arc access to existing ChatGPT conversations.
   Validated OAuth credentials stay in Android secure storage, outside portable
   backups; a sign-out attempts remote revocation and removes local tokens.
-- **About T1 Arc > Check for updates** makes a manual, unauthenticated request
+- **About and updates > Check for updates** makes a manual, unauthenticated request
   to GitHub for public release and build metadata. It does not send health
   records, provider credentials or a device identifier. GitHub still receives
   ordinary network metadata such as the IP address. Opening the release page
   or downloading an APK uses GitHub and its asset hosts. Nothing downloads or
   installs automatically; Android asks before an update is installed.
+- The same request also runs automatically, at most once a day, while
+  **About and updates > Tell me when an update is out** is on. See
+  [Daily update check](#daily-update-check-on-by-default).
 - Submitted branded-food text or a barcode, plus selected country/language
   context, can be sent to Open Food Facts. A US barcode miss can trigger the
   documented low-rate USDA exact-GTIN fallback. These services also see the
@@ -125,13 +177,45 @@ purely local processing. In particular, Google's Gemini API terms require a
 billing-enabled project for health information in this route; users should
 review the [provider-specific requirements](docs/TARV1S_BYOK.md#choose-a-provider).
 
+## Daily update check (on by default)
+
+This is one of two network flows that are on without the user choosing them;
+the other is [anonymous usage counts](#anonymous-usage-counts-on-by-default).
+It tells people when a new public version is published, including people who
+rarely open the app. It can be turned off at any time in
+**About and updates > Tell me when an update is out**. Existing users get the
+default unless they turn it off.
+
+- **What is sent.** At most once a day, on an app open or after the phone's
+  glucose collector syncs, T1 Arc makes the same unauthenticated request to
+  GitHub's public release information as **Check for updates**. It sends no
+  health records, readings, account details, credentials, cookies or device
+  identifier. GitHub receives ordinary network metadata such as the IP
+  address, as with any website. The request goes to GitHub, not to the
+  maintainer.
+- **What is shown.** When GitHub lists a newer verified public phone release,
+  T1 Arc shows one quiet notification for that version, if Android
+  notifications are allowed. Tapping it opens **About and updates** with the
+  release notes. Nothing downloads or installs automatically.
+- **What is stored.** The time of the last check, the newest version
+  announced, and a newer release the check found with its public release
+  notes, so **About and updates** can show them without asking GitHub again. They
+  are kept in Android secure storage on the phone and are not part of
+  encrypted backups.
+- **Test builds.** Builds whose version has a suffix (for example
+  `1.7.21-aaps.4`) and other Android packages never check automatically, so a
+  public release is never suggested over features only that build has.
+
 ## Anonymous usage counts (on by default)
 
-This is the one network flow that is on without the user choosing it. It sends
-no health data, and it is the only message T1 Arc sends to the maintainer by
-default. It lets the maintainer see roughly how many people use each version.
-There is no prompt; it can be turned off at any time in **Settings → Privacy →
-Share anonymous usage counts**.
+This is one of two network flows that are on without the user choosing them;
+the other is the [daily update check](#daily-update-check-on-by-default). It
+sends no health data, and it is the only message T1 Arc sends to the
+maintainer by default. It lets the maintainer see roughly how many people use each version.
+The last step of the first-run tour shows the switch, already on, so a new
+user can turn it off before starting; there is no separate prompt. Existing
+users keep the choice already stored on their phone. It can be turned off at
+any time in **Settings → Backup and privacy → Share anonymous usage counts**.
 
 - **Daily message.** At most once per local calendar day, on the first app open
   that day: `{"schema":1,"kind":"day","appVersion":"1.7.20"}`.
@@ -190,8 +274,9 @@ see the device.
 
 ### Voluntary support and Tarv1s response reports
 
-**Settings → Help and support → Report a problem** lets you describe an app
-problem without a GitHub account. You can optionally include a technical summary:
+**Settings → Help, feedback and tour → Help and support → Report a problem**
+lets you describe an app problem without a GitHub account. You can optionally
+include a technical summary:
 app version/build, Android version, device model and predefined technical event
 codes with minute-resolution UTC timestamps. You can inspect the exact report
 before consenting to send or export it. Diagnostic fields do not include readings,

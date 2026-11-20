@@ -69,8 +69,9 @@ describe("manual ketone deletion UI", () => {
 
   it("surfaces a failed ketone timeline and refreshes derived data only after deletion", () => {
     expect(todayScreenSource).toContain("todayTimeline.error ? (");
+    expect(todayScreenSource).toContain("onRetry={todayTimeline.reload}");
     expect(todayScreenSource).toContain(
-      "Saved ketone readings are temporarily unavailable.",
+      "Saved ketone readings could not be loaded",
     );
     const deletionStart = dataProviderSource.indexOf(
       "const deleteManualContext = useCallback",

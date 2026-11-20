@@ -4,7 +4,12 @@ import {
 } from "@/data/persistence/t1arcDatabase";
 import { compactTarvisEvidence } from "@/data/tarvis/evidenceCompaction";
 import {
+  isTarvisEvidenceLineData,
+  type TarvisEvidenceLineData,
+} from "@/data/tarvis/evidenceLine";
+import {
   type GlucoseAnswerBundleV2,
+  glucoseAnswerThresholdMatcher,
   isGlucoseAnswerBundleV2,
   parseGlucoseAnswerBundleV2,
 } from "@/data/tarvis/glucoseAnswerBundleV2";
@@ -95,6 +100,8 @@ export interface StoredTarvisExchange {
   clarificationQuestion?: string;
   intent?: TarvisIntentV1;
   presentation?: TarvisEvidencePresentation;
+  /** Fixed, locally built line naming the period, readings, coverage and range used. */
+  evidenceLine?: TarvisEvidenceLineData;
   requestMetrics?: TarvisRequestMetrics;
   /** Independent of requestMetrics: a request can be sent but rejected locally. */
   modelRequestSent?: boolean;
@@ -362,6 +369,8 @@ function validAnswer(value: unknown): value is TarvisAnswer {
     uniqueStrings(value.evidenceIds) &&
     Array.isArray(value.limitations) &&
     value.limitations.every((item) => typeof item === "string") &&
+    (value.shortContext === undefined || typeof value.shortContext === "string") &&
+    (value.shortNotice === undefined || typeof value.shortNotice === "string") &&
     (value.directPresentation === undefined ||
       isTarvisDirectAnswerPresentation(value.directPresentation))
   );
@@ -664,12 +673,10 @@ function distributionForWindow(
   const lower = bundle.thresholds.find(({ role }) => role === "range_lower");
   const upper = bundle.thresholds.find(({ role }) => role === "range_upper");
   if (!window || !lower || !upper) return null;
-  const matches = (value: number, threshold: typeof lower) => {
-    if (threshold.operator === "gt") return value > threshold.value;
-    if (threshold.operator === "gte") return value >= threshold.value;
-    if (threshold.operator === "lt") return value < threshold.value;
-    return value <= threshold.value;
-  };
+  // Same versioned rule as the saved claim, so older answers stay valid.
+  const matches = glucoseAnswerThresholdMatcher(
+    bundle.algorithms.metricVersions.find(({ metric }) => metric === "glucose.time_in_range")?.version,
+  );
   const durations = { below: 0, within: 0, above: 0 };
   let observed = 0;
   window.observationIntervals.forEach((interval) => {
@@ -1083,6 +1090,10 @@ function parsedExchange(
     intent: isTarvisIntentV1(exchange.intent) ? exchange.intent : undefined,
     presentation: isTarvisEvidencePresentation(exchange.presentation)
       ? exchange.presentation
+      : undefined,
+    // Optional display metadata: an invalid line is dropped, never the exchange.
+    evidenceLine: isTarvisEvidenceLineData(exchange.evidenceLine)
+      ? exchange.evidenceLine
       : undefined,
   } satisfies LoadedStoredTarvisExchange;
 }

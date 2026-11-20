@@ -1,6 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import { NightscoutConnection, NightscoutIobCobSnapshot } from './types';
-import { isFreshNightscoutIobCobSnapshot } from './iobCobSnapshot';
+import {
+  isFreshNightscoutIobCobSnapshot,
+  NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS,
+} from './iobCobSnapshot';
 import {
   type LocalDataWriteLease,
 } from '@/data/privacy/localDataWriteEpoch';
@@ -12,7 +15,10 @@ import {
   type StoredNightscoutIobCobSnapshot,
 } from './secureStore';
 
-export { NIGHTSCOUT_IOB_COB_MAX_AGE_MS } from './iobCobSnapshot';
+export {
+  NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS,
+  NIGHTSCOUT_IOB_COB_MAX_AGE_MS,
+} from './iobCobSnapshot';
 
 export function nightscoutConnectionFingerprintMaterial(
   connection: NightscoutConnection,
@@ -46,6 +52,37 @@ export async function loadNightscoutIobCobSnapshot(
     stored.connectionFingerprint !== fingerprint ||
     !stored.snapshot ||
     !isFreshNightscoutIobCobSnapshot(stored.snapshot, now)
+  ) {
+    return undefined;
+  }
+  return stored.snapshot;
+}
+
+/**
+ * The saved connection's last reported estimate for glance surfaces and the
+ * Today card, which show its own age. Undefined when the user turned IOB/COB
+ * off, the connection changed or the estimate is over an hour old.
+ */
+export async function loadDisplayableNightscoutIobCobSnapshot(
+  now = Date.now(),
+  lease?: LocalDataWriteLease,
+) {
+  const { connection, iobCob: stored } = (
+    await loadOwnedNightscoutConnection(lease)
+  ).values;
+  if (!connection || connection.includeIobCob === false || !stored) {
+    return undefined;
+  }
+  if (
+    stored.version !== 2 ||
+    !stored.snapshot ||
+    stored.connectionFingerprint !==
+      (await nightscoutConnectionFingerprint(connection)) ||
+    !isFreshNightscoutIobCobSnapshot(
+      stored.snapshot,
+      now,
+      NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS,
+    )
   ) {
     return undefined;
   }

@@ -10,8 +10,10 @@ import { AppMenuButton } from "@/components/AppMenuButton";
 import { DateNavigator } from "@/components/DateNavigator";
 import { EmptyState } from "@/components/EmptyState";
 import { EvidenceRecordInspector } from "@/components/EvidenceRecordInspector";
+import { InsightDayHighlightsCard } from "@/components/InsightDayHighlightsCard";
 import { InsightReviewHistoryCard } from "@/components/InsightReviewHistoryCard";
-import { InsightReviewScheduleCard } from "@/components/InsightReviewScheduleCard";
+import { moreFindingsLabel, splitCompareFindings, type CompareFindingGroups } from "@/components/tarvis/compareFindings";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { LoadingCard } from "@/components/LoadingCard";
 import { SafetyNote } from "@/components/SafetyNote";
 import { SectionCard } from "@/components/SectionCard";
@@ -27,7 +29,17 @@ import {
   InsightFinding,
   InsightKind,
 } from "@/domain/insights";
-import { InsightPeriodDays } from "@/domain/insightRanges";
+import {
+  InsightPeriodDays,
+  isInsightComparisonRequest,
+} from "@/domain/insightRanges";
+import {
+  consensusGlucoseBandBounds,
+  formatGlucoseThreshold,
+  glucoseTargetRangeLabel,
+  STANDARD_GLUCOSE_RANGE,
+  TIGHT_GLUCOSE_RANGE,
+} from "@/domain/glucoseRanges";
 import { groupInsightFindingsForDashboard } from "@/domain/insightDashboard";
 import { TimeRange } from "@/domain/models";
 import {
@@ -54,6 +66,7 @@ import {
 } from "@/domain/regionalFormat";
 import { TarvisScreen } from "@/screens/TarvisScreen";
 import { loadRetrospectivePhysiology } from "@/data/tarvis/retrospectivePhysiology";
+import { createCurrentIobLoader } from "@/data/tarvis/currentIobLoader";
 import { createRetrospectiveIobLoader } from "@/data/tarvis/retrospectiveIobLoader";
 import { useAppTheme } from "@/theme/theme";
 import {
@@ -63,7 +76,7 @@ import {
   resolveLiveTarvisLaunchContext,
 } from "@/data/tarvis/conversationScope";
 
-type InsightPeriodChoice = "3" | "7" | "14" | "30";
+type InsightPeriodChoice = "3" | "7" | "14" | "30" | "90";
 
 const CATEGORY_ICON: Record<InsightCategory, keyof typeof Ionicons.glyphMap> = {
   glucose: "pulse-outline",
@@ -350,6 +363,38 @@ function RetryErrorCard({
   );
 }
 
+function ComparisonPercentMetric({
+  current,
+  label,
+  previous,
+}: {
+  current: number;
+  label: string;
+  previous: number;
+}) {
+  const { colors } = useAppTheme();
+  const { defaults: regional } = useRegionalProfile();
+  const value = (percent: number) =>
+    formatRegionalNumber(percent, regional.locale, { maximumFractionDigits: 1 });
+  return (
+    <View
+      accessible
+      accessibilityLabel={`${label}: ${value(current)} percent of observed time, previously ${value(previous)} percent.`}
+      style={styles.metric}
+    >
+      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
+      <Text style={[styles.metricValue, { color: colors.text }]}>
+        {value(current)}%
+      </Text>
+      <Text style={[styles.metricDelta, { color: colors.textTertiary }]}>
+        was {value(previous)}%
+      </Text>
+    </View>
+  );
+}
+
 export function InsightsScreen() {
   const route = useRoute<RouteProp<RootTabParamList, 'Insights'>>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, 'Insights'>>();
@@ -417,6 +462,10 @@ export function InsightsScreen() {
     (request: Parameters<typeof loadRetrospectivePhysiology>[0]) =>
       loadRetrospectivePhysiology({ ...request, asOf: now }),
     [now],
+  );
+  const loadTarvisCurrentIob = useMemo(
+    () => createCurrentIobLoader(dataMode),
+    [dataMode],
   );
   const loadTarvisTimestampedIob = useMemo(
     () => createRetrospectiveIobLoader(dataMode),
@@ -554,10 +603,40 @@ export function InsightsScreen() {
     savedReviewCount: savedReviewReports.length,
   });
 
+  const latestCompleteDateRef = useRef(latestCompleteDate);
+  useEffect(() => {
+    latestCompleteDateRef.current = latestCompleteDate;
+  }, [latestCompleteDate]);
   useFocusEffect(
     useCallback(() => {
-      setWorkspace(DEFAULT_TARVIS_WORKSPACE);
-    }, []),
+      // A comparison request from History arrives with the focus change.
+      // Read it from navigation state so the order of focus and param
+      // effects cannot send the person to the Tarv1s workspace instead.
+      const state = navigation.getState();
+      const params = state?.routes.find(({ key }) => key === route.key)?.params as
+        | RootTabParamList["Insights"]
+        | undefined;
+      const comparison = params?.comparison;
+      if (comparison !== undefined) {
+        navigation.setParams({ comparison: undefined });
+      }
+      if (!isInsightComparisonRequest(comparison)) {
+        setWorkspace(DEFAULT_TARVIS_WORKSPACE);
+        return;
+      }
+      const latest = latestCompleteDateRef.current;
+      setEntryContext(undefined);
+      setTarvisDraft(undefined);
+      setSelectedReview(undefined);
+      setSelectedEvidence(undefined);
+      setExpanded(new Set());
+      setPeriodChoice(String(comparison.periodDays) as InsightPeriodChoice);
+      setComparisonEndDate(
+        comparison.endDate > latest ? latest : comparison.endDate,
+      );
+      setPeriodControlsVisible(true);
+      setWorkspace("insights");
+    }, [navigation, route.key]),
   );
 
   const findings = useMemo(() => activeReport?.findings ?? [], [activeReport]);
@@ -570,12 +649,8 @@ export function InsightsScreen() {
     ...dashboardFindings.context,
   ];
   const confidenceFindings = dashboardFindings.confidence;
-  const visibleChanges = allFindingsVisible
-    ? dashboardFindings.changes
-    : dashboardFindings.changes.slice(0, 3);
-  const visibleContext = allFindingsVisible
-    ? dashboardFindings.context
-    : dashboardFindings.context.slice(0, 3);
+  // The three most useful findings first; the rest fold under "More findings".
+  const compareFindings = splitCompareFindings(dashboardFindings);
 
   useEffect(() => {
     if (dataMode !== "live") {
@@ -664,6 +739,58 @@ export function InsightsScreen() {
     setWorkspace(next);
   }
 
+  function renderFindingGroups(
+    groups: CompareFindingGroups<InsightFinding>,
+    withDetail: boolean,
+  ) {
+    return (
+      <>
+        {groups.changes.length ? (
+          <>
+            <SectionHeading
+              title="Changes worth knowing"
+              detail={withDetail ? "The clearest changes in glucose and insulin, ordered by likely usefulness." : undefined}
+            />
+            <View style={styles.findingStack}>
+              {groups.changes.map((finding) => (
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  expanded={expanded.has(finding.id)}
+                  highlighted={false}
+                  onAskTarvis={() => openTarvisForFinding(finding)}
+                  onToggle={() => toggleFinding(finding.id)}
+                  onInspectRecords={setSelectedEvidence}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+        {groups.context.length ? (
+          <>
+            <SectionHeading
+              title="Possible influences"
+              detail={withDetail ? "Food, activity, sleep and other recorded context that changed nearby. These are clues, not proven causes." : undefined}
+            />
+            <View style={styles.findingStack}>
+              {groups.context.map((finding) => (
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  expanded={expanded.has(finding.id)}
+                  highlighted={false}
+                  onAskTarvis={() => openTarvisForFinding(finding)}
+                  onToggle={() => toggleFinding(finding.id)}
+                  onInspectRecords={setSelectedEvidence}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+      </>
+    );
+  }
+
   const compactHeader = (
     <View style={styles.compactHeader}>
       <AppMenuButton />
@@ -739,6 +866,9 @@ export function InsightsScreen() {
             }
             loadTimestampedIob={
               tarvisContext.liveData ? loadTarvisTimestampedIob : undefined
+            }
+            loadCurrentIob={
+              tarvisContext.liveData ? loadTarvisCurrentIob : undefined
             }
             loadReportForRange={loadTarvisReportForRange}
             onBack={() => {
@@ -823,6 +953,7 @@ export function InsightsScreen() {
                 { value: "7", label: "7D" },
                 { value: "14", label: "14D" },
                 { value: "30", label: "30D" },
+                { value: "90", label: "90D" },
               ]}
               value={periodChoice}
               onChange={choosePeriod}
@@ -894,7 +1025,29 @@ export function InsightsScreen() {
             ) : null}
             {reviewsVisible ? (
               <View style={styles.reviewStack}>
-                <InsightReviewScheduleCard />
+                <Pressable
+                  accessibilityHint="Opens Settings, Notifications and reminders"
+                  accessibilityRole="button"
+                  onPress={() => navigation.navigate("Sources", sourceSettingsRouteParams("notifications"))}
+                  style={({ pressed }) => [
+                    styles.reviewToggle,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderRadius: radius.md,
+                      opacity: pressed ? 0.72 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.primary} name="notifications-outline" size={19} />
+                  <View style={styles.reviewCopy}>
+                    <Text style={[styles.reviewTitle, { color: colors.text }]}>Weekly review reminder</Text>
+                    <Text style={[styles.reviewDetail, { color: colors.textSecondary }]}>
+                      Day, time and Android settings are in Settings, Notifications and reminders
+                    </Text>
+                  </View>
+                  <Ionicons accessibilityElementsHidden color={colors.textTertiary} name="chevron-forward" size={18} />
+                </Pressable>
                 {reviewAccess.showHistoryLoading ? (
                   <LoadingCard label="Opening saved review history…" />
                 ) : null}
@@ -954,24 +1107,19 @@ export function InsightsScreen() {
                 {activeReport.summary}
               </Text>
               <View style={[styles.metricRow, { borderColor: colors.divider }]}>
-                <View style={styles.metric}>
-                  <Text
-                    style={[
-                      styles.metricLabel,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Time in range
-                  </Text>
-                  <Text style={[styles.metricValue, { color: colors.text }]}>
-                    {activeReport.current.timeInRangePercent}%
-                  </Text>
-                  <Text
-                    style={[styles.metricDelta, { color: colors.textTertiary }]}
-                  >
-                    was {activeReport.previous.timeInRangePercent}%
-                  </Text>
-                </View>
+                <ComparisonPercentMetric
+                  label={glucoseTargetRangeLabel(STANDARD_GLUCOSE_RANGE, regional)}
+                  current={activeReport.current.timeInRangePercent}
+                  previous={activeReport.previous.timeInRangePercent}
+                />
+                {activeReport.current.timeInTightRangePercent !== undefined &&
+                activeReport.previous.timeInTightRangePercent !== undefined ? (
+                  <ComparisonPercentMetric
+                    label={glucoseTargetRangeLabel(TIGHT_GLUCOSE_RANGE, regional)}
+                    current={activeReport.current.timeInTightRangePercent}
+                    previous={activeReport.previous.timeInTightRangePercent}
+                  />
+                ) : null}
                 <View style={styles.metric}>
                   <Text
                     style={[
@@ -995,89 +1143,66 @@ export function InsightsScreen() {
                       : formatGlucose(activeReport.previous.glucoseAverage, regional, { withUnit: false })}
                   </Text>
                 </View>
-                <View style={styles.metric}>
-                  <Text
-                    style={[
-                      styles.metricLabel,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Below range
-                  </Text>
-                  <Text style={[styles.metricValue, { color: colors.text }]}>
-                    {activeReport.current.timeBelowPercent}%
-                  </Text>
-                  <Text
-                    style={[styles.metricDelta, { color: colors.textTertiary }]}
-                  >
-                    was {activeReport.previous.timeBelowPercent}%
-                  </Text>
-                </View>
-                <View style={styles.metric}>
-                  <Text
-                    style={[
-                      styles.metricLabel,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Above range
-                  </Text>
-                  <Text style={[styles.metricValue, { color: colors.text }]}>
-                    {activeReport.current.timeAbovePercent}%
-                  </Text>
-                  <Text
-                    style={[styles.metricDelta, { color: colors.textTertiary }]}
-                  >
-                    was {activeReport.previous.timeAbovePercent}%
-                  </Text>
-                </View>
+                <ComparisonPercentMetric
+                  label={`Below ${formatGlucoseThreshold(STANDARD_GLUCOSE_RANGE.lowerMmolL, regional)}`}
+                  current={activeReport.current.timeBelowPercent}
+                  previous={activeReport.previous.timeBelowPercent}
+                />
+                <ComparisonPercentMetric
+                  label={`Above ${formatGlucoseThreshold(STANDARD_GLUCOSE_RANGE.upperMmolL, regional)}`}
+                  current={activeReport.current.timeAbovePercent}
+                  previous={activeReport.previous.timeAbovePercent}
+                />
+                {activeReport.current.timeVeryLowPercent !== undefined &&
+                activeReport.previous.timeVeryLowPercent !== undefined ? (
+                  <ComparisonPercentMetric
+                    label={`Very low, ${consensusGlucoseBandBounds("veryLow", regional)}`}
+                    current={activeReport.current.timeVeryLowPercent}
+                    previous={activeReport.previous.timeVeryLowPercent}
+                  />
+                ) : null}
               </View>
+              <Text style={[styles.metricDelta, styles.metricFootnote, { color: colors.textTertiary }]}>
+                Shares of observed sensor time. Standard and tight ranges follow the international consensus on time in ranges; time without readings is not counted.
+              </Text>
             </SectionCard>
+            <InsightDayHighlightsCard
+              loadGlucose={loadTarvisGlucoseReadings}
+              now={now}
+              periodRange={activeReport.currentRange}
+            />
 
             {reviewFindings.length ? (
               <>
-                {visibleChanges.length ? (
-                  <>
-                    <SectionHeading
-                      title="Changes worth knowing"
-                      detail="The clearest changes in glucose and insulin, ordered by likely usefulness."
-                    />
-                    <View style={styles.findingStack}>
-                      {visibleChanges.map((finding) => (
-                        <FindingCard
-                          key={finding.id}
-                          finding={finding}
-                          expanded={expanded.has(finding.id)}
-                          highlighted={false}
-                          onAskTarvis={() => openTarvisForFinding(finding)}
-                          onToggle={() => toggleFinding(finding.id)}
-                          onInspectRecords={setSelectedEvidence}
-                        />
-                      ))}
-                    </View>
-                  </>
+                {renderFindingGroups(compareFindings.top, true)}
+                {compareFindings.moreCount ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: allFindingsVisible }}
+                    onPress={() => setAllFindingsVisible((visible) => !visible)}
+                    style={({ pressed }) => [
+                      styles.allFindingsButton,
+                      {
+                        borderColor: colors.border,
+                        borderRadius: radius.md,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.allFindingsText, { color: colors.primary }]}
+                    >
+                      {moreFindingsLabel(
+                        compareFindings.moreCount,
+                        allFindingsVisible,
+                        (value) => formatRegionalNumber(value, regional.locale, { maximumFractionDigits: 0 }),
+                      )}
+                    </Text>
+                  </Pressable>
                 ) : null}
-                {visibleContext.length ? (
-                  <>
-                    <SectionHeading
-                      title="Possible influences"
-                      detail="Food, activity, sleep and other recorded context that changed nearby. These are clues, not proven causes."
-                    />
-                    <View style={styles.findingStack}>
-                      {visibleContext.map((finding) => (
-                        <FindingCard
-                          key={finding.id}
-                          finding={finding}
-                          expanded={expanded.has(finding.id)}
-                          highlighted={false}
-                          onAskTarvis={() => openTarvisForFinding(finding)}
-                          onToggle={() => toggleFinding(finding.id)}
-                          onInspectRecords={setSelectedEvidence}
-                        />
-                      ))}
-                    </View>
-                  </>
-                ) : null}
+                {allFindingsVisible && compareFindings.moreCount
+                  ? renderFindingGroups(compareFindings.more, false)
+                  : null}
               </>
             ) : (
               <>
@@ -1098,29 +1223,6 @@ export function InsightsScreen() {
                 </SectionCard>
               </>
             )}
-            {dashboardFindings.changes.length > 3 ||
-            dashboardFindings.context.length > 3 ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setAllFindingsVisible((visible) => !visible)}
-                style={({ pressed }) => [
-                  styles.allFindingsButton,
-                  {
-                    borderColor: colors.border,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.allFindingsText, { color: colors.primary }]}
-                >
-                  {allFindingsVisible
-                    ? "Show the highlights"
-                    : `View all ${formatRegionalNumber(reviewFindings.length, regional.locale, { maximumFractionDigits: 0 })} findings`}
-                </Text>
-              </Pressable>
-            ) : null}
             {confidenceFindings.length ? (
               <View style={styles.confidenceSection}>
                 <Pressable
@@ -1217,8 +1319,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.25,
   },
   compactHeaderSubtitle: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 1,
   },
   compactHeaderAction: {
@@ -1256,7 +1358,7 @@ const styles = StyleSheet.create({
   },
   periodToggleCopy: { flex: 1 },
   periodToggleTitle: { fontSize: 13, lineHeight: 18, fontWeight: "800" },
-  periodToggleDetail: { fontSize: 10, lineHeight: 15, marginTop: 1 },
+  periodToggleDetail: { fontSize: 12, lineHeight: 17, marginTop: 1 },
   retryErrorContent: {
     minHeight: 96,
     flexDirection: "row",
@@ -1347,8 +1449,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   reviewDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   reviewStack: {
@@ -1361,8 +1463,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   heroEyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.9,
   },
@@ -1379,8 +1481,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   updating: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 5,
   },
   metricRow: {
@@ -1397,8 +1499,8 @@ const styles = StyleSheet.create({
     minWidth: 124,
   },
   metricLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   metricValue: {
     fontSize: 25,
@@ -1407,8 +1509,11 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   metricDelta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  metricFootnote: {
+    marginTop: 8,
   },
   askRow: {
     minHeight: 54,
@@ -1443,8 +1548,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   suggestionText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "600",
   },
   answerCard: {
@@ -1467,8 +1572,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   answerMeta: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 9,
   },
   findingStack: {
@@ -1481,8 +1586,8 @@ const styles = StyleSheet.create({
   },
   noReviewDetail: {
     marginTop: 4,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   confidenceSection: {
     gap: 12,
@@ -1508,8 +1613,8 @@ const styles = StyleSheet.create({
   },
   confidenceDetail: {
     marginTop: 2,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   allFindingsButton: {
     minHeight: 46,
@@ -1546,8 +1651,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   findingKind: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.8,
   },
@@ -1568,8 +1673,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   caveat: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontStyle: "italic",
     marginTop: 7,
   },
@@ -1621,12 +1726,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   evidenceCount: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   evidenceDescription: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   exampleRow: {
@@ -1638,8 +1743,8 @@ const styles = StyleSheet.create({
   },
   exampleTime: {
     width: 38,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontVariant: ["tabular-nums"],
   },
   exampleCopy: {
@@ -1651,12 +1756,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   exampleSecondary: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
   },
   exampleId: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
     marginTop: 2,
   },
   openRecordsButton: {
@@ -1672,8 +1777,8 @@ const styles = StyleSheet.create({
   },
   openRecordsText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
     textAlign: "center",
   },

@@ -19,9 +19,10 @@ import {
 import { formatShortDate, formatTime, toDateKey } from "@/domain/time";
 import { buildDataCompletenessReport } from "@/domain/dataCompleteness";
 import { isManualKetoneEvent } from "@/data/manualContext";
-import { contextNoteDisplayTitle } from "@/domain/contextNotes";
+import { contextNoteDisplayTitle, contextNoteDisplayDetail } from "@/domain/contextNotes";
 import { sensorWarmupEvidence } from './sensorWarmupEvidence';
 import { formatGlucose, formatWeight } from "@/domain/regionalFormat";
+import { glucoseMeetsThreshold } from "@/domain/glucoseRanges";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import {
   formatTarvisFixedNumber,
@@ -29,6 +30,7 @@ import {
 } from "./regionalNumberPresentation";
 
 import { buildTarvisEvidencePacket } from "./evidencePacket";
+import { therapyStateEpisodeFinding } from "./therapyStateEvidence";
 import {
   TARVIS_EXPLICIT_DATA_QUALITY_CHECK_IDS,
   type TarvisExcludedContextCheck,
@@ -187,6 +189,9 @@ function restrictTimelineToRange(
     pumpStates: timeline.pumpStates?.filter(({ start, end }) =>
       overlapsRange(start, end, range),
     ),
+    therapyStates: timeline.therapyStates?.filter(({ start, end }) =>
+      overlapsRange(start, end, range),
+    ),
     context: timeline.context.filter((event) =>
       overlapsRange(event.start, eventEnd(event), range),
     ),
@@ -311,7 +316,7 @@ function selectEpisode(
     eventKind === "high" ? TARGET_HIGH_MMOL_L : TARGET_LOW_MMOL_L;
   const crossings = canonicalReadingsAtEachTimestamp(readings).filter(
     ({ mmolL }) =>
-      eventKind === "high" ? mmolL > threshold : mmolL < threshold,
+      glucoseMeetsThreshold(mmolL, eventKind === "high" ? "gt" : "lt", threshold),
   );
   const isolated = [...crossings].sort((left, right) => {
     const extreme =
@@ -430,7 +435,7 @@ function contextPreview(event: HealthContextEvent): EvidenceRecordPreview {
         ? "Recorded medication event"
         : `${formatTarvisNumber(event.amount, { maximumFractionDigits: 2 })}${event.unit ? ` ${event.unit}` : ""}`;
   } else if (event.kind === "note") {
-    secondary = event.detail ?? `${event.category} note`;
+    secondary = contextNoteDisplayDetail(event, getRuntimeRegionalDefaults()) ?? `${event.category} note`;
   }
   return {
     id: event.id,
@@ -1079,6 +1084,12 @@ function eventFindings(
 ) {
   const findings: (InsightFinding | undefined)[] = [
     eventOverviewFinding(selected, timeline),
+    // Recorded AAPS settings are always named: a temporary target or a
+    // reduced profile is part of what was happening, whatever was asked.
+    therapyStateEpisodeFinding(selected.episode.kind, timeline, {
+      start: selected.episode.start,
+      end: selected.episode.end,
+    }),
     requestedEvidenceCheckFinding(
       selected.episode.kind,
       timeline,
@@ -1326,8 +1337,14 @@ export async function loadPlannedGlucoseEpisodeEvidence({
   const requestedCheck = plannedFindings.find(({ id }) =>
     id.endsWith("requested-evidence-availability"),
   );
-  if (requestedCheck) {
-    lookup.packet.requiredFindingIds = [requestedCheck.id];
+  const therapyStates = plannedFindings.find(({ id }) =>
+    id.endsWith("-therapy-states"),
+  );
+  const required = [requestedCheck?.id, therapyStates?.id].filter(
+    (id): id is string => id !== undefined,
+  );
+  if (required.length) {
+    lookup.packet.requiredFindingIds = required;
   }
   lookup.packet.comparison.current = redactUnselectedSummaryCategories(
     lookup.packet.comparison.current,

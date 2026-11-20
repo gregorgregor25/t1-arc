@@ -46,7 +46,7 @@ setup; normal glucose syncing does not need it.
 
 ## Install the companion once
 
-Open **Settings → Watch & watch faces → Set up my watch** on your phone.
+Open **Settings → Watch → Set up my watch** on your phone.
 
 1. Connect the phone and watch to the same Wi-Fi. Keep the watch awake and charging.
 2. Select your watch type and follow the short steps to enable Developer options.
@@ -95,10 +95,11 @@ On Windows PowerShell, use `.\adb.exe` in place of `adb` when running it from
 the extracted Platform Tools directory. Replace the uppercase placeholders
 with the addresses and file location on your own devices.
 
-Open T1 Arc on the watch. In the phone's Settings, open **Watch & watch faces**
-(**Display → Wear OS** in older releases) and check the connection. A queued reading means the phone
-has handed it to the transport, not that the watch has displayed it. Confirm
-the value and its age on the watch itself.
+Open T1 Arc on the watch. In the phone's Settings, open **Watch**
+(**Watch & watch faces** or **Display → Wear OS** in older releases) and check
+the connection. A queued reading means the phone has handed it to the
+transport, not that the watch has displayed it. Confirm the value and its age
+on the watch itself.
 
 If installation reports a signature conflict, stop. Do not uninstall a
 working companion to force an update.
@@ -108,7 +109,7 @@ working companion to force an update.
 On supported Wear OS 6 watches, the companion already contains the five face
 files. There is no extra face download.
 
-1. In the phone's **Watch & watch faces** settings, find **Watch faces**.
+1. In the phone's **Watch** settings, find **Watch faces**.
 2. If more than one watch is connected, choose the watch you want to change.
 3. Select Meridian, Chronograph, Atelier, Pace or Summit, then tap **Use [name] on watch**.
 4. Wait for the confirmed result. Installed and active are different states.
@@ -177,11 +178,11 @@ If readings stop:
 
 1. Check that the phone's live source is connected and current.
 2. Open the watch companion and compare its reading and age with the phone.
-3. Check the phone's **Wear OS** connection status.
+3. Check the connection in the phone's **Settings → Watch**.
 4. Confirm the phone and companion came from the same release.
-5. If you have two T1 Arc phone apps, check **About T1 Arc** in each. Different
-   packages do not share data or watch connections. Force-stopping the app
-   connected to the companion stops its updates.
+5. If you have two T1 Arc phone apps, check **About and updates** in each.
+   Different packages do not share data or watch connections. Force-stopping
+   the app connected to the companion stops its updates.
 
 Keep the working apps until the replacement connection has been checked.
 Ordinary encrypted backups do not move provider passwords, API keys or Android

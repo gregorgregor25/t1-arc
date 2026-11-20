@@ -1,0 +1,93 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+// Installed only by the CI dependency-download retry and removed at job end.
+def mirrorUrl = 'https://maven-central.storage-download.googleapis.com/maven2/'
+def isAnonymousRepository = { repository, hosts, paths ->
+    if (!(repository instanceof MavenArtifactRepository)) return false
+    def source = repository.url
+    if (source?.scheme != 'https' || !(source.host in hosts) ||
+        !(source.path in paths) || !(source.port in [-1, 443]) ||
+        source.userInfo != null || source.query != null || source.fragment != null ||
+        !repository.authentication.empty) return false
+    // Gradle 9.3.1 exposes this provider without creating default credentials.
+    // Skip credentialed repositories and implementations we cannot inspect.
+    try {
+        return !repository.configuredCredentials.present
+    } catch (Exception ignored) {
+        return false
+    }
+}
+
+def mirrorCentral = { repositories ->
+    repositories.withType(MavenArtifactRepository).each { repository ->
+        if (!isAnonymousRepository(repository,
+            ['repo.maven.apache.org', 'repo1.maven.org'], ['/maven2', '/maven2/'])) return
+        // Updating the existing repository retains its order and content filters.
+        repository.url = mirrorUrl
+    }
+}
+
+gradle.beforeSettings { settings ->
+    settings.buildscript.configurations.matching { it.name == 'classpath' }.configureEach { configuration ->
+        configuration.incoming.beforeResolve {
+            // Gradle adds its implicit portal to the script's copied repositories.
+            // Add runtime dependencies here, before included settings plugins load.
+            if (!settings.pluginManagement.repositories.empty) return
+            def repositories = settings.buildscript.repositories
+            if (repositories.size() != 1) return
+            def portal = repositories.first()
+            if (!isAnonymousRepository(portal, ['plugins.gradle.org'], ['/m2', '/m2/'])) return
+            try {
+                // Inspect a copy so checking Gradle's filter does not lock the original.
+                def content = portal.repositoryDescriptorCopy
+                if (content.toContentFilter() != org.gradle.internal.Actions.doNothing() ||
+                    content.includedConfigurations != null || content.excludedConfigurations != null ||
+                    content.requiredAttributes != null) return
+            } catch (Exception ignored) {
+                return
+            }
+            repositories.maven {
+                url = mirrorUrl
+            }
+        }
+    }
+    settings.pluginManagement.resolutionStrategy.eachPlugin {
+        mirrorCentral(settings.pluginManagement.repositories)
+    }
+}
+
+gradle.settingsEvaluated { settings ->
+    def workspace = System.getenv('GITHUB_WORKSPACE')
+    if (workspace != null) {
+        def workspaceDir = new File(workspace).canonicalFile
+        def expectedExpoPluginDir = new File(workspaceDir,
+            'node_modules/expo-modules-core/expo-module-gradle-plugin')
+        def expoPluginDir = expectedExpoPluginDir.canonicalFile
+        // This npm-owned included build has no settings script to declare Central.
+        // Configure plugin metadata before its Kotlin project plugin is resolved.
+        if (expoPluginDir == expectedExpoPluginDir.absoluteFile &&
+            settings.settingsDir.canonicalFile == expoPluginDir &&
+            !new File(expoPluginDir, 'settings.gradle').exists() &&
+            !new File(expoPluginDir, 'settings.gradle.kts').exists() &&
+            settings.pluginManagement.repositories.empty) {
+            settings.pluginManagement.repositories.maven {
+                url = mirrorUrl
+            }
+            settings.pluginManagement.repositories.gradlePluginPortal()
+        }
+    }
+    gradle.beforeProject { project ->
+        project.buildscript.configurations.configureEach { configuration ->
+            configuration.incoming.beforeResolve {
+                mirrorCentral(settings.pluginManagement.repositories)
+                mirrorCentral(project.buildscript.repositories)
+            }
+        }
+        project.configurations.configureEach { configuration ->
+            configuration.incoming.beforeResolve {
+                mirrorCentral(settings.dependencyResolutionManagement.repositories)
+                mirrorCentral(project.repositories)
+            }
+        }
+    }
+}

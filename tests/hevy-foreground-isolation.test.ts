@@ -32,13 +32,19 @@ describe("Hevy foreground sync isolation", () => {
     expect(primaryRefresh).not.toContain("syncHevyIfDue");
     expect(primaryRefresh).toContain("updateGlucoseDisplayFromHistory");
     expect(primaryRefresh).toContain("repository.refreshGlucose?.()");
+    // Slow side jobs run only on a live full pass, never on the glucose lane.
     expect(primaryRefresh).toMatch(
-      /repositoryState\.mode === "live" && includeHealthConnect\s*\? generateInsightReviewIfDue/,
+      /const runSideJobs =\s*repositoryState\.mode === "live" && includeHealthConnect;/,
     );
-    expect(primaryRefresh).toMatch(
-      /repositoryState\.mode === "live" && includeHealthConnect\s*\? syncConfiguredNightscoutHistoryIfDue/,
+    const sideJobs = primaryRefresh.slice(
+      primaryRefresh.indexOf("const sideJobs"),
+      primaryRefresh.indexOf(": [];", primaryRefresh.indexOf("const sideJobs")),
     );
-    const cadenceStart = source.indexOf("const refreshInterval = setInterval");
+    expect(sideJobs).toMatch(/runSideJobs\s*\?/);
+    expect(sideJobs).toContain("generateInsightReviewIfDue()");
+    expect(sideJobs).toContain("syncConfiguredNightscoutHistoryIfDue(");
+    expect(sideJobs).toContain("syncHealthConnectIfDue(");
+    const cadenceStart = source.indexOf("const stopRefreshInterval = startForegroundInterval");
     const cadenceEnd = source.indexOf("const subscription", cadenceStart);
     const frequentCadence = source.slice(cadenceStart, cadenceEnd);
     expect(frequentCadence).toContain("refreshGlucoseSilently()");
@@ -48,10 +54,13 @@ describe("Hevy foreground sync isolation", () => {
     );
     expect(frequentCadence).toContain("60_000");
     const localClockStart = source.indexOf("const reconcileClock");
-    const localClockEnd = source.indexOf("return () => clearInterval", localClockStart);
+    const localClockEnd = source.indexOf("}, [publishLatestStoredGlucose]);", localClockStart);
     const localClock = source.slice(localClockStart, localClockEnd);
     expect(localClock).toContain("publishLatestStoredGlucose()");
     expect(localClock).toContain("15_000");
+    // Both timers stop while the app is in the background.
+    expect(localClock).toContain("startForegroundInterval(reconcileClock");
+    expect(frequentCadence).toContain("AppState);");
     expect(localClock).not.toContain("refreshGlucoseSilently()");
     expect(localClock).not.toContain("refreshSilently()");
     expect(source).toContain(

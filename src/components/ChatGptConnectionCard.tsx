@@ -73,8 +73,38 @@ export function ChatGptConnectionCard({
     backgroundColor: colors.surfaceElevated,
   };
 
+  // Shown first, straight after sign-in, so the switch is never below the fold.
+  const readyToUse = Boolean(account?.connected && selectedModel && !active);
+
   return (
     <View style={{ gap: 14 }}>
+      {readyToUse ? (
+        <View style={{ gap: 7 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint={`Uses ${selectedModel!.displayName} for AI answers`}
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            onPress={onUse}
+            style={({ pressed }) => ({
+              minHeight: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center",
+              borderRadius: radius.md, backgroundColor: colors.primary,
+              opacity: disabled ? 0.55 : pressed ? 0.72 : 1,
+            })}
+          >
+            <Ionicons accessibilityElementsHidden name="checkmark-circle-outline" size={19} color={colors.onPrimary} />
+            <Text style={{ color: colors.onPrimary, fontWeight: "800", fontSize: 14 }}>Use ChatGPT for AI answers</Text>
+          </Pressable>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 17 }}>
+            Signed in. Model: {selectedModel!.displayName}. You can change the model below.
+          </Text>
+        </View>
+      ) : null}
+      {active ? (
+        <Text accessibilityLiveRegion="polite" style={{ color: colors.text, fontSize: 13, fontWeight: "700", lineHeight: 19 }}>
+          ChatGPT is in use for AI answers.
+        </Text>
+      ) : null}
       <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 19 }}>
         Use an eligible ChatGPT Plus or Pro plan. This connection cannot read your existing ChatGPT chats. Your question and selected context go to OpenAI only when you tap Send.
       </Text>
@@ -95,7 +125,7 @@ export function ChatGptConnectionCard({
       ) : null}
       {state.accounts.length ? (
         <View style={{ gap: 7 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>ACCOUNT</Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.8 }}>ACCOUNT</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Choose ChatGPT account"
@@ -167,7 +197,7 @@ export function ChatGptConnectionCard({
       {account?.connected ? (
         <View style={{ gap: 9 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 0.8 }}>MODEL</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 0.8 }}>MODEL</Text>
             <Pressable accessibilityRole="button" disabled={disabled || refreshingModels} onPress={() => { void refreshModels(false).catch(() => undefined); }} style={{ minHeight: 44, flexDirection: "row", alignItems: "center", gap: 5 }}>
               {refreshingModels ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons accessibilityElementsHidden name="refresh" size={15} color={colors.primary} />}
               <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>Refresh models</Text>
@@ -200,7 +230,7 @@ export function ChatGptConnectionCard({
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700" }} numberOfLines={1}>{model.displayName}</Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 11 }} numberOfLines={1}>{model.slug}</Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>{model.slug}</Text>
                     </View>
                     {model.slug === state.selectedModel ? <Ionicons accessibilityElementsHidden name="checkmark" size={18} color={colors.primary} /> : null}
                   </Pressable>
@@ -211,22 +241,6 @@ export function ChatGptConnectionCard({
           ) : null}
           {state.selectedModel && !selectedModel ? (
             <Text accessibilityLiveRegion="polite" style={{ color: colors.danger, fontSize: 12 }}>Your saved model is no longer available. Choose another before sending.</Text>
-          ) : null}
-          {!active ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: disabled || !selectedModel }}
-              disabled={disabled || !selectedModel}
-              onPress={onUse}
-              style={({ pressed }) => ({
-                minHeight: 50, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center",
-                borderRadius: radius.md, backgroundColor: selectedModel ? colors.primary : colors.border,
-                opacity: disabled || !selectedModel ? 0.55 : pressed ? 0.72 : 1,
-              })}
-            >
-              <Ionicons accessibilityElementsHidden name="checkmark-circle-outline" size={19} color={selectedModel ? colors.onPrimary : colors.textTertiary} />
-              <Text style={{ color: selectedModel ? colors.onPrimary : colors.textTertiary, fontWeight: "800", fontSize: 14 }}>Use ChatGPT for AI answers</Text>
-            </Pressable>
           ) : null}
         </View>
       ) : null}

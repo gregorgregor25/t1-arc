@@ -50,7 +50,10 @@ function VaultFact({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function LocalDataControlCard({ onErased }: { onErased(): void }) {
+export function LocalDataControlCard({ hasUnsavedSignIn, onErased }: {
+  hasUnsavedSignIn: boolean;
+  onErased(): void;
+}) {
   const { colors, radius } = useAppTheme();
   const {
     eraseAllLocalHealthData,
@@ -99,7 +102,7 @@ export function LocalDataControlCard({ onErased }: { onErased(): void }) {
     glookoSyncing ||
     glookoReportSyncing ||
     !summary ||
-    (!hasStoredData && !hasSavedConfiguration);
+    (!hasStoredData && !hasSavedConfiguration && !hasUnsavedSignIn);
 
   async function erase() {
     setErasing(true);
@@ -303,8 +306,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   factLabel: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     marginTop: 2,
     textTransform: "uppercase",

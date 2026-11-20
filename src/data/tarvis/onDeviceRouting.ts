@@ -65,6 +65,16 @@ export type TarvisOnDeviceRoute =
   | { kind: "model-education" }
   | { kind: "model-evidence" };
 
+/**
+ * One plain reply: the message alone when it already asks its question or
+ * gives an example, so the reply never ends with two questions in a row.
+ */
+function clarificationReply(message: string, clarification: string) {
+  const text = message.trim();
+  if (text.endsWith("?") || /for example/i.test(text)) return text;
+  return `${text} ${clarification}`.trim();
+}
+
 function answer(
   headline: string,
   copy: string,
@@ -258,8 +268,11 @@ export function routeTarvisIntent(
       kind: "capability",
       answer: answer(
         "One detail before I calculate that",
-        `${resolution.outcome.message} ${resolution.outcome.clarification}`.trim(),
-        "No calculation or AI provider request was made because the requested meaning was not unambiguous.",
+        clarificationReply(
+          resolution.outcome.message,
+          resolution.outcome.clarification,
+        ),
+        "No calculation was made and nothing was sent to an AI provider, because the question could be read more than one way.",
       ),
     };
   }
@@ -268,8 +281,8 @@ export function routeTarvisIntent(
     kind: "capability",
     answer: answer(
       "I can’t calculate that safely yet",
-      `${resolution.outcome.message} I won’t substitute a different metric or time window.`,
-      "No calculation or AI provider request was made for this unsupported request.",
+      `${resolution.outcome.message} I won’t swap in a different number or time period.`,
+      "No calculation was made and nothing was sent to an AI provider.",
     ),
   };
 }

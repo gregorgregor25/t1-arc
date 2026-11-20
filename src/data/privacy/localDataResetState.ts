@@ -51,6 +51,7 @@ export async function getLocalDataResetState(): Promise<LocalDataResetState> {
     notificationSource,
     glucoseDisplay,
     glucoseAlerts,
+    nativeGlucoseAlarms,
     insightReview,
     healthConnectPreferences,
     tarvis,
@@ -68,6 +69,9 @@ export async function getLocalDataResetState(): Promise<LocalDataResetState> {
     T1ArcNotificationSource.getStatusAsync(),
     T1ArcGlucoseDisplay.getStatusAsync(),
     loadGlucoseAlertPreferences(),
+    // Older installed modules have no native alarm files. When the method is
+    // present, failures must propagate rather than claim private data is empty.
+    T1ArcGlucoseDisplay.getGlucoseAlarmStatusAsync?.(),
     loadInsightReviewPreferences(),
     hasSavedHealthConnectPreferences(),
     getTarvisStoredDataStatus(),
@@ -100,6 +104,8 @@ export async function getLocalDataResetState(): Promise<LocalDataResetState> {
       notificationSource.pendingCount > 0 ||
       glucoseDisplay.enabled ||
       glucoseAlerts.enabled ||
+      nativeGlucoseAlarms?.configured ||
+      (nativeGlucoseAlarms?.customSounds.length ?? 0) > 0 ||
       insightReview.weeklyNotificationEnabled ||
       healthConnectPreferences ||
       hasTarvisData,

@@ -3,11 +3,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { AppState, View } from 'react-native';
 import { recordDiagnostic } from '@/data/support/diagnosticStore';
+import { noteUpdateCheckOpportunity } from '@/data/updates/updateCheckOpportunity';
 import { reportUsageOnOpenAsync } from '@/data/usageReporting/usageReporter';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AppAlertHost } from '@/components/AppAlertHost';
+import { GlucoseAlarmHost } from '@/components/GlucoseAlarmHost';
 import { ColdLaunchPresentation } from '@/components/ColdLaunchPresentation';
 import { LocalDataEraseRecoveryGate } from '@/components/LocalDataEraseRecoveryGate';
 import { AppNavigator } from '@/navigation/AppNavigator';
@@ -27,10 +29,13 @@ function AppContent() {
   useEffect(() => {
     recordDiagnostic('app_opened');
     reportUsageOnOpen();
+    // Daily update check (on by default; About T1 Arc). Cached, never throws.
+    noteUpdateCheckOpportunity();
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') {
         recordDiagnostic('app_foreground');
         reportUsageOnOpen();
+        noteUpdateCheckOpportunity();
       }
       if (state === 'background') recordDiagnostic('app_background');
     });
@@ -43,6 +48,7 @@ function AppContent() {
         <GlucoseAppearanceProvider>
           <DataProvider>
             <AppNavigator />
+            <GlucoseAlarmHost />
           </DataProvider>
         </GlucoseAppearanceProvider>
       </RegionalProfileProvider>

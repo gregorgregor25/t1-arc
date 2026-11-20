@@ -3,12 +3,48 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
   <uses-permission android:name="android.permission.VIBRATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <queries>
+    <package android:name="info.nightscout.androidaps" />
+  </queries>
 
   <application>
+    <receiver
+      android:name=".T1ArcGlucoseAlarmReceiver"
+      android:enabled="true"
+      android:exported="false" />
+    <!-- Re-arms saved glucose alarm choices after a reboot or an app update. -->
+    <receiver
+      android:name=".T1ArcGlucoseAlarmRestartReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+    <receiver
+      android:name=".T1ArcAapsStatusReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="info.nightscout.androidaps.status" />
+      </intent-filter>
+    </receiver>
+    <!-- AAPS xDrip+ sync: read-only boluses, carbs, targets and profile switches. -->
+    <receiver
+      android:name=".T1ArcAapsTreatmentReceiver"
+      android:enabled="true"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="info.nightscout.client.NEW_FOOD" />
+      </intent-filter>
+    </receiver>
     <meta-data
       android:name="com.google.android.gms.car.application"
       android:resource="@xml/t1arc_automotive_app_desc" />
@@ -46,7 +82,7 @@
       android:name=".T1ArcGlucoseDisplayService"
       android:enabled="true"
       android:exported="false"
-      android:foregroundServiceType="specialUse">
+      android:foregroundServiceType="specialUse|mediaPlayback">
       <property
         android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
         android:value="User-enabled continuous glucose display and LibreLinkUp refresh for personal diabetes monitoring." />

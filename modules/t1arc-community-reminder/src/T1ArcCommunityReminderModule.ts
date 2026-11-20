@@ -13,6 +13,9 @@ declare class NativeCommunityReminder extends NativeModule<Record<string, never>
   copySupportEmailAsync(): Promise<void>;
   shouldRequestPermissionAsync(): Promise<boolean>;
   markPermissionRequestedAsync(): Promise<void>;
+  /** Posts the quiet "new version available" notice; false when notifications are off. */
+  showUpdateNotificationAsync(version: string): Promise<boolean>;
+  cancelUpdateNotificationAsync(): Promise<void>;
 }
 
 const native = requireNativeModule<NativeCommunityReminder>('T1ArcCommunityReminder');

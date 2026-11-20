@@ -88,7 +88,7 @@ export function FoodLibraryBrowser({ initialTab, foodsOnly, onFood, onRecipe, on
         <View style={styles.controls}>
           <TextInput accessibilityLabel="Search your saved food library" placeholder="Search saved foods" placeholderTextColor={colors.textTertiary} value={query}
             onChangeText={value => { resetResults(); setQuery(value); }} clearButtonMode="while-editing" returnKeyType="search"
-            style={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderRadius: radius.md }]} />
+            style={[styles.input, { color: colors.text, backgroundColor: colors.surfaceMuted, borderColor: colors.controlBorder, borderRadius: radius.md }]} />
           <FoodLibraryTabs value={tab} foodsOnly={foodsOnly} showHeading={false} onChange={value => { if (value !== tab) { resetResults(); setTab(value); } }} />
         </View>
         <FlatList data={items} keyExtractor={item => `${item.kind}:${item.value.id}`} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list}

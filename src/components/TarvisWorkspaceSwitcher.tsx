@@ -17,8 +17,8 @@ export function TarvisWorkspaceSwitcher({
       <SegmentedControl
         accessibilityLabel="Tarv1s workspace"
         options={[
-          { value: "tarvis", label: "Tarv1s" },
-          { value: "insights", label: "Insights" },
+          { value: "tarvis", label: "Ask" },
+          { value: "insights", label: "Compare periods" },
         ]}
         value={value}
         onChange={onChange}

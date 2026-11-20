@@ -1,7 +1,9 @@
 # T1 Arc screenshots
 
-Captured on a Pixel in dark mode on 17 September 2026. The phone views show
-the creator's own records, shared with permission. They illustrate the app;
+Captured on a Pixel in dark mode on 17 September 2026, before the 1.8
+redesign of Today, Settings and History, so some screens now look different.
+The phone views show the creator's own records, shared with permission. They
+illustrate the app;
 the values and personal food entries are not recommendations or a claim of
 complete restaurant coverage. Tap an image for the full-size view.
 

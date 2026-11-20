@@ -158,6 +158,28 @@ function observationIntervals(
   });
 }
 
+/**
+ * Duration-weighted observation intervals used by every time-in-range figure:
+ * each canonical sample is carried forward until the next sample, the end of
+ * the range or the observation gap cap, whichever comes first.
+ */
+export function glucoseObservationIntervals(
+  readings: readonly GlucoseReading[],
+  range: TimeRange,
+  observationGapCapMilliseconds = DEFAULT_OBSERVATION_GAP_MS,
+): { start: number; end: number; mmolL: number }[] {
+  assertRange(range);
+  assertFinitePositive(
+    observationGapCapMilliseconds,
+    "The observation gap cap",
+  );
+  return observationIntervals(
+    canonicalGlucoseSamples(readings, range),
+    range,
+    observationGapCapMilliseconds,
+  );
+}
+
 function missingIntervals(
   observed: readonly ObservationInterval[],
   range: TimeRange,

@@ -93,6 +93,26 @@ export function normalizeProviderResponse(provider: TarvisProvider, value: unkno
   return { status: "completed", output: [{ content: [{ type: "output_text", text }] }], usage: { input_tokens: input, output_tokens: output, total_tokens: input + output } };
 }
 
+const PROVIDER_ERROR_CODE = /^[a-z_]{1,40}$/;
+
+/**
+ * Reads only `error.code` and `error.type` from an error body, and only when
+ * each is a short lower-case identifier. Any other content is discarded.
+ */
+async function providerErrorCodes(response: Response): Promise<Set<string>> {
+  const codes = new Set<string>();
+  try {
+    if (typeof response.text !== "function") return codes;
+    const error = record(record(JSON.parse(await response.text())).error);
+    for (const value of [error.code, error.type]) {
+      if (typeof value === "string" && PROVIDER_ERROR_CODE.test(value)) codes.add(value);
+    }
+  } catch {
+    // Not JSON, empty or unreadable: map by status only.
+  }
+  return codes;
+}
+
 export async function fetchTarvisProviderResponse(provider: TarvisProvider, key: string, openAiUrl: string, init: RequestInit) {
   assertTarvisProviderReady(provider);
   const config = TARVIS_PROVIDERS[provider];
@@ -141,9 +161,23 @@ export async function fetchTarvisProviderResponse(provider: TarvisProvider, key:
     if (init.signal?.aborted) throw error;
     throw new TarvisProviderError(`${config.label} could not be reached. Check your connection and try again.`);
   }
-  // Do not surface provider error bodies: they may echo private inputs.
+  // Do not surface provider error bodies: they may echo private inputs. Only
+  // short machine codes are read from them, never shown or logged.
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new TarvisProviderError(`${config.label} API key is invalid or lacks permission. Open Tarv1s settings to check it.`, true);
+    const codes = await providerErrorCodes(response);
+    if (provider === "openai") {
+      if (response.status === 401) throw new TarvisProviderError("OpenAI rejected this API key. It may have been deleted or pasted incompletely. Replace it in Tarv1s settings.", true);
+      if (response.status === 404 || (response.status === 403 && codes.has("model_not_found"))) {
+        throw new TarvisProviderError(`This OpenAI key can't use the model ${model}. Choose another model in Tarv1s settings, or give the key's project access to that model.`, true);
+      }
+      if (response.status === 403) throw new TarvisProviderError("OpenAI accepted the key but refused the request. Check the key's permissions and your account's region in your OpenAI account.", true);
+      // Waiting does not add credit, so this sets no cooldown.
+      if (response.status === 429 && codes.has("insufficient_quota")) {
+        throw new TarvisProviderError("Your OpenAI account has no API credit left, or billing is not set up. Add credit in your OpenAI account, or choose another provider in Tarv1s settings.", true);
+      }
+    }
+    if (response.status === 401) throw new TarvisProviderError(`${config.label} rejected this API key. Replace it in Tarv1s settings.`, true);
+    if (response.status === 403) throw new TarvisProviderError(`${config.label} accepted the key but refused the request. Check the key's permissions in your ${config.label} account.`, true);
     if (response.status === 429) {
       const retry = response.headers?.get("retry-after");
       const seconds = retry && /^\d+$/.test(retry) ? Number(retry) : 0;

@@ -429,7 +429,7 @@ export function XdripSourceCard() {
           styles.input,
           {
             backgroundColor: colors.surfaceMuted,
-            borderColor: colors.border,
+            borderColor: colors.controlBorder,
             borderRadius: radius.md,
             color: colors.text,
           },
@@ -546,8 +546,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   presetDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 2,
   },
   label: {
@@ -594,8 +594,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   statusBody: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   actionRow: {

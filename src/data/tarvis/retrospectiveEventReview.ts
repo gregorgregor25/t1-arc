@@ -5,6 +5,7 @@ import type {
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "@/domain/contextNotes";
 import {
   ActivityEvent,
@@ -39,6 +40,7 @@ import {
 } from "@/domain/time";
 
 import type { TarvisAnswer } from "./types";
+import { hasRecentWeekPhrase, RECENT_WEEK_DAYS } from "./recentWeekPhrase";
 import { mealNutritionSummary } from "@/domain/mealNutrition";
 import { extractTarvisLiterals } from "./intent/literals";
 import {
@@ -50,6 +52,7 @@ import {
 import type { RetrospectiveIobLoader } from "./retrospectiveIobLoader";
 import { requestedTarvisPeriodDays } from "./scope";
 import { formatGlucose } from "@/domain/regionalFormat";
+import { glucoseMeetsThreshold } from "@/domain/glucoseRanges";
 import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { formatStrengthWorkoutSet } from "@/domain/strengthWorkoutPresentation";
 import {
@@ -341,6 +344,11 @@ export function rangeForRetrospectiveEventQuestion(
   const requestedWeekday = weekdayDateKey(question, today);
   if (requestedWeekday) {
     return rangeForRetrospectiveDate(requestedWeekday, question, asOf);
+  }
+  // "the past week" is the last 7 local days including today, never the
+  // previous calendar week that bare "last week" means.
+  if (hasRecentWeekPhrase(question)) {
+    return multiDayRange(today, RECENT_WEEK_DAYS, asOf);
   }
   const calendarPeriod = retrospectiveCalendarPeriodRange(
     question,
@@ -797,15 +805,18 @@ function describeGlucose(
       reading.timestamp >= outcomeRange.start &&
       reading.timestamp <= outcomeRange.end,
   );
-  const lows = relevant.filter((reading) => reading.mmolL < TARGET_LOW_MMOL_L);
+  // Same boundary rule as History: 70 mg/dL is not below 3.9 mmol/L.
+  const lows = relevant.filter((reading) =>
+    glucoseMeetsThreshold(reading.mmolL, "lt", TARGET_LOW_MMOL_L),
+  );
   const lowAtOrBeforeStart =
     nearStart &&
     nearStart.timestamp <= activity.start &&
-    nearStart.mmolL < TARGET_LOW_MMOL_L
+    glucoseMeetsThreshold(nearStart.mmolL, "lt", TARGET_LOW_MMOL_L)
       ? nearStart
       : undefined;
   const highs = relevant.filter(
-    (reading) => reading.mmolL > TARGET_HIGH_MMOL_L,
+    (reading) => glucoseMeetsThreshold(reading.mmolL, "gt", TARGET_HIGH_MMOL_L),
   );
   const firstLow = lows[0];
   const lowest = minReading(lows);
@@ -830,6 +841,7 @@ function describeGlucose(
       `Glucose was ${regionalGlucose(nearStart.mmolL)} near the start at ${formatTime(nearStart.timestamp)}.`,
     );
     if (
+      nearStart.trend === "tripleDown" ||
       nearStart.trend === "doubleDown" ||
       nearStart.trend === "down" ||
       nearStart.trend === "slightDown"
@@ -1348,7 +1360,7 @@ function rankedContextDetail(event: RankedReviewContextEvent) {
     return `${formatManualKetoneTitle(ketone)} · manually entered`;
   }
   return `${contextNoteCategoryLabel(event.category)} · ${
-    event.detail ?? "no additional detail recorded"
+    contextNoteDisplayDetail(event, getRuntimeRegionalDefaults()) ?? "no additional detail recorded"
   }`;
 }
 

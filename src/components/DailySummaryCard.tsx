@@ -317,8 +317,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.9,
   },
@@ -355,8 +355,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   coverage: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   tirCopy: {
@@ -369,8 +369,8 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   tirLabel: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '800',
     letterSpacing: 0.55,
   },
@@ -388,14 +388,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   metricValue: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   metricLabel: {
-    fontSize: 7,
-    lineHeight: 10,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
@@ -407,13 +407,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   showMoreText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
   },
   footnote: {
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 12,
   },
 });

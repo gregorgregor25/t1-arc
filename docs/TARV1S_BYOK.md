@@ -13,7 +13,13 @@ available.
 
 ## Choose a provider
 
-In Tarv1s settings, select OpenAI, Google Gemini or Anthropic Claude. Read the
+Tarv1s settings first list what works without any connection: exact questions
+about your records and period summaries. **ChatGPT** is listed first as the
+simplest option, because it uses a sign-in rather than an API key.
+
+For an API-key connection, select OpenAI, Google Gemini or Anthropic Claude.
+A suitable default model is already chosen; the model list is under
+**Advanced · Model** and only needs changing if you want a different model. Read the
 selected provider's data-use notice, enter its API key and choose **Save key on
 this phone**. If a key is already saved, choose **Use selected provider**.
 Saving checks the key's format and stores it locally; the first eligible AI
@@ -83,6 +89,27 @@ phone validation and its limits.
 Some exact questions can be answered locally from records already on the
 phone. Questions that need broader language reasoning show the provider setup and
 require the user to choose whether to send them.
+
+**Summarise a period** prepares a plain-language summary of today, last night,
+or the last 7, 14 or 30 complete days entirely on the phone, from fixed
+templates. It covers sensor coverage, standard time in range and the five
+consensus bands, tight range and your own range if set, average glucose, GMI
+(only when it meets the GMI rules), variability, low and high episode counts,
+and insulin totals with how far the records reach and where they came from. No
+AI account is needed and nothing is sent. When no provider is connected, this
+card is the first thing Tarv1s shows. Last night uses your night alert hours
+when night alerts are turned on, otherwise 00:00–06:00.
+
+Every answer that uses your records shows a fixed line under it, for example
+"Calculated from: 10 Nov 2026 – 16 Nov 2026 · 2,016 glucose readings · 100%
+sensor coverage · Standard range 3.9–10.0 mmol/L". The line is built on the
+phone from the calculation or evidence that produced the answer, never from
+model-written text. General explanations that did not use your records do not
+show it.
+
+The reply filter blocks dosing directions, treatment instructions and pump
+setting recommendations. Plain descriptions of what was recorded, such as "AAPS
+delivered 0.4 U as an SMB at 02:10", are allowed.
 
 Opening Tarv1s, seeing starter questions, saving an answer in your notebook or
 preparing appointment notes does not make a provider request. Exact local

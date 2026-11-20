@@ -30,6 +30,7 @@ import {
   isSourceConnectionSupersededError,
   type SourceConnectionWriteLease,
 } from '@/data/live/sourceConnectionOwnership';
+import { serviceStatusMessage } from "@/domain/serviceMessages";
 
 const RECENT_ENTRY_COUNT = 96;
 const MAX_ENTRY_COUNT = 5_000;
@@ -333,7 +334,7 @@ export class NightscoutGlucoseSource implements GlucoseSource {
       if (!response.ok) {
         throw new NightscoutError(
           "network",
-          `Nightscout returned HTTP ${response.status}.`,
+          serviceStatusMessage("Your Nightscout site", response.status),
         );
       }
       const body = await boundedResponseText(response);
@@ -407,7 +408,7 @@ export class NightscoutGlucoseSource implements GlucoseSource {
       if (payload.length > 0 && readings.length === 0) {
         throw new NightscoutError(
           "invalid-response",
-          "Nightscout returned entries, but none contained a usable SGV and millisecond timestamp.",
+          "Your Nightscout site sent glucose entries, but none had a reading and time T1 Arc can use. Check that your uploader is sending glucose to Nightscout.",
         );
       }
       await this.store.upsertReadings(readings);
@@ -457,7 +458,7 @@ export class NightscoutGlucoseSource implements GlucoseSource {
       if (!response.ok) {
         throw new NightscoutError(
           "network",
-          `Nightscout IOB and COB returned HTTP ${response.status}.`,
+          `Insulin and carbs on board could not be read from Nightscout. ${serviceStatusMessage("Your Nightscout site", response.status)}`,
         );
       }
       const payload = await response.json();

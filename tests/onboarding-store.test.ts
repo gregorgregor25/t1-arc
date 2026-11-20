@@ -9,6 +9,10 @@ import {
   saveOnboardingComplete,
   saveOnboardingProgress,
 } from "@/data/onboarding/onboardingStore";
+import {
+  LAST_ONBOARDING_TOUR_INDEX,
+  ONBOARDING_WALKTHROUGH_VERSION,
+} from "@/screens/onboarding/tourModel";
 
 const secureStore = vi.hoisted(() => {
   const values = new Map<string, string>();
@@ -42,7 +46,7 @@ describe("onboarding state", () => {
     await expect(loadOnboardingState()).resolves.toMatchObject({
       status: "in_progress",
       lastStep: 2,
-      walkthroughVersion: 1,
+      walkthroughVersion: ONBOARDING_WALKTHROUGH_VERSION,
     });
     await expect(loadOnboardingComplete()).resolves.toBe(false);
   });
@@ -51,7 +55,7 @@ describe("onboarding state", () => {
     await saveOnboardingComplete();
     await expect(loadOnboardingState()).resolves.toMatchObject({
       status: "completed",
-      lastStep: 4,
+      lastStep: LAST_ONBOARDING_TOUR_INDEX,
     });
     await expect(loadOnboardingComplete()).resolves.toBe(true);
   });
@@ -110,7 +114,7 @@ describe("onboarding state", () => {
       vi.fn(async () => undefined),
     );
 
-    await writes.progress(4);
+    await writes.progress(LAST_ONBOARDING_TOUR_INDEX);
 
     expect(persistProgress).not.toHaveBeenCalled();
   });

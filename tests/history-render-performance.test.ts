@@ -40,7 +40,7 @@ describe('History render performance contract', () => {
     expect(history).toContain('<PopulatedHistoryContent');
     expect(timelineHook).toContain('const latestRange = useRef(range);');
     expect(timelineHook).toContain(
-      '}, [contextPaddingMs, rangeKey, repository, revision]);',
+      '}, [attempt, contextPaddingMs, rangeKey, repository, revision]);',
     );
     expect(timelineHook).not.toContain(
       '}, [range.end, range.start, rangeKey, repository, revision]);',
@@ -51,7 +51,7 @@ describe('History render performance contract', () => {
       '}, [dataMode, range.end, range.start, requestKey, revision]);',
     );
     expect(healthHook).toContain('const latestRange = useRef(range);');
-    expect(healthHook).toContain('}, [dataMode, requestKey, refreshBucket, revision]);');
+    expect(healthHook).toContain('}, [attempt, dataMode, requestKey, refreshBucket, revision]);');
     expect(healthHook).toContain('Math.floor(range.end / 300_000)');
     expect(healthHook).not.toContain(
       '}, [dataMode, range.end, range.start, requestKey, revision]);',

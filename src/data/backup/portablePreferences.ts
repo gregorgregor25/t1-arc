@@ -1,11 +1,81 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import {
+  GLUCOSE_ALARM_BUILT_IN_SOUND,
+  GLUCOSE_ALARM_KINDS,
+  GLUCOSE_ALARM_SOUND_KEYS,
+  type GlucoseAlarmConfiguration,
+  type GlucoseAlarmKind,
+  upgradeGlucoseAlarmConfiguration,
+  validateGlucoseAlarmConfiguration,
+} from '@/domain/glucoseAlarms';
 
 import {
   getIncludedPortablePreferenceGroups,
+  PORTABLE_GLUCOSE_ALARM_CONFIGURATION_KEYS,
   PORTABLE_PREFERENCES_VERSION,
+  type PortableGlucoseAlarmConfiguration,
+  type PortableGlucoseAlarmSettings,
   PortablePreferences,
   validatePortablePreferences,
 } from '@/domain/portablePreferences';
+
+export interface PortablePreferenceRestoreOutcome {
+  preferences: PortablePreferences;
+  /** Plain-language notes for the restore summary, such as a replaced sound. */
+  notices: string[];
+}
+
+const ALARM_KIND_LABELS: Record<GlucoseAlarmKind, string> = {
+  urgentLow: 'urgent low', low: 'low', high: 'high', veryHigh: 'very high', stale: 'missing readings',
+};
+
+/** Alarm choices without the master or sound switch, plus names of the custom sounds they use. */
+export function portableGlucoseAlarmSettings(
+  configuration: GlucoseAlarmConfiguration,
+  customSounds: readonly { id: string; name: string }[],
+): PortableGlucoseAlarmSettings {
+  const portable = Object.fromEntries(
+    PORTABLE_GLUCOSE_ALARM_CONFIGURATION_KEYS.map((key) => [key, configuration[key]]),
+  ) as unknown as PortableGlucoseAlarmConfiguration;
+  const used = new Set(Object.values(GLUCOSE_ALARM_SOUND_KEYS).map((key) => configuration[key]));
+  return {
+    configuration: portable,
+    customSounds: customSounds
+      .filter((sound) => used.has(sound.id))
+      .map((sound) => ({ id: sound.id, name: sound.name.slice(0, 160) })),
+  };
+}
+
+/**
+ * Builds the configuration to save on this phone. Alarms always arrive off.
+ * A custom sound that is not on this phone falls back to the built-in sound
+ * for that level, and a notice says so.
+ */
+export function restorableGlucoseAlarmConfiguration(
+  settings: PortableGlucoseAlarmSettings,
+  availableSoundIds: ReadonlySet<string>,
+): { configuration: GlucoseAlarmConfiguration; notices: string[] } {
+  const configuration: GlucoseAlarmConfiguration = { ...settings.configuration, enabled: false, audioEnabled: false };
+  const notices: string[] = [];
+  for (const kind of GLUCOSE_ALARM_KINDS) {
+    const key = GLUCOSE_ALARM_SOUND_KEYS[kind];
+    const id = configuration[key];
+    if (!id.startsWith('custom:') || availableSoundIds.has(id)) continue;
+    const fallback = GLUCOSE_ALARM_BUILT_IN_SOUND[kind];
+    configuration[key] = fallback;
+    const name = settings.customSounds.find((sound) => sound.id === id)?.name.trim();
+    notices.push(`${name ? `The sound “${name}”` : 'A custom alarm sound'} is not on this phone, so ${ALARM_KIND_LABELS[kind]} alerts use the built-in ${fallback === 'pulse' ? 'Steady pulse' : 'Two notes'} sound.`);
+  }
+  return { configuration, notices };
+}
+
+function disarmed(configuration: GlucoseAlarmConfiguration): GlucoseAlarmConfiguration {
+  return { ...configuration, enabled: false, audioEnabled: false };
+}
+
+function commonAlertChoicesNotRestored(reason: string) {
+  return `The low, high and missing-reading choices in this backup could not be combined with the other alarm choices on this phone. ${reason} This phone’s own alarm choices were kept and switched off. Check them in alert settings.`;
+}
 
 export interface PortablePreferenceAdapter {
   getDisplayStatus(): Promise<{
@@ -32,6 +102,7 @@ export interface PortablePreferenceAdapter {
   getStepGoal(): Promise<number | undefined>;
   getTreatmentProfile(): Promise<PortablePreferences['treatmentProfile']>;
   getRegionalProfile(): Promise<PortablePreferences['regionalProfile']>;
+  getGlucoseAlarms(): Promise<PortablePreferences['glucoseAlarms']>;
   setGlucoseAppearance(
     settings: PortablePreferences['glucoseAppearance'],
   ): Promise<unknown>;
@@ -48,9 +119,22 @@ export interface PortablePreferenceAdapter {
     reviewHour: number;
     reviewMinute: number;
   }): Promise<unknown>;
+  /**
+   * Saves this phone's current alarm choices with both master switches (alerts
+   * and sound) off, changing nothing else, and switches the older alert
+   * notifications off too. Runs before anything is restored, whatever the
+   * backup contains.
+   */
+  disarmGlucoseAlarms(): Promise<{ notices: string[] } | void>;
+  /**
+   * Restores the older common alert choices, switched off. When the backup also
+   * carries full alarm choices they replace the native choices in one save
+   * later, so the common choices are not merged into native first.
+   */
   setGlucoseAlerts(
     settings: PortablePreferences['glucoseAlerts'],
-  ): Promise<unknown>;
+    options: { fullAlarmChoicesFollow: boolean },
+  ): Promise<{ notices: string[] } | void>;
   setThemePreference(
     mode: NonNullable<PortablePreferences['themeMode']>,
   ): Promise<unknown>;
@@ -61,6 +145,10 @@ export interface PortablePreferenceAdapter {
   setRegionalProfile(
     profile: NonNullable<PortablePreferences['regionalProfile']>,
   ): Promise<unknown>;
+  /** Saves alarm choices switched off. Resolves with notices for the restore summary. */
+  setGlucoseAlarms(
+    settings: PortableGlucoseAlarmSettings,
+  ): Promise<{ notices: string[] }>;
 }
 
 async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
@@ -76,6 +164,7 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
       resetGlucoseAlertState,
       saveGlucoseAlertPreferences,
     },
+    { getGlucoseAlarmStatus, saveGlucoseAlarmConfiguration },
     { loadThemePreference, saveThemePreference },
     { loadStepGoal, saveStepGoal },
     {
@@ -88,11 +177,19 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
     import('../../../modules/t1arc-glucose-display'),
     import('@/data/insights/insightReviewPreferences'),
     import('@/data/glucoseAlerts/glucoseAlertPreferences'),
+    import('@/data/glucoseAlerts/glucoseAlarms'),
     import('@/data/themePreference'),
     import('@/data/healthGoals'),
     import('@/data/tarvis/treatmentProfile'),
     import('@/data/regionalProfile'),
   ]);
+  async function nativeAlarmConfiguration() {
+    const configuration = await T1ArcGlucoseDisplay.getGlucoseAlarmConfigurationAsync?.();
+    if (configuration === undefined || configuration === null) return undefined;
+    const upgraded = upgradeGlucoseAlarmConfiguration(configuration);
+    if (!upgraded) throw new Error(validateGlucoseAlarmConfiguration(configuration) ?? 'The alarm choices could not be read.');
+    return upgraded;
+  }
   return {
     getDisplayStatus: () => T1ArcGlucoseDisplay.getStatusAsync(),
     getGlucoseAppearance: () =>
@@ -112,12 +209,34 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
         reviewMinute: preferences.reviewMinute ?? 0,
       };
     },
-    getGlucoseAlerts: loadGlucoseAlertPreferences,
+    getGlucoseAlerts: async () => {
+      const configuration = await nativeAlarmConfiguration();
+      if (!configuration) return loadGlucoseAlertPreferences();
+      return {
+        lowEnabled: configuration.lowEnabled,
+        lowThresholdMmolL: configuration.lowThresholdMmolL,
+        highEnabled: configuration.highEnabled,
+        highThresholdMmolL: configuration.highThresholdMmolL,
+        staleEnabled: configuration.staleEnabled,
+        // The portable legacy schema cannot represent the new short reminder
+        // intervals. Export no automatic reminder rather than substitute an
+        // invented cadence. Native sounds/night/very-high/arming stay local.
+        repeatMinutes: [0, 30, 60, 120].includes(configuration.repeatMinutes)
+          ? configuration.repeatMinutes
+          : 0,
+      };
+    },
     getThemePreference: loadThemePreference,
     getStepGoal: loadStepGoal,
     getTreatmentProfile: async () =>
       (await loadTarvisTreatmentProfile()) ?? null,
     getRegionalProfile: loadRegionalProfile,
+    getGlucoseAlarms: async () => {
+      const configuration = await nativeAlarmConfiguration();
+      if (!configuration) return null;
+      const status = await getGlucoseAlarmStatus();
+      return portableGlucoseAlarmSettings(configuration, status.customSounds);
+    },
     setGlucoseAppearance: (settings) =>
       T1ArcGlucoseDisplay.setAppearanceSettingsAsync(settings),
     setLockScreenVisible: (visible) =>
@@ -127,9 +246,49 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
     setAodSize: (size) => T1ArcGlucoseDisplay.setAodSizeAsync(size),
     setWeeklyReviewEnabled: setWeeklyReviewNotificationEnabled,
     setWeeklyReviewTiming,
-    setGlucoseAlerts: async (settings) => {
+    disarmGlucoseAlarms: async () => {
+      // An additive restore does not pass through the full-erasure epoch, and
+      // the native ownership fence deliberately ignores legacy enable/disable
+      // calls. Switch the native owner off explicitly, on its own, so no
+      // later validation or restore failure can leave it armed.
+      const configuration = await nativeAlarmConfiguration();
+      if (configuration) await saveGlucoseAlarmConfiguration(disarmed(configuration));
+      // The older alert notifications have their own switch. A backup without
+      // alert choices (version 1) never reaches setGlucoseAlerts, so switch
+      // them off here as well.
+      const legacy = await loadGlucoseAlertPreferences();
+      if (!legacy.enabled) return { notices: [] };
+      await saveGlucoseAlertPreferences({ ...legacy, enabled: false });
+      await resetGlucoseAlertState();
+      return {
+        notices: configuration
+          ? []
+          : ['Glucose alerts were switched off while restoring. Check them in alert settings and turn them on when you are ready.'],
+      };
+    },
+    setGlucoseAlerts: async (settings, { fullAlarmChoicesFollow }) => {
+      const notices: string[] = [];
+      const configuration = fullAlarmChoicesFollow ? undefined : await nativeAlarmConfiguration();
+      if (configuration) {
+        const veryHighConflicts = configuration.veryHighThresholdMmolL !== null &&
+          configuration.veryHighThresholdMmolL <= settings.highThresholdMmolL;
+        const merged = disarmed({
+          ...configuration,
+          ...settings,
+          ...(veryHighConflicts ? {
+            veryHighEnabled: false,
+            veryHighThresholdMmolL: null,
+          } : {}),
+        });
+        // Validate the combination as a whole. If it does not fit, the
+        // phone keeps its own (already switched off) choices.
+        const error = validateGlucoseAlarmConfiguration(merged);
+        if (error) notices.push(commonAlertChoicesNotRestored(error));
+        else await saveGlucoseAlarmConfiguration(merged);
+      }
       await saveGlucoseAlertPreferences({ ...settings, enabled: false });
       await resetGlucoseAlertState();
+      return { notices };
     },
     setThemePreference: saveThemePreference,
     setStepGoal: saveStepGoal,
@@ -138,6 +297,33 @@ async function nativeAdapter(): Promise<PortablePreferenceAdapter> {
         ? saveTarvisTreatmentProfile(profile.carbRatioSchedule)
         : clearTarvisTreatmentProfile(),
     setRegionalProfile: saveRegionalProfile,
+    setGlucoseAlarms: async (settings) => {
+      if (!T1ArcGlucoseDisplay.saveGlucoseAlarmConfigurationAsync) {
+        return { notices: ['Alarm choices in this backup need the updated T1 Arc Android app, so they were not restored.'] };
+      }
+      const status = await getGlucoseAlarmStatus();
+      const { configuration, notices } = restorableGlucoseAlarmConfiguration(
+        settings,
+        new Set(status.customSounds.map((sound) => sound.id)),
+      );
+      // The complete restored choices are validated together and saved in
+      // one step, with both master switches off.
+      const error = validateGlucoseAlarmConfiguration(configuration);
+      if (error) {
+        return {
+          notices: [
+            `The alarm choices in this backup could not be restored. ${error} Alarms on this phone are switched off. Check them in alert settings.`,
+          ],
+        };
+      }
+      await saveGlucoseAlarmConfiguration(configuration);
+      return {
+        notices: [
+          'Alarm choices were restored switched off. Check them in alert settings and turn them on when you are ready.',
+          ...notices,
+        ],
+      };
+    },
   };
 }
 
@@ -155,6 +341,7 @@ export async function capturePortablePreferences(
     dailyStepGoal,
     treatmentProfile,
     regionalProfile,
+    glucoseAlarms,
   ] = await Promise.all([
     source.getDisplayStatus(),
     source.getGlucoseAppearance(),
@@ -165,6 +352,7 @@ export async function capturePortablePreferences(
     source.getStepGoal(),
     source.getTreatmentProfile(),
     source.getRegionalProfile(),
+    source.getGlucoseAlarms(),
   ]);
   return validatePortablePreferences({
     version: PORTABLE_PREFERENCES_VERSION,
@@ -189,13 +377,14 @@ export async function capturePortablePreferences(
     },
     treatmentProfile,
     regionalProfile,
+    glucoseAlarms,
   });
 }
 
 export async function restorePortablePreferences(
   preferences: PortablePreferences,
   adapter?: PortablePreferenceAdapter,
-) {
+): Promise<PortablePreferenceRestoreOutcome> {
   const safe = validatePortablePreferences(preferences);
   const destination = adapter ?? (await nativeAdapter());
   return restoreValidatedPortablePreferences(safe, destination);
@@ -210,7 +399,7 @@ export async function restorePortablePreferences(
 export async function restorePortablePreferencesInTransaction(
   preferences: PortablePreferences,
   transaction: SQLiteDatabase,
-) {
+): Promise<PortablePreferenceRestoreOutcome> {
   const safe = validatePortablePreferences(preferences);
   const [destination, { restoreInsightReviewPreferencesInTransaction }] =
     await Promise.all([
@@ -229,8 +418,27 @@ async function restoreValidatedPortablePreferences(
   safe: PortablePreferences,
   destination: PortablePreferenceAdapter,
   restoreInsightReviews?: () => Promise<unknown>,
-) {
+): Promise<PortablePreferenceRestoreOutcome> {
   const includedGroups = getIncludedPortablePreferenceGroups(safe);
+  const notices: string[] = [];
+  // Switch alarms off first, before anything is merged or validated. A later
+  // preference failure must never leave the prior native audible owner running.
+  const disarm = await destination.disarmGlucoseAlarms();
+  if (disarm) notices.push(...disarm.notices);
+  const fullAlarmChoices =
+    includedGroups.includes('glucoseAlarms') && safe.glucoseAlarms !== null
+      ? safe.glucoseAlarms
+      : null;
+  if (includedGroups.includes('glucoseAlerts')) {
+    const result = await destination.setGlucoseAlerts(safe.glucoseAlerts, {
+      fullAlarmChoicesFollow: fullAlarmChoices !== null,
+    });
+    if (result) notices.push(...result.notices);
+  }
+  // Full alarm choices (version 7 and later) always arrive switched off.
+  if (fullAlarmChoices) {
+    notices.push(...(await destination.setGlucoseAlarms(fullAlarmChoices)).notices);
+  }
   await destination.setGlucoseAppearance(safe.glucoseAppearance);
   await destination.setAodPosition(safe.glanceableDisplay.aodPosition);
   await destination.setAodSize(safe.glanceableDisplay.aodSize);
@@ -255,9 +463,6 @@ async function restoreValidatedPortablePreferences(
       });
     }
   }
-  if (includedGroups.includes('glucoseAlerts')) {
-    await destination.setGlucoseAlerts(safe.glucoseAlerts);
-  }
   if (includedGroups.includes('themeMode') && safe.themeMode !== null) {
     await destination.setThemePreference(safe.themeMode);
   }
@@ -273,5 +478,5 @@ async function restoreValidatedPortablePreferences(
   ) {
     await destination.setRegionalProfile(safe.regionalProfile);
   }
-  return safe;
+  return { preferences: safe, notices };
 }

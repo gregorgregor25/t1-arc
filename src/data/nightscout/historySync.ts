@@ -1,4 +1,3 @@
-import { NightscoutGlucoseSource } from './NightscoutGlucoseSource';
 import { dayRange } from '@/domain/time';
 import {
   NightscoutHistoryState,
@@ -16,12 +15,17 @@ import {
   type SourceConnectionWriteLease,
 } from '@/data/live/sourceConnectionOwnership';
 
+/** A Nightscout glucose source, or a treatments-only reader while AAPS supplies glucose. */
+export interface NightscoutHistoryImporter {
+  importHistoryRange(startMs: number, endMs: number): Promise<unknown>;
+}
+
 let syncInFlight:
   | { key: string; promise: Promise<NightscoutHistoryState> }
   | undefined;
 
 export async function syncNightscoutHistoryIfDue(
-  source: NightscoutGlucoseSource,
+  source: NightscoutHistoryImporter,
   now = Date.now(),
   sourceWriteLease: SourceConnectionWriteLease,
 ) {
@@ -39,7 +43,7 @@ export async function syncNightscoutHistoryIfDue(
 }
 
 async function runNightscoutHistorySync(
-  source: NightscoutGlucoseSource,
+  source: NightscoutHistoryImporter,
   now: number,
   writeLease: SourceConnectionWriteLease,
 ) {

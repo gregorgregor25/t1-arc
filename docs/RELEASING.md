@@ -164,9 +164,9 @@ At minimum:
 5. restart the phone and confirm a cold launch;
 6. compare the APK checksum with the attached checksum file;
 7. confirm the release notes match the tested asset.
-8. open **Settings > About T1 Arc** and compare the package, version and source
-   revision with the build record. A production release must report a clean
-   source revision, not local changes or an unknown commit.
+8. open **Settings > About and updates** and compare the package, version and
+   source revision with the build record. A production release must report a
+   clean source revision, not local changes or an unknown commit.
 9. install the matching companion on a supported watch, enable Wear sharing on
    the phone and verify live readings, freshness, units, colours and reconnects;
 10. on Wear OS 6 or later, install each design from the phone, approve activation

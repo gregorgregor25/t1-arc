@@ -41,6 +41,8 @@ vi.mock('@/data/nightscout/historySync', () => ({ syncNightscoutHistoryIfDue: vi
 vi.mock('@/data/xdrip/XdripGlucoseSource', () => ({ XdripGlucoseSource: class {} }));
 vi.mock('@/data/dexcomShare/DexcomShareGlucoseSource', () => ({ DexcomShareGlucoseSource: class {} }));
 vi.mock('@/data/medtrum/MedtrumGlucoseSource', () => ({ MedtrumGlucoseSource: class {} }));
+vi.mock('@/data/aaps/AapsGlucoseSource', () => ({ AapsGlucoseSource: class {} }));
+vi.mock('@/data/aaps/localAapsSource', () => ({ getSelectedGlucoseSourceId: vi.fn(async () => undefined) }));
 
 describe('monitoring day with notification capture', () => {
   beforeEach(() => {

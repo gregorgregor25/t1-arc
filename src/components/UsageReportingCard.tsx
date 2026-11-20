@@ -6,7 +6,11 @@ import { getUsageConsentAsync, setUsageConsentAsync } from '@/data/usageReportin
 import { USAGE_REPORTING_COPY } from '@/domain/usageReportingCopy';
 import { useAppTheme } from '@/theme/theme';
 
-/** Settings > Privacy off switch for anonymous usage counts. There is no prompt. */
+/**
+ * Switch for anonymous usage counts, shown in Settings > Backup and privacy and
+ * in the tour's setup step. It always shows the choice stored on this phone, so
+ * existing users keep their choice and new users can decide before they start.
+ */
 export function UsageReportingCard() {
   const { colors } = useAppTheme();
   const [enabled, setEnabled] = useState(true);
@@ -80,6 +84,7 @@ export function UsageReportingCard() {
         <Pressable
           accessibilityRole="button"
           onPress={retry}
+          style={styles.textAction}
         >
           <Text style={[styles.link, { color: colors.primary }]}>{USAGE_REPORTING_COPY.loadError}</Text>
         </Pressable>
@@ -89,6 +94,7 @@ export function UsageReportingCard() {
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   fill: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   heading: { fontSize: 18, lineHeight: 26, fontWeight: '700' },

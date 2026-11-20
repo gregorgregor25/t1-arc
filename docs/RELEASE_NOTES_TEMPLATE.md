@@ -67,7 +67,7 @@ faces: Meridian, Chronograph, Atelier, Pace and Summit. List only the matching
 APKs that are actually attached and verified for this release. The companion
 contains its own bundled faces for supported Watch Face Push devices; the
 independent phone APK bundles the companion for the guided installer in
-**Settings → Watch & watch faces**. Installation requires the user’s explicit
+**Settings → Watch**. Installation requires the user’s explicit
 action and temporary watch debugging; it is not automatic. This phone update
 does not change the glucose companion protocol, so a working companion does not
 need reinstalling solely because the phone version increased.

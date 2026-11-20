@@ -18,17 +18,62 @@ const unavailable: GlucoseDisplayStatus = {
 };
 
 let privateGlucoseWriteEpoch = 0;
+let selectedSourceId: string | undefined;
+let selectionGeneration = 0;
 
 function validWriteEpoch(value: number) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
 export default {
+  addListener(_eventName: string, _listener: () => void) {
+    return { remove() {} };
+  },
   async getStatusAsync() {
     return unavailable;
   },
   async getPrivateGlucoseWriteEpochAsync() {
     return privateGlucoseWriteEpoch;
+  },
+  async getAapsLocalStatusAsync() {
+    return { supported: false, selectedSourceId, selectionGeneration,
+      writeEpoch: privateGlucoseWriteEpoch, bufferedCount: 0 };
+  },
+  async setLocalGlucoseSourceAsync(sourceId: string, writeEpoch: number) {
+    if (!validWriteEpoch(writeEpoch) || writeEpoch !== privateGlucoseWriteEpoch) {
+      throw new Error('This glucose selection was superseded by a privacy erase.');
+    }
+    if (sourceId !== selectedSourceId) {
+      selectedSourceId = sourceId;
+      selectionGeneration += 1;
+    }
+    return { supported: false, selectedSourceId, selectionGeneration,
+      writeEpoch: privateGlucoseWriteEpoch, bufferedCount: 0 };
+  },
+  async peekAapsReadingsAsync() {
+    return [];
+  },
+  async acknowledgeAapsReadingsAsync() {
+    return false;
+  },
+  async getAapsTreatmentStatusAsync() {
+    return { supported: false, bufferedCount: 0, droppedCount: 0, localRouteEnabled: false };
+  },
+  async setAapsLocalTreatmentsEnabledAsync() {
+    return { supported: false, bufferedCount: 0, droppedCount: 0, localRouteEnabled: false };
+  },
+  async peekAapsTreatmentsAsync() {
+    return [];
+  },
+  async acknowledgeAapsTreatmentsAsync() {
+    return false;
+  },
+  async updateSelectedGlucoseForWriteEpochAsync(writeEpoch: number, generation: number) {
+    if (!validWriteEpoch(writeEpoch) || writeEpoch !== privateGlucoseWriteEpoch ||
+      generation !== selectionGeneration) {
+      throw new Error('This glucose publication was superseded.');
+    }
+    return false;
   },
   async getWearStatusAsync() {
     return {
@@ -111,9 +156,39 @@ export default {
       throw new Error('A stale glucose privacy clear cannot replace a newer epoch.');
     }
     privateGlucoseWriteEpoch = writeEpoch;
+    selectedSourceId = undefined;
+    selectionGeneration += 1;
     return unavailable;
   },
   async showGlucoseAlertAsync() {
+    return false;
+  },
+  async getGlucoseAlarmConfigurationAsync() {
+    return null;
+  },
+  async getGlucoseAlarmStatusAsync() {
+    return {
+      configured: false,
+      enabled: false,
+      audioEnabled: false,
+      audioArmed: false,
+      activeKind: null,
+      episodeId: null,
+      readingTimestampMs: null,
+      snoozedUntilMs: null,
+      lowPausedUntilMs: null,
+      maxSnoozeMinutes: 24 * 60,
+      acknowledged: false,
+      missing: true,
+      playbackState: 'blocked' as const,
+      readinessIssues: ['Glucose alarms are available in the installed Android app.'],
+      customSounds: [],
+    };
+  },
+  async reconcileGlucoseAlarmAsync() {
+    return false;
+  },
+  async openGlucoseAlarmExactAlarmSettingsAsync() {
     return false;
   },
   async setGlucoseAlertMonitoringEnabledAsync() {

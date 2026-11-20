@@ -14,10 +14,13 @@ describe('usage reporting disclosure', () => {
     expect(hint).toContain('deletes the local activity history');
   });
 
-  it('is shown as a switch in Settings > Privacy, with no prompt or card elsewhere', () => {
-    const sources = readFileSync('src/screens/SourcesScreen.tsx', 'utf8');
-    const privacy = sources.slice(sources.indexOf('activeSource === "privacy"'));
+  it('is shown as a switch in Settings > Privacy and in the tour setup step, with no separate prompt', () => {
+    const sources = readFileSync('src/screens/settings/SettingsPages.tsx', 'utf8');
+    const privacy = sources.slice(sources.indexOf('function BackupPrivacyPage'));
     expect(privacy).toContain('<UsageReportingCard />');
+    // New users see the same switch, showing the stored choice, in the tour.
+    const tour = readFileSync('src/screens/onboarding/TourSetupPanel.tsx', 'utf8');
+    expect(tour).toContain('<UsageReportingCard />');
     const card = readFileSync('src/components/UsageReportingCard.tsx', 'utf8');
     expect(card).toContain('<Switch');
     expect(card).toContain('setUsageConsentAsync');

@@ -2445,7 +2445,7 @@ export function FoodLoggerCard({
                         styles.mealTitleInput,
                         {
                           backgroundColor: colors.surface,
-                          borderColor: colors.border,
+                          borderColor: colors.controlBorder,
                           borderRadius: radius.md,
                           color: colors.text,
                         },
@@ -2608,15 +2608,32 @@ export function FoodLoggerCard({
                 </Pressable>
               ) : null}
 
-              <View style={{ gap: 10 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {[{ title: 'Read label', icon: 'camera-outline' as const, run: () => beginLabelFood(true) },
-                    { title: 'Quick carbs', icon: 'add-circle-outline' as const, run: () => { Keyboard.dismiss(); setCustomOpen(false); setBarcodeEntryOpen(false); setCatalogueToolsOpen(false); setQuickCarbOpen(true); setMoreWaysOpen(true); } },
-                    { title: 'Enter food', icon: 'create-outline' as const, run: () => beginLabelFood(false) }].map(action => <Pressable key={action.title} accessibilityRole="button" onPress={action.run} style={{ flexGrow: 1, flexBasis: 90, padding: 12, minHeight: 64, gap: 6, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.surfaceMuted }}><Ionicons name={action.icon} size={24} color={colors.primary} /><Text style={{ color: colors.text, fontWeight: '600', textAlign: 'center' }}>{action.title}</Text></Pressable>)}
+              {/* Search comes first. The two most used shortcuts sit beside
+                  More ways to add, which opens barcode number, quick carbs,
+                  create a food and the offline catalogue. */}
+              <View style={styles.addWays}>
+                <View accessibilityLabel="Other ways to add food" style={styles.addWayChips}>
+                  {[{ title: 'Quick carbs', label: 'Quick carbs', icon: 'add-circle-outline' as const, run: () => { Keyboard.dismiss(); setCustomOpen(false); setBarcodeEntryOpen(false); setCatalogueToolsOpen(false); setQuickCarbOpen(true); setMoreWaysOpen(true); } },
+                    { title: 'Read a label', label: 'Read a food label with the camera', icon: 'camera-outline' as const, run: () => beginLabelFood(true) }].map(action => (
+                    <Pressable key={action.title} accessibilityLabel={action.label} accessibilityRole="button" onPress={action.run} style={({ pressed }) => [styles.addWayChip, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill, opacity: pressed ? 0.68 : 1 }]}>
+                      <Ionicons accessibilityElementsHidden name={action.icon} size={18} color={colors.primary} />
+                      <Text style={[styles.addWayChipText, { color: colors.text }]}>{action.title}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable accessibilityLabel="More ways to add food" accessibilityHint="Barcode number, quick carbs, create a food and the offline catalogue" accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setMoreWaysOpen(true); }} style={({ pressed }) => [styles.addWayChip, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill, opacity: pressed ? 0.68 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="ellipsis-horizontal" size={18} color={colors.primary} />
+                    <Text style={[styles.addWayChipText, { color: colors.text }]}>More ways to add</Text>
+                  </Pressable>
                 </View>
                 <View style={styles.foodActions}>
-                  <Pressable accessibilityLabel="Copy foods from yesterday or another day" accessibilityRole="button" onPress={beginCopyFromDay} style={[styles.foodAction, { minHeight: 48 }]}><Text style={{ color: colors.primary }}>Copy from a day</Text></Pressable>
-                  <Pressable accessibilityLabel="More ways to add food" accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setMoreWaysOpen(true); }} style={[styles.foodAction, { minHeight: 48 }]}><Text style={{ color: colors.textSecondary }}>More options</Text></Pressable>
+                  <Pressable accessibilityLabel="Copy foods from yesterday or another day" accessibilityRole="button" onPress={beginCopyFromDay} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.6 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="copy-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.foodActionText, { color: colors.primary }]}>Copy from a day</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel="Enter a food yourself" accessibilityHint="Type the name and nutrition from the pack or your own recipe" accessibilityRole="button" onPress={() => beginLabelFood(false)} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.6 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="create-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.foodActionText, { color: colors.primary }]}>Enter a food yourself</Text>
+                  </Pressable>
                 </View>
               </View>
 
@@ -3570,7 +3587,7 @@ export function FoodLoggerCard({
                                   styles.countInput,
                                   {
                                     backgroundColor: colors.surface,
-                                    borderColor: colors.border,
+                                    borderColor: colors.controlBorder,
                                     borderRadius: radius.sm,
                                     color: colors.text,
                                   },
@@ -3698,7 +3715,7 @@ export function FoodLoggerCard({
                               styles.recipeNameInput,
                               {
                                 backgroundColor: colors.surface,
-                                borderColor: colors.border,
+                                borderColor: colors.controlBorder,
                                 borderRadius: radius.sm,
                                 color: colors.text,
                               },
@@ -4672,7 +4689,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4694,7 +4711,7 @@ export function FoodLoggerCard({
                             styles.quickCarbInput,
                             {
                               backgroundColor: colors.surface,
-                              borderColor: colors.border,
+                              borderColor: colors.controlBorder,
                               borderRadius: radius.sm,
                               color: colors.text,
                             },
@@ -4834,7 +4851,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4859,7 +4876,7 @@ export function FoodLoggerCard({
                           styles.customWideInput,
                           {
                             backgroundColor: colors.surface,
-                            borderColor: colors.border,
+                            borderColor: colors.controlBorder,
                             borderRadius: radius.sm,
                             color: colors.text,
                           },
@@ -4887,7 +4904,7 @@ export function FoodLoggerCard({
                               styles.customNumberInput,
                               {
                                 backgroundColor: colors.surface,
-                                borderColor: colors.border,
+                                borderColor: colors.controlBorder,
                                 borderRadius: radius.sm,
                                 color: colors.text,
                               },
@@ -5028,7 +5045,7 @@ export function FoodLoggerCard({
                                 styles.customNumberInput,
                                 {
                                   backgroundColor: colors.surface,
-                                  borderColor: colors.border,
+                                  borderColor: colors.controlBorder,
                                   borderRadius: radius.sm,
                                   color: colors.text,
                                 },
@@ -5293,8 +5310,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   compactDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 1,
   },
   card: {
@@ -5374,8 +5391,8 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   close: {
     width: 48,
@@ -5409,8 +5426,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   editNoticeDetail: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   mealSummary: {
@@ -5463,6 +5480,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  addWays: { gap: 4 },
+  addWayChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  addWayChip: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  addWayChipText: { fontSize: 14, lineHeight: 20, fontWeight: "700" },
   foodActions: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -5504,8 +5533,8 @@ const styles = StyleSheet.create({
   },
   copyFromDayDetail: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   copyUndo: {
     minHeight: 52,
@@ -5657,7 +5686,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   customToggleDetail: {
-    fontSize: 11,
+    fontSize: 12,
   },
   quickCarbForm: {
     borderWidth: 1,
@@ -5720,7 +5749,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   customLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "700",
   },
   customNumberInput: {
@@ -5746,7 +5775,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   customHint: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   customBarcodeLink: {
@@ -5797,8 +5826,8 @@ const styles = StyleSheet.create({
   },
   barcodeNoticeText: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   mealRow: {
     flexDirection: "row",
@@ -5913,8 +5942,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   fieldOptional: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   mealTitleInput: {
     minHeight: 52,
@@ -5927,8 +5956,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   recentMealHint: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.7,
@@ -5977,8 +6006,8 @@ const styles = StyleSheet.create({
   },
   recipeServing: {
     marginTop: "auto",
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
   },
   recentMealAction: {
@@ -6003,8 +6032,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   recentMealMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedBlock: {
     gap: 8,
@@ -6035,8 +6064,8 @@ const styles = StyleSheet.create({
   },
   resultCount: {
     flexShrink: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     textAlign: "right",
   },
   totalCarbs: {
@@ -6051,8 +6080,8 @@ const styles = StyleSheet.create({
   },
   basketSecondary: {
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedFood: {
     minHeight: 128,
@@ -6083,8 +6112,8 @@ const styles = StyleSheet.create({
   },
   selectedBrand: {
     marginTop: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   selectedDataStatus: {
     alignSelf: "flex-start",
@@ -6098,8 +6127,8 @@ const styles = StyleSheet.create({
   },
   selectedDataStatusText: {
     flexShrink: 1,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
   },
   selectedCarbs: {
@@ -6110,8 +6139,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   selectedMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   selectedControls: {
@@ -6146,14 +6175,14 @@ const styles = StyleSheet.create({
   },
   selectedSource: {
     width: "100%",
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   servingLabel: {
     width: "100%",
     marginRight: 2,
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: "700",
   },
   eachAmountShell: {
@@ -6173,8 +6202,8 @@ const styles = StyleSheet.create({
   },
   eachAmountUnit: {
     paddingHorizontal: 6,
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   countEditor: {
@@ -6214,7 +6243,7 @@ const styles = StyleSheet.create({
   },
   amountUnit: {
     paddingHorizontal: 7,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
   remove: {
@@ -6245,8 +6274,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   recipeSaveDetail: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   recipeFields: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -6289,8 +6318,8 @@ const styles = StyleSheet.create({
   },
   recipeServingsUnit: {
     paddingRight: 10,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   recipeSaveButton: {
@@ -6337,8 +6366,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   onlineMessage: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     paddingVertical: 8,
   },
   hint: {
@@ -6376,8 +6405,8 @@ const styles = StyleSheet.create({
   },
   resultBrand: {
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
   resultCarbs: {
     marginTop: 3,
@@ -6386,8 +6415,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   resultMeta: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
   },
   error: {
@@ -6457,8 +6486,8 @@ const styles = StyleSheet.create({
   },
   dataInfoLabel: {
     flex: 1,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "700",
   },
   attributionBlock: {
@@ -6490,8 +6519,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   footerLabel: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
   },
   footerCarbs: {
     fontSize: 15,
@@ -6499,8 +6528,8 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   footerMacros: {
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 16,
   },
   save: {
     minWidth: 150,

@@ -2,7 +2,10 @@
 export const DIAGNOSTIC_CODES = [
   'app_opened', 'app_foreground', 'app_background', 'interface_error',
   'refresh_started', 'refresh_finished', 'refresh_failed', 'health_refresh_failed',
-  'source_check',
+  'source_check', 'refresh_watchdog',
+  'health_sync_started', 'health_sync_finished',
+  'insight_review_started', 'insight_review_finished',
+  'history_sync_started', 'history_sync_finished',
 ] as const;
 export type DiagnosticCode = typeof DIAGNOSTIC_CODES[number];
 export const DIAGNOSTIC_SOURCES = ['nightscout', 'xdrip', 'dexcom', 'medtrum'] as const;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { readHealthMetricSnapshot } from "@/data/healthMetricReader";
 import {
@@ -25,6 +25,8 @@ export function useDailyHealthMetrics(range: TimeRange) {
   const [snapshot, setSnapshot] =
     useState<KeyedAsyncSnapshot<string, DailyHealthSnapshot>>();
   const visibleSnapshot = snapshotValueForKey(snapshot, requestKey);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
     latestRange.current = range;
@@ -62,12 +64,13 @@ export function useDailyHealthMetrics(range: TimeRange) {
     return () => {
       active = false;
     };
-  }, [dataMode, requestKey, refreshBucket, revision]);
+  }, [attempt, dataMode, requestKey, refreshBucket, revision]);
 
   return {
     metrics: visibleSnapshot?.metrics,
     records: visibleSnapshot?.records ?? [],
     contextNeedsSource: visibleSnapshot?.contextNeedsSource ?? [],
     error: visibleSnapshot?.error,
+    reload,
   };
 }

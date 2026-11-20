@@ -61,7 +61,7 @@ export function FoodLabelReview({ draft, preview, convention, onConvention, onRe
       <TextInput accessibilityLabel={`Label ${label.toLowerCase()}`} value={values[field]} keyboardType="decimal-pad"
         placeholder="Enter from label" placeholderTextColor={colors.textSecondary} maxLength={12}
         onChangeText={value => { setValues(current => ({ ...current, [field]: value })); setChecked(false); setError(undefined); }}
-        style={[styles.input, text, { backgroundColor: colors.surface, borderColor: colors.border }]} />
+        style={[styles.input, text, { backgroundColor: colors.surface, borderColor: colors.controlBorder }]} />
     </View>)}
     <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }}
       accessibilityLabel="I checked the amount and values against the label" onPress={() => { Keyboard.dismiss(); setChecked(value => !value); }}

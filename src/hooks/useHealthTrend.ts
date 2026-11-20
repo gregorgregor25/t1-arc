@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { HealthTrendDay } from "@/data/healthConnect/dailyHealthMetrics";
 import { readHealthTrendSnapshot } from "@/data/healthMetricReader";
@@ -20,6 +20,8 @@ export function useHealthTrend(endDate: DateKey, days = 7) {
   const [snapshot, setSnapshot] =
     useState<KeyedAsyncSnapshot<string, HealthTrendSnapshot>>();
   const visibleSnapshot = snapshotValueForKey(snapshot, requestKey);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
     let active = true;
@@ -49,11 +51,12 @@ export function useHealthTrend(endDate: DateKey, days = 7) {
     return () => {
       active = false;
     };
-  }, [dataMode, days, endDate, requestKey, refreshBucket, revision]);
+  }, [attempt, dataMode, days, endDate, requestKey, refreshBucket, revision]);
 
   return {
     data: visibleSnapshot?.data ?? [],
     error: visibleSnapshot?.error,
     loading: visibleSnapshot === undefined,
+    reload,
   };
 }
