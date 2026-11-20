@@ -33,6 +33,7 @@ SENSOR_MODEL = "Dexcom G6"
 SENSOR_WARMUP_MINUTES = 120
 SENSOR_TITLE = f"{SENSOR_MODEL} warming up"
 SENSOR_DETAIL_PREFIX = "Readings expected from"
+SENSOR_SAVE = "Save new sensor"
 BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 TIME_AT_END = re.compile(r"(\d{1,2}):(\d{2})(?: ([ap]m))?$")
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -289,8 +290,21 @@ class Device:
                     texts.add(value)
         return frozenset(texts)
 
+    def has_label(self, root: ET.Element, label: str) -> bool:
+        """Whether any node, on screen or not, has exactly this text or description."""
+        want = normalise(label)
+        return any(normalise(node.get(attribute, "")) == want
+                   for node in root.iter("node") for attribute in ("text", "content-desc"))
+
     def sensor_record(self, root: ET.Element) -> tuple[str, str] | None:
-        """The invented record's title and reading-time detail, when Today shows both."""
+        """The saved record's title and reading-time detail, when Today shows both with the form closed.
+
+        The open form shows its own "Readings expected from: ..." preview, so the
+        record only counts once Today is the selected tab and the form's save
+        button has gone.
+        """
+        if self.selected_tab(root) != "Today" or self.has_label(root, SENSOR_SAVE):
+            return None
         title = detail = None
         for node in root.iter("node"):
             value = normalise(node.get("text", ""))
@@ -339,7 +353,7 @@ class Device:
             if time.monotonic() > deadline:
                 self.screenshot(f"{name}-timeout")
                 self.layout(f"{name}-timeout")
-                raise CheckFailed(f"Today did not show {SENSOR_TITLE!r} with its reading time within {timeout} s.")
+                raise CheckFailed(f"Today did not show {SENSOR_TITLE!r} with its reading time, with the form closed, within {timeout} s.")
             time.sleep(2)
 
     def tap_point(self, point: tuple[int, int]) -> None:
@@ -577,8 +591,8 @@ class Acceptance:
         device.tap("Sensor model:", root, exact=False)
         root = device.scroll_to(SENSOR_MODEL)
         device.tap(SENSOR_MODEL, root)
-        root = device.scroll_to("Save new sensor", max_y=0.97)
-        device.tap("Save new sensor", root)
+        root = device.scroll_to(SENSOR_SAVE, max_y=0.97)
+        device.tap(SENSOR_SAVE, root)
         title, detail = device.wait_for_sensor_record(60, name=f"{prefix}-sensor-saved")
         device.screenshot(f"{prefix}-sensor-saved")
         device.layout(f"{prefix}-sensor-saved")

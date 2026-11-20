@@ -35,26 +35,24 @@ concurrency:
   group: emulator-acceptance-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  RELEASE_TAG: ${{ inputs.tag || 'v1.7.18' }}
+  PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.7.18' }}
+  API_LEVEL: ${{ inputs.api_level || '35' }}
+  EXPECTED_CERT_SHA256: 31babc04082806319b3eb1ed97f437c40d32b6e2eac4463eb485c4b681740f50
+  RESULTS_DIR: emulator-results
+
 jobs:
-  acceptance:
-    name: Install, update and relaunch on an emulator
+  fetch:
+    name: Download and check the signed APKs
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 15
     permissions:
       # Draft release assets are visible only to tokens with write access.
-      # This job downloads them; it never creates, edits or uploads a release.
+      # This job checks out no code and runs no project code. It only
+      # downloads release files; it never creates, edits or uploads a release.
       contents: write
-    env:
-      RELEASE_TAG: ${{ inputs.tag || 'v1.7.18' }}
-      PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.7.18' }}
-      API_LEVEL: ${{ inputs.api_level || '35' }}
-      EXPECTED_CERT_SHA256: 31babc04082806319b3eb1ed97f437c40d32b6e2eac4463eb485c4b681740f50
-      RESULTS_DIR: emulator-results
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Check the inputs
         run: |
           for tag in "$RELEASE_TAG" "$PREVIOUS_TAG"; do
@@ -73,7 +71,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p apks/new apks/old "$RESULTS_DIR"
+          mkdir -p apks/new apks/old
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir apks/new \
             --pattern "T1-Arc-$RELEASE_TAG.apk" \
             --pattern "T1-Arc-$RELEASE_TAG.apk.sha256" \
@@ -99,7 +97,44 @@ jobs:
             echo "release_apk_sha256=$(sha256sum "apks/new/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)"
             echo "previous_apk_sha256=$(sha256sum "apks/old/T1-Arc-$PREVIOUS_TAG.apk" | cut -d ' ' -f 1)"
             echo "signer_sha256=$EXPECTED_CERT_SHA256"
-          } > "$RESULTS_DIR/apks.txt"
+          } > apks/apks.txt
+
+      - name: Hand the checked APKs to the emulator job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checked-apks
+          path: apks
+          retention-days: 1
+          if-no-files-found: error
+
+  acceptance:
+    name: Install, update and relaunch on an emulator
+    needs: fetch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Receive the checked APKs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: checked-apks
+          path: apks
+
+      - name: Confirm the APKs are the ones checked
+        run: |
+          set -euo pipefail
+          # The fetch job verified the checksums and signer; confirm nothing changed in transit.
+          (cd apks/new && sha256sum -c "T1-Arc-$RELEASE_TAG.apk.sha256")
+          (cd apks/old && sha256sum -c "T1-Arc-$PREVIOUS_TAG.apk.sha256")
+          grep -qx "release_apk_sha256=$(sha256sum "apks/new/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)" apks/apks.txt
+          grep -qx "previous_apk_sha256=$(sha256sum "apks/old/T1-Arc-$PREVIOUS_TAG.apk" | cut -d ' ' -f 1)" apks/apks.txt
+          mkdir -p "$RESULTS_DIR"
+          mv apks/apks.txt "$RESULTS_DIR/apks.txt"
 
       - name: Enable hardware acceleration for the emulator
         run: |
