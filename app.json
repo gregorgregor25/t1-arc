@@ -2,7 +2,7 @@
   "expo": {
     "name": "T1 Arc",
     "slug": "t1-arc",
-    "version": "1.8.0",
+    "version": "1.8.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "t1arc",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "io.github.gregorgregor25.t1arc",
-      "versionCode": 96,
+      "versionCode": 98,
       "softwareKeyboardLayoutMode": "resize",
       "allowBackup": false,
       "blockedPermissions": [
@@ -26,7 +26,7 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
