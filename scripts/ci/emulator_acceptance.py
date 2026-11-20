@@ -624,9 +624,31 @@ class Acceptance:
         device.wait_for_tab("Today", 60, name=f"{prefix}-after-about")
         return f"About shows {version_text} and the clean source revision {revision}."
 
-    def record_sensor_change(self, prefix: str) -> str:
-        """Save one invented record through the app's own form before updating."""
+    def leave_demo(self, prefix: str) -> None:
+        """Switch from the demo to the user's own (empty) records, as a real user would before logging."""
         device = self.device
+        root = device.wait_for_tab("Today", 60, name=f"{prefix}-before-sensor")
+        if not device.has_label(root, "Exit demo"):
+            return
+        device.tap("Exit demo", root)
+        deadline = time.monotonic() + 60
+        while True:
+            root = device.layout()
+            if root is not None and device.on_tab(root, "Today") and not device.has_label(root, "Exit demo"):
+                break
+            device.assert_healthy()
+            if time.monotonic() > deadline:
+                device.screenshot(f"{prefix}-exit-demo-timeout")
+                device.layout(f"{prefix}-exit-demo-timeout")
+                raise CheckFailed("Today still showed the demo 60 s after tapping 'Exit demo'.")
+            time.sleep(2)
+        device.screenshot(f"{prefix}-demo-left")
+        device.layout(f"{prefix}-demo-left")
+
+    def record_sensor_change(self, prefix: str) -> str:
+        """Leave the demo, then save one invented record through the app's own form before updating."""
+        device = self.device
+        self.leave_demo(prefix)
         root = device.scroll_to("Record sensor change")
         device.tap("Record sensor change", root)
         _, root = device.wait_for(("Sensor model:", "Choose your sensor"), 45, exact=False, name=f"{prefix}-sensor-form")
@@ -655,7 +677,7 @@ class Acceptance:
         if (ends - started) % (24 * 60) != SENSOR_WARMUP_MINUTES:
             raise CheckFailed(f"Today shows {detail!r}, which is not {SENSOR_WARMUP_MINUTES} minutes after the recorded start.")
         self.sensor = (title, detail)
-        return (f"Saved a {SENSOR_MODEL} sensor change. Today shows {title!r} and {detail!r}, "
+        return (f"Left the demo and saved a {SENSOR_MODEL} sensor change. Today shows {title!r} and {detail!r}, "
                 f"{SENSOR_WARMUP_MINUTES} minutes after the recorded start.")
 
     def expect_sensor_record(self, prefix: str) -> str:
