@@ -12,7 +12,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { EvidenceRecordInspector } from "@/components/EvidenceRecordInspector";
 import { InsightDayHighlightsCard } from "@/components/InsightDayHighlightsCard";
 import { InsightReviewHistoryCard } from "@/components/InsightReviewHistoryCard";
-import { InsightReviewScheduleCard } from "@/components/InsightReviewScheduleCard";
+import { moreFindingsLabel, splitCompareFindings, type CompareFindingGroups } from "@/components/tarvis/compareFindings";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { LoadingCard } from "@/components/LoadingCard";
 import { SafetyNote } from "@/components/SafetyNote";
 import { SectionCard } from "@/components/SectionCard";
@@ -65,6 +66,7 @@ import {
 } from "@/domain/regionalFormat";
 import { TarvisScreen } from "@/screens/TarvisScreen";
 import { loadRetrospectivePhysiology } from "@/data/tarvis/retrospectivePhysiology";
+import { createCurrentIobLoader } from "@/data/tarvis/currentIobLoader";
 import { createRetrospectiveIobLoader } from "@/data/tarvis/retrospectiveIobLoader";
 import { useAppTheme } from "@/theme/theme";
 import {
@@ -461,6 +463,10 @@ export function InsightsScreen() {
       loadRetrospectivePhysiology({ ...request, asOf: now }),
     [now],
   );
+  const loadTarvisCurrentIob = useMemo(
+    () => createCurrentIobLoader(dataMode),
+    [dataMode],
+  );
   const loadTarvisTimestampedIob = useMemo(
     () => createRetrospectiveIobLoader(dataMode),
     [dataMode],
@@ -643,12 +649,8 @@ export function InsightsScreen() {
     ...dashboardFindings.context,
   ];
   const confidenceFindings = dashboardFindings.confidence;
-  const visibleChanges = allFindingsVisible
-    ? dashboardFindings.changes
-    : dashboardFindings.changes.slice(0, 3);
-  const visibleContext = allFindingsVisible
-    ? dashboardFindings.context
-    : dashboardFindings.context.slice(0, 3);
+  // The three most useful findings first; the rest fold under "More findings".
+  const compareFindings = splitCompareFindings(dashboardFindings);
 
   useEffect(() => {
     if (dataMode !== "live") {
@@ -737,6 +739,58 @@ export function InsightsScreen() {
     setWorkspace(next);
   }
 
+  function renderFindingGroups(
+    groups: CompareFindingGroups<InsightFinding>,
+    withDetail: boolean,
+  ) {
+    return (
+      <>
+        {groups.changes.length ? (
+          <>
+            <SectionHeading
+              title="Changes worth knowing"
+              detail={withDetail ? "The clearest changes in glucose and insulin, ordered by likely usefulness." : undefined}
+            />
+            <View style={styles.findingStack}>
+              {groups.changes.map((finding) => (
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  expanded={expanded.has(finding.id)}
+                  highlighted={false}
+                  onAskTarvis={() => openTarvisForFinding(finding)}
+                  onToggle={() => toggleFinding(finding.id)}
+                  onInspectRecords={setSelectedEvidence}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+        {groups.context.length ? (
+          <>
+            <SectionHeading
+              title="Possible influences"
+              detail={withDetail ? "Food, activity, sleep and other recorded context that changed nearby. These are clues, not proven causes." : undefined}
+            />
+            <View style={styles.findingStack}>
+              {groups.context.map((finding) => (
+                <FindingCard
+                  key={finding.id}
+                  finding={finding}
+                  expanded={expanded.has(finding.id)}
+                  highlighted={false}
+                  onAskTarvis={() => openTarvisForFinding(finding)}
+                  onToggle={() => toggleFinding(finding.id)}
+                  onInspectRecords={setSelectedEvidence}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+      </>
+    );
+  }
+
   const compactHeader = (
     <View style={styles.compactHeader}>
       <AppMenuButton />
@@ -812,6 +866,9 @@ export function InsightsScreen() {
             }
             loadTimestampedIob={
               tarvisContext.liveData ? loadTarvisTimestampedIob : undefined
+            }
+            loadCurrentIob={
+              tarvisContext.liveData ? loadTarvisCurrentIob : undefined
             }
             loadReportForRange={loadTarvisReportForRange}
             onBack={() => {
@@ -968,7 +1025,29 @@ export function InsightsScreen() {
             ) : null}
             {reviewsVisible ? (
               <View style={styles.reviewStack}>
-                <InsightReviewScheduleCard />
+                <Pressable
+                  accessibilityHint="Opens Settings, Notifications and reminders"
+                  accessibilityRole="button"
+                  onPress={() => navigation.navigate("Sources", sourceSettingsRouteParams("notifications"))}
+                  style={({ pressed }) => [
+                    styles.reviewToggle,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderRadius: radius.md,
+                      opacity: pressed ? 0.72 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.primary} name="notifications-outline" size={19} />
+                  <View style={styles.reviewCopy}>
+                    <Text style={[styles.reviewTitle, { color: colors.text }]}>Weekly review reminder</Text>
+                    <Text style={[styles.reviewDetail, { color: colors.textSecondary }]}>
+                      Day, time and Android settings are in Settings, Notifications and reminders
+                    </Text>
+                  </View>
+                  <Ionicons accessibilityElementsHidden color={colors.textTertiary} name="chevron-forward" size={18} />
+                </Pressable>
                 {reviewAccess.showHistoryLoading ? (
                   <LoadingCard label="Opening saved review history…" />
                 ) : null}
@@ -1095,48 +1174,35 @@ export function InsightsScreen() {
 
             {reviewFindings.length ? (
               <>
-                {visibleChanges.length ? (
-                  <>
-                    <SectionHeading
-                      title="Changes worth knowing"
-                      detail="The clearest changes in glucose and insulin, ordered by likely usefulness."
-                    />
-                    <View style={styles.findingStack}>
-                      {visibleChanges.map((finding) => (
-                        <FindingCard
-                          key={finding.id}
-                          finding={finding}
-                          expanded={expanded.has(finding.id)}
-                          highlighted={false}
-                          onAskTarvis={() => openTarvisForFinding(finding)}
-                          onToggle={() => toggleFinding(finding.id)}
-                          onInspectRecords={setSelectedEvidence}
-                        />
-                      ))}
-                    </View>
-                  </>
+                {renderFindingGroups(compareFindings.top, true)}
+                {compareFindings.moreCount ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: allFindingsVisible }}
+                    onPress={() => setAllFindingsVisible((visible) => !visible)}
+                    style={({ pressed }) => [
+                      styles.allFindingsButton,
+                      {
+                        borderColor: colors.border,
+                        borderRadius: radius.md,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.allFindingsText, { color: colors.primary }]}
+                    >
+                      {moreFindingsLabel(
+                        compareFindings.moreCount,
+                        allFindingsVisible,
+                        (value) => formatRegionalNumber(value, regional.locale, { maximumFractionDigits: 0 }),
+                      )}
+                    </Text>
+                  </Pressable>
                 ) : null}
-                {visibleContext.length ? (
-                  <>
-                    <SectionHeading
-                      title="Possible influences"
-                      detail="Food, activity, sleep and other recorded context that changed nearby. These are clues, not proven causes."
-                    />
-                    <View style={styles.findingStack}>
-                      {visibleContext.map((finding) => (
-                        <FindingCard
-                          key={finding.id}
-                          finding={finding}
-                          expanded={expanded.has(finding.id)}
-                          highlighted={false}
-                          onAskTarvis={() => openTarvisForFinding(finding)}
-                          onToggle={() => toggleFinding(finding.id)}
-                          onInspectRecords={setSelectedEvidence}
-                        />
-                      ))}
-                    </View>
-                  </>
-                ) : null}
+                {allFindingsVisible && compareFindings.moreCount
+                  ? renderFindingGroups(compareFindings.more, false)
+                  : null}
               </>
             ) : (
               <>
@@ -1157,29 +1223,6 @@ export function InsightsScreen() {
                 </SectionCard>
               </>
             )}
-            {dashboardFindings.changes.length > 3 ||
-            dashboardFindings.context.length > 3 ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setAllFindingsVisible((visible) => !visible)}
-                style={({ pressed }) => [
-                  styles.allFindingsButton,
-                  {
-                    borderColor: colors.border,
-                    borderRadius: radius.md,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.allFindingsText, { color: colors.primary }]}
-                >
-                  {allFindingsVisible
-                    ? "Show the highlights"
-                    : `View all ${formatRegionalNumber(reviewFindings.length, regional.locale, { maximumFractionDigits: 0 })} findings`}
-                </Text>
-              </Pressable>
-            ) : null}
             {confidenceFindings.length ? (
               <View style={styles.confidenceSection}>
                 <Pressable

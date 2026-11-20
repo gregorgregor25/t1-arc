@@ -24,6 +24,28 @@ import type {
 const NIGHTSCOUT_CONNECTION_KEY = 't1arc.nightscout.connection.v1';
 const NIGHTSCOUT_HISTORY_STATE_KEY = 't1arc.nightscout.history-state.v1';
 const NIGHTSCOUT_IOB_COB_KEY = 't1arc.nightscout.iob-cob.v1';
+const NIGHTSCOUT_TREATMENT_SYNC_KEY = 't1arc.nightscout.treatment-sync.v1';
+
+interface StoredNightscoutTreatmentSync {
+  ownerGeneration: number;
+  succeededAt: number;
+}
+
+function parseNightscoutTreatmentSync(value: unknown) {
+  const candidate = value as Partial<StoredNightscoutTreatmentSync> | null;
+  return candidate &&
+    typeof candidate.ownerGeneration === 'number' &&
+    Number.isSafeInteger(candidate.ownerGeneration) &&
+    candidate.ownerGeneration >= 0 &&
+    typeof candidate.succeededAt === 'number' &&
+    Number.isFinite(candidate.succeededAt) &&
+    candidate.succeededAt > 0
+    ? {
+        ownerGeneration: candidate.ownerGeneration,
+        succeededAt: candidate.succeededAt,
+      }
+    : undefined;
+}
 
 export interface StoredNightscoutIobCobSnapshot {
   version: 2;
@@ -115,6 +137,7 @@ const nightscoutSecureStoreSpec: SourceOwnedSecureStoreSpec<{
   connection: NightscoutConnection;
   historyState: NightscoutHistoryState;
   iobCob: StoredNightscoutIobCobSnapshot;
+  treatmentSync: StoredNightscoutTreatmentSync;
 }> = {
   sourceId: 'nightscout',
   primaryField: 'connection',
@@ -130,6 +153,10 @@ const nightscoutSecureStoreSpec: SourceOwnedSecureStoreSpec<{
     iobCob: {
       key: NIGHTSCOUT_IOB_COB_KEY,
       parse: parseNightscoutIobCob,
+    },
+    treatmentSync: {
+      key: NIGHTSCOUT_TREATMENT_SYNC_KEY,
+      parse: parseNightscoutTreatmentSync,
     },
   },
   identityDigest: ({ connection }) =>
@@ -148,6 +175,27 @@ export async function loadOwnedNightscoutConnection(
 
 export async function loadNightscoutConnection(lease?: LocalDataWriteLease) {
   return (await loadOwnedNightscoutConnection(lease)).values.connection;
+}
+
+/** A current-window treatment poll receipt, independent of content-addressed imports. */
+export async function loadNightscoutTreatmentSyncAt(lease?: LocalDataWriteLease) {
+  const owned = await loadOwnedNightscoutConnection(lease);
+  const receipt = owned.values.treatmentSync;
+  return receipt?.ownerGeneration === owned.sourceWriteLease?.ownerGeneration
+    ? receipt?.succeededAt
+    : undefined;
+}
+
+export function saveNightscoutTreatmentSyncAt(
+  succeededAt: number,
+  sourceWriteLease: SourceConnectionWriteLease,
+) {
+  return updateSourceOwnedSecureStoreField(
+    nightscoutSecureStoreSpec,
+    'treatmentSync',
+    { succeededAt, ownerGeneration: sourceWriteLease.ownerGeneration },
+    sourceWriteLease,
+  );
 }
 
 export function beginNightscoutConnectionChange(lease?: LocalDataWriteLease) {
@@ -214,5 +262,6 @@ export async function clearNightscoutConnection() {
     forceClearEpochBoundSecureStoreValue(NIGHTSCOUT_CONNECTION_KEY),
     forceClearEpochBoundSecureStoreValue(NIGHTSCOUT_HISTORY_STATE_KEY),
     forceClearEpochBoundSecureStoreValue(NIGHTSCOUT_IOB_COB_KEY),
+    forceClearEpochBoundSecureStoreValue(NIGHTSCOUT_TREATMENT_SYNC_KEY),
   ]);
 }

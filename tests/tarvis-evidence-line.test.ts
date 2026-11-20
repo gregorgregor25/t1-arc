@@ -125,6 +125,16 @@ describe("Tarv1s evidence line", () => {
     expect(line).toBe("Calculated from: 16 Nov 2026 · 2 glucose readings");
   });
 
+  it("counts other referenced records in the singular when there is one", () => {
+    const one: EvidenceReference[] = [
+      { id: "therapy-state-intervals", label: "Recorded temporary targets", description: "", range: YESTERDAY, recordIds: ["tt-1"], examples: [] },
+    ];
+    const data = buildTarvisEvidenceLineData({ answer: answer(), question: "x", references: one })!;
+    expect(data.windows[0]).toMatchObject({ records: 1, recordLabel: "record" });
+    const two = [{ ...one[0]!, recordIds: ["tt-1", "tt-2"] }];
+    expect(buildTarvisEvidenceLineData({ answer: answer(), question: "x", references: two })!.windows[0]).toMatchObject({ records: 2, recordLabel: "records" });
+  });
+
   it("is absent for general explanations, safety boundaries and answers without records", () => {
     const references: EvidenceReference[] = [
       { id: "glucose-week", label: "Glucose readings", description: "", range: YESTERDAY, recordIds: ["a"], examples: [] },

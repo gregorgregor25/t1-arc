@@ -321,10 +321,16 @@ records do not depend on anything on this page.
 
 ### Check for an APK update
 
-Open **About T1 Arc**, then **Check for updates**. This is a manual check against
-the official GitHub repository. It does not send health records or automatically
-download or install anything. If the check cannot reach GitHub, your installed
-app and records are unchanged; you can try again later.
+Open **About T1 Arc**, then **Check for updates**. This checks the official
+GitHub repository. It does not send health records or automatically download or
+install anything. If the check cannot reach GitHub, your installed app and
+records are unchanged; you can try again later.
+
+**Tell me when an update is out** is on by default. T1 Arc then runs the same
+check once a day and shows one quiet notification for each new version, if
+Android notifications are allowed. Tapping it opens this page with the release
+notes. Test builds never check automatically. See the
+[privacy notice](../PRIVACY.md#daily-update-check-on-by-default).
 
 When an update is offered, review **What's changed**, make an encrypted backup,
 then choose **Open release and download**. Android asks before installing and

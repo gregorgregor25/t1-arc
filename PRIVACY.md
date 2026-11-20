@@ -142,6 +142,9 @@ data directly from the device to the service the user selected:
   ordinary network metadata such as the IP address. Opening the release page
   or downloading an APK uses GitHub and its asset hosts. Nothing downloads or
   installs automatically; Android asks before an update is installed.
+- The same request also runs automatically, at most once a day, while
+  **About T1 Arc > Tell me when an update is out** is on. See
+  [Daily update check](#daily-update-check-on-by-default).
 - Submitted branded-food text or a barcode, plus selected country/language
   context, can be sent to Open Food Facts. A US barcode miss can trigger the
   documented low-rate USDA exact-GTIN fallback. These services also see the
@@ -163,11 +166,41 @@ purely local processing. In particular, Google's Gemini API terms require a
 billing-enabled project for health information in this route; users should
 review the [provider-specific requirements](docs/TARV1S_BYOK.md#choose-a-provider).
 
+## Daily update check (on by default)
+
+This is one of two network flows that are on without the user choosing them;
+the other is [anonymous usage counts](#anonymous-usage-counts-on-by-default).
+It tells people when a new public version is published, including people who
+rarely open the app. It can be turned off at any time in
+**About T1 Arc > Tell me when an update is out**. Existing users get the
+default unless they turn it off.
+
+- **What is sent.** At most once a day, on an app open or after the phone's
+  glucose collector syncs, T1 Arc makes the same unauthenticated request to
+  GitHub's public release information as **Check for updates**. It sends no
+  health records, readings, account details, credentials, cookies or device
+  identifier. GitHub receives ordinary network metadata such as the IP
+  address, as with any website. The request goes to GitHub, not to the
+  maintainer.
+- **What is shown.** When GitHub lists a newer verified public phone release,
+  T1 Arc shows one quiet notification for that version, if Android
+  notifications are allowed. Tapping it opens **About T1 Arc** with the
+  release notes. Nothing downloads or installs automatically.
+- **What is stored.** The time of the last check, the newest version
+  announced, and a newer release the check found with its public release
+  notes, so **About T1 Arc** can show them without asking GitHub again. They
+  are kept in Android secure storage on the phone and are not part of
+  encrypted backups.
+- **Test builds.** Builds whose version has a suffix (for example
+  `1.7.21-aaps.4`) and other Android packages never check automatically, so a
+  public release is never suggested over features only that build has.
+
 ## Anonymous usage counts (on by default)
 
-This is the one network flow that is on without the user choosing it. It sends
-no health data, and it is the only message T1 Arc sends to the maintainer by
-default. It lets the maintainer see roughly how many people use each version.
+This is one of two network flows that are on without the user choosing them;
+the other is the [daily update check](#daily-update-check-on-by-default). It
+sends no health data, and it is the only message T1 Arc sends to the
+maintainer by default. It lets the maintainer see roughly how many people use each version.
 The last step of the first-run tour shows the switch, already on, so a new
 user can turn it off before starting; there is no separate prompt. Existing
 users keep the choice already stored on their phone. It can be turned off at

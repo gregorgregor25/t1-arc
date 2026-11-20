@@ -65,7 +65,13 @@ Gemini** or **Anthropic Claude**. No account is required to use the rest of T1 A
 
 1. Open Tarv1s settings and choose **ChatGPT**.
 2. Choose **Continue with ChatGPT**. Sign in and grant access in the system browser.
-3. Return to T1 Arc, choose an available model and choose **Use ChatGPT for AI answers**.
+3. Return to T1 Arc. The first model your account lists is already chosen; you
+   can change it. Choose **Use ChatGPT for AI answers**, shown at the top of the
+   ChatGPT section.
+
+If the connection in use stops working, for example after its API key is
+removed, Tarv1s settings offer a one-tap switch to a connection that is already
+set up. Nothing changes until you tap it.
 
 The documented preview supports eligible Plus and Pro accounts. Access and
 allowances are controlled by OpenAI; T1 Arc does not promise unlimited usage or
@@ -77,7 +83,8 @@ Models are loaded from the active account and displayed in the order OpenAI
 returns. Opening the model picker refreshes a catalogue older than five minutes;
 **Refresh models** always requests a fresh list. Availability depends on the
 account, so an API model is not added to this list by assumption. A saved model
-that disappears must be replaced explicitly. Separate
+that disappears must be replaced explicitly; only an account with no model
+chosen gets the first listed model. Separate
 ChatGPT registrations stay separate even when they have the same email address.
 
 ## What is shared and stored

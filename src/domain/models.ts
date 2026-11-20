@@ -1,3 +1,4 @@
+import type { TherapyStateInterval } from './therapyStates';
 import type { SourceCapability } from './sourceCapabilities';
 
 /** The device's IANA zone is the app's local-time basis. */
@@ -55,7 +56,7 @@ export interface BasalDelivery {
   units: number;
   /** Glooko's delivery label, for example Scheduled. */
   deliveryType?: string;
-  /** Present for percentage-based temporary basal rows. */
+  /** Percentage of the profile rate for a temporary basal (100 means unchanged). */
   percentage?: number;
   /** True when units were derived from rate x duration, not reported directly. */
   unitsEstimated?: boolean;
@@ -78,6 +79,13 @@ export interface BolusDelivery {
   carbRatioGramsPerUnit?: number;
   initialUnits?: number;
   extendedUnits?: number;
+  /**
+   * Read-time only, never stored. Set by source reconciliation when the kept
+   * record comes from a source that does not record AAPS's SMB marking
+   * (Glooko) and a hidden copy of the same delivery from a source that does
+   * (Nightscout, AAPS) says whether it was an SMB.
+   */
+  smbMarking?: { sourceId: string; smb: boolean };
   sourceId: string;
   importedAt?: number;
   sourceFile?: string;
@@ -138,6 +146,8 @@ export interface DataSourceStatus {
   lastAttemptAt?: number;
   lastUpdatedAt?: number;
   dataThrough?: number;
+  /** The earliest stored record from this source, when it is known. */
+  dataFrom?: number;
   recordCount?: number;
   errorCode?: string;
   capabilities?: readonly SourceCapability[];
@@ -151,6 +161,8 @@ export interface TimelineData {
   boluses: BolusDelivery[];
   dailyInsulinTotals?: InsulinDailyTotal[];
   pumpStates?: PumpStateInterval[];
+  /** AAPS temporary targets, profile switches, running modes and suspensions. */
+  therapyStates?: TherapyStateInterval[];
   context: HealthContextEvent[];
   sources: DataSourceStatus[];
 }

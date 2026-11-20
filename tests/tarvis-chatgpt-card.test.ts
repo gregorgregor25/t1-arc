@@ -132,4 +132,32 @@ describe("ChatGPT connection controls", () => {
     (view.button("Refresh models").props?.onPress as () => void)();
     expect(view.props.onRefreshModels).toHaveBeenCalledOnce();
   });
+
+  it("puts Use ChatGPT first, straight after sign-in, with the preselected model", () => {
+    const model = { slug: "account-model", displayName: "Account model" };
+    const account = { id: "account-a", label: "Account A", hasSession: true, connected: true, models: [model], selectedModel: model.slug };
+    const view = render({ state: { available: true, hasPendingRegistration: false, connected: true, accounts: [account], activeAccountId: account.id, models: [model], selectedModel: model.slug } });
+    const buttons = view.nodes.filter(node => node.props?.accessibilityRole === "button");
+    expect(view.label(buttons[0])).toBe("Use ChatGPT for AI answers");
+    expect(buttons[0]?.props?.disabled).toBe(false);
+    (buttons[0]?.props?.onPress as () => void)();
+    expect(view.props.onUse).toHaveBeenCalledOnce();
+    expect(view.nodes.map(node => view.label(node)).join(" ")).toContain("Model: Account model");
+  });
+
+  it("says ChatGPT is in use instead of offering it again", () => {
+    const model = { slug: "account-model", displayName: "Account model" };
+    const account = { id: "account-a", label: "Account A", hasSession: true, connected: true, models: [model], selectedModel: model.slug };
+    const view = render({ active: true, state: { available: true, hasPendingRegistration: false, connected: true, accounts: [account], activeAccountId: account.id, models: [model], selectedModel: model.slug } });
+    expect(() => view.button("Use ChatGPT for AI answers")).toThrow();
+    expect(view.nodes.map(node => view.label(node)).join(" ")).toContain("ChatGPT is in use for AI answers.");
+  });
+
+  it("does not offer Use ChatGPT when the saved model is no longer listed", () => {
+    const model = { slug: "account-model", displayName: "Account model" };
+    const account = { id: "account-a", label: "Account A", hasSession: true, connected: true, models: [model], selectedModel: "gone" };
+    const view = render({ state: { available: true, hasPendingRegistration: false, connected: true, accounts: [account], activeAccountId: account.id, models: [model], selectedModel: "gone" } });
+    expect(() => view.button("Use ChatGPT for AI answers")).toThrow();
+    expect(view.nodes.map(node => view.label(node)).join(" ")).toContain("Your saved model is no longer available");
+  });
 });

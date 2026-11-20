@@ -9,16 +9,29 @@ import type { DataSourceStatus } from '@/domain/models';
 import { formatDate, formatTime, toDateKey } from '@/domain/time';
 import { useAppTheme } from '@/theme/theme';
 
-export function ConnectionSummary({ sources }: { sources: readonly DataSourceStatus[] }) {
+/**
+ * One chip for every connection and insulin-record check on Today. It stays
+ * hidden while everything is up to date, and opens the details in place.
+ */
+export function ConnectionSummary({ sources, insulinThrough }: {
+  sources: readonly DataSourceStatus[];
+  /** "Insulin records through 13:00", only while synced insulin lags. */
+  insulinThrough?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const { colors } = useAppTheme();
+  const { colors, radius } = useAppTheme();
   const navigation = useNavigation<NavigationProp<RootTabParamList>>();
   const issues = connectionIssues(sources);
-  if (!issues.length) return null;
-  return <View>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', gap: 8, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
-      <Ionicons name="information-circle-outline" size={20} color={colors.warning} accessibilityElementsHidden />
-      <Text style={{ color: colors.textSecondary, flex: 1 }}>{issues.length === 1 ? `${issues[0]!.label} records need a check` : 'Some connections need a check'}</Text>
+  if (!issues.length && !insulinThrough) return null;
+  const chipLabel = issues.length > 1 || (issues.length === 1 && insulinThrough)
+    ? 'Some connections need a check'
+    : issues.length === 1
+      ? `${issues[0]!.label} records need a check`
+      : 'Insulin records need a check';
+  return <View style={{ gap: 4 }}>
+    <Pressable accessibilityRole="button" accessibilityHint={expanded ? 'Hides the connection details' : 'Shows which records need a check'} accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={({ pressed }) => ({ minHeight: 44, maxWidth: '100%', alignSelf: 'flex-start', flexDirection: 'row', gap: 6, alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.pill, backgroundColor: pressed ? colors.surfaceMuted : colors.surface })}>
+      <Ionicons name="alert-circle-outline" size={18} color={colors.warning} accessibilityElementsHidden />
+      <Text style={{ color: colors.text, flexShrink: 1, fontSize: 14, fontWeight: '700' }}>{chipLabel}</Text>
       <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} accessibilityElementsHidden />
     </Pressable>
     {expanded ? issues.map(source => <View key={source.id} style={{ paddingVertical: 8 }}>
@@ -30,6 +43,10 @@ export function ConnectionSummary({ sources }: { sources: readonly DataSourceSta
         navigation.navigate('Sources', target ? sourceSettingsRouteParams(target) : { focused: false });
       }} style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.primary, fontWeight: '600' }}>Check connection</Text></Pressable>
     </View>) : null}
+    {expanded && insulinThrough ? <View style={{ paddingVertical: 8 }}>
+      <Text style={{ color: colors.text, fontWeight: '600' }}>Insulin records</Text>
+      <Text style={{ color: colors.textSecondary, lineHeight: 21 }}>{insulinThrough}. Today&apos;s insulin totals may be incomplete until newer records arrive.</Text>
+    </View> : null}
     {expanded ? <Pressable accessibilityRole="button" onPress={() => navigation.navigate('Sources', { ...sourceSettingsRouteParams(), panel: 'source-health' })} style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}><Text style={{ color: colors.primary, fontWeight: '600' }}>See source health</Text></Pressable> : null}
   </View>;
 }

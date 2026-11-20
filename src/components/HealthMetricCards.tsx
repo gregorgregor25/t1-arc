@@ -2,6 +2,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   LayoutChangeEvent,
   Modal,
   Pressable,
@@ -27,7 +29,7 @@ import type {
   DailyMetricRecord,
 } from "@/domain/dailyHealthMetrics";
 import type { ActivityEvent, HealthContextEvent } from "@/domain/models";
-import { contextNoteDisplayTitle } from "@/domain/contextNotes";
+import { contextNoteDisplayTitle, contextNoteDisplayDetail } from "@/domain/contextNotes";
 import { formatStrengthWorkoutSet } from "@/domain/strengthWorkoutPresentation";
 import { dayRange, formatDate } from "@/domain/time";
 import { summarizeWorkoutHeartRate } from "@/domain/workoutHeartRate";
@@ -55,6 +57,9 @@ import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 import { useAppTheme } from "@/theme/theme";
 import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { MetricPreferencesSheet } from "./MetricPreferencesSheet";
+import { PageSheet } from "./history/PageSheet";
+import { ListGroup, ListRow } from "./ui";
+import { groupRemainingHealthMetrics, healthPriorityIds } from "./healthMetrics/healthLayout";
 
 import { SectionCard } from "./SectionCard";
 import {
@@ -212,7 +217,7 @@ function contextEventDetail(event: HealthContextEvent) {
     return `${formatRegionalNumber(Math.round(event.durationMinutes), regional.locale, { maximumFractionDigits: 0 })} min`;
   }
   return event.kind === "note"
-    ? (event.detail ?? "Recorded context")
+    ? (contextNoteDisplayDetail(event, regional) ?? "Recorded context")
     : "Recorded event";
 }
 
@@ -1730,6 +1735,7 @@ export function HealthMetricCards({
   const [selectedId, setSelectedId] = useState<string>();
   const display = useDisplayPreferences();
   const [editingMetrics, setEditingMetrics] = useState(false);
+  const [editMenuVisible, setEditMenuVisible] = useState(false);
   const [draftVisibleIds, setDraftVisibleIds] = useState<string[]>([]);
   const [stepGoal, setStepGoal] = useState<number>();
   useEffect(() => {
@@ -2611,16 +2617,40 @@ export function HealthMetricCards({
   const visible = availableDefinitions.filter((definition) => !display.preferences.hiddenHealthMetrics.includes(definition.id));
   const selected = visible.find((definition) => definition.id === selectedId);
 
+  const priorityIds = healthPriorityIds(visible, display.preferences.glanceOrder);
+  const priorities = priorityIds.flatMap((id) => visible.filter((definition) => definition.id === id));
+  const groups = groupRemainingHealthMetrics(visible, priorityIds);
+  const hiddenCount = display.preferences.hiddenHealthMetrics.length;
+  const openVisibilityChoices = () => {
+    setDraftVisibleIds(definitions.filter(definition => !display.preferences.hiddenHealthMetrics.includes(definition.id)).map(({ id }) => id));
+    setEditMenuVisible(false);
+    setEditingMetrics(true);
+  };
+  const showAllFromEditSheet = () => {
+    void display.save({ hiddenHealthMetrics: [] }).then((saved) => {
+      if (!saved) return;
+      setEditMenuVisible(false);
+      AccessibilityInfo.announceForAccessibility("All health sections are shown.");
+    });
+  };
+  // Same rule as before the redesign: the header and Edit appear when there
+  // is something to show or something hidden to bring back.
+  const showEditHeader = availableDefinitions.length > 0 || hiddenCount > 0;
+
   return (
     <>
-      {availableDefinitions.length > 0 || display.preferences.hiddenHealthMetrics.length > 0 ? (
-        <View style={styles.preferencesHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Choose health sections to show" disabled={display.loading} accessibilityState={{ disabled: display.loading }} onPress={() => {
-            setDraftVisibleIds(definitions.filter(definition => !display.preferences.hiddenHealthMetrics.includes(definition.id)).map(({ id }) => id));
-            setEditingMetrics(true);
-          }} style={({ pressed }) => [styles.preferencesAction, { opacity: pressed || display.loading ? 0.5 : 1 }]}>
+      {showEditHeader ? (
+        <View style={styles.prioritiesHeader}>
+          <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>{priorities.length ? "Your priorities" : "Health records"}</Text>
+          <Pressable
+            accessibilityHint="Choose which health sections to show, show hidden sections or set your daily step goal"
+            accessibilityLabel="Edit Health view"
+            accessibilityRole="button"
+            onPress={() => setEditMenuVisible(true)}
+            style={({ pressed }) => [styles.preferencesAction, { opacity: pressed ? 0.6 : 1 }]}
+          >
             <Ionicons accessibilityElementsHidden name="options-outline" size={18} color={colors.primary} />
-            <Text style={[styles.preferencesText, { color: colors.primary }]}>Edit view</Text>
+            <Text style={[styles.preferencesText, styles.editLabel, { color: colors.primary }]}>Edit</Text>
           </Pressable>
         </View>
       ) : null}
@@ -2636,7 +2666,7 @@ export function HealthMetricCards({
         </SectionCard>
       ) : null}
       <View style={styles.cards}>
-        {visible.map((definition) => (
+        {priorities.map((definition) => (
           <MetricCard
             definition={definition}
             key={definition.id}
@@ -2645,6 +2675,73 @@ export function HealthMetricCards({
           />
         ))}
       </View>
+      {groups.length > 0 ? (
+        <View style={styles.groups}>
+          <Text accessibilityRole="header" style={[styles.groupHeading, { color: colors.text }]}>Everything else</Text>
+          {groups.map((group) => (
+            <ListGroup key={group.id} label={group.label}>
+              {group.metrics.map((definition) => (
+                <ListRow
+                  accessibilityHint={`Opens daily and seven-day ${definition.label} details`}
+                  detail={definition.status}
+                  key={definition.id}
+                  onPress={() => setSelectedId(definition.id)}
+                  title={definition.label}
+                  value={definition.primary}
+                />
+              ))}
+            </ListGroup>
+          ))}
+        </View>
+      ) : null}
+      <PageSheet
+        closeLabel="Close Health view options"
+        onClose={() => setEditMenuVisible(false)}
+        subtitle="Hidden sections still keep their records."
+        title="Edit Health view"
+        visible={editMenuVisible}
+      >
+        <ListGroup label="Sections">
+          <ListRow
+            accessibilityHint="Choose which health sections to show"
+            detail={hiddenCount > 0 ? `${formatRegionalNumber(hiddenCount, regional.locale, { maximumFractionDigits: 0 })} hidden` : "All sections shown"}
+            disabled={display.loading}
+            onPress={openVisibilityChoices}
+            title="Edit view"
+          />
+          {hiddenCount > 0 ? (
+            <ListRow
+              accessibilityLabel={display.saving ? "Show all sections. Working, please wait." : undefined}
+              disabled={display.saving}
+              onPress={showAllFromEditSheet}
+              showChevron={false}
+              title="Show all sections"
+              trailing={display.saving ? (
+                <ActivityIndicator
+                  accessibilityElementsHidden
+                  color={colors.primary}
+                  importantForAccessibility="no-hide-descendants"
+                />
+              ) : undefined}
+            />
+          ) : null}
+        </ListGroup>
+        {display.error ? (
+          <Text accessibilityLiveRegion="polite" style={[styles.preferencesText, { color: colors.warning }]}>
+            {display.error} Please try again.
+          </Text>
+        ) : null}
+        <Text style={[styles.preferencesText, { color: colors.textSecondary }]}>
+          The four large cards follow the priorities you chose for Today at a glance, skipping measures with no records.
+        </Text>
+        {dataMode === "live" ? (
+          <StepGoalEditor
+            goal={stepGoal}
+            key={`edit:${stepGoal ?? "unset"}:${regional.locale}`}
+            onChange={setStepGoal}
+          />
+        ) : null}
+      </PageSheet>
       <MetricDetailModal
         definition={selected}
         goal={stepGoal}
@@ -2674,7 +2771,10 @@ export function HealthMetricCards({
 }
 
 const styles = StyleSheet.create({
-  preferencesHeader: { alignItems: "flex-end" },
+  prioritiesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+  groupHeading: { flexShrink: 1, fontSize: 18, lineHeight: 24, fontWeight: "700" },
+  editLabel: { fontWeight: "700" },
+  groups: { marginTop: 16, gap: 8 },
   preferencesAction: { minHeight: 48, paddingHorizontal: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   preferencesText: { fontSize: 14, lineHeight: 22, flexShrink: 1 },
   cards: { gap: 9 },

@@ -1,7 +1,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { AskTarvisButton } from './AskTarvisButton';
 import { FOOD_LOG_SOURCE_ID } from '@/data/food/foodLogRepository';
-import { MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
+import { isManualMeterReadingEvent, MANUAL_CONTEXT_SOURCE_ID } from '@/data/manualContext';
+import { contextNoteDisplayTitle } from '@/domain/contextNotes';
 import { createTarvisPeriodEntry } from '@/domain/tarvisEntry';
 import { ReactNode, useCallback, useMemo, useState } from "react";
 import {
@@ -32,6 +33,14 @@ import {
   PumpStateInterval,
   TimelineData,
 } from "@/domain/models";
+import type { TherapyStateInterval } from "@/domain/therapyStates";
+import {
+  notableTherapyStates,
+  THERAPY_STATE_TONE_LABELS,
+  therapyStateLabel,
+  therapyStateTone,
+  type TherapyStateTone,
+} from "@/domain/therapyStatePresentation";
 import {
   buildColouredGlucoseSegments,
   buildGlucoseChartScale,
@@ -42,6 +51,7 @@ import {
   glucoseRangeForValue,
 } from "@/domain/glucoseAppearance";
 import { DateKey, dayRange, formatTime, toDateKey } from "@/domain/time";
+import { timelineAddActionLabel } from "@/components/history/historyTimelineActions";
 import {
   formatGlucose,
   formatRegionalFixedNumber,
@@ -85,9 +95,10 @@ const GLUCOSE_TOP = 18;
 const GLUCOSE_BOTTOM = 174;
 const INSULIN_TOP = 214;
 const INSULIN_BOTTOM = 274;
-const ACTIVITY_LANE_Y = 287;
-const PAUSE_LANE_Y = 303;
-const STATE_LANE_HEIGHT = 9;
+const ACTIVITY_LANE_Y = 285;
+const PAUSE_LANE_Y = 298;
+const THERAPY_LANE_Y = 311;
+const STATE_LANE_HEIGHT = 8;
 const PLOT_LEFT = 6;
 const AXIS_WIDTH = 35;
 const MAX_BOLUS_UNITS = 7;
@@ -95,7 +106,7 @@ const GAP_THRESHOLD_MS = DEFAULT_GLUCOSE_GAP_THRESHOLD_MS;
 const DAILY_INSULIN_SUMMARY_THRESHOLD_MS = 14 * 24 * 3_600_000;
 
 export type TimelineLayer =
-  "glucose" | "basal" | "bolus" | "activity" | "pause";
+  "glucose" | "basal" | "bolus" | "activity" | "pause" | "therapy";
 
 export type TimelineLayerVisibility = Record<TimelineLayer, boolean>;
 
@@ -105,6 +116,7 @@ export const DEFAULT_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: true,
   activity: false,
   pause: false,
+  therapy: true,
 };
 
 export const GLUCOSE_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
@@ -113,6 +125,7 @@ export const GLUCOSE_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: false,
   activity: false,
   pause: false,
+  therapy: false,
 };
 
 export const INSULIN_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
@@ -121,6 +134,7 @@ export const INSULIN_ONLY_TIMELINE_LAYERS: TimelineLayerVisibility = {
   bolus: true,
   activity: false,
   pause: false,
+  therapy: false,
 };
 
 function nearestByTimestamp<T>(
@@ -139,6 +153,19 @@ function nearestByTimestamp<T>(
   });
   return { item: nearest, distance: nearestDistance };
 }
+
+const addLabelFormat = {
+  time: formatTime,
+  day: (timestamp: number) => {
+    const regional = getRuntimeRegionalDefaults();
+    return getCachedDateTimeFormat(regional.locale, {
+      timeZone: regional.timeZone,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    }).format(timestamp);
+  },
+};
 
 function chartTick(timestamp: number, rangeDuration: number) {
   const regional = getRuntimeRegionalDefaults();
@@ -234,6 +261,7 @@ const LAYER_LABELS: Record<TimelineLayer, string> = {
   bolus: "Bolus",
   activity: "Activity",
   pause: "Pauses",
+  therapy: "AAPS",
 };
 
 const LAYER_ICONS: Record<TimelineLayer, keyof typeof Ionicons.glyphMap> = {
@@ -242,6 +270,7 @@ const LAYER_ICONS: Record<TimelineLayer, keyof typeof Ionicons.glyphMap> = {
   bolus: "flash-outline",
   activity: "walk-outline",
   pause: "pause-outline",
+  therapy: "options-outline",
 };
 
 function TimelineLayerControls({
@@ -304,12 +333,14 @@ function Inspector({
   bolus,
   dailyTotal,
   pumpStates,
+  therapyStates,
   insulinAvailable,
   insulinNotConnected,
   showBasal,
   showBolus,
   showGlucose,
   contextEvents,
+  range,
   onClose,
   onAddContext,
   onEditContext,
@@ -320,12 +351,15 @@ function Inspector({
   bolus?: BolusDelivery;
   dailyTotal?: InsulinDailyTotal;
   pumpStates: PumpStateInterval[];
+  therapyStates: TherapyStateInterval[];
   insulinAvailable: boolean;
   insulinNotConnected: boolean;
   showBasal: boolean;
   showBolus: boolean;
   showGlucose: boolean;
   contextEvents: HealthContextEvent[];
+  /** The chart's period; the spoken add labels include the date when it covers more than a day. */
+  range: { start: number; end: number };
   onClose(): void;
   onAddContext?(timestamp: number, kind: "meal" | "note"): void;
   onEditContext?(event: HealthContextEvent): void;
@@ -412,7 +446,7 @@ function Inspector({
           Reading recorded at {formatTime(glucose.timestamp)}
         </Text>
       ) : null}
-      {showInsulin || pumpStates.length ? (
+      {showInsulin || pumpStates.length || therapyStates.length ? (
         <View style={[styles.inspectorMeta, { borderTopColor: colors.divider }]}>
           {showInsulin ? (
             <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
@@ -433,6 +467,11 @@ function Inspector({
               ).join(" · ")}
             </Text>
           ) : null}
+          {therapyStates.length ? (
+            <Text style={[styles.inspectorInsulin, { color: colors.textSecondary }]}>
+              {therapyStates.map(therapyStateLabel).join(" · ")}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       <View style={[styles.contextSection, { borderTopColor: colors.divider }]}>
@@ -440,7 +479,13 @@ function Inspector({
           RECORDED NEAR THIS TIME
         </Text>
         {contextEvents.length ? contextEvents.map((event) => {
-          const icon: keyof typeof Ionicons.glyphMap = event.kind === "meal"
+          // A finger-prick meter reading is a manual record, not a sensor
+          // value: it is listed here by name and never plotted on the chart.
+          const meterReading = isManualMeterReadingEvent(event);
+          const title = event.kind === "note" ? contextNoteDisplayTitle(event, regional) : event.title;
+          const icon: keyof typeof Ionicons.glyphMap = meterReading
+            ? "eyedrop-outline"
+            : event.kind === "meal"
             ? "restaurant-outline"
             : event.kind === "activity"
               ? "walk-outline"
@@ -465,10 +510,10 @@ function Inspector({
               </View>
               <View style={styles.contextCopy}>
                 <Text numberOfLines={1} style={[styles.contextTitle, { color: colors.text }]}>
-                  {event.title}
+                  {title}
                 </Text>
                 <Text style={[styles.contextTime, { color: colors.textTertiary }]}>
-                  {formatTime(event.start)} · {event.kind === "note" ? "Note" : event.kind.charAt(0).toUpperCase() + event.kind.slice(1)}
+                  {formatTime(event.start)} · {meterReading ? "Meter reading (not from your sensor)" : event.kind === "note" ? "Note" : event.kind.charAt(0).toUpperCase() + event.kind.slice(1)}
                   {event.kind === "meal" && event.carbsGrams !== undefined
                     ? ` · ${formatRegionalNumber(event.carbsGrams, regional.locale)} g carbs`
                     : ""}
@@ -476,7 +521,7 @@ function Inspector({
               </View>
               {canEdit ? (
                 <Pressable
-                  accessibilityLabel={`Edit ${event.title}`}
+                  accessibilityLabel={`Edit ${title}`}
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => onEditContext?.(event)}
@@ -496,7 +541,7 @@ function Inspector({
       {onAddContext ? (
         <View style={styles.contextActions}>
           <Pressable
-            accessibilityLabel={`Add meal at ${formatTime(timestamp)}`}
+            accessibilityLabel={timelineAddActionLabel("meal", timestamp, range, addLabelFormat)}
             accessibilityRole="button"
             onPress={() => onAddContext(timestamp, "meal")}
             style={({ pressed }) => [
@@ -509,7 +554,7 @@ function Inspector({
             <Text style={[styles.contextActionText, { color: colors.onPrimary }]}>Add meal</Text>
           </Pressable>
           <Pressable
-            accessibilityLabel={`Add note at ${formatTime(timestamp)}`}
+            accessibilityLabel={timelineAddActionLabel("note", timestamp, range, addLabelFormat)}
             accessibilityRole="button"
             onPress={() => onAddContext(timestamp, "note")}
             style={({ pressed }) => [
@@ -579,8 +624,13 @@ export function CombinedTimeline({
   const insulinBottom = INSULIN_BOTTOM * verticalScale;
   const activityLaneY = ACTIVITY_LANE_Y * verticalScale;
   const pauseLaneY = PAUSE_LANE_Y * verticalScale;
+  const therapyLaneY = THERAPY_LANE_Y * verticalScale;
   const stateLaneHeight = Math.max(5, STATE_LANE_HEIGHT * verticalScale);
   const insulinAvailable = hasInsulinDeliveryEvidence(data);
+  const therapyStates = useMemo(
+    () => notableTherapyStates(data.therapyStates),
+    [data.therapyStates],
+  );
   const insulinFidelity = useMemo(
     () => describeInsulinTimelineFidelity(data),
     [data],
@@ -603,6 +653,7 @@ export function CombinedTimeline({
       bolusCount: data.boluses.length,
       dailyTotals: latestDailyTotals,
       pumpStates: data.pumpStates ?? [],
+      therapyStates,
     });
   const visibleLayers: TimelineLayerVisibility = {
     glucose: layers.glucose && availableLayers.glucose,
@@ -610,6 +661,7 @@ export function CombinedTimeline({
     bolus: layers.bolus && availableLayers.bolus,
     activity: layers.activity && availableLayers.activity,
     pause: layers.pause && availableLayers.pause,
+    therapy: layers.therapy && availableLayers.therapy,
   };
   const visibleLayerCount = (Object.keys(layers) as TimelineLayer[]).filter(
     (layer) => availableLayers[layer] && layers[layer],
@@ -788,6 +840,24 @@ export function CombinedTimeline({
             inspectedTimestamp >= state.start &&
             inspectedTimestamp < state.end,
         );
+  const selectedTherapyStates =
+    inspectedTimestamp === undefined || !visibleLayers.therapy
+      ? []
+      : therapyStates.filter(
+          (state) =>
+            inspectedTimestamp >= state.start &&
+            inspectedTimestamp < state.end,
+        );
+  const therapyToneColour: Record<TherapyStateTone, string> = {
+    target: colors.accent,
+    profile: colors.primary,
+    interruption: colors.warning,
+  };
+  const visibleTherapyTones = visibleLayers.therapy
+    ? (Object.keys(THERAPY_STATE_TONE_LABELS) as TherapyStateTone[]).filter(
+        (tone) => therapyStates.some((state) => therapyStateTone(state) === tone),
+      )
+    : [];
   const nearbyContext = (() => {
     if (inspectedTimestamp === undefined) return [];
     const nearby = nearbyTimelineContext(data.context, inspectedTimestamp, 45 * 60_000, 5);
@@ -961,6 +1031,14 @@ export function CombinedTimeline({
                 shape="band"
               />
             ) : null}
+            {visibleTherapyTones.map((tone) => (
+              <LegendKey
+                key={`therapy-${tone}`}
+                color={therapyToneColour[tone]}
+                label={`AAPS: ${THERAPY_STATE_TONE_LABELS[tone].toLowerCase()}`}
+                shape="band"
+              />
+            ))}
           </View>
         ) : null}
 
@@ -969,6 +1047,7 @@ export function CombinedTimeline({
         data.boluses.length === 0 &&
         (data.dailyInsulinTotals?.length ?? 0) === 0 &&
         (data.pumpStates?.length ?? 0) === 0 &&
+        therapyStates.length === 0 &&
         data.context.length === 0 ? (
           <EmptyState
             title="No timeline data"
@@ -977,7 +1056,7 @@ export function CombinedTimeline({
         ) : (
           <>
             <View
-              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses and ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals. Use Inspect timeline for the selected point's values.`}
+              accessibilityLabel={`Timeline for ${formatTimelineRange(data.range)}, with ${formatRegionalNumber(data.glucose.length, regional.locale, { maximumFractionDigits: 0 })} glucose readings, ${formatRegionalNumber(data.basal.length, regional.locale, { maximumFractionDigits: 0 })} basal delivery intervals, ${formatRegionalNumber(data.boluses.length, regional.locale, { maximumFractionDigits: 0 })} boluses, ${formatRegionalNumber(data.pumpStates?.length ?? 0, regional.locale, { maximumFractionDigits: 0 })} pump-state intervals and ${formatRegionalNumber(therapyStates.length, regional.locale, { maximumFractionDigits: 0 })} recorded AAPS settings changes. Use Inspect timeline for the selected point's values.`}
               onLayout={onLayout}
               style={[styles.chart, { height: chartHeight }]}
               {...scrubber.panHandlers}
@@ -1029,6 +1108,40 @@ export function CombinedTimeline({
                           </G>
                         );
                       })}
+                    {visibleLayers.therapy
+                      ? therapyStates.map((state) => {
+                          const startX = Math.max(PLOT_LEFT, x(state.start));
+                          const endX = Math.min(plotRight, x(state.end));
+                          if (endX <= startX) return null;
+                          const colour = therapyToneColour[therapyStateTone(state)];
+                          return (
+                            <Rect
+                              key={state.id}
+                              fill={colour}
+                              fillOpacity={state.endBasis === "open" ? 0.4 : 0.72}
+                              height={stateLaneHeight}
+                              stroke={colour}
+                              strokeOpacity={0.9}
+                              strokeWidth={1}
+                              width={Math.max(2, endX - startX)}
+                              x={startX}
+                              y={therapyLaneY}
+                              rx={stateLaneHeight / 2}
+                            />
+                          );
+                        })
+                      : null}
+                    {visibleLayers.therapy ? (
+                      <SvgText
+                        fill={colors.textTertiary}
+                        fontSize={8}
+                        fontWeight="700"
+                        x={PLOT_LEFT}
+                        y={therapyLaneY - 2}
+                      >
+                        AAPS
+                      </SvgText>
+                    ) : null}
                     {visibleLayers.activity ? (
                       <SvgText
                         fill={colors.textTertiary}
@@ -1467,12 +1580,14 @@ export function CombinedTimeline({
                 bolus={selectedBolus}
                 dailyTotal={selectedDailyTotal}
                 pumpStates={selectedPumpStates}
+                therapyStates={selectedTherapyStates}
                 insulinAvailable={insulinAvailable}
                 insulinNotConnected={insulinFidelity.kind === 'not-connected'}
                 showBasal={visibleLayers.basal}
                 showBolus={visibleLayers.bolus}
                 showGlucose={visibleLayers.glucose}
                 contextEvents={nearbyContext}
+                range={data.range}
                 onClose={() => {
                   setSelection(undefined);
                   setSelectedMealIds([]);

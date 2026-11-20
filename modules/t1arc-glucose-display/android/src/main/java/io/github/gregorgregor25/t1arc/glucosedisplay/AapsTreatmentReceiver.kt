@@ -11,6 +11,8 @@ import android.util.Base64
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.KeyStore
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.zip.GZIPInputStream
@@ -128,8 +130,12 @@ internal object AapsTreatmentPolicy {
     "targetTop" to 0.0..400.0,
     "targetBottom" to 0.0..400.0,
     "percentage" to 1.0..1_000.0,
+    // Profile switch time shift in hours.
+    "timeshift" to -23.0..23.0,
   )
-  private val textLimits = mapOf("notes" to 240, "reason" to 80, "profile" to 80, "pumpType" to 40)
+  private val textLimits = mapOf(
+    "notes" to 240, "reason" to 80, "profile" to 80, "originalProfileName" to 80, "pumpType" to 40,
+  )
   private val booleans = setOf("isValid", "isSMB", "isEmulatingTempBasal")
 
   fun acceptsPayloadLength(length: Int) = length in 1..MAX_PAYLOAD_CHARS
@@ -159,13 +165,27 @@ internal object AapsTreatmentPolicy {
     return number.toLong().takeIf { it in MIN_TIMESTAMP..MAX_SAFE_INTEGER }
   }
 
+  /**
+   * AAPS's xDrip+ JSON for profile switches, therapy events and extended
+   * boluses carries only `created_at`, an ISO-8601 UTC time with milliseconds.
+   */
+  private fun isoTimestamp(value: Any?): Long? {
+    val raw = (value as? String)?.takeIf { it.length in 20..40 } ?: return null
+    return try {
+      Instant.parse(raw).toEpochMilli().takeIf { it in MIN_TIMESTAMP..MAX_SAFE_INTEGER }
+    } catch (_: DateTimeParseException) {
+      null
+    }
+  }
+
   private fun text(value: Any?, limit: Int): String? =
     (value as? String)?.filter { it >= ' ' }?.trim()?.take(limit)?.takeIf(String::isNotEmpty)
 
   /** Returns only listed fields, plus a stable identifier, or null when the row is not a supported treatment. */
   fun sanitizeRow(row: Map<String, Any?>, receivedAt: Long): Map<String, Any>? {
     val eventType = text(row["eventType"], 40) ?: return null
-    val time = timestamp(row["date"]) ?: timestamp(row["timestamp"]) ?: timestamp(row["mills"]) ?: return null
+    val time = timestamp(row["date"]) ?: timestamp(row["timestamp"]) ?: timestamp(row["mills"])
+      ?: isoTimestamp(row["created_at"]) ?: return null
     if (time < receivedAt - MAX_AGE_MS || time > receivedAt + MAX_CLOCK_SKEW_MS) return null
     val out = LinkedHashMap<String, Any>()
     out["eventType"] = eventType
@@ -174,7 +194,13 @@ internal object AapsTreatmentPolicy {
     textLimits.forEach { (key, limit) -> text(row[key], limit)?.let { out[key] = it } }
     booleans.forEach { key -> (row[key] as? Boolean)?.let { out[key] = it } }
     (row["type"] as? String)?.takeIf { it in setOf("NORMAL", "SMB", "PRIMING") }?.let { out["type"] = it }
-    (row["units"] as? String)?.takeIf { it == "mg/dl" || it == "mmol" }?.let { out["units"] = it }
+    text(row["units"], 12)?.let { units ->
+      out["units"] = when (units.lowercase()) {
+        "mg/dl" -> "mg/dl"
+        "mmol", "mmol/l" -> "mmol"
+        else -> units
+      }
+    }
     number(row["pumpId"])?.takeIf { it >= 0.0 && it % 1.0 == 0.0 && it <= MAX_SAFE_INTEGER }
       ?.let { out["pumpId"] = it.toLong() }
 

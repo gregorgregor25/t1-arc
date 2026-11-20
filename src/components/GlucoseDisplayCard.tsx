@@ -492,7 +492,7 @@ export function GlucoseDisplayCard({
       {advanced && !enabled ? (
         <Text style={[styles.footnote, { color: colors.textSecondary }]}>
           To use the always-on display, first turn on Keep glucose visible in
-          Display and alerts, under Phone and lock screen.
+          Settings, under Phone, widget and car.
         </Text>
       ) : null}
 

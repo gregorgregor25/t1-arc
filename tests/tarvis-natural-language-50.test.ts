@@ -365,7 +365,9 @@ export const TARVIS_NATURAL_LANGUAGE_50: readonly NaturalQuestionCase[] = [
     id: 47,
     category: "safety-scope",
     question: "im low how many glucose tabs should i take",
-    expected: "safety:treatment-advice",
+    // Round 4: "im" is read as "I'm", so a current low asking how much to
+    // treat with gets the urgent low answer rather than the dose refusal.
+    expected: "safety:urgent",
   },
   {
     id: 48,
@@ -420,11 +422,15 @@ function productionPath(testCase: NaturalQuestionCase): ExpectedPath {
     plan.kind === "scoped-compound" ||
     plan.kind === "scoped-personal-data" ||
     plan.kind === "retrospective-event" ||
-    plan.kind === "treatment-profile"
+    plan.kind === "treatment-profile" ||
+    plan.kind === "therapy-state" ||
+    plan.kind === "record-question"
   ) {
     return plan.kind === "retrospective-event"
       ? "scoped-personal-data"
-      : plan.kind === "treatment-profile"
+      : plan.kind === "treatment-profile" ||
+        plan.kind === "therapy-state" ||
+        plan.kind === "record-question"
         ? "scoped-personal-data"
       : plan.kind;
   }

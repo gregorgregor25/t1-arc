@@ -31,7 +31,7 @@ This route is **off by default** because Android cannot confirm who sent these b
 - The receiver needs no permission and AAPS offers no authenticated local channel. Android names the sender only on Android 14 and later, and only when the sender chooses to share its identity, which AAPS does not. When Android does name a sender that is not AAPS (`info.nightscout.androidaps`), the broadcast is rejected even with the switch on. When it names no sender, the records are kept with the provenance **Received on this phone; sender not verified**. The decision is the pure function `AapsTreatmentSenderPolicy.decide`, covered by JVM unit tests.
 - Each broadcast is capped in size and record count. Only listed fields within plausible ranges are kept, then stored in a Keystore-encrypted queue bound to the current selection and privacy epoch. Erase and choosing another glucose source clear that queue.
 - Records are saved with `aaps-local` provenance and the label "Received on this phone; sender not verified", or "Received on this phone from AAPS; sender confirmed by Android" in the rare case Android named AAPS as the sender. Records stored by earlier versions keep their old label "AAPS xDrip+ broadcast" and are treated as unverified. Today's insulin figure says "sender not verified" whenever it includes such records. The broadcast carries no AAPS database ID, so each record is identified by its kind and time. AAPS re-sends a changed record and marks a deleted one withdrawn; T1 Arc replaces the earlier copy instead of keeping both.
-- This route does **not** include temporary basals, scheduled basal or device status, and AAPS sends only the last 24 hours. Records that arrive while T1 Arc is closed wait in the queue until the app next refreshes.
+- This route does **not** include temporary basals, running modes, scheduled basal or device status, and AAPS sends only the last 24 hours. Profile switches, therapy events and extended boluses carry only a `created_at` time, which the receiver now reads. Records that arrive while T1 Arc is closed wait in the queue until the app next refreshes.
 - Any other installed app that declares the same receiver also receives what AAPS sends. If AAPS has no profile loaded, it drops the whole batch.
 
 ### From Nightscout: fill switch on the AAPS card
@@ -41,12 +41,55 @@ When AAPS is selected, the AAPS card shows **Fill insulin and carb history from 
 - While AAPS is selected, the regular refresh, the older-history backfill and the Nightscout connection check all read treatments only. Connecting Nightscout then succeeds without a Nightscout glucose reading.
 - Withdrawn records (`isValid: false`) and priming boluses are kept as raw evidence but not counted. A temporary basal ends when the next one starts or is cancelled. Large ranges are read page by page rather than cut off at 5,000 records.
 - Nightscout carries temporary basals only. Without a pump export for the same period, scheduled basal is missing from the daily total, and Today says so.
+- Today checks when the current Nightscout connection last fetched and saved its recent treatment history successfully. An unchanged response refreshes that time. Downloading older history does not. Disconnecting or erasing the connection clears the saved time.
 
 ### Counting each record once
 
 The same delivery can arrive from Glooko, Nightscout and AAPS on this phone. All copies stay stored with their own provenance. At read time T1 Arc counts one copy, preferring Glooko, then Nightscout (read with your own token), then AAPS on this phone. Unverified on-phone records therefore only fill gaps Nightscout does not cover yet, such as the minutes before its next fetch. A bolus matches when the times are within 2 minutes and the amounts within 0.05 U; carbs match within 2 minutes and 0.5 g. One kept record hides at most one copy from each other source, so three copies of one bolus count once, while two real boluses close together in the same source both count. Carbs follow the same rule, including carbs from a Glooko export, so one meal counts once in Today, History, the period summary, exports and the clinic report. Basal periods already covered by a higher-preference source are not counted twice. Manual entries are never hidden.
 
 While AAPS is selected, Today's insulin figure names where the AAPS records came from, shows the latest record time ("data through"), notes when scheduled basal is not included, and shows **No data** with the reason when nothing was recorded.
+
+## AAPS settings history (therapy states)
+
+T1 Arc reads the settings AAPS recorded as active: temporary targets, profile switches, the loop's running mode, pump suspensions and logged exercise. They are built when needed from the treatment records already stored from Nightscout and from AAPS on this phone, so no database change was needed and older history works too. They are only described. T1 Arc never uses them to calculate insulin or to suggest a setting.
+
+### What each route carries
+
+Checked against the AAPS source at commit `c20c229`.
+
+| Setting | Nightscout upload | AAPS xDrip+ broadcast on this phone |
+| --- | --- | --- |
+| Temporary target | `Temporary Target`: reason (Custom, Hypo, Activity, Eating Soon, Automation, Wear), targets in mg/dL, duration in minutes and milliseconds. An early cancel shortens the same record. | Same reason and duration. Targets are in your display unit. A cancel is a new record with no reason and no targets. |
+| Profile switch | `Profile Switch`: profile name, original name, percentage, time shift in hours, exact original duration (0 = until changed). | Name, percentage, time shift and duration. Before this change the phone dropped these records because they carry only `created_at`; it now reads that time. |
+| Running mode | `OpenAPS Offline` with `mode` (closed, open, closed-loop LGS, disabled, suspended, disconnected, superbolus), `autoForced` and the older `reason` values. | Not sent. |
+| Pump suspend | `Temp Basal` of type `PUMP_SUSPEND` or `EMULATED_PUMP_SUSPEND`; `Pump Suspend` / `Pump Resume` events from other uploaders. | Not sent. |
+| Exercise | `Exercise` or a timed careportal note about exercise or activity. | Therapy events with a duration only. |
+| Effective profile switch | Uploaded as a `Note`. | Not sent. |
+
+Effective profile switches and the profile's internal schedule are not read. Glooko's Omnipod 5 "Activity mode" lanes stay separate and are not part of these answers.
+
+### How an interval is built
+
+- A setting ends at its recorded duration, at the next record of the same kind, or at a cancel or resume record, whichever comes first. With none of these it is shown as having **no recorded end** up to now or the end of the period, never as finished.
+- AAPS writes an ongoing running mode with no duration and an open-ended disabled loop as ten years; both mean "until changed". A temporary suspension does not end the ongoing mode under it.
+- A re-sent record replaces the stored copy when it is newer, so a target cancelled early shows its real end. Before this change the stored copy kept the original duration.
+- The same record from Nightscout and from the phone is kept once: same kind, starts within 2 minutes, same reason, target, percentage or mode. Nightscout's copy is preferred; the other stays listed as a duplicate and both raw records can be opened from the evidence.
+- Times are stored as exact instants and shown in local time, so a target across a clock change keeps its real length.
+- Target values follow the glucose unit in Settings, including on previously imported timeline entries. mmol/L uses one decimal place and mg/dL uses whole numbers. The source record keeps the original values and units.
+- A state that began before the displayed period can still appear in it. Overlapping pump and loop suspension records stay individually inspectable. Their shared minutes and glucose readings count once in the combined summary.
+- Closed loop and a 100% profile with no end are the ordinary background state and are not listed as notable.
+
+### Where they appear
+
+- **History timeline:** an **AAPS** lane under the activity and pause lanes, with its own layer chip. The legend names the three colours: temporary target or exercise, profile switch, and loop mode or suspension. A fainter band has no recorded end. Tapping the chart lists the settings active at that moment.
+- **Tarv1s, glucose episodes:** a high or low answer names any non-ordinary setting active in the six hours before or two hours after, with its times, source and "timing is context, not proof".
+- **Tarv1s, direct questions:** for example "How did my glucose go during activity mode?", "How were my levels when my profile was at 80% last week?" or "How were my readings while the loop was suspended?". The answer is built on the phone. It lists the recorded intervals, gives glucose while they were active with coverage, and compares the same clock times on other days without that kind of setting. It withholds the glucose summary below 70% coverage, withholds the comparison with fewer than 3 matched windows, and always says the comparison is an observation, not proof that the setting made the difference. Without a time in the question it uses the last 30 days. Questions that ask what to set are not answered this way.
+
+### Limits
+
+- Nightscout records can arrive late, and none arrive while AAPS is offline.
+- The phone broadcast covers only the last 24 hours, carries no running modes or temporary basals, and Android usually cannot confirm its sender. Answers say when an interval came only from an unverified sender.
+- AAPS and Nightscout record a temporary basal's `percent` as the change from the profile rate. T1 Arc reads it as a percentage of the profile rate, including for earlier imports and restored backups. For example, a recorded change of −25 means 75% of the profile rate. The raw record retains −25. T1 Arc estimates delivered units from the reported absolute rate and duration. A percentage alone cannot establish delivered units. [AAPS upload format](https://github.com/nightscout/AndroidAPS/blob/c20c229/plugins/sync/src/commonMain/kotlin/app/aaps/plugins/sync/nsclientV3/extensions/TemporaryBasalExtension.kt)
 
 ## Provenance and retention
 
@@ -97,6 +140,10 @@ Checked against the AAPS source at commit [`c20c229`](https://github.com/nightsc
 Not yet checked on a device: that AAPS on the phone discovers the T1 Arc receiver and that its broadcasts arrive in the background.
 
 ## Verification and remaining device checks
+
+### AAPS settings history, 17 November 2026
+
+On `codex/tarvis-aaps-context`; nothing was installed on a phone. `npm run quality` passes (lint, TypeScript and the full Vitest suite). New tests cover parsing for each route and event type (mg/dL and mmol/L targets, cancel shapes, profile percentage and time shift, running modes and older offline reasons, suspend-type temporary basals, exercise, missing times and durations), interval ends (recorded duration, next record, cancel, no recorded end, suspension over an ongoing mode), duplicates across Nightscout and the phone, both clock changes in Europe/London, refreshing a re-sent record in memory and in real SQLite, Tarv1s routing, answer wording against the treatment-directive check, coverage and comparison thresholds, and the glucose-episode finding. The Kotlin test for `created_at` runs in CI only. Still to check on the phone: set an Activity temporary target and an 80% profile in AAPS, then confirm both appear once in the History AAPS lane and in a Tarv1s answer.
 
 ### Insulin and carb history, November 2026
 

@@ -57,6 +57,35 @@ class AapsTreatmentPolicyTest {
     assertEquals("Activity", result["reason"])
   }
 
+  @Test fun targetUnitAliasesAreNormalizedAndUnknownUnitsRemainInspectable() {
+    mapOf("mmol" to "mmol", "MMOL/L" to "mmol", "mmol/L" to "mmol", "mg/dL" to "mg/dl", "MG/DL" to "mg/dl", "unknown" to "unknown").forEach { (input, expected) ->
+      val result = sanitize(row(
+        "eventType" to "Temporary Target", "timestamp" to time, "duration" to 60,
+        "targetBottom" to 8.0, "targetTop" to 8.0, "units" to input,
+      ))!!
+      assertEquals(expected, result["units"])
+      assertEquals(8.0, result["targetBottom"] as Double, 0.0)
+    }
+    val missing = sanitize(row("eventType" to "Temporary Target", "timestamp" to time, "targetBottom" to 8.0))!!
+    assertFalse(missing.containsKey("units"))
+  }
+
+  @Test fun profileSwitchesUseCreatedAtAndKeepPercentageAndTimeShift() {
+    // AAPS's xDrip+ profile-switch JSON has no date or timestamp field.
+    val created = java.time.Instant.ofEpochMilli(time).toString()
+    val result = sanitize(row(
+      "eventType" to "Profile Switch", "created_at" to created, "duration" to 90,
+      "percentage" to 80, "timeshift" to 2, "profile" to "Default(80%,2h)",
+      "originalProfileName" to "Default", "originalDuration" to 5_400_000L, "isValid" to true,
+    ))!!
+    assertEquals("profile-switch-$time", result["identifier"])
+    assertEquals(time, result["date"])
+    assertEquals(80.0, result["percentage"] as Double, 0.0)
+    assertEquals(2.0, result["timeshift"] as Double, 0.0)
+    assertEquals("Default", result["originalProfileName"])
+    assertNull(sanitize(row("eventType" to "Profile Switch", "created_at" to "not a time")))
+  }
+
   @Test fun extendedBolusesNeedTheirEnteredTotal() {
     val result = sanitize(row(
       "eventType" to "Combo Bolus", "date" to time, "enteredinsulin" to 2.0,

@@ -25,6 +25,8 @@ export const typeScale = {
   title: 17,
   titleLarge: 20,
   headline: 24,
+  /** Screen titles in the 2026 redesign (`ScreenHeader`). */
+  screenTitle: 28,
   display: 32,
 } as const;
 

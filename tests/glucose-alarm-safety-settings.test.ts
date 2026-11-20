@@ -324,3 +324,15 @@ describe('automatic re-arming and wording (source checks)', () => {
     expect(card).not.toMatch(/units? of insulin|take \d+ ?g|eat \d+/i);
   });
 });
+
+describe('on-screen alert card', () => {
+  it('hides the card while an alert is snoozed or silenced so it does not cover the screen', async () => {
+    const { glucoseAlarmBannerVisible } = await import('@/domain/glucoseAlarms');
+    expect(glucoseAlarmBannerVisible({ panelOpen: false, snoozed: false, silenced: false })).toBe(true);
+    expect(glucoseAlarmBannerVisible({ panelOpen: false, snoozed: true, silenced: false })).toBe(false);
+    expect(glucoseAlarmBannerVisible({ panelOpen: false, snoozed: false, silenced: true })).toBe(false);
+    expect(glucoseAlarmBannerVisible({ panelOpen: true, snoozed: false, silenced: false })).toBe(false);
+    const host = readFileSync('src/components/GlucoseAlarmHost.tsx', 'utf8');
+    expect(host).toContain('glucoseAlarmBannerVisible({ panelOpen: visible, snoozed, silenced: status.acknowledged })');
+  });
+});

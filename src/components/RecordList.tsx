@@ -17,6 +17,7 @@ import {
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "@/domain/contextNotes";
 import { mealNutritionSummary } from "@/domain/mealNutrition";
 import { selectLatestInsulinDailyTotals } from "@/domain/timelineInsulinSummary";
@@ -247,7 +248,7 @@ function RecordRow({
           break;
         case "note":
           detail = record.value.detail
-            ? `${contextNoteCategoryLabel(record.value.category)} · ${record.value.detail}`
+            ? `${contextNoteCategoryLabel(record.value.category)} · ${contextNoteDisplayDetail(record.value, regional)}`
             : contextNoteCategoryLabel(record.value.category);
           break;
       }

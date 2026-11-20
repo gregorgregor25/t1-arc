@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -32,7 +32,6 @@ import { DEFAULT_DISPLAY_PREFERENCES, GLANCE_METRIC_IDS, prioritiseGlanceMetrics
 import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { presentGlanceGlucose } from '@/domain/glanceGlucosePresentation';
 
-import { SectionCard } from "./SectionCard";
 import { MetricPreferencesSheet } from "./MetricPreferencesSheet";
 
 const GLANCE_OPTIONS = [
@@ -82,106 +81,84 @@ function formatDuration(value: number, locale: string) {
   return remainder ? `${hoursLabel}h ${remainderLabel}m` : `${hoursLabel}h`;
 }
 
-function MetricRow({ metric, last }: { metric: GlanceMetric; last: boolean }) {
+function MetricTile({ metric, wide, children }: { metric: GlanceMetric; wide: boolean; children?: ReactNode }) {
   const { colors, radius } = useAppTheme();
-  const { fontScale } = useWindowDimensions();
-  const stackedValue = fontScale > 1.3 || metric.stackValue;
   const segmentTotal =
     metric.segments?.reduce((total, segment) => total + segment.value, 0) ?? 0;
 
   return (
-    <Pressable
-      accessible
-      accessibilityLabel={`${metric.label}, ${metric.value}${
-        metric.detail ? `, ${metric.detail}` : ""
-      }`}
-      accessibilityHint={
-        metric.onPress ? `Opens ${metric.label} history` : undefined
-      }
-      accessibilityRole={metric.onPress ? "button" : undefined}
-      disabled={!metric.onPress}
-      onPress={metric.onPress}
-      style={({ pressed }) => [
-        !last && {
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.divider,
+    <View
+      style={[
+        styles.tile,
+        wide ? styles.tileWide : styles.tileHalf,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderRadius: radius.lg,
         },
-        pressed && { opacity: 0.7 },
       ]}
     >
-      <View style={styles.metric}>
-        <View
-          accessibilityElementsHidden
-          style={[
-            styles.icon,
-            {
-              backgroundColor: `${metric.tone}18`,
-              borderColor: `${metric.tone}32`,
-              borderRadius: radius.md,
-            },
-          ]}
-        >
-          <Ionicons color={metric.tone} name={metric.icon} size={21} />
-        </View>
-        <View style={styles.metricCopy}>
+      <Pressable
+        accessible
+        accessibilityLabel={`${metric.label}, ${metric.value}${
+          metric.detail ? `, ${metric.detail}` : ""
+        }`}
+        accessibilityHint={
+          metric.onPress ? `Opens ${metric.label} history` : undefined
+        }
+        accessibilityRole={metric.onPress ? "button" : undefined}
+        disabled={!metric.onPress}
+        onPress={metric.onPress}
+        style={({ pressed }) => [styles.tilePress, pressed && { opacity: 0.7 }]}
+      >
+        <View style={styles.tileHeader}>
+          <Ionicons accessibilityElementsHidden color={metric.tone} name={metric.icon} size={18} />
           <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
             {metric.label}
           </Text>
-          {stackedValue ? (
-            <Text
-              style={[
-                styles.metricValue,
-                styles.stackedValue,
-                { color: colors.text },
-              ]}
-            >
-              {metric.value}
-            </Text>
-          ) : null}
-          {metric.detail ? (
-            <Text style={[styles.metricDetail, { color: colors.textTertiary }]}>
-              {metric.detail}
-            </Text>
-          ) : null}
-          {segmentTotal > 0 ? (
-            <View
+          {metric.onPress ? (
+            <Ionicons
               accessibilityElementsHidden
-              style={[
-                styles.track,
-                {
-                  backgroundColor: colors.surfaceMuted,
-                  borderRadius: radius.pill,
-                },
-              ]}
-            >
-              {metric.segments!.map((segment, index) => (
-                <View
-                  key={`${metric.id}:${index}`}
-                  style={{
-                    backgroundColor: segment.color,
-                    flex: segment.value,
-                    opacity: index === 0 ? 0.72 : 1,
-                  }}
-                />
-              ))}
-            </View>
+              color={colors.textTertiary}
+              name="chevron-forward"
+              size={17}
+            />
           ) : null}
         </View>
-        {!stackedValue ? (
-          <Text style={[styles.metricValue, { color: colors.text }]}>
-            {metric.value}
+        <Text style={[wide ? styles.metricValueWide : styles.metricValue, { color: colors.text }]}>
+          {metric.value}
+        </Text>
+        {metric.detail ? (
+          <Text style={[styles.metricDetail, { color: colors.textSecondary }]}>
+            {metric.detail}
           </Text>
         ) : null}
-        {metric.onPress ? (
-          <Ionicons
+        {segmentTotal > 0 ? (
+          <View
             accessibilityElementsHidden
-            color={colors.textTertiary}
-            name="chevron-forward"
-            size={17}
-          />
+            style={[
+              styles.track,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderRadius: radius.pill,
+              },
+            ]}
+          >
+            {metric.segments!.map((segment, index) => (
+              <View
+                key={`${metric.id}:${index}`}
+                style={{
+                  backgroundColor: segment.color,
+                  flex: segment.value,
+                  opacity: index === 0 ? 0.72 : 1,
+                }}
+              />
+            ))}
+          </View>
         ) : null}
-      </View>
-    </Pressable>
+      </Pressable>
+      {children ? <View style={styles.tileExtra}>{children}</View> : null}
+    </View>
   );
 }
 
@@ -197,6 +174,7 @@ export function TodayGlanceCard({
   range,
   onOpenInsulin,
   onOpenTimeInRange,
+  gmi,
 }: {
   glucose?: GlucoseStats;
   glucoseLabel: string;
@@ -211,8 +189,13 @@ export function TodayGlanceCard({
   range: TimeRange;
   onOpenInsulin?(): void;
   onOpenTimeInRange?(): void;
+  /** The rolling GMI estimate, shown inside the time-in-range tile. */
+  gmi?: ReactNode;
 }) {
-  const { colors } = useAppTheme();
+  const { colors, radius } = useAppTheme();
+  const { fontScale } = useWindowDimensions();
+  // At large text sizes every tile takes the full width so values never clip.
+  const allWide = fontScale > 1.3;
   const { defaults: regional } = useRegionalProfile();
   const display = useDisplayPreferences();
   const [editingPriorities, setEditingPriorities] = useState(false);
@@ -430,12 +413,14 @@ export function TodayGlanceCard({
     }
   }
 
-  if (!metrics.length) return null;
+  if (!metrics.length && !gmi) return null;
+  const ordered = prioritiseGlanceMetrics(metrics, display.preferences.glanceOrder);
+  const hasTimeInRange = ordered.some((metric) => metric.id === "time-in-range");
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>At a glance</Text>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Today so far</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Edit your at a glance priorities"
@@ -455,15 +440,29 @@ export function TodayGlanceCard({
           <Text style={[styles.metricDetail, { color: colors.warning }]}>{display.error} Tap to retry.</Text>
         </Pressable>
       ) : null}
-      <SectionCard style={styles.metrics}>
-        {prioritiseGlanceMetrics(metrics, display.preferences.glanceOrder).map((metric, index, visible) => (
-          <MetricRow
+      <View style={styles.grid}>
+        {ordered.map((metric) => (
+          <MetricTile
             key={metric.id}
-            last={index === visible.length - 1}
             metric={metric}
-          />
+            wide={allWide || metric.id === "time-in-range"}
+          >
+            {metric.id === "time-in-range" ? gmi : null}
+          </MetricTile>
         ))}
-      </SectionCard>
+        {gmi && !hasTimeInRange ? (
+          <View
+            style={[
+              styles.tile,
+              styles.tileWide,
+              styles.tilePress,
+              { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.lg },
+            ]}
+          >
+            {gmi}
+          </View>
+        ) : null}
+      </View>
       <MetricPreferencesSheet
         visible={editingPriorities}
         mode="priorities"
@@ -495,52 +494,60 @@ const styles = StyleSheet.create({
   edit: { minWidth: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
   editText: { fontSize: 14, lineHeight: 21, fontWeight: "600" },
   retry: { minHeight: 48, justifyContent: "center" },
-  metrics: {
+  grid: {
     marginTop: 11,
-    padding: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  tile: {
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
-  metric: {
-    minHeight: 70,
+  tileWide: { width: "100%" },
+  // Two per row: half the width minus half the 10 dp gap.
+  tileHalf: { flexBasis: "47%", flexGrow: 1 },
+  tilePress: {
+    minHeight: 96,
+    padding: 14,
+    gap: 4,
+  },
+  // Lines up extra rows (such as GMI) with the tile text above them.
+  tileExtra: {
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingBottom: 14,
+  },
+  tileHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 11,
-  },
-  icon: {
-    width: 42,
-    height: 42,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  metricCopy: {
-    flex: 1,
-    minWidth: 0,
+    gap: 7,
   },
   metricLabel: {
-    fontSize: 13,
-    lineHeight: 18,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: "600",
   },
   metricDetail: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   metricValue: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
     letterSpacing: -0.35,
-    textAlign: "right",
   },
-  stackedValue: { textAlign: "left", marginTop: 4 },
+  metricValueWide: {
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+    letterSpacing: -0.5,
+  },
   track: {
-    height: 4,
-    maxWidth: 112,
+    height: 6,
     marginTop: 6,
     flexDirection: "row",
     overflow: "hidden",

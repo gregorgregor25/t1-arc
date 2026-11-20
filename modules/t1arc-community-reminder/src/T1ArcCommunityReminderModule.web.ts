@@ -9,5 +9,7 @@ class CommunityReminderWeb extends NativeModule<Record<string, never>> {
   async copySupportEmailAsync(): Promise<void> { await navigator.clipboard.writeText('support@t1arc.com'); }
   async shouldRequestPermissionAsync(): Promise<boolean> { return false; }
   async markPermissionRequestedAsync(): Promise<void> {}
+  async showUpdateNotificationAsync(_version: string): Promise<boolean> { return false; }
+  async cancelUpdateNotificationAsync(): Promise<void> {}
 }
 export default registerWebModule(CommunityReminderWeb, 'T1ArcCommunityReminder');

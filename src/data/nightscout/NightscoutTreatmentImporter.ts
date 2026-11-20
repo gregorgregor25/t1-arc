@@ -15,9 +15,11 @@ import { parseExternalAbsoluteTimestamp } from '@/domain/externalTimestamp';
 import { getRuntimeRegionalDefaults } from '@/domain/regionalProfileRuntime';
 import { NIGHTSCOUT_GLUCOSE_CAPABILITIES } from '@/domain/sourceCapabilities';
 import { getZonedDateTimeParts } from '@/domain/time';
+import { temporaryTargetRange } from '@/domain/temporaryTargets';
 
 import { NightscoutConnection, NightscoutError, NightscoutTreatment } from './types';
 import { nightscoutRequestHeaders } from './auth';
+import { nightscoutBasalPercentOfProfile } from './basalPercentage';
 import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const MAX_TREATMENTS = 5_000;
@@ -156,19 +158,21 @@ const THERAPY_EVENTS: Record<string, ContextNoteEvent['category']> = {
   'sensor start': 'sensor',
 };
 
-function formatTarget(treatment: NightscoutTreatment) {
+function formatTarget(treatment: NightscoutTreatment, sourceId: string) {
   const bottom = numeric(treatment.targetBottom);
   const top = numeric(treatment.targetTop);
-  if (bottom === undefined || top === undefined || bottom <= 0 || top <= 0) {
+  if (treatment.targetBottom == null && treatment.targetTop == null) {
     return undefined;
   }
+  const range = temporaryTargetRange(treatment.targetBottom, treatment.targetTop, treatment.units, sourceId);
+  if (!range) return 'target value unavailable';
   const units = safeText(treatment.units, 12) || 'mg/dL';
-  return bottom === top
-    ? `target ${bottom} ${units} as recorded`
+  return bottom === top || bottom === undefined || top === undefined
+    ? `target ${bottom ?? top} ${units} as recorded`
     : `target ${bottom} to ${top} ${units} as recorded`;
 }
 
-function noteDetail(treatment: NightscoutTreatment, eventType: string) {
+function noteDetail(treatment: NightscoutTreatment, eventType: string, sourceId: string) {
   const parts: string[] = [];
   const profile = safeText(treatment.profile);
   if (profile) parts.push(profile);
@@ -184,7 +188,7 @@ function noteDetail(treatment: NightscoutTreatment, eventType: string) {
   const reason = safeText(treatment.reason);
   if (reason) parts.push(reason);
   if (/temporary target/i.test(eventType)) {
-    const target = formatTarget(treatment);
+    const target = formatTarget(treatment, sourceId);
     if (target) parts.push(target);
   }
   const notes = safeText(treatment.notes);
@@ -378,7 +382,7 @@ export function normalizeNightscoutTreatments(
           rateUnitsPerHour: rate,
           units: (rate * (end - timestamp)) / 3_600_000,
           deliveryType: eventType,
-          percentage: numeric(treatment.percent),
+          percentage: nightscoutBasalPercentOfProfile(numeric(treatment.percent)),
           unitsEstimated: true,
           sourceId: origin.sourceId,
           importedAt,
@@ -394,12 +398,6 @@ export function normalizeNightscoutTreatments(
       }
     }
 
-    const descriptor = [
-      eventType,
-      safeText(treatment.profile),
-      safeText(treatment.reason),
-      safeText(treatment.notes),
-    ].join(' ');
     const therapyCategory = THERAPY_EVENTS[eventType.toLowerCase()];
     if (/profile switch|temporary target|override/i.test(eventType)) {
       context.push({
@@ -412,7 +410,7 @@ export function normalizeNightscoutTreatments(
             : undefined,
         title: eventType,
         category: 'pump',
-        detail: noteDetail(treatment, eventType),
+        detail: noteDetail(treatment, eventType, origin.sourceId),
         sourceId: origin.sourceId,
         origin: 'imported',
         recordedAt: importedAt,
@@ -434,27 +432,9 @@ export function normalizeNightscoutTreatments(
         sourceRow: index + 1,
       });
     }
-    if (
-      duration !== undefined &&
-      duration > 0 &&
-      duration <= 1_440 &&
-      /(exercise|activity)/i.test(descriptor)
-    ) {
-      rawRecords.push({
-        id: `${origin.sourceId}:pump-state:activity:${sourceId}`,
-        sourceId: origin.sourceId,
-        recordKind: 'pump-state-interval',
-        timestamp,
-        sourceFile: origin.sourceFile,
-        sourceRow: index + 1,
-        payloadJson: JSON.stringify({
-          start: timestamp,
-          end: timestamp + duration * 60_000,
-          kind: 'activity-mode',
-        }),
-        importedAt,
-      });
-    }
+    // Temporary targets, profile switches and logged exercise are read as
+    // typed therapy states from this raw record (see domain/therapyStates);
+    // they are no longer stored as Omnipod-style "Activity mode" intervals.
   });
 
   valid.forEach((item, index) => {
@@ -542,11 +522,14 @@ export class NightscoutTreatmentImporter {
     private readonly store: HealthRecordStore,
     private readonly fetcher: FetchLike = fetch,
     private readonly clock: () => number = Date.now,
+    private readonly recordSuccessfulRefresh?: (succeededAt: number) => Promise<void>,
   ) {}
 
-  refresh() {
+  async refresh() {
     const end = this.clock();
-    return this.importRange(end - 2 * 86_400_000, end);
+    const result = await this.importRange(end - 2 * 86_400_000, end);
+    await this.recordSuccessfulRefresh?.(this.clock());
+    return result;
   }
 
   async importRange(start: number, end: number) {

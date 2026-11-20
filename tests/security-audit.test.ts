@@ -163,3 +163,74 @@ describe('production dependency security gate', () => {
     }
   });
 });
+
+describe('reviewed picomatch build-tool advisory', () => {
+  const picomatchContext = { lockfile: installedLockfile, packageConfig, now: new Date('2026-11-17T12:00:00Z') };
+  function picomatchReport() {
+    const vulnerabilities: Record<string, Finding> = {
+      picomatch: {
+        name: 'picomatch', severity: 'high',
+        nodes: ['node_modules/picomatch', 'node_modules/expo/node_modules/picomatch', 'node_modules/tinyglobby/node_modules/picomatch'],
+        via: [{
+          source: 1247710, name: 'picomatch', dependency: 'picomatch', severity: 'high',
+          url: 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf', range: '<=4.0.7',
+        }],
+      },
+      micromatch: { name: 'micromatch', severity: 'high', nodes: ['node_modules/micromatch'], via: ['picomatch'] },
+      'metro-file-map': { name: 'metro-file-map', severity: 'high', nodes: ['node_modules/metro-file-map'], via: ['micromatch'] },
+    };
+    return {
+      auditReportVersion: 2, vulnerabilities,
+      metadata: {
+        vulnerabilities: { info: 0, low: 0, moderate: 0, high: 3, critical: 0, total: 3 },
+        dependencies: { prod: 547, dev: 316, optional: 58, peer: 3, peerOptional: 0, total: 873 },
+      },
+    };
+  }
+
+  it('allows only the exact reviewed graph before the review expires', () => {
+    expect(evaluateAuditReport(picomatchReport(), picomatchContext)).toMatchObject({
+      allowed: true, classification: 'reviewed-build-tool',
+    });
+  });
+
+  it('fails closed after expiry', () => {
+    expect(evaluateAuditReport(picomatchReport(), { ...picomatchContext, now: new Date('2026-12-17T00:00:00Z') }))
+      .toMatchObject({ allowed: false });
+  });
+
+  it('fails closed for another high finding outside the graph', () => {
+    const report = picomatchReport();
+    report.vulnerabilities.lodash = { name: 'lodash', severity: 'high', nodes: ['node_modules/lodash'], via: ['picomatch'] };
+    report.metadata.vulnerabilities.high = 4;
+    report.metadata.vulnerabilities.total = 4;
+    expect(evaluateAuditReport(report, picomatchContext)).toMatchObject({ allowed: false });
+  });
+
+  it('fails closed when a graph member carries its own advisory', () => {
+    const report = picomatchReport();
+    report.vulnerabilities.micromatch!.via = [{
+      source: 1, name: 'micromatch', dependency: 'micromatch', severity: 'high',
+      url: 'https://github.com/advisories/GHSA-xxxx-xxxx-xxxx', range: '<5',
+    }];
+    expect(evaluateAuditReport(report, picomatchContext)).toMatchObject({ allowed: false });
+  });
+
+  it('fails closed when the advisory or installed version changes', () => {
+    const changedAdvisory = picomatchReport();
+    (changedAdvisory.vulnerabilities.picomatch!.via[0] as Record<string, unknown>).range = '<=4.0.8';
+    expect(evaluateAuditReport(changedAdvisory, picomatchContext)).toMatchObject({ allowed: false });
+    const changedLock = {
+      ...picomatchContext,
+      lockfile: { ...installedLockfile, packages: { ...installedLockfile.packages, 'node_modules/picomatch': { version: '2.3.1' } } },
+    };
+    expect(evaluateAuditReport(picomatchReport(), changedLock)).toMatchObject({ allowed: false });
+  });
+
+  it('still rejects critical findings', () => {
+    const report = picomatchReport();
+    report.vulnerabilities.micromatch!.severity = 'critical';
+    report.metadata.vulnerabilities = { info: 0, low: 0, moderate: 0, high: 2, critical: 1, total: 3 };
+    expect(evaluateAuditReport(report, picomatchContext)).toMatchObject({ allowed: false });
+  });
+});

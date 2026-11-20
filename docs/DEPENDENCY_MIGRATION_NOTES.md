@@ -59,3 +59,26 @@ those known incompatible versions while allowing SDK 57 patches. GitHub's
 [ignore rules](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/controlling-dependencies-updated)
 can also suppress security-update PRs for the ignored ranges. Security alerts
 remain visible; triage those manually until the coordinated migration is ready.
+
+## 17 November 2026: temporary picomatch build-tool allowance
+
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+(picomatch ReDoS through repeated extglobs, high) now covers picomatch up to
+4.0.7, and no patched release exists. npm reports 21 to 22 high findings, all
+derived from picomatch through Metro, Expo CLI, React Native codegen,
+tinyglobby and Jest workers.
+
+Exposure: a production Android JavaScript export of commit `052513f`
+(`npx expo export --platform android --source-maps --no-bytecode`) contained
+1,753 modules and none from picomatch, micromatch, tinyglobby, jest-util,
+jest-worker or metro-file-map. The ReDoS needs attacker-controlled glob
+patterns; the build tools only use patterns from this repository's
+configuration.
+
+`scripts/security-audit.mjs` allows only this graph until
+**17 December 2026**: every high finding must be a named member of the
+reviewed graph, members may only point at each other, the single advisory
+object must match this advisory exactly, and the three installed picomatch
+paths must keep versions 2.3.2, 4.0.7 and 4.0.5. Any other high or critical
+finding still blocks. Remove the allowance as soon as a patched picomatch is
+published and the tree is updated.

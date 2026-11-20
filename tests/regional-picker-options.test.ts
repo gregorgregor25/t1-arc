@@ -65,9 +65,9 @@ describe("regional picker options", () => {
   });
 });
 
-describe("Region and Display settings layout", () => {
+describe("Region and Appearance settings layout", () => {
   const card = readFileSync("src/components/RegionalSettingsCard.tsx", "utf8");
-  const sources = readFileSync("src/screens/SourcesScreen.tsx", "utf8");
+  const sources = readFileSync("src/screens/settings/SettingsPages.tsx", "utf8");
 
   it("shows the glucose unit before More options", () => {
     const unit = card.indexOf('optionGroup("Glucose unit"');
@@ -84,13 +84,13 @@ describe("Region and Display settings layout", () => {
     expect(card).toContain("timeZoneList ? (");
   });
 
-  it("puts Glucose ranges at the top of Display settings", () => {
-    const display = sources.slice(sources.indexOf('{activeSource === "display" ? ('));
-    const ranges = display.indexOf('title="Glucose ranges"');
-    const theme = display.indexOf('title="App appearance"');
+  it("puts Glucose ranges at the top of Appearance settings", () => {
+    const appearance = sources.slice(sources.indexOf('case "appearance":'));
+    const ranges = appearance.indexOf('title="Glucose ranges"');
+    const theme = appearance.indexOf("<ThemePreferenceCard />");
     expect(ranges).toBeGreaterThan(-1);
     expect(theme).toBeGreaterThan(ranges);
-    expect(display).toContain('visible={expandedSetting === "display-ranges"}');
-    expect(sources).toContain('moreOptionsOpen={expandedSetting === "region-more"}');
+    expect(appearance).toContain('visible={expanded === "appearance-ranges"}');
+    expect(sources).toContain('moreOptionsOpen={expanded === "region-more"}');
   });
 });

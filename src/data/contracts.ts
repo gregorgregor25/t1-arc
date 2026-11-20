@@ -9,6 +9,7 @@ import {
   TimeRange,
   TimelineData,
 } from '@/domain/models';
+import type { TherapyStateInterval } from '@/domain/therapyStates';
 import type { DirectLibreRefreshReason } from '@/data/libreLinkUp/refreshPolicy';
 import {
   SOURCE_HEALTH_WINDOW_MS,
@@ -63,6 +64,7 @@ export interface InsulinSource {
   getBolusDeliveries(range: TimeRange): Promise<BolusDelivery[]>;
   getDailyTotals?(range: TimeRange): Promise<InsulinDailyTotal[]>;
   getPumpStates?(range: TimeRange): Promise<PumpStateInterval[]>;
+  getTherapyStates?(range: TimeRange): Promise<TherapyStateInterval[]>;
   getStatus(now?: number): Promise<DataSourceStatus>;
 }
 
@@ -128,6 +130,7 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       boluses,
       dailyInsulinTotals,
       pumpStates,
+      therapyStates,
       context,
       glucoseStatus,
       insulinStatus,
@@ -138,6 +141,7 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       this.insulinSource.getBolusDeliveries(range),
       this.insulinSource.getDailyTotals?.(range) ?? Promise.resolve([]),
       this.insulinSource.getPumpStates?.(range) ?? Promise.resolve([]),
+      this.insulinSource.getTherapyStates?.(range).catch(() => []) ?? Promise.resolve([]),
       this.contextSource?.getEvents(range) ?? Promise.resolve([]),
       this.glucoseSource.getStatus(),
       this.insulinSource.getStatus(),
@@ -151,6 +155,7 @@ export class CombinedDiabetesRepository implements DiabetesRepository {
       boluses,
       dailyInsulinTotals,
       pumpStates,
+      therapyStates,
       context,
       sources: [
         glucoseStatus,

@@ -8,7 +8,8 @@ import { AppMenuButton } from "@/components/AppMenuButton";
 import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
-import { CurrentGlucoseCard } from "@/components/CurrentGlucoseCard";
+import { CurrentGlucoseCard, NowTherapyStateChips } from "@/components/CurrentGlucoseCard";
+import { nowTherapyStateLines, therapyStateRouteActivity } from "@/components/nowCardPresentation";
 import { ErrorCard } from "@/components/ErrorCard";
 import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -26,6 +27,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
 import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
 import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
+import { useTherapyStateRouteTimes } from "@/hooks/useTherapyStateRouteTimes";
 import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
 import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
@@ -39,7 +41,9 @@ import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualCont
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
 import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
-import { addDays, dayRange } from "@/domain/time";
+import { addDays, dayRange, formatDate } from "@/domain/time";
+import { connectionSettingsTarget } from "@/domain/connectionSummary";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
 import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
@@ -113,6 +117,7 @@ export function TodayScreen() {
   const latest = useLatestData();
   const aaps = useAapsCardSnapshot(dataMode === 'live', repository, revision);
   const aapsInsulin = useAapsInsulinContext(dataMode === 'live', revision);
+  const therapyStateRoutes = useTherapyStateRouteTimes(dataMode === 'live', ownerIdentity, revision);
   const aapsSelected = aaps.kind === 'aaps';
   // Never attach a prior session's independently loaded glucose to new estimates.
   const cardReading = aapsSelected ? aaps.reading
@@ -176,6 +181,16 @@ export function TodayScreen() {
       setContextKindLocked(true);
       setContextLaunchRequest((value) => value + 1);
     }
+  }
+
+  function checkGlucoseConnection() {
+    // Opens the settings page of the source the card's reading came from,
+    // or source health when that source has no page of its own (AAPS).
+    const target = cardReading ? connectionSettingsTarget(cardReading.sourceId) : undefined;
+    navigation.navigate(
+      "Sources",
+      target ? sourceSettingsRouteParams(target) : { ...sourceSettingsRouteParams(), panel: "source-health" },
+    );
   }
 
   function addFromTimeline(timestamp: number, kind: "meal" | "note") {
@@ -264,11 +279,30 @@ export function TodayScreen() {
     : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
+  // Recorded AAPS states active now ("Activity target until 11:30"). Each
+  // state is trusted as current only while the route that delivered it is
+  // working: a recent Nightscout treatment sync for Nightscout copies, and
+  // AAPS treatments or glucose received on this phone for local copies.
+  const therapyStateLines = useMemo(() => {
+    const data = todayTimeline.data;
+    if (!data?.therapyStates?.length) return [];
+    const activity = therapyStateRouteActivity({
+      now,
+      // States are read up to the end of the loaded day; an old load is stale too.
+      readThrough: data.range.end,
+      nightscoutTreatmentSyncAt: therapyStateRoutes.nightscoutTreatmentSyncAt,
+      aapsLocalTreatmentsReceivedAt: therapyStateRoutes.aapsLocalTreatmentsReceivedAt,
+      aapsLocalReadingAt: cardReading?.sourceId === "aaps-local" ? cardReading.timestamp : undefined,
+      aapsLocalTreatmentRouteOn: therapyStateRoutes.aapsLocalTreatmentRouteOn,
+    });
+    return nowTherapyStateLines(data.therapyStates, now, activity);
+  }, [cardReading, now, therapyStateRoutes, todayTimeline.data]);
 
   return (
     <View style={styles.screen}>
       <AppScreen
         title="Today"
+        subtitle={formatDate(today)}
         quietHeader
         bottomClearance={FLOATING_BUTTON_CLEARANCE}
         refreshing={syncing}
@@ -299,11 +333,25 @@ export function TodayScreen() {
                 source: undefined,
               })
             }
+            onCheckConnection={checkGlucoseConnection}
+            onLogHypoTreatment={() => chooseLogEntry("hypo-treatment")}
+            onLogMeterReading={() => chooseLogEntry("meter-glucose")}
           />
         )}
-        <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
-        <DeviceAgeChips />
-        <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
+        {/* Checks shrink to chips under Now until they need attention. */}
+        <View style={styles.chips}>
+          <NowTherapyStateChips lines={therapyStateLines} />
+          <SensorChangeStatus
+            onRecord={() => chooseLogEntry('sensor-start')}
+            showRecordAction={false}
+            sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)}
+          />
+          <DeviceAgeChips onRecordSensorChange={() => chooseLogEntry('sensor-start')} />
+          <ConnectionSummary
+            insulinThrough={insulinThrough}
+            sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]}
+          />
+        </View>
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
             {latest.error ? (
@@ -334,6 +382,7 @@ export function TodayScreen() {
           insulinProvenance={insulinProvenance}
           insulinThrough={insulinThrough}
           range={dayRange(today, now)}
+          gmi={<GmiCard variant="inline" />}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {
               focus: "glucose",
@@ -350,7 +399,6 @@ export function TodayScreen() {
           }
         />
 
-        <GmiCard />
         <View style={styles.timeline}>
           {selectedTimeline.error ? (
             <ErrorCard
@@ -452,6 +500,10 @@ export function TodayScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  chips: {
+    marginTop: 12,
+    gap: 10,
   },
   latestError: {
     marginTop: 12,

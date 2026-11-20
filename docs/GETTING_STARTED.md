@@ -64,10 +64,13 @@ Accessibility can be enabled. T1 Arc cannot approve that permission for itself.
 
 ## Update T1 Arc
 
-Open **About T1 Arc > Check for updates** for a manual check against the official
-GitHub repository. If an update is offered, review **What's changed** and open
-its release page. Nothing downloads or installs automatically. You can also
-watch the repository's Releases or check the Releases page yourself.
+T1 Arc checks the official GitHub repository once a day and shows one quiet
+notification when a new version is published. Turn this off in
+**About T1 Arc > Tell me when an update is out**. You can also open
+**About T1 Arc > Check for updates** at any time. If an update is offered,
+review **What's changed** and open its release page. Nothing downloads or
+installs automatically. You can also watch the repository's Releases or check
+the Releases page yourself.
 
 The check does not offer draft or GitHub prerelease builds. It also explains
 when a private or development package cannot be updated by the public APK.

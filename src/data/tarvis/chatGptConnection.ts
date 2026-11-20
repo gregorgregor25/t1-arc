@@ -247,6 +247,15 @@ function publicState(saved: SavedConnection | undefined, available: boolean): Ch
   };
 }
 
+/**
+ * Gives a signed-in account with no model chosen the first model ChatGPT
+ * lists for it, so the connection can be used straight after sign-in. A model
+ * the user chose is never replaced, even when it is no longer listed.
+ */
+function preselectChatGptModel(account: SavedAccount) {
+  if (!account.selectedModel && account.models.length) account.selectedModel = account.models[0]!.slug;
+}
+
 async function fetchModels(token: string, lease: LocalDataWriteLease): Promise<ChatGptModel[]> {
   try {
     const native = await getNative();
@@ -383,7 +392,9 @@ export async function signInChatGpt(lease: LocalDataWriteLease, existingAccountI
       const old = saved.accounts.find((account) => account.id === id);
       const account: SavedAccount = {
         id, clientId: credentials.clientId, subject: credentials.subject,
-        email: credentials.email, credentials, models: [], selectedModel: old?.selectedModel,
+        // A model choice is kept only when renewing a live session. A fresh
+        // sign-in always starts from the first listed (recommended) model.
+        email: credentials.email, credentials, models: [], selectedModel: old?.credentials ? old.selectedModel : undefined,
       };
       // Retain validated credentials if the model catalog is temporarily down.
       saved.accounts = [...saved.accounts.filter((item) => item.id !== id), account];
@@ -406,6 +417,7 @@ export async function signInChatGpt(lease: LocalDataWriteLease, existingAccountI
       }
       account.models = models;
       account.modelsFetchedAt = Date.now();
+      preselectChatGptModel(account);
       await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     }));
   }
@@ -494,6 +506,7 @@ export async function selectChatGptAccount(id: string, lease: LocalDataWriteLeas
     }
     account.models = models;
     account.modelsFetchedAt = Date.now();
+    preselectChatGptModel(account);
     saved.activeAccountId = id;
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
@@ -535,6 +548,7 @@ export async function refreshChatGptModels(lease: LocalDataWriteLease): Promise<
     }
     account.models = models;
     account.modelsFetchedAt = Date.now();
+    preselectChatGptModel(account);
     await saveEpochBoundSecureStoreValue(STORAGE_KEY, saved, lease);
     return publicState(saved, true);
   });

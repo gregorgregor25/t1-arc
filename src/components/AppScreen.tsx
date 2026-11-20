@@ -22,6 +22,8 @@ import { DemoModeNotice } from "./DemoModeNotice";
 
 interface AppScreenProps extends PropsWithChildren {
   title: string;
+  /** Optional short line under the title, such as today's date. */
+  subtitle?: string;
   header?: ReactNode;
   trailing?: ReactNode;
   footer?: ReactNode;
@@ -43,6 +45,7 @@ interface AppScreenProps extends PropsWithChildren {
 
 export function AppScreen({
   title,
+  subtitle,
   header,
   trailing,
   footer,
@@ -84,6 +87,11 @@ export function AppScreen({
           {title}
           <Text style={{ color: colors.primary }}>.</Text>
         </Text>
+        {subtitle ? (
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
       {trailing}
     </View>
@@ -216,6 +224,11 @@ const styles = StyleSheet.create({
     lineHeight: 39,
     fontWeight: "800",
     letterSpacing: -1,
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    marginTop: 2,
   },
   quietTitle: {
     fontSize: 31,

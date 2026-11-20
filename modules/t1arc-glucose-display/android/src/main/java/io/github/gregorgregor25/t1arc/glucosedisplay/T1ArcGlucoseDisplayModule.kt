@@ -2060,14 +2060,11 @@ private object T1ArcGlucoseNotification {
       T1ArcGlucoseDisplayState.displayTimeZone(context),
     )
 
-  private fun ageCopy(timestampMs: Long, now: Long, locale: Locale): String {
-    val minutes = floor(max(0L, now - timestampMs) / 60_000.0).toInt()
-    return when (minutes) {
-      0 -> "just now"
-      1 -> "${RegionalNumberFormatter.integer(1L, locale)} min ago"
-      else -> "${RegionalNumberFormatter.integer(minutes.toLong(), locale)} min ago"
+  /** Strikes through the last known value where the host renders spans. */
+  private fun struck(copy: StruckText): CharSequence =
+    SpannableString(copy.text).apply {
+      setSpan(StrikethroughSpan(), copy.struckStart, copy.struckEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
-  }
 
   private fun trendPresentation(trend: String): Pair<String, String> =
     GlucoseTrendPresentation.phone(trend) ?: ("?" to "Direction unavailable")
@@ -2263,17 +2260,13 @@ private object T1ArcGlucoseNotification {
     context: Context,
     freshness: DisplayFreshness,
     timestampMs: Long?,
-  ): Notification =
-    builder(context)
+  ): Notification {
+    // Never the value or insulin and carbs on board: only freshness, as before.
+    val copy = GlucoseSurfaceCopy.redacted(freshness)
+    return builder(context)
       .setSmallIcon(R.drawable.t1arc_notification_pulse)
-      .setContentTitle("T1 Arc glucose")
-      .setContentText(
-        if (freshness == DisplayFreshness.STALE) {
-          "Last known glucose is stale"
-        } else {
-          "${freshness.label} reading available"
-        }
-      )
+      .setContentTitle(copy.title)
+      .setContentText(copy.text)
       .setCategory(Notification.CATEGORY_STATUS)
       .setVisibility(Notification.VISIBILITY_PUBLIC)
       .setOnlyAlertOnce(true)
@@ -2281,6 +2274,7 @@ private object T1ArcGlucoseNotification {
       .setShowWhen(timestampMs != null)
       .setWhen(timestampMs ?: System.currentTimeMillis())
       .build()
+  }
 
   fun buildPrivateMonitoring(context: Context): Notification {
     ensureChannel(context)
@@ -2299,9 +2293,10 @@ private object T1ArcGlucoseNotification {
       builder(context)
         .setSmallIcon(R.drawable.t1arc_notification_pulse)
         .setContentTitle("T1 Arc private monitoring")
-        .setContentText(if (T1ArcGlucoseDisplayState.alertMonitoringEnabled(context))
-          "Your chosen alerts are being checked on this phone."
-          else "Your home screen glucose widget is being kept up to date.")
+        .setContentText(GlucoseSurfaceCopy.monitoringText(
+          T1ArcGlucoseDisplayState.alertMonitoringEnabled(context),
+          GlucoseSurfaceCopy.selectedSourceName(AapsLocalStore.selectedSource(context)),
+        ))
         .setContentIntent(pendingIntent(context))
         .setCategory(Notification.CATEGORY_SERVICE)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
@@ -2325,80 +2320,85 @@ private object T1ArcGlucoseNotification {
     val freshness = T1ArcGlucoseDisplayState.freshness(context, now)
     val notification =
       if (snapshot == null) {
+        // Name the source chosen in Settings; never assume LibreLinkUp.
+        val waiting = GlucoseSurfaceCopy.waiting(
+          GlucoseSurfaceCopy.selectedSourceName(AapsLocalStore.selectedSource(context)),
+        )
         builder(context)
           .setSmallIcon(R.drawable.t1arc_notification_pulse)
-          .setContentTitle("Waiting for personal glucose")
-          .setContentText("T1 Arc is checking your saved LibreLinkUp connection.")
-          .setStyle(
-            Notification.BigTextStyle().bigText(
-              "T1 Arc is checking your saved LibreLinkUp connection. The notification will update when a reading is available."
-            )
-          )
+          .setContentTitle(waiting.title)
+          .setContentText(waiting.text)
+          .setStyle(Notification.BigTextStyle().bigText(waiting.bigText))
           .setShowWhen(false)
       } else {
         val (arrow, direction) = trendPresentation(snapshot.trend)
-        val directionCopy =
-          if (snapshot.trendOrigin == "calculated") "$direction (calculated)" else direction
+        val calculated = snapshot.trendOrigin == "calculated"
+        val locale = T1ArcGlucoseDisplayState.displayLocale(context)
         val value = T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL)
         val unit = T1ArcGlucoseDisplayState.displayGlucoseUnit(context)
-        val age =
-          ageCopy(
-            snapshot.timestampMs,
-            now,
-            T1ArcGlucoseDisplayState.displayLocale(context),
-          )
-        val status =
-          if (freshness == DisplayFreshness.STALE) {
-            "Stale · Last known · $age · ${formatTime(context, snapshot.timestampMs)}"
-          } else {
-            "${freshness.label} · $age · ${formatTime(context, snapshot.timestampMs)}"
-          }
+        val age = GlucoseSurfaceCopy.age(snapshot.timestampMs, now, locale)
+        val rangeWord = GlucoseSurfaceCopy.rangeWord(
+          T1ArcGlucoseDisplayState.appearance(context).categoryFor(snapshot.mmolL),
+        )
+        val sourceName = GlucoseSurfaceCopy.readingSourceName(snapshot.sourceLabel)
+        val stale = freshness == DisplayFreshness.STALE
         // Shown with the private notification only. The redacted lock-screen
         // version below never includes it, matching glucose privacy.
         val onBoard =
           T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.NOTIFICATION, now)
+        val expandedTitle =
+          glucoseDisplayTitle(
+            value,
+            GlucoseSurfaceCopy.directionSuffix(arrow, direction, calculated, unit),
+            freshness,
+          )
+        val title: CharSequence
+        val text: CharSequence
+        val summary: CharSequence
+        if (stale) {
+          val lastKnown = struck(
+            GlucoseSurfaceCopy.staleLine(value, formatTime(context, snapshot.timestampMs), sourceName),
+          )
+          title = GlucoseSurfaceCopy.staleTitle(snapshot.timestampMs, now, locale)
+          text = lastKnown
+          summary = SpannableStringBuilder(lastKnown).apply {
+            if (onBoard != null) append(" · ${onBoard.compact} · ${onBoard.detail}")
+          }
+        } else {
+          title = glucoseDisplayTitle(
+            value,
+            GlucoseSurfaceCopy.directionSuffix(arrow, direction, calculated),
+            freshness,
+          )
+          text = GlucoseSurfaceCopy.readingLine(age, freshness, rangeWord, onBoard?.compact)
+          summary = GlucoseSurfaceCopy.expandedSummary(
+            age, freshness, sourceName, onBoard?.compact, onBoard?.detail,
+          )
+        }
         val readingBuilder =
           builder(context)
           .setSmallIcon(valueIcon(context, snapshot, freshness))
-          .setContentTitle(
-            glucoseDisplayTitle(value, " $arrow  $directionCopy", freshness)
-          )
-          .setContentText("$unit · $status")
+          .setContentTitle(title)
+          .setContentText(text)
           .setShowWhen(true)
           .setWhen(snapshot.timestampMs)
-        if (onBoard != null) readingBuilder.setSubText(onBoard.compact)
         val chart = historyBitmap(context, snapshot)
         if (chart != null) {
           readingBuilder.setStyle(
             Notification.BigPictureStyle()
               .bigPicture(chart)
-              .setBigContentTitle(
-                glucoseDisplayTitle(
-                  value,
-                  " $unit $arrow · $directionCopy",
-                  freshness,
-                )
-              )
-              .setSummaryText(
-                if (onBoard == null) "$status · ${snapshot.sourceLabel}"
-                else "$status · ${onBoard.detail}"
-              )
+              .setBigContentTitle(if (stale) title else expandedTitle)
+              .setSummaryText(summary)
           )
         } else {
           readingBuilder.setStyle(
-            Notification.BigTextStyle().bigText(
-              SpannableStringBuilder()
-                .append(
-                  glucoseDisplayTitle(
-                    value,
-                    " $unit $arrow · $directionCopy",
-                    freshness,
-                  )
-                )
-                .append("\n$status")
-                .append(if (onBoard == null) "" else "\n${onBoard.compact}\n${onBoard.detail}")
-                .append("\n${snapshot.sourceLabel} · Tap to inspect the timeline.")
-            )
+            Notification.BigTextStyle()
+              .setBigContentTitle(if (stale) title else expandedTitle)
+              .bigText(
+                SpannableStringBuilder()
+                  .append(summary)
+                  .append("\nTap to inspect the timeline.")
+              )
           )
         }
         readingBuilder
@@ -2417,14 +2417,14 @@ private object T1ArcGlucoseNotification {
       .addAction(
         Notification.Action.Builder(
           null,
-          "Log food",
+          GlucoseSurfaceCopy.LOG_FOOD_ACTION,
           foodLogPendingIntent(context),
         ).build()
       )
       .addAction(
         Notification.Action.Builder(
           null,
-          "Log context",
+          GlucoseSurfaceCopy.LOG_SOMETHING_ACTION,
           contextLogPendingIntent(context),
         ).build()
       )
@@ -2446,10 +2446,75 @@ private object T1ArcGlucoseNotification {
     return notification.build()
   }
 
+  // What the posted glucose notification shows, so an identical re-post (and
+  // its value icon and chart bitmaps) can be skipped. Read and written only
+  // inside the phone-surface gate.
+  @Volatile private var shownKey: String? = null
+
+  /**
+   * A small key for everything the glucose notification shows, from cheap
+   * inputs only: reading, value text, trend, age text, on-board text, alarm
+   * warning, colour and privacy mode. A change in any of them re-posts.
+   */
+  private fun contentKey(context: Context): String {
+    val snapshot = T1ArcGlucoseDisplayState.snapshot(context)
+    val now = System.currentTimeMillis()
+    val freshness = T1ArcGlucoseDisplayState.freshness(context, now)
+    val parts = mutableListOf<Any?>(
+      freshness,
+      T1ArcGlucoseDisplayState.lockScreenVisible(context),
+      T1ArcGlucoseAlarmEngine.ongoingWarning,
+      T1ArcGlucoseDisplayState.displayColor(context, snapshot, freshness),
+    )
+    if (snapshot == null) {
+      parts.add(AapsLocalStore.selectedSource(context))
+    } else {
+      val locale = T1ArcGlucoseDisplayState.displayLocale(context)
+      val onBoard =
+        T1ArcOnBoardEstimateState.presentation(context, snapshot, OnBoardSurface.NOTIFICATION, now)
+      parts.add(snapshot.timestampMs)
+      parts.add(snapshot.mmolL)
+      parts.add(snapshot.trend)
+      parts.add(snapshot.trendOrigin)
+      parts.add(snapshot.sourceLabel)
+      parts.add(T1ArcGlucoseDisplayState.displayGlucoseValue(context, snapshot.mmolL))
+      parts.add(T1ArcGlucoseDisplayState.displayGlucoseUnit(context))
+      parts.add(locale)
+      parts.add(GlucoseSurfaceCopy.age(snapshot.timestampMs, now, locale))
+      parts.add(GlucoseSurfaceCopy.staleTitle(snapshot.timestampMs, now, locale))
+      parts.add(formatTime(context, snapshot.timestampMs))
+      parts.add(T1ArcGlucoseDisplayState.appearance(context).categoryFor(snapshot.mmolL))
+      parts.add(onBoard?.compact)
+      parts.add(onBoard?.detail)
+    }
+    return parts.joinToString("\u001f")
+  }
+
+  private fun stillShown(manager: NotificationManager): Boolean =
+    runCatching { manager.activeNotifications.any { it.id == NOTIFICATION_ID } }
+      .getOrDefault(false)
+
+  /** Records that the service just posted the glucose notification itself. */
+  fun rememberShown(context: Context) {
+    shownKey = runCatching { contentKey(context) }.getOrNull()
+  }
+
+  /** The notification id now shows something else, or nothing. */
+  fun forgetShown() {
+    shownKey = null
+  }
+
   fun notify(context: Context) {
     T1ArcGlucosePhoneSurfaceGate.publishIfEnabled(context) {
       val manager = context.getSystemService(NotificationManager::class.java)
+      val key = runCatching { contentKey(context) }.getOrNull()
+      // Same content still on screen: nothing to post. A new reading, a new
+      // age text or an alarm warning changes the key and posts at once.
+      if (key != null && key == shownKey && stillShown(manager)) {
+        return@publishIfEnabled
+      }
       manager.notify(NOTIFICATION_ID, build(context))
+      shownKey = key
       T1ArcGlucoseWidget.updateAll(context)
       T1ArcAodAccessibilityService.snapshotChanged()
     }
@@ -2458,6 +2523,7 @@ private object T1ArcGlucoseNotification {
   fun cancel(context: Context) {
     T1ArcGlucosePhoneSurfaceGate.mutate {
       context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+      shownKey = null
       T1ArcAodAccessibilityService.snapshotChanged()
     }
   }
@@ -2949,6 +3015,9 @@ class T1ArcGlucoseDisplayService : Service() {
   private var networkCallbackRegistered = false
   private var serviceAlive = false
   private var alarmPlaybackActive = false
+  // The mode and service type of this instance's last startForeground call.
+  private var foregroundStartedMode: GlucoseCollectorForegroundMode? = null
+  private var foregroundStartedType = 0
   private var validatedNetworkSyncPending = false
   private var aapsSyncPending = false
   private val cadenceTracker = ReadingCadenceTracker()
@@ -3122,6 +3191,14 @@ class T1ArcGlucoseDisplayService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val foregroundType =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+          (if (alarmPlaybackActive) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
+      } else {
+        0
+      }
+    var refreshShownNotification = false
     // Resolve ownership inside the publication fence. A service start that was
     // queued while display was on must not publish the old glucose foreground
     // notification after disable has committed and cancelled it.
@@ -3130,6 +3207,22 @@ class T1ArcGlucoseDisplayService : Service() {
         val resolvedMode = T1ArcGlucoseDisplayState.collectorMode(this)
         if (resolvedMode == GlucoseCollectorForegroundMode.STOPPED) {
           return@mutate null
+        }
+        // A restart of the running display service does not need another
+        // foreground post: refresh the shown content once below instead, which
+        // skips the post when nothing visible changed.
+        if (
+          resolvedMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY &&
+            resolvedMode == foregroundStartedMode &&
+            foregroundType == foregroundStartedType &&
+            // Skip only while Android still reports this service in the
+            // foreground. If it was ever demoted, post again so the
+            // startForegroundService deadline is always met.
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            foregroundServiceType != 0
+        ) {
+          refreshShownNotification = true
+          return@mutate resolvedMode
         }
         val notification =
           when (resolvedMode) {
@@ -3143,11 +3236,17 @@ class T1ArcGlucoseDisplayService : Service() {
           startForeground(
             NOTIFICATION_ID,
             notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-              (if (alarmPlaybackActive) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0),
+            foregroundType,
           )
         } else {
           startForeground(NOTIFICATION_ID, notification)
+        }
+        foregroundStartedMode = resolvedMode
+        foregroundStartedType = foregroundType
+        if (resolvedMode == GlucoseCollectorForegroundMode.GLUCOSE_DISPLAY) {
+          T1ArcGlucoseNotification.rememberShown(this)
+        } else {
+          T1ArcGlucoseNotification.forgetShown()
         }
         resolvedMode
       }
@@ -3155,6 +3254,7 @@ class T1ArcGlucoseDisplayService : Service() {
       stopSelf()
       return START_NOT_STICKY
     }
+    if (refreshShownNotification) T1ArcGlucoseNotification.notify(this)
 
     handler.removeCallbacks(renderRunnable)
     handler.removeCallbacks(syncRunnable)

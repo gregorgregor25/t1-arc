@@ -48,6 +48,8 @@ import {
   EvidenceRequestSnapshot,
   evidenceRequestKey,
   evidenceResolutionValue,
+  evidenceInspectorRecordPresentation,
+  referencedHealthRecordsForView,
   evidenceSnapshotForRequest,
   nextEvidenceVisibleCount,
   shouldShowEvidencePagination,
@@ -189,6 +191,9 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
     repository,
   );
   const data = visibleRecordSnapshot?.data;
+  const selectedContextEvent = data?.context.find(
+    (event) => evidence?.id === `context-window:${event.id}`,
+  );
   const healthRecords = visibleRecordSnapshot?.healthRecords ?? [];
   const notificationIobRecords =
     visibleRecordSnapshot?.notificationIobRecords ?? [];
@@ -216,6 +221,11 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
     exactQueryWithoutVisualization ||
     evidence?.examples.some((example) => example.kind === "glucose") ||
     data?.glucose.length,
+  );
+  const recordPresentation = evidenceInspectorRecordPresentation(
+    evidence,
+    hasGlucoseEvidence ? view : "records",
+    selectedContextEvent?.kind,
   );
   const needsGenericVisual = Boolean(
     evidence &&
@@ -389,11 +399,11 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
     return { checked: requested.size, resolved };
   })();
 
-  const referencedHealthRecords = (() => {
-    if (!evidence) return [];
-    const requested = new Set(evidence.recordIds);
-    return healthRecords.filter((record) => requested.has(record.id));
-  })();
+  const referencedHealthRecords = referencedHealthRecordsForView(
+    healthRecords,
+    evidence?.recordIds ?? [],
+    recordPresentation.includeWeightRecords,
+  );
   const hasReferencedTimelineRecords = (() => {
     if (!data || !evidence) return false;
     const available = timelineRecordIds(data);
@@ -433,7 +443,7 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
         >
           <View style={styles.headerCopy}>
             <Text style={[styles.eyebrow, { color: colors.accent }]}>
-              EXACT CALCULATION INPUTS
+              {recordPresentation.heading}
             </Text>
             <Text
               numberOfLines={1}
@@ -505,7 +515,7 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                 </View>
                 <View style={styles.explainerCopy}>
                   <Text style={[styles.explainerTitle, { color: colors.text }]}>
-                    No hidden evidence
+                    {recordPresentation.title}
                   </Text>
                   <Text
                     style={[
@@ -513,8 +523,7 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                       { color: colors.textSecondary },
                     ]}
                   >
-                    {sentence(evidence.description)} Every saved record used for
-                    this answer is shown below.
+                    {sentence(evidence.description)} {recordPresentation.explanation}
                   </Text>
                 </View>
               </View>
@@ -540,7 +549,7 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                       { color: colors.textTertiary },
                     ]}
                   >
-                    SHOWN
+                    {recordPresentation.resolvedLabel}
                   </Text>
                 </View>
                 <View style={styles.summaryMetric}>
@@ -557,7 +566,7 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                       { color: colors.textTertiary },
                     ]}
                   >
-                    USED
+                    {recordPresentation.totalLabel}
                   </Text>
                 </View>
                 <View style={styles.summaryDates}>
@@ -654,8 +663,8 @@ function EvidenceRecordInspectorContent({ evidence, onClose }: Props) {
                       }
                       accessibilityHint={
                         option === "records"
-                          ? "Opens the complete text alternative containing every exact supporting record."
-                          : "Opens the saved query-specific chart."
+                          ? "Opens the list of referenced records."
+                          : "Opens the glucose chart for this view."
                       }
                       accessibilityRole="tab"
                       accessibilityState={{ selected: view === option }}
@@ -1115,6 +1124,8 @@ function sourceRecordLabel(kind: string) {
   if (kind === "pump-mode-daily") return "Daily Omnipod operating modes";
   if (kind === "pump-state-interval") return "Timed pump state";
   if (kind === "pump-settings") return "Omnipod settings snapshot";
+  if (kind === "nightscout-treatment") return "Nightscout treatment record";
+  if (kind === "aaps-local-treatment") return "AAPS treatment received on this phone";
   return kind.replace(/[-_]+/g, " ");
 }
 

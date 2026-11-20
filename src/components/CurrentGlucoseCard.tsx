@@ -1,8 +1,8 @@
 import cardSpec from '../../modules/t1arc-glucose-display/shared/current-glucose-card.json';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -20,7 +20,6 @@ import Svg, {
 import { DataSourceStatus, GlucoseReading } from '@/domain/models';
 import { freshnessCopy, glucoseFreshness } from '@/domain/freshness';
 import {
-  GLUCOSE_RANGE_LABELS,
   glucoseRangeForValue,
   glucoseTone,
 } from '@/domain/glucoseAppearance';
@@ -44,8 +43,16 @@ import { useAppTheme } from '@/theme/theme';
 import { StatusPill } from './StatusPill';
 import { AapsEstimateSummary } from './AapsEstimateSummary';
 import type { AapsEstimateInput } from './aapsEstimatePresentation';
-import { SurfaceSheen } from './SurfaceSheen';
 import { currentGlucoseCardLayout } from './currentGlucoseCardLayout';
+import {
+  lowReadingMessage,
+  NOW_CARD_CLOCK_AHEAD_MS,
+  nowCardSourceName,
+  nowCardState,
+  staleReadingMessage,
+  type NowStateShape,
+  type NowTherapyStateLine,
+} from './nowCardPresentation';
 import { useSystemBarInsets } from '@/hooks/useSystemBarInsets';
 import {
   glucoseTraceGeometry,
@@ -65,14 +72,10 @@ function GlucoseTrace({
   endTimestamp,
   readings,
   stale,
-  traceTop,
-  inFlow = false,
 }: {
   endTimestamp: number;
   readings: GlucoseReading[];
   stale: boolean;
-  traceTop: number;
-  inFlow?: boolean;
 }) {
   const { colors, dark } = useAppTheme();
   const { settings } = useGlucoseAppearance();
@@ -84,10 +87,10 @@ function GlucoseTrace({
     <View
       accessibilityElementsHidden
       pointerEvents="none"
-      style={inFlow ? styles.flowTrace : [styles.trace, { top: traceTop }]}
+      style={styles.flowTrace}
     >
       <Svg
-        height={inFlow ? cardSpec.traceHeight : '100%'}
+        height={cardSpec.traceHeight}
         preserveAspectRatio="none"
         viewBox={`0 0 ${TRACE_WIDTH} ${TRACE_HEIGHT}`}
         width="100%"
@@ -140,6 +143,42 @@ function GlucoseTrace({
   );
 }
 
+function StateShape({ shape, color }: { shape: NowStateShape; color: string }) {
+  const size = 12;
+  let inner;
+  switch (shape) {
+    case 'circle':
+      inner = <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />;
+      break;
+    case 'ring':
+      inner = <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: color }} />;
+      break;
+    case 'triangle-up':
+    case 'triangle-down':
+      inner = (
+        <View
+          style={[
+            styles.triangle,
+            shape === 'triangle-up'
+              ? { borderBottomWidth: size, borderBottomColor: color }
+              : { borderTopWidth: size, borderTopColor: color },
+          ]}
+        />
+      );
+      break;
+  }
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.shapeBox}
+      testID={`now-state-${shape}`}
+    >
+      {inner}
+    </View>
+  );
+}
+
 export function CurrentGlucoseCard({
   reading,
   history = [],
@@ -148,6 +187,9 @@ export function CurrentGlucoseCard({
   trendAssessment,
   trendDetailsRequest = 0,
   onChooseSource,
+  onCheckConnection,
+  onLogHypoTreatment,
+  onLogMeterReading,
   aapsEstimates,
 }: {
   reading?: GlucoseReading;
@@ -157,6 +199,12 @@ export function CurrentGlucoseCard({
   trendAssessment?: GlucoseTrendAssessment;
   trendDetailsRequest?: number;
   onChooseSource?(): void;
+  /** No recent reading: opens the settings page for the glucose source. */
+  onCheckConnection?(): void;
+  /** Low or very low: opens the hypo treatment form (nothing saves until confirmed). */
+  onLogHypoTreatment?(): void;
+  /** No recent reading: opens the meter (finger-prick) reading form. */
+  onLogMeterReading?(): void;
   aapsEstimates?: AapsEstimateInput;
 }) {
   const { colors, dark, radius } = useAppTheme();
@@ -193,6 +241,10 @@ export function CurrentGlucoseCard({
     freshness,
     appearance,
   );
+  const state = nowCardState(valueRange, freshness);
+  const lowMode = Boolean(reading) && state.mode === 'low';
+  const staleMode = Boolean(reading) && isStale;
+  const sourceName = nowCardSourceName(reading?.sourceId);
   const trendIcon: keyof typeof Ionicons.glyphMap =
     assessment.direction === 'tripleDown' ||
     assessment.direction === 'doubleDown' ||
@@ -209,32 +261,68 @@ export function CurrentGlucoseCard({
       ? `${trend.label} (calculated)`
       : trend.label;
   const chooseSourceContent = colors.onPrimary;
-  const glucoseContent = (
-    <>
-      <View style={[styles.topRow, aapsEstimates && styles.aapsTopRow]}>
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
-          {isStale ? 'Last known' : 'Now'}
-        </Text>
-        <View style={[styles.statusBlock, aapsEstimates && styles.aapsStatusBlock]}>
-          {reading ? (
-            <Text style={[styles.age, { color: colors.textSecondary }]}>
-              {aapsEstimates ? `Glucose · ${age}` : age}
-            </Text>
-          ) : null}
-          {freshness !== 'current' ? <StatusPill freshness={freshness} /> : null}
-        </View>
-      </View>
+  const readingLabel = reading
+    ? isStale
+      ? `Last known glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, shown struck through because it is stale. Updated ${age}.`
+      : `Current glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, ${trendLabel}. ${state.word}. ${freshnessCopy[freshness].label}, updated ${age}.`
+    : 'Current glucose is unavailable.';
+  const ageLine = staleMode
+    ? `Last reading ${age}`
+    : [aapsEstimates ? `Glucose · ${age}` : age, sourceName].filter(Boolean).join(' · ');
 
+  return (
+    <View
+      style={[
+        styles.card,
+        reading ? null : { minHeight: layout.minHeight },
+        {
+          backgroundColor: lowMode ? `${valueTone}1F` : colors.surface,
+          borderColor: lowMode ? valueTone : colors.border,
+          borderWidth: lowMode ? 2 : StyleSheet.hairlineWidth,
+          borderRadius: radius.xl,
+          shadowColor: colors.surfaceShadow,
+        },
+      ]}
+      testID={`now-card-${reading ? state.mode : 'missing'}`}
+    >
       {reading ? (
         <>
-          <View style={styles.readingRow}>
+          <View style={styles.topRow}>
+            <View
+              style={[
+                styles.statePill,
+                {
+                  backgroundColor: staleMode ? colors.surfaceMuted : `${valueTone}24`,
+                  borderColor: staleMode ? colors.border : `${valueTone}88`,
+                },
+              ]}
+            >
+              <StateShape color={staleMode ? colors.textSecondary : valueTone} shape={state.shape} />
+              <Text style={[styles.stateWord, { color: staleMode ? colors.text : valueTone }]}>
+                {state.word}
+              </Text>
+            </View>
+            <View style={styles.statusBlock}>
+              <Text style={[styles.age, { color: colors.textSecondary }]}>{ageLine}</Text>
+              {freshness === 'delayed' ? <StatusPill freshness={freshness} /> : null}
+            </View>
+          </View>
+
+          <Pressable
+            accessibilityHint="Opens how this reading's direction was recorded"
+            accessibilityLabel={readingLabel}
+            accessibilityRole="button"
+            onPress={() => setTrendDetailsVisible(true)}
+            style={({ pressed }) => [styles.readingRow, pressed && { opacity: 0.72 }]}
+            testID="now-card-reading"
+          >
             <Text
               maxFontSizeMultiplier={1.3}
               style={[
                 styles.value,
-                { color: valueTone },
-                isStale && {
-                  textDecorationColor: valueTone,
+                { color: staleMode ? colors.textSecondary : valueTone },
+                staleMode && {
+                  textDecorationColor: colors.textSecondary,
                   textDecorationLine: 'line-through',
                   textDecorationStyle: 'solid',
                 },
@@ -243,79 +331,140 @@ export function CurrentGlucoseCard({
               {formatGlucose(reading.mmolL, regional, { withUnit: false })}
             </Text>
             <View style={styles.unitBlock}>
-              <Text
-                style={[
-                  styles.arrow,
-                  { color: valueTone },
-                  isStale && {
-                    textDecorationColor: valueTone,
-                    textDecorationLine: 'line-through',
-                    textDecorationStyle: 'solid',
-                  },
-                ]}
-              >
-                {trend.arrow}
-              </Text>
-              <Text style={[styles.unit, { color: colors.textSecondary }]}>
-                {glucoseUnitLabel(regional.glucoseUnit)}
-              </Text>
+              {staleMode ? (
+                <>
+                  <Text style={[styles.direction, { color: colors.text }]}>Last known</Text>
+                  <Text style={[styles.unit, { color: colors.textSecondary }]}>
+                    at {formatTime(reading.timestamp)} · {glucoseUnitLabel(regional.glucoseUnit)}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <View style={styles.directionRow}>
+                    <Text
+                      maxFontSizeMultiplier={1.3}
+                      style={[styles.arrow, { color: lowMode ? valueTone : colors.text }]}
+                    >
+                      {trend.arrow}
+                    </Text>
+                    <Text style={[styles.direction, { color: colors.text }]}>
+                      {trendLabel}
+                    </Text>
+                  </View>
+                  <Text style={[styles.unit, { color: colors.textSecondary }]}>
+                    {glucoseUnitLabel(regional.glucoseUnit)}
+                  </Text>
+                </>
+              )}
             </View>
-          </View>
-          {aapsEstimates ? (
+          </Pressable>
+
+          {lowMode ? (
+            <View style={styles.stateBlock}>
+              <Text style={[styles.stateMessage, { color: colors.text }]}>
+                {lowReadingMessage(
+                  valueRange,
+                  formatGlucose(
+                    valueRange === 'veryLow' ? appearance.veryLowMax : appearance.targetMin,
+                    regional,
+                  ),
+                )}
+              </Text>
+              {onLogHypoTreatment ? (
+                <Pressable
+                  accessibilityHint="Opens the hypo treatment form. Nothing is saved until you confirm."
+                  accessibilityRole="button"
+                  onPress={onLogHypoTreatment}
+                  style={({ pressed }) => [
+                    styles.stateButton,
+                    {
+                      backgroundColor: valueTone,
+                      borderRadius: radius.md,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.background} name="medkit-outline" size={20} />
+                  <Text style={[styles.stateButtonText, { color: colors.background }]}>
+                    Log hypo treatment
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {staleMode ? (
+            <View style={styles.stateBlock}>
+              <Text style={[styles.stateMessage, { color: colors.text }]}>
+                {staleReadingMessage(sourceName, formatTime(reading.timestamp), {
+                  clockAhead: reading.timestamp - now > NOW_CARD_CLOCK_AHEAD_MS,
+                })}
+              </Text>
+              {onCheckConnection ? (
+                <Pressable
+                  accessibilityHint="Opens the settings page for your glucose source"
+                  accessibilityRole="button"
+                  onPress={onCheckConnection}
+                  style={({ pressed }) => [
+                    styles.stateButton,
+                    {
+                      backgroundColor: colors.primary,
+                      borderRadius: radius.md,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.onPrimary} name="git-network-outline" size={20} />
+                  <Text style={[styles.stateButtonText, { color: colors.onPrimary }]}>
+                    Check the connection
+                  </Text>
+                </Pressable>
+              ) : null}
+              {onLogMeterReading ? (
+                <Pressable
+                  accessibilityHint="Opens a form to record a finger-prick reading. It is kept separate from sensor readings."
+                  accessibilityRole="button"
+                  onPress={onLogMeterReading}
+                  style={({ pressed }) => [
+                    styles.stateButton,
+                    styles.secondaryStateButton,
+                    {
+                      borderColor: colors.primary,
+                      borderRadius: radius.md,
+                      backgroundColor: pressed ? colors.surfaceMuted : colors.surface,
+                    },
+                  ]}
+                >
+                  <Ionicons accessibilityElementsHidden color={colors.primary} name="eyedrop-outline" size={20} />
+                  <Text style={[styles.stateButtonText, { color: colors.primary }]}>
+                    Log a meter reading
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {!staleMode ? (
             <GlucoseTrace
               endTimestamp={reading.timestamp}
               readings={history}
               stale={isStale}
-              traceTop={layout.traceTop}
-              inFlow
             />
           ) : null}
-          <View style={styles.footer}>
-            {isStale ? (
+
+          {!isStale && (assessment.origin === 'calculated' || assessment.sourceDetail) ? (
+            <View style={styles.footer}>
               <View style={styles.detailRow}>
                 <Ionicons
                   accessibilityElementsHidden
-                  name="alert-circle-outline"
-                  color={valueTone}
+                  name={trendIcon}
+                  color={colors.textSecondary}
                   size={18}
                 />
-                <Text style={[styles.detailStrong, { color: colors.text }]}>
-                  Stale · last known reading
+                <Text style={[styles.detail, { color: colors.textSecondary }]}>
+                  {assessment.origin === 'calculated' ? 'Direction calculated by T1 Arc' : 'Direction from your source'}
                 </Text>
               </View>
-            ) : (
-              <>
-                <View style={styles.detailRow}>
-                  <Ionicons
-                    accessibilityElementsHidden
-                    name={trendIcon}
-                    color={valueTone}
-                    size={18}
-                  />
-                  <Text style={[styles.detailStrong, { color: colors.text }]}>
-                    {trendLabel}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.rangePill,
-                    {
-                      backgroundColor: `${valueTone}18`,
-                      borderColor: `${valueTone}66`,
-                    },
-                  ]}
-                >
-                  <View
-                    accessibilityElementsHidden
-                    style={[styles.rangeDot, { backgroundColor: valueTone }]}
-                  />
-                  <Text style={[styles.rangeText, { color: valueTone }]}>
-                    {GLUCOSE_RANGE_LABELS[valueRange]}
-                  </Text>
-                </View>
-              </>
-            )}
-            {!isStale && (assessment.origin === 'calculated' || assessment.sourceDetail) ? (
               <Pressable
                 accessibilityLabel={assessment.origin === 'calculated' ? 'How this trend was calculated' : 'About this source trend'}
                 accessibilityHint={assessment.origin === 'calculated' ? 'Opens the exact readings used for this fallback' : 'Opens the source direction and watch display details'}
@@ -337,12 +486,18 @@ export function CurrentGlucoseCard({
                   size={18}
                 />
               </Pressable>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
         </>
       ) : (
         <View style={styles.missing}>
-          <Text style={[styles.missingTitle, { color: colors.text }]}>No reading</Text>
+          <View style={styles.topRow}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Now</Text>
+            <StatusPill freshness={freshness} />
+          </View>
+          <Text accessibilityLabel={readingLabel} style={[styles.missingTitle, { color: colors.text }]}>
+            No reading
+          </Text>
           <Text style={[styles.detail, { color: colors.textSecondary }]}>
             {source?.isLive
               ? 'The connected glucose source has not supplied a usable value.'
@@ -388,7 +543,7 @@ export function CurrentGlucoseCard({
         </View>
       )}
       {reading && freshness !== 'current' && source?.isLive ? (
-        <Text style={[styles.detail, styles.sourceDetail, { color: colors.textSecondary }]}>
+        <Text style={[styles.detail, { color: colors.textSecondary }]}>
           {source.errorCode
             ? 'The last source check failed. Open Settings to check the connection and retry.'
             : source.lastUpdatedAt && source.lastUpdatedAt > reading.timestamp
@@ -396,49 +551,6 @@ export function CurrentGlucoseCard({
               : 'Waiting for a newer reading. Open Settings to check the source connection.'}
         </Text>
       ) : null}
-    </>
-  );
-  return (
-    <LinearGradient
-      accessibilityLabel={
-        reading
-          ? isStale
-            ? `Last known glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, shown struck through because it is stale. Updated ${age}.`
-            : `Current glucose ${formatGlucoseAccessible(reading.mmolL, regional)}, ${trendLabel}. ${freshnessCopy[freshness].label}, updated ${age}.`
-          : 'Current glucose is unavailable.'
-      }
-      colors={[
-        colors.surfaceGradientStart,
-        colors.surfaceGradientMiddle,
-        colors.surfaceGradientEnd,
-      ]}
-      end={{ x: 0.9, y: 1 }}
-      locations={[0, 0.46, 1]}
-      start={{ x: 0.02, y: 0 }}
-      style={[
-        styles.card,
-        { minHeight: layout.minHeight },
-        {
-          borderColor: colors.surfaceBorder,
-          borderRadius: radius.xl,
-          shadowColor: colors.surfaceShadow,
-        },
-      ]}
-    >
-      <SurfaceSheen radius={radius.xl} />
-      {reading && !aapsEstimates ? (
-        <GlucoseTrace
-          endTimestamp={reading.timestamp}
-          readings={history}
-          stale={isStale}
-          traceTop={layout.traceTop}
-        />
-      ) : null}
-      {aapsEstimates ? (
-        <View style={{ minHeight: layout.minHeight - cardSpec.padding * 2 }}>
-          {glucoseContent}
-        </View>
-      ) : glucoseContent}
       {aapsEstimates ? <AapsEstimateSummary estimates={aapsEstimates} now={now} /> : null}
       <Modal
         animationType="fade"
@@ -491,9 +603,13 @@ export function CurrentGlucoseCard({
                 />
               </Pressable>
             </View>
-            {assessment.origin === 'source' ? (
+            {assessment.origin === 'unavailable' ? (
               <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
-                {assessment.sourceDetail}{assessment.compatibilityNote ? ` ${assessment.compatibilityNote}` : ''}
+                {assessment.reason ?? 'No direction is available for this reading.'}
+              </Text>
+            ) : assessment.origin === 'source' ? (
+              <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
+                {assessment.sourceDetail ?? 'This direction was supplied by your glucose source with the reading.'}{assessment.compatibilityNote ? ` ${assessment.compatibilityNote}` : ''}
               </Text>
             ) : (
               <Text style={[styles.modalBody, { color: colors.textSecondary }]}>
@@ -570,36 +686,167 @@ export function CurrentGlucoseCard({
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+    </View>
+  );
+}
+
+const THERAPY_STATE_ICONS: Record<NowTherapyStateLine['state']['kind'], keyof typeof Ionicons.glyphMap> = {
+  'temporary-target': 'flag-outline',
+  'profile-switch': 'person-outline',
+  'loop-mode': 'sync-outline',
+  'pump-suspend': 'pause-circle-outline',
+  exercise: 'walk-outline',
+};
+
+/**
+ * One calm chip per recorded AAPS state that is active now (at most two),
+ * shown under the Now card. Tapping shows the full record and its source
+ * (AAPS on this phone, or Nightscout). It repeats what was recorded and
+ * suggests nothing.
+ */
+export function NowTherapyStateChips({ lines }: { lines: readonly NowTherapyStateLine[] }) {
+  const { colors, radius, type } = useAppTheme();
+  if (!lines.length) return null;
+
+  function showRecord(line: NowTherapyStateLine) {
+    Alert.alert(
+      'Recorded setting',
+      `${line.detail}
+
+Source: ${line.source}
+
+This shows what your loop recorded. T1 Arc does not change any setting.`,
+    );
+  }
+
+  return (
+    <View accessibilityLabel="Recorded loop settings now" style={styles.therapyRow}>
+      {lines.map((line) => (
+        <Pressable
+          key={line.id}
+          accessibilityRole="button"
+          accessibilityLabel={`Recorded setting: ${line.text}`}
+          accessibilityHint="Shows the full record and where it came from"
+          onPress={() => showRecord(line)}
+          style={({ pressed }) => [
+            styles.therapyChip,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+              borderRadius: radius.pill,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Ionicons
+            accessibilityElementsHidden
+            color={colors.textSecondary}
+            name={THERAPY_STATE_ICONS[line.state.kind]}
+            size={15}
+          />
+          <Text style={[styles.therapyLabel, { color: colors.text, fontSize: type.callout }]}>
+            {line.text}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    minHeight: cardSpec.minHeight,
-    padding: cardSpec.padding,
+  therapyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  therapyChip: {
+    minHeight: 44,
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  therapyLabel: { flexShrink: 1, fontWeight: '700' },
+  card: {
+    padding: cardSpec.padding,
     overflow: 'hidden',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 8,
+    gap: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  trace: {
-    position: 'absolute',
-    left: cardSpec.traceInset,
-    right: cardSpec.traceInset,
-    top: cardSpec.traceTop,
-    height: cardSpec.traceHeight,
-    opacity: cardSpec.traceOpacity,
-  },
-  // AAPS's age can wrap at large text sizes. Reserve the graph after the
-  // measured value row instead of positioning it over a guessed text height.
+  // The age and source can wrap at large text sizes. Reserve the graph after
+  // the measured value row instead of positioning it over a guessed height.
   flowTrace: {
     height: cardSpec.traceHeight + 18,
     paddingTop: 18,
-    marginTop: 8,
     opacity: cardSpec.traceOpacity,
+  },
+  shapeBox: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  triangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  statePill: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  stateWord: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  directionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  direction: {
+    flexShrink: 1,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
+  },
+  stateBlock: {
+    gap: 10,
+  },
+  stateMessage: {
+    fontSize: 16,
+    lineHeight: 23,
+  },
+  stateButton: {
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  secondaryStateButton: {
+    borderWidth: 1,
+  },
+  stateButtonText: {
+    flexShrink: 1,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '700',
   },
   tracePeriod: {
     position: 'absolute',
@@ -613,30 +860,32 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  aapsTopRow: { flexWrap: 'wrap' },
-  aapsStatusBlock: { flexShrink: 1, maxWidth: '100%' },
   label: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '700',
   },
   statusBlock: {
+    flexShrink: 1,
     alignItems: 'flex-end',
     gap: 6,
   },
   age: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 15,
+    lineHeight: 20,
     fontVariant: ['tabular-nums'],
+    textAlign: 'right',
   },
   readingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    flexWrap: 'wrap',
+    minHeight: 48,
   },
   value: {
     fontSize: cardSpec.valueSize,
@@ -646,8 +895,10 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   unitBlock: {
+    flexShrink: 1,
     marginLeft: 13,
     paddingTop: 7,
+    gap: 2,
   },
   arrow: {
     fontSize: cardSpec.arrowSize,
@@ -655,19 +906,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   unit: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '600',
-    marginTop: 2,
   },
   footer: {
-    marginTop: 'auto',
-    paddingTop: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     flexWrap: 'wrap',
     gap: 10,
-    zIndex: 3,
   },
   detailRow: {
     flexShrink: 1,
@@ -675,19 +923,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  detailStrong: {
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
   detail: {
     fontSize: 14,
     lineHeight: 20,
-  },
-  sourceDetail: {
-    marginTop: 12,
   },
   calculatedTrend: {
     width: 44,
@@ -697,25 +935,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 4,
-  },
-  rangePill: {
-    minHeight: 30,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  rangeDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-  },
-  rangeText: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '800',
   },
   missing: {
     flex: 1,

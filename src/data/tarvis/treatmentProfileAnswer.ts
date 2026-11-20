@@ -25,7 +25,7 @@ export function buildTarvisTreatmentProfileAnswer(
     return {
       headline: "No saved carb-ratio profile",
       answer:
-        "T1 Arc does not have a confirmed insulin-to-carb ratio saved. Add only the ratios already agreed in your care plan under Settings → Diabetes profile.",
+        "T1 Arc does not have a confirmed insulin-to-carb ratio saved. Add only the ratios already agreed in your care plan under Settings → Tarv1s and diabetes profile.",
       confidence: "limited",
       evidenceIds: [],
       limitations: [
@@ -55,7 +55,7 @@ export function treatmentProfileLoadFailureAnswer(): TarvisAnswer {
   return {
     headline: "I could not read your saved profile safely",
     answer:
-      "T1 Arc did not use the saved ratio because its local profile could not be validated. Open Settings → Diabetes profile to review and save it again.",
+      "T1 Arc did not use the saved ratio because its local profile could not be validated. Open Settings → Tarv1s and diabetes profile to review and save it again.",
     confidence: "limited",
     evidenceIds: [],
     limitations: [

@@ -14,6 +14,7 @@ import {
 } from './databaseStartupPolicy';
 import { createPriorityTransactionScheduler } from './priorityTransactionScheduler';
 import { HEALTH_CONNECT_IDENTITY_INDEX_SQL } from './healthConnectIdentityIndex';
+import { THERAPY_STATE_PREDECESSOR_INDEX_SQL } from './therapyStatePredecessorIndex';
 import { createReusableConnection } from './reusableConnection';
 import { isSqliteBusyError, retrySqliteBusy } from './sqliteBusyRetry';
 import { pruneRetainedGlookoSources } from '@/data/glooko/glookoSourceRetention';
@@ -979,6 +980,7 @@ async function openAndMigrate() {
   // Additive, idempotent index; run after any legacy table reconstruction.
   // Existing rows and portable provider-identity semantics are unchanged.
   await database.execAsync(HEALTH_CONNECT_IDENTITY_INDEX_SQL);
+  await database.execAsync(THERAPY_STATE_PREDECESSOR_INDEX_SQL);
   await ensureColumn(
     database,
     'glucose_readings',

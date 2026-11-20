@@ -7,8 +7,13 @@ import {
   TimeRange,
 } from '@/domain/models';
 import { toDateKey } from '@/domain/time';
+import {
+  THERAPY_STATE_PAYLOAD_MARKERS,
+  THERAPY_STATE_RAW_RECORD_KINDS,
+} from '@/domain/therapyStates';
 import { selectRetainedGlookoSources } from '@/data/glooko/glookoSourceRetention';
 import { isManualInsulinDelivery } from '@/data/manualInsulin';
+import { selectTherapyStatePredecessors } from './therapyStatePredecessors';
 
 export interface StoredRecordBounds {
   earliest?: number;
@@ -70,10 +75,43 @@ export interface ImportRawRecord {
   importedAt: number;
 }
 
+/**
+ * Raw treatment rows a source can edit in place (AAPS shortens a cancelled
+ * temporary target, for example). Re-importing them keeps the newest payload;
+ * other raw evidence keeps the first copy it was seen with.
+ */
+export const REVISABLE_RAW_RECORD_KINDS: readonly string[] = THERAPY_STATE_RAW_RECORD_KINDS;
+
+export function isRevisableRawRecordKind(recordKind: string) {
+  return REVISABLE_RAW_RECORD_KINDS.includes(recordKind);
+}
+
+export const THERAPY_STATE_SOURCE_IDS = ['nightscout', 'aaps-local'] as const;
+
+export function isTherapyStateCandidate(
+  sourceId: string,
+  recordKind: string,
+  payloadJson: string,
+) {
+  if (!(THERAPY_STATE_SOURCE_IDS as readonly string[]).includes(sourceId)) return false;
+  if (!isRevisableRawRecordKind(recordKind)) return false;
+  const lower = payloadJson.toLowerCase();
+  return THERAPY_STATE_PAYLOAD_MARKERS.some((marker) => lower.includes(marker.toLowerCase()));
+}
+
 export function pumpStateIntervalFromRawRecord(
   record: ImportRawRecord,
 ): PumpStateInterval | undefined {
   if (record.recordKind !== 'pump-state-interval') return undefined;
+  // Earlier versions stored AAPS/Nightscout temporary targets and exercise
+  // notes as Omnipod-style "Activity mode". They are now typed therapy
+  // states read from the treatment itself, so those copies are not shown.
+  if (
+    record.sourceId !== 'glooko-export' &&
+    record.id.includes(':pump-state:activity:')
+  ) {
+    return undefined;
+  }
   try {
     const payload = JSON.parse(record.payloadJson) as {
       start?: unknown;
@@ -199,6 +237,14 @@ export interface HealthRecordStore {
   getRawSourceRecordsByIds(
     recordIds: readonly string[],
   ): Promise<ImportRawRecord[]>;
+  /**
+   * Stored Nightscout and on-phone AAPS treatments that can start or end a
+   * therapy state (temporary target, profile switch, running mode, pump
+   * suspension, exercise), with timestamps in `range`. With `includePreceding`,
+   * also keep the preceding valid state or end per route and kind so an
+   * until-changed state can begin before the recent history window.
+   */
+  getTherapyStateRecords?(range: TimeRange, includePreceding?: boolean): Promise<ImportRawRecord[]>;
   hasImportSourcePayload(sourceId: string): Promise<boolean>;
   writeImport(
     batch: ImportBatch,
@@ -346,6 +392,26 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
           (left.timestamp ?? left.importedAt) -
           (right.timestamp ?? right.importedAt),
       );
+  }
+
+  async getTherapyStateRecords(range: TimeRange, includePreceding = false) {
+    if (range.end <= range.start) return [];
+    const candidates = [...this.rawRecords.values()]
+      .filter(
+        (record) =>
+          (THERAPY_STATE_SOURCE_IDS as readonly string[]).includes(record.sourceId) &&
+          isRevisableRawRecordKind(record.recordKind) &&
+          record.timestamp !== undefined &&
+          record.timestamp < range.end,
+      );
+    return [
+      ...candidates.filter((record) => record.timestamp! >= range.start &&
+        isTherapyStateCandidate(record.sourceId, record.recordKind, record.payloadJson)),
+      ...(includePreceding
+        ? selectTherapyStatePredecessors(candidates.filter((record) => record.timestamp! < range.start))
+        : []),
+    ]
+      .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
   }
 
   async getRawSourceRecordsByIds(recordIds: readonly string[]) {
@@ -612,6 +678,11 @@ export class MemoryHealthRecordStore implements HealthRecordStore {
       } else if (record.importedAt > existingRaw.importedAt) {
         this.rawRecords.set(record.id, {
           ...existingRaw,
+          // AAPS edits a treatment in place, for example shortening a
+          // cancelled temporary target; keep the newest copy of the record.
+          ...(isRevisableRawRecordKind(record.recordKind)
+            ? { payloadJson: record.payloadJson, timestamp: record.timestamp }
+            : {}),
           importedAt: record.importedAt,
         });
       }

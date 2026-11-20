@@ -24,7 +24,7 @@ describe("manual public APK update check", () => {
   it("offers only a verified official phone release with a higher installed version code", async () => {
     const request = fetcher();
     expect(await checkPublicRelease(installed, { fetcher: request })).toEqual({
-      kind: "available", version: "1.8.0", notes: release.body,
+      kind: "available", version: "1.8.0", versionCode: 29, notes: release.body,
       releaseUrl: release.html_url, apkUrl: release.assets[0]?.browser_download_url,
     });
     expect(request).toHaveBeenCalledTimes(2);

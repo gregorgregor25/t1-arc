@@ -956,3 +956,65 @@ describe("Tarv1s deterministic personal-data executor", () => {
     ).toThrow("does not exactly match");
   });
 });
+
+describe("insulin totals say which part is missing and where stored history starts", () => {
+  const bolus = (id: string, timestamp: number, units: number) => ({
+    id,
+    timestamp,
+    units,
+    sourceId: "insulin-source",
+  });
+
+  it("names the start of stored insulin history for a day before it", () => {
+    const result = execute("how much insulin did I take yesterday?", (range) =>
+      timeline(range, {
+        sources: [
+          source("insulin-source", "Insulin", {
+            capabilities: GLOOKO_IMPORT_CAPABILITIES,
+            dataFrom: NOW - 60 * 60_000,
+          }),
+        ],
+      }),
+    );
+    expect(result.answer.answer).toContain("Stored insulin records start on Thu 13 Aug.");
+    expect(result.answer.answer).not.toMatch(/\b0\.0 U\b/);
+  });
+
+  it("gives the bolus count and units when basal records are missing", () => {
+    const result = execute("how much insulin did I take yesterday?", (range) =>
+      timeline(range, {
+        boluses: [
+          bolus("b1", range.start + 8 * 3_600_000, 2.5),
+          bolus("b2", range.start + 13 * 3_600_000, 1.25),
+        ],
+        sources: [
+          source("insulin-source", "Insulin", {
+            capabilities: GLOOKO_IMPORT_CAPABILITIES,
+            dataFrom: range.start - 30 * 86_400_000,
+          }),
+        ],
+      }),
+    );
+    expect(result.answer.answer).toContain(
+      "2 bolus records are stored for this period (3.75 U). No basal records are stored, so a full total is not available.",
+    );
+    expect(result.answer.answer).not.toContain("Stored insulin records start");
+  });
+
+  it("gives the total when both basal and boluses cover the day", () => {
+    const result = execute("how much insulin did I take yesterday?", (range) =>
+      timeline(range, {
+        dailyInsulinTotals: authoritativeTotals(range, "day", 30),
+        boluses: [bolus("b1", range.start + 8 * 3_600_000, 2.5)],
+        sources: [
+          source("insulin-source", "Insulin", {
+            capabilities: GLOOKO_IMPORT_CAPABILITIES,
+            dataFrom: range.start - 30 * 86_400_000,
+          }),
+        ],
+      }),
+    );
+    expect(result.answer.headline).toBe("Delivered insulin: 30.0 U");
+    expect(result.answer.answer).not.toContain("No basal records are stored");
+  });
+});

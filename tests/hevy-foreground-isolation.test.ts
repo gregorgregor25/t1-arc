@@ -32,12 +32,18 @@ describe("Hevy foreground sync isolation", () => {
     expect(primaryRefresh).not.toContain("syncHevyIfDue");
     expect(primaryRefresh).toContain("updateGlucoseDisplayFromHistory");
     expect(primaryRefresh).toContain("repository.refreshGlucose?.()");
+    // Slow side jobs run only on a live full pass, never on the glucose lane.
     expect(primaryRefresh).toMatch(
-      /repositoryState\.mode === "live" && includeHealthConnect\s*\? generateInsightReviewIfDue/,
+      /const runSideJobs =\s*repositoryState\.mode === "live" && includeHealthConnect;/,
     );
-    expect(primaryRefresh).toMatch(
-      /repositoryState\.mode === "live" && includeHealthConnect\s*\? syncConfiguredNightscoutHistoryIfDue/,
+    const sideJobs = primaryRefresh.slice(
+      primaryRefresh.indexOf("const sideJobs"),
+      primaryRefresh.indexOf(": [];", primaryRefresh.indexOf("const sideJobs")),
     );
+    expect(sideJobs).toMatch(/runSideJobs\s*\?/);
+    expect(sideJobs).toContain("generateInsightReviewIfDue()");
+    expect(sideJobs).toContain("syncConfiguredNightscoutHistoryIfDue(");
+    expect(sideJobs).toContain("syncHealthConnectIfDue(");
     const cadenceStart = source.indexOf("const stopRefreshInterval = startForegroundInterval");
     const cadenceEnd = source.indexOf("const subscription", cadenceStart);
     const frequentCadence = source.slice(cadenceStart, cadenceEnd);

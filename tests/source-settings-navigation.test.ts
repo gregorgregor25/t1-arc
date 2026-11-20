@@ -4,9 +4,15 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  SETTINGS_MAIN_PLACES,
+  SETTINGS_SHORT_LIST,
   SOURCE_CHOOSER_ANSWERS,
   SOURCE_MENU_ITEMS,
   SOURCE_MENU_SECTIONS,
+  glucoseSourcePageForSourceId,
+  resolveSettingsRequest,
+  settingsBackLabel,
+  settingsParentPage,
   sourceJumpFromRoute,
   sourceSettingsBackTarget,
   sourceSettingsRouteParams,
@@ -14,25 +20,37 @@ import {
 import type { SourceJump } from "@/navigation/sourceNavigation";
 
 const EXPECTED_SOURCE_JUMPS = [
-  "profile",
+  // Six main places
+  "glucose",
+  "alarms",
+  "phone",
+  "watch",
+  "healthdata",
+  "privacy",
+  // Short list
+  "notifications",
+  "region",
+  "appearance",
+  "tarvis",
+  "help",
+  "about",
+  "advanced",
+  // Glucose sources: on this phone, then online accounts
   "aaps",
+  "xdrip",
+  "notification",
   "libre",
   "dexcom",
   "nightscout",
   "medtrum",
-  "xdrip",
-  "notification",
+  // Health and insulin data connections
   "health",
   "glooko",
   "hevy",
   "strava",
-  "display",
-  "watch",
-  "region",
-  "privacy",
+  // Pages inside a place
+  "profile",
   "support",
-  "about",
-  "advanced",
 ] as const satisfies readonly SourceJump[];
 
 const appMenuSource = readFileSync(
@@ -59,14 +77,32 @@ describe("Settings source back navigation", () => {
     );
   });
 
-  it("orders Settings with data connections first and help last", () => {
+  it("orders Settings as six main places, then the short list, then the pages inside them", () => {
     expect(SOURCE_MENU_SECTIONS.map(({ id }) => id)).toEqual([
-      "glucose",
+      "main",
+      "more",
+      "glucose-phone",
+      "glucose-online",
       "health",
-      "display",
-      "data",
+      "tarvis",
       "help",
-      "advanced",
+    ]);
+    expect(SETTINGS_MAIN_PLACES.map(({ label }) => label)).toEqual([
+      "Glucose source",
+      "Alarms",
+      "Phone, widget and car",
+      "Watch",
+      "Health and insulin data",
+      "Backup and privacy",
+    ]);
+    expect(SETTINGS_SHORT_LIST.map(({ label }) => label)).toEqual([
+      "Notifications and reminders",
+      "Units and region",
+      "Appearance, ranges and colours",
+      "Tarv1s and diabetes profile",
+      "Help, feedback and tour",
+      "About and updates",
+      "Advanced and experimental",
     ]);
   });
 
@@ -80,16 +116,17 @@ describe("Settings source back navigation", () => {
 
   it("collects experimental and development-only settings in one place", () => {
     const screen = readFileSync(
-      path.join(process.cwd(), "src", "screens", "SourcesScreen.tsx"),
+      path.join(process.cwd(), "src", "screens", "settings", "SettingsPages.tsx"),
       "utf8",
     );
-    const advanced = screen.slice(screen.indexOf('{activeSource === "advanced" ? ('));
+    const advanced = screen.slice(screen.indexOf("function AdvancedPage("));
     expect(advanced).toContain('variant="advanced"');
     expect(advanced).toContain('title="Earlier test-app migration"');
     const privacy = screen.slice(
-      screen.indexOf('{activeSource === "privacy" ? ('),
-      screen.indexOf('{activeSource === "advanced" ? ('),
+      screen.indexOf("function BackupPrivacyPage("),
+      screen.indexOf("function NotificationsPage("),
     );
+    expect(privacy).toContain("<EncryptedBackupCard");
     expect(privacy).not.toContain("MaintainerMigrationCard");
     const card = readFileSync(
       path.join(process.cwd(), "src", "components", "GlucoseDisplayCard.tsx"),
@@ -122,6 +159,50 @@ describe("Settings source back navigation", () => {
       expect(sourceSettingsBackTarget(source)).toBe("overview");
     },
   );
+
+  it("keeps the earlier Display and alerts link working", () => {
+    expect(sourceJumpFromRoute("display")).toBe("display");
+    expect(resolveSettingsRequest("display")).toEqual({ page: "phone" });
+    expect(SOURCE_MENU_ITEMS.some(({ source }) => source === "display")).toBe(false);
+  });
+
+  it("opens one-off panel requests on the page that now holds them", () => {
+    expect(resolveSettingsRequest("display", "display-alerts")).toEqual({ page: "alarms" });
+    expect(resolveSettingsRequest(undefined, "source-health")).toEqual({
+      page: "glucose",
+      expand: "glucose-health",
+    });
+    expect(resolveSettingsRequest("glooko")).toEqual({ page: "glooko" });
+    expect(resolveSettingsRequest(undefined)).toEqual({ page: undefined });
+  });
+
+  it("returns from a page inside a place to that place, and from a place to Settings", () => {
+    for (const source of ["aaps", "xdrip", "notification", "libre", "dexcom", "nightscout", "medtrum"] as const) {
+      expect(settingsParentPage(source)).toBe("glucose");
+      expect(settingsBackLabel(source)).toBe("Glucose source");
+    }
+    for (const source of ["health", "glooko", "hevy", "strava"] as const) {
+      expect(settingsParentPage(source)).toBe("healthdata");
+    }
+    expect(settingsParentPage("profile")).toBe("tarvis");
+    expect(settingsParentPage("support")).toBe("help");
+    for (const place of [...SETTINGS_MAIN_PLACES, ...SETTINGS_SHORT_LIST]) {
+      expect(settingsParentPage(place.source)).toBeUndefined();
+      expect(settingsBackLabel(place.source)).toBe("Settings");
+    }
+  });
+
+  it("names the Settings page of the glucose source in use", () => {
+    expect(glucoseSourcePageForSourceId("aaps-local")).toBe("aaps");
+    expect(glucoseSourcePageForSourceId("xdrip-local")).toBe("xdrip");
+    expect(glucoseSourcePageForSourceId("android-notification")).toBe("notification");
+    expect(glucoseSourcePageForSourceId("t1arc-librelinkup")).toBe("libre");
+    expect(glucoseSourcePageForSourceId("dexcom-share")).toBe("dexcom");
+    expect(glucoseSourcePageForSourceId("nightscout")).toBe("nightscout");
+    expect(glucoseSourcePageForSourceId("medtrum-easyfollow")).toBe("medtrum");
+    expect(glucoseSourcePageForSourceId("glooko")).toBeUndefined();
+    expect(glucoseSourcePageForSourceId(undefined)).toBeUndefined();
+  });
 
   it("returns from the Settings overview to the previous app screen", () => {
     expect(sourceSettingsBackTarget(undefined)).toBe("previous-screen");

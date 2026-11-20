@@ -1,4 +1,6 @@
 import { evidenceIds } from "./evidencePacket";
+import { educationReplyGivesTreatment, personalReplyGivesTreatment } from "./replyGuard";
+import { normaliseSafetyText } from "./textNormalise";
 import { TarvisAnswer, TarvisModelEvidencePacket, TarvisUsage } from "./types";
 
 export const MAX_TARVIS_REQUESTS_PER_HOUR = 10;
@@ -139,7 +141,10 @@ function maskDescriptiveForms(sentence: string) {
 function splitSentences(text: string) {
   return text
     // Semicolons stay inside a sentence so "...; do the same" keeps its topic.
-    .split(/(?<=[.!?])\s+|\n+/)
+    // Keep the closing mark ("Why not ...?") so every question is checked,
+    // not only the last one.
+    .replace(/([.!?])\s+/g, "$1\n")
+    .split(/\n+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }
@@ -161,6 +166,10 @@ function isRecordedEventDescription(sentence: string, masked: string) {
 // Judgement words that present a treatment as called for.
 const TREATMENT_JUDGEMENT =
   /\b(?:indicated|warranted|justified|called for|advised|advisable|recommended|needed|required|necessary|appropriate|in order|prudent|sensible|safest|makes sense|do well|time for|helpful|please|is to be|are to be|is best|are best|the (?:next|right|best|safest|sensible|obvious) (?:step|choice|course|option|move)|would (?:resolve|bring|fix|treat|suit|sort)|suits? (?:you|your))\b|\b(?:should|must|needs? to|ought to|has to|have to)\s+(?:remain|stay|be kept|continue)\b/i;
+// "Changes to ratios are best agreed with your diabetes team" hands the
+// decision to the team; it is not a judgement that a change is called for.
+const TEAM_DECISION =
+  /\b(?:is|are)\s+best\s+(?:agreed|discussed|decided|made|reviewed|planned|left)\s+(?:with|by|to)\s+(?:your|the|a)\s+(?:diabetes|healthcare|health\s+care|care|clinical|medical)\s+team\b/gi;
 // "Your basal needs a small reduction", "Your ratio would benefit from".
 const YOUR_TREATMENT_NEEDS =
   /\byour\s+(?:basal(?:\s+rates?)?|ratios?|bolus(?:es)?|insulin|doses?|pump|targets?|profiles?|corrections?|carbs?|isf|icr|factors?|temp(?:orary)?\s+(?:basal|target)s?)\b[^.;!?]{0,60}\b(?:needs?|should|must|ought|has to|have to|would benefit|will need|requires?)\b/i;
@@ -192,11 +201,12 @@ function startsAsInstruction(masked: string) {
 /** Instruction shapes checked in both personal and education answers. */
 function clauseGivesInstruction(clause: string, masked: string) {
   const unmasked = clause.replace(INSULIN_NEEDS_NOUN, " ");
+  const judged = /\d/.test(clause) ? clause : clause.replace(TEAM_DECISION, " ");
   return (
     startsAsInstruction(masked) ||
     /\bgo ahead and\b/i.test(masked) ||
     STRONG_BACK_REFERENCE.test(masked) ||
-    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(clause)) ||
+    (TREATMENT_TOPIC.test(clause) && TREATMENT_JUDGEMENT.test(judged)) ||
     YOUR_TREATMENT_NEEDS.test(unmasked) ||
     QUANTITY_OUTCOME.test(unmasked) ||
     GLUCOSE_GOAL.test(clause) ||
@@ -242,7 +252,7 @@ function sentenceIsTreatmentDirective(sentence: string) {
  * back-reference checks, sentence by sentence.
  */
 function containsEducationTreatmentDirective(text: string) {
-  const normalised = text.replace(/[‘’]/g, "'");
+  const normalised = normaliseSafetyText(text);
   if (TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised))) return true;
   return splitSentences(normalised)
     .flatMap((sentence) => [sentence, ...sentence.split(CLAUSE_BOUNDARY)])
@@ -256,10 +266,11 @@ function containsEducationTreatmentDirective(text: string) {
  * statements about recorded events pass.
  */
 export function containsTreatmentDirective(text: string) {
-  const normalised = text.replace(/[‘’]/g, "'");
+  const normalised = normaliseSafetyText(text);
   return (
     TREATMENT_DIRECTIVE_PATTERNS.some((pattern) => pattern.test(normalised)) ||
-    splitSentences(normalised).some(sentenceIsTreatmentDirective)
+    splitSentences(normalised).some(sentenceIsTreatmentDirective) ||
+    personalReplyGivesTreatment(text)
   );
 }
 const PROHIBITED_CAUSAL_OUTPUT =
@@ -278,6 +289,12 @@ const PROHIBITED_DIAGNOSIS_OUTPUT =
 // Personal-evidence parsing retains its stricter, existing output filter.
 const PROHIBITED_EDUCATION_TREATMENT_OUTPUT =
   /(?:^|[.!?;:\n,]\s*)(?:(?:please|then|for example)\s+)?(?:take|inject|use|administer|bolus|correct with|give yourself|reduce|lower|increase|decrease|adjust|change|double|halve|skip|stop|set|have|eat|drink|consume)\b[\s\S]{0,80}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b|\b(?:you (?:should|must|need to|can)|(?:i |we )?(?:recommend|suggest|advise)|consider|try|best to|to treat|to correct)\b[\s\S]{0,100}\b(?:tak(?:e|ing)|inject(?:ing)?|us(?:e|ing)|administer(?:ing)?|bolus|giv(?:e|ing)|reduc(?:e|ing)|lower(?:ing)?|increas(?:e|ing)|decreas(?:e|ing)|adjust(?:ing)?|chang(?:e|ing)|doubl(?:e|ing)|halv(?:e|ing)|skip(?:ping)?|stop(?:ping)?|set(?:ting)?|hav(?:e|ing)|eat(?:ing)?|drink(?:ing)?|consum(?:e|ing))\b[\s\S]{0,60}\b(?:insulin|units?|dose|bolus|basal|ratio|factor|target|carbs?|carbohydrates?|grams?|juice|glucose tablets?)\b/i;
+// Education answers must not slip a specific amount or a first-person
+// recommendation past the directive checks: "I would increase your basal by
+// 10%", "a 20% profile would help", "Consider a 2 unit correction", "A
+// correction of 2 units should bring you into range", "60 g at 1:10 is 6 units".
+const EDUCATION_AMOUNT_DIRECTIVE =
+  /\bi(?:'d|\s+would|\s+will|\s+suggest|\s+recommend|\s+advise)\s+(?:\w+\s+){0,2}?(?:increas\w*|decreas\w*|reduc\w*|lower\w*|rais\w*|tak\w*|giv\w*|bolus\w*|inject\w*|set\w*|chang\w*|adjust\w*|us(?:e|ing)|try\w*|go\s+for|start\w*|switch\w*|tighten\w*|loosen\w*)\b|\d+(?:[.,]\d+)?\s*(?:u|units?|iu|%|percent|g|grams?)(?![\w%])[^.!?\n]{0,60}\b(?:would|will|should|could|might|may)\s+(?:help|work|do\s+it|fix|cover|bring|get|sort|be\s+(?:better|best|good|right|enough|safer|ideal|sensible|fine))\b|\bconsider(?:ing)?\s+(?:a|an|the|about|around)?\s*\d|\b\d+(?:[.,]\d+)?\s*(?:g|grams?)\b[^.!?\n]{0,20}\bat\s+1\s*:\s*\d+(?:[.,]\d+)?\s+(?:is|=|equals|would\s+be|means|gives|needs|comes\s+to)\s+(?:about\s+|around\s+|roughly\s+)?\d/i;
 // A level-3 definition can describe someone being unable to self-treat and
 // needing another person's assistance. That past-tense description is not an
 // instruction to administer anything. Keep the exception this specific.
@@ -367,7 +384,9 @@ export function parseTarvisAnswer(
     : visibleCopy;
   if (
     (generalEducation
-      ? PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
+      ? educationReplyGivesTreatment({ headline, answer, limitations }) ||
+        PROHIBITED_EDUCATION_TREATMENT_OUTPUT.test(treatmentCopy) ||
+        EDUCATION_AMOUNT_DIRECTIVE.test(treatmentCopy) ||
         containsEducationTreatmentDirective(treatmentCopy)
       : containsTreatmentDirective(treatmentCopy)) ||
     PROHIBITED_CAUSAL_OUTPUT.test(causalCopy) ||

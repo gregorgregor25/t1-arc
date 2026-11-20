@@ -126,6 +126,7 @@ describe("timeline presentation", () => {
       bolus: false,
       activity: false,
       pause: false,
+      therapy: false,
     });
   });
 

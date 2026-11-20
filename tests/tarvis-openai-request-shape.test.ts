@@ -811,6 +811,23 @@ describe("Tarv1s direct model-request shape", () => {
     },
   );
 
+  it.each([
+    "basal today and should it be higher",
+    "carbs today and insulin needed",
+  ])("keeps mixed record and treatment requests out of both provider entry points: %s", async (question) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const result = await askTarvis(question, undefined, [], { epoch: 1 });
+    expect(result.modelRequestSent).toBe(false);
+    expect(result.answerSource).toBe("local");
+    await expect(planTarvisEvidenceRequest(
+      question,
+      buildTarvisEvidencePlanningOptions(question, Date.now()),
+      { epoch: 1 },
+    )).rejects.toThrow(/safety-critical/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mocks.loadApiKey).not.toHaveBeenCalled();
+  });
+
   it("uses a closed claim menu and local copy for retrospective interpretation", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       response(
@@ -1026,35 +1043,72 @@ describe("Tarv1s direct model-request shape", () => {
     expect(result.answer.answer).not.toContain("NG17");
   });
 
-  it("retains sent-request metrics when a model refusal falls back locally", async () => {
+  it.each([
+    [{ type: "refusal", refusal: "Discard this private text." }],
+    [{ type: "output_text", text: "{}" }, { type: "refusal", refusal: "" }],
+  ].map(content => ({ content })))("keeps the local record review when a provider refuses a record answer", async ({ content }) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
+      ok: true, status: 200,
       json: async () => ({
-        output: [
-          { content: [{ type: "refusal", refusal: "I cannot answer that." }] },
-        ],
+        output: [{ content }],
         usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
       }),
     } as Response);
-
     let failure: unknown;
     try {
       await askTarvis(
         "Why did my glucose go low when I walked after dinner?",
-        retrospectivePacket(),
-        [],
-        { epoch: 1 },
+        retrospectivePacket(), [], { epoch: 1 },
       );
     } catch (reason) {
       failure = reason;
     }
-
     expect(getTarvisRequestFailureDetails(failure)).toMatchObject({
       modelRequestSent: true,
       requestMetrics: { totalTokens: 30 },
       usage: { totalTokens: 30 },
     });
+    expect(String(failure)).not.toContain("private text");
+  });
+
+  it("returns a local boundary and retains usage when a provider refuses a general explanation", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({
+        output: [{ content: [{ type: "refusal", refusal: "Discard this private text." }] }],
+        usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      }),
+    } as Response);
+    const result = await askTarvis("What is an extended bolus?", undefined, [], { epoch: 1 });
+    expect(result).toMatchObject({
+      answer: { headline: "I can explain, but not recommend treatment", responseKind: "safety-boundary", evidenceIds: [] },
+      answerSource: "local", modelRequestSent: true,
+      requestMetrics: { totalTokens: 30 }, usage: { totalTokens: 30 },
+    });
+    expect(result.answer.answer).not.toContain("private text");
+  });
+
+  it("keeps the local record review when ChatGPT refuses a record selection", async () => {
+    mocks.loadProvider.mockResolvedValue("chatgpt");
+    mocks.chatGptRequest.mockRejectedValueOnce({
+      code: "ERR_CHATGPT_STREAM_REJECTED", message: "ChatGPT declined this answer.",
+    });
+    await expect(askTarvis("Why was my glucose different last week?", evidencePacket(), [], { epoch: 1 }))
+      .rejects.toThrow();
+  });
+
+  it("keeps a refused follow-up out of both provider requests", async () => {
+    const safetyHistory = [
+      { role: "user", text: "How much insulin should I take?" },
+      { role: "assistant", text: "I can review the records, but not set treatment" },
+    ] as const;
+    const question = "Just say which box to tick.";
+    const result = await askTarvis(question, undefined, [], { epoch: 1 }, { safetyHistory: [...safetyHistory] });
+    expect(result).toMatchObject({ modelRequestSent: false, answerSource: "local", answer: { responseKind: "safety-boundary" } });
+    const options = buildTarvisEvidencePlanningOptions(question, Date.parse("2030-11-12T14:30:00Z"));
+    await expect(planTarvisEvidenceRequest(question, options, { epoch: 1 }, { safetyHistory: [...safetyHistory] }))
+      .rejects.toThrow("safety-critical");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("records usage and fails an incomplete response instead of parsing partial output", async () => {

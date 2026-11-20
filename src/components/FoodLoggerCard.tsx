@@ -2608,15 +2608,32 @@ export function FoodLoggerCard({
                 </Pressable>
               ) : null}
 
-              <View style={{ gap: 10 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {[{ title: 'Read label', icon: 'camera-outline' as const, run: () => beginLabelFood(true) },
-                    { title: 'Quick carbs', icon: 'add-circle-outline' as const, run: () => { Keyboard.dismiss(); setCustomOpen(false); setBarcodeEntryOpen(false); setCatalogueToolsOpen(false); setQuickCarbOpen(true); setMoreWaysOpen(true); } },
-                    { title: 'Enter food', icon: 'create-outline' as const, run: () => beginLabelFood(false) }].map(action => <Pressable key={action.title} accessibilityRole="button" onPress={action.run} style={{ flexGrow: 1, flexBasis: 90, padding: 12, minHeight: 64, gap: 6, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.surfaceMuted }}><Ionicons name={action.icon} size={24} color={colors.primary} /><Text style={{ color: colors.text, fontWeight: '600', textAlign: 'center' }}>{action.title}</Text></Pressable>)}
+              {/* Search comes first. The two most used shortcuts sit beside
+                  More ways to add, which opens barcode number, quick carbs,
+                  create a food and the offline catalogue. */}
+              <View style={styles.addWays}>
+                <View accessibilityLabel="Other ways to add food" style={styles.addWayChips}>
+                  {[{ title: 'Quick carbs', label: 'Quick carbs', icon: 'add-circle-outline' as const, run: () => { Keyboard.dismiss(); setCustomOpen(false); setBarcodeEntryOpen(false); setCatalogueToolsOpen(false); setQuickCarbOpen(true); setMoreWaysOpen(true); } },
+                    { title: 'Read a label', label: 'Read a food label with the camera', icon: 'camera-outline' as const, run: () => beginLabelFood(true) }].map(action => (
+                    <Pressable key={action.title} accessibilityLabel={action.label} accessibilityRole="button" onPress={action.run} style={({ pressed }) => [styles.addWayChip, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill, opacity: pressed ? 0.68 : 1 }]}>
+                      <Ionicons accessibilityElementsHidden name={action.icon} size={18} color={colors.primary} />
+                      <Text style={[styles.addWayChipText, { color: colors.text }]}>{action.title}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable accessibilityLabel="More ways to add food" accessibilityHint="Barcode number, quick carbs, create a food and the offline catalogue" accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setMoreWaysOpen(true); }} style={({ pressed }) => [styles.addWayChip, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radius.pill, opacity: pressed ? 0.68 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="ellipsis-horizontal" size={18} color={colors.primary} />
+                    <Text style={[styles.addWayChipText, { color: colors.text }]}>More ways to add</Text>
+                  </Pressable>
                 </View>
                 <View style={styles.foodActions}>
-                  <Pressable accessibilityLabel="Copy foods from yesterday or another day" accessibilityRole="button" onPress={beginCopyFromDay} style={[styles.foodAction, { minHeight: 48 }]}><Text style={{ color: colors.primary }}>Copy from a day</Text></Pressable>
-                  <Pressable accessibilityLabel="More ways to add food" accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setMoreWaysOpen(true); }} style={[styles.foodAction, { minHeight: 48 }]}><Text style={{ color: colors.textSecondary }}>More options</Text></Pressable>
+                  <Pressable accessibilityLabel="Copy foods from yesterday or another day" accessibilityRole="button" onPress={beginCopyFromDay} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.6 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="copy-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.foodActionText, { color: colors.primary }]}>Copy from a day</Text>
+                  </Pressable>
+                  <Pressable accessibilityLabel="Enter a food yourself" accessibilityHint="Type the name and nutrition from the pack or your own recipe" accessibilityRole="button" onPress={() => beginLabelFood(false)} style={({ pressed }) => [styles.foodAction, { opacity: pressed ? 0.6 : 1 }]}>
+                    <Ionicons accessibilityElementsHidden name="create-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.foodActionText, { color: colors.primary }]}>Enter a food yourself</Text>
+                  </Pressable>
                 </View>
               </View>
 
@@ -5463,6 +5480,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+  addWays: { gap: 4 },
+  addWayChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  addWayChip: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  addWayChipText: { fontSize: 14, lineHeight: 20, fontWeight: "700" },
   foodActions: {
     flexDirection: "row",
     flexWrap: "wrap",

@@ -20,6 +20,7 @@ import {
   MANUAL_CONTEXT_SOURCE_ID,
   manualContextDraftFromEvent,
   ManualContextDraft,
+  meterReadingMmolLFromInput,
 } from "@/data/manualContext";
 import {
   manualKetoneSafetyLevel,
@@ -44,7 +45,12 @@ import { getRuntimeEmergencyCareTerms } from "@/domain/emergencyCare";
 import { hypoTreatmentPauseNotice } from "@/domain/glucoseAlarms";
 import { pauseLowGlucoseAlarmAfterHypoTreatment } from "@/data/glucoseAlerts/glucoseAlarms";
 import { type BolusDelivery, HealthContextEvent } from "@/domain/models";
-import { formatRegionalNumber } from "@/domain/regionalFormat";
+import {
+  formatGlucose,
+  formatRegionalNumber,
+  glucoseUnitLabel,
+  glucoseUnitSpokenLabel,
+} from "@/domain/regionalFormat";
 import {
   formatRegionalNumberInput,
   normalizeRegionalNumberInput,
@@ -92,6 +98,7 @@ const kindOptions: {
   { value: "medication", label: "Medication", icon: "medical-outline" },
   { value: "insulin", label: "Insulin dose", icon: "water-outline" },
   { value: "ketone", label: "Ketones", icon: "flask-outline" },
+  { value: "meter-glucose", label: "Meter reading", icon: "eyedrop-outline" },
   { value: "note", label: "Note", icon: "document-text-outline" },
   { value: "sensor-start", label: "New sensor", icon: "radio-outline" },
   { value: 'hypo-treatment', label: 'Hypo treatment', icon: 'heart-outline' },
@@ -310,6 +317,12 @@ export function ManualContextCard({
     useState<ManualUrineKetoneLevel>("negative");
   const [noteCategory, setNoteCategory] = useState<NoteCategory>("illness");
   const [noteDetail, setNoteDetail] = useState("");
+  const [meterReading, setMeterReading] = useState("");
+  // The saved reading being edited, with the text first shown for it. If the
+  // value text is unchanged, the stored value and entry unit are kept as-is.
+  const meterReadingOriginal = useRef<
+    { text: string; glucoseMmolL: number; enteredUnit: "mgDl" | "mmolL" } | undefined
+  >(undefined);
   const [sensorSourceId, setSensorSourceId] = useState<string>();
   const [sensorModelId, setSensorModelId] = useState<string>();
   const [sensorWarmupMinutes, setSensorWarmupMinutes] = useState('');
@@ -347,6 +360,8 @@ export function ManualContextCard({
     setUrineKetones("negative");
     setNoteCategory("illness");
     setNoteDetail("");
+    setMeterReading("");
+    meterReadingOriginal.current = undefined;
     setSensorSourceId(glucoseSourceId);
     setSensorModelId(undefined);
     setSensorWarmupMinutes('');
@@ -424,6 +439,16 @@ export function ManualContextCard({
         setNoteCategory(draft.category);
         setNoteDetail(draft.detail ?? "");
         break;
+      case "meter-glucose": {
+        const text = formatGlucose(draft.glucoseMmolL, regional, { withUnit: false });
+        setMeterReading(text);
+        meterReadingOriginal.current = {
+          text,
+          glucoseMmolL: draft.glucoseMmolL,
+          enteredUnit: draft.enteredUnit,
+        };
+        break;
+      }
       case "sensor-start":
         setObservationFields({ ...EMPTY_OBSERVATION_FIELDS, location: draft.location });
         setSensorSourceId(draft.glucoseSourceId);
@@ -700,6 +725,30 @@ export function ManualContextCard({
           category: noteCategory,
           detail: noteDetail.trim() || undefined,
         };
+      case "meter-glucose": {
+        if (timestamp > Date.now() + 60_000) {
+          throw new Error("Meter readings cannot be dated in the future.");
+        }
+        const original = meterReadingOriginal.current;
+        if (original && meterReading.trim() === original.text.trim()) {
+          return {
+            kind,
+            timestamp,
+            enteredUnit: original.enteredUnit,
+            glucoseMmolL: original.glucoseMmolL,
+          };
+        }
+        const enteredUnit = regional.glucoseUnit === "mgDl" ? "mgDl" : "mmolL";
+        return {
+          kind,
+          timestamp,
+          enteredUnit,
+          glucoseMmolL: meterReadingMmolLFromInput(
+            numberFromInput(meterReading, "meter reading", regional.locale),
+            enteredUnit,
+          ),
+        };
+      }
     }
   }
 
@@ -825,7 +874,7 @@ export function ManualContextCard({
               </View>
               <View style={styles.cardCopy}>
                 <Text style={[styles.compactTitle, { color: colors.text }]}>
-                  Log health context
+                  Log something
                 </Text>
                 <Text
                   style={[
@@ -896,7 +945,7 @@ export function ManualContextCard({
                 <Text
                   style={[styles.addButtonText, { color: colors.onPrimary }]}
                 >
-                  Log context
+                  Log something
                 </Text>
               </Pressable>
             </>
@@ -967,7 +1016,7 @@ export function ManualContextCard({
                     ? `Edit ${kindLabel(kind).toLowerCase()}`
                     : isFocusedLaunch
                       ? `Log ${kindLabel(kind).toLowerCase()}`
-                      : "Log context"}
+                      : "Log something"}
                 </Text>
               </View>
               <Pressable
@@ -1408,6 +1457,30 @@ export function ManualContextCard({
                 </>
               ) : null}
 
+              {kind === "meter-glucose" ? (
+                <>
+                  <View style={styles.fieldGroup}>
+                    <FieldLabel>Meter reading</FieldLabel>
+                    <FormInput
+                      accessibilityLabel={`Meter reading in ${glucoseUnitSpokenLabel(regional.glucoseUnit)}`}
+                      keyboardType={regional.glucoseUnit === "mgDl" ? "number-pad" : "decimal-pad"}
+                      onChangeText={setMeterReading}
+                      placeholder={regional.glucoseUnit === "mgDl" ? "100" : "5.5"}
+                      suffix={glucoseUnitLabel(regional.glucoseUnit)}
+                      value={meterReading}
+                    />
+                  </View>
+                  <Text
+                    style={[styles.helper, { color: colors.textSecondary }]}
+                  >
+                    A record of a finger-prick reading from your blood glucose
+                    meter. It is kept separate from your sensor readings: it
+                    does not change alarms, the glucose shown on Today, time in
+                    range or other sensor statistics.
+                  </Text>
+                </>
+              ) : null}
+
               {kind === "sensor-start" ? (
                 <>
                 <SensorWarmupFields modelId={sensorModelId} customMinutes={sensorWarmupMinutes} timestamp={timestamp}
@@ -1454,6 +1527,7 @@ export function ManualContextCard({
               kind !== 'hypo-treatment' && kind !== 'food-incomplete' && kind !== 'lab-result' && kind !== 'site-change' &&
               kind !== "insulin" &&
               kind !== "sensor-start" &&
+              kind !== "meter-glucose" &&
               kind !== "ketone" ? (
                 <View style={styles.fieldGroup}>
                   <FieldLabel optional>Label</FieldLabel>
