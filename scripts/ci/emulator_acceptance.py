@@ -2,9 +2,9 @@
 """Emulator acceptance checks for signed T1 Arc release APKs.
 
 Run by .github/workflows/emulator-acceptance.yml inside a booted emulator.
-It drives the app with adb and uiautomator only, uses the synthetic demo and
-keeps the emulator offline, so no personal data, accounts or usage counts are
-involved. Screenshots, screen layouts, logcat and a Markdown summary are
+It drives the app with adb and uiautomator only, connects no data source,
+saves one invented sensor-change record and keeps the emulator offline, so no
+personal data, accounts or usage counts are involved. Screenshots, screen layouts, logcat and a Markdown summary are
 written to RESULTS_DIR and uploaded as the run's artifact.
 """
 
@@ -224,20 +224,31 @@ class Device:
         assert point is not None
         self.tap_point(point)
 
-    def scroll_to(self, label: str, *, exact: bool = True, swipes: int = 12) -> ET.Element:
+    def scroll_to(self, label: str, *, exact: bool = True, swipes: int = 12, max_y: float = 0.8) -> ET.Element:
         for _ in range(swipes + 1):
             root = self.layout()
             if root is not None:
                 point = self.locate(root, label, exact=exact)
                 # Keep the target clear of the bottom tab bar before using it.
-                if point and point[1] < self.height * 0.8:
+                # Fixed footer buttons pass a larger max_y.
+                if point and point[1] < self.height * max_y:
                     return root
-            x = self.width // 2
-            self.shell(f"input swipe {x} {int(self.height * 0.72)} {x} {int(self.height * 0.38)} 450", check=False)
-            time.sleep(1.2)
+            self.swipe_up()
         self.screenshot(f"scroll-{label}-missing")
         self.layout(f"scroll-{label}-missing")
         raise CheckFailed(f"Could not find {label!r} after scrolling.")
+
+    def swipe_up(self) -> None:
+        """Move the content up, showing what is further down the page."""
+        x = self.width // 2
+        self.shell(f"input swipe {x} {int(self.height * 0.72)} {x} {int(self.height * 0.38)} 450", check=False)
+        time.sleep(1.2)
+
+    def scroll_to_top(self) -> None:
+        x = self.width // 2
+        for _ in range(4):
+            self.shell(f"input swipe {x} {int(self.height * 0.3)} {x} {int(self.height * 0.8)} 300", check=False)
+            time.sleep(0.8)
 
     def back(self) -> None:
         self.shell("input keyevent KEYCODE_BACK", check=False)
@@ -396,6 +407,42 @@ class Acceptance:
         device.wait_for_all(SHARED_TABS, 60, name=f"{prefix}-after-about")
         return f"About shows {version_text} and the clean source revision {revision}."
 
+    def record_sensor_change(self, prefix: str) -> str:
+        """Save one invented record through the app's own form before updating."""
+        device = self.device
+        root = device.scroll_to("Record sensor change")
+        device.tap("Record sensor change", root)
+        device.wait_for(("Sensor model:", "Choose your sensor"), 45, exact=False, name=f"{prefix}-sensor-form")
+        device.screenshot(f"{prefix}-sensor-form")
+        device.layout(f"{prefix}-sensor-form")
+        root = device.scroll_to("Sensor model:", exact=False)
+        device.tap("Sensor model:", root, exact=False)
+        root = device.scroll_to("Other / not sure")
+        device.tap("Other / not sure", root)
+        root = device.scroll_to("Save new sensor", max_y=0.97)
+        device.tap("Save new sensor", root)
+        device.wait_for(("New sensor recorded at",), 60, exact=False, name=f"{prefix}-sensor-saved")
+        device.screenshot(f"{prefix}-sensor-saved")
+        device.assert_healthy()
+        return "Saved a sensor change (Other / not sure) and saw it on Today."
+
+    def expect_sensor_record(self, prefix: str) -> str:
+        device = self.device
+        for _ in range(5):
+            root = device.layout()
+            if root is not None:
+                for label in ("New sensor recorded at", "Sensor and site age"):
+                    if device.locate(root, label, exact=False):
+                        device.screenshot(f"{prefix}-sensor-record")
+                        device.layout(f"{prefix}-sensor-record")
+                        device.scroll_to_top()
+                        return f"Today shows the sensor change saved before the update ({label!r})."
+            device.swipe_up()
+        device.screenshot(f"{prefix}-sensor-record-missing")
+        device.layout(f"{prefix}-sensor-record-missing")
+        device.scroll_to_top()
+        raise CheckFailed("The sensor change saved before the update is not shown on Today.")
+
     def relaunch_to_today(self, prefix: str) -> str:
         device = self.device
         device.launch()
@@ -423,6 +470,11 @@ class Acceptance:
             lambda: self.finish_first_run("old"),
             prerequisite=installed,
         )
+        recorded = self.check(
+            "Previous release: save an invented sensor-change record",
+            lambda: self.record_sensor_change("old"),
+            prerequisite=ready,
+        )
         device.force_stop()
         updated = self.check(
             f"Update to {self.new['version']} installs over it, keeping app data",
@@ -433,6 +485,11 @@ class Acceptance:
             "Updated app opens to Today without the first-run tour",
             lambda: self.relaunch_to_today("updated"),
             prerequisite=updated,
+        )
+        self.check(
+            "Updated app still shows the saved sensor change",
+            lambda: self.expect_sensor_record("updated"),
+            prerequisite=opened and recorded,
         )
         self.check("Updated app: main tabs open", lambda: self.open_main_tabs("updated"), prerequisite=opened)
         if self.new_is_redesign:
@@ -483,7 +540,8 @@ def write_summary(acceptance: Acceptance, device_facts: dict[str, str]) -> None:
         f"- Emulator: Android {device_facts['release']} (API {device_facts['sdk']}), "
         f"{device_facts['abi']} with ARM64 apps allowed: {device_facts['arm64']}.",
         f"- Network: {device_facts['network']}.",
-        f"- Update path: {PREVIOUS_TAG} to {RELEASE_TAG}; data used: the built-in synthetic demo only.",
+        f"- Update path: {PREVIOUS_TAG} to {RELEASE_TAG}. No data source is connected; the only record is",
+        "  an invented sensor change that this check saves before updating.",
     ]
     apk_facts = RESULTS / "apks.txt"
     if apk_facts.exists():

@@ -2,8 +2,9 @@ name: Emulator release acceptance
 
 # Installs the exact signed release APK on a disposable Android emulator:
 # a clean installation, an in-place update over the previous public release,
-# cold launches and a restart. It uses the synthetic demo with the network
-# switched off, so no personal data, accounts or usage counts are involved.
+# an invented sensor-change record kept across the update, cold launches and
+# a restart. No data source is connected and the network is switched off, so
+# no personal data, accounts or usage counts are involved.
 
 on:
   workflow_dispatch:
