@@ -23,14 +23,19 @@ Follow the [phone installation guide](GETTING_STARTED.md) and
 
 - Glucose, insulin, food and health history together, with inspectable records.
 - Supported provider connections, Health Connect, Hevy and manual logging.
+- A read-only AndroidAPS source for the phone that runs AAPS.
 - Encrypted local storage and encrypted portable backups.
 - Food search, barcode scanning, saved foods, recipes and on-device label reading.
 - Tarv1s local factual answers and optional broader questions using an eligible
   ChatGPT plan or your own OpenAI, Google Gemini or Anthropic Claude API key.
-- Notifications, widgets, optional alerts and a Wear OS companion with five faces.
+- Notifications, widgets, a bedside view, optional glucose alarms and a Wear OS
+  companion with five faces.
+- A daily update check, on by default, that can be turned off in
+  **About and updates**.
 
 See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
-[Tarv1s costs and setup](TARV1S_BYOK.md) and [data freshness](DATA_FRESHNESS.md).
+[Tarv1s costs and setup](TARV1S_BYOK.md), [data freshness](DATA_FRESHNESS.md),
+[glucose alarms](GLUCOSE_ALARMS.md) and [AAPS local source](AAPS_LOCAL_SOURCE.md).
 
 The API-key routes use each user's saved key and model. There is no shared
 maintainer API key or hosted AI relay. ChatGPT is a separate, optional plan
@@ -39,7 +44,41 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.8.0: redesign, glucose alarms, AAPS on this phone and update alerts
+
+1.8.0 is the first public release since 1.7.18. It includes every change in
+the unpublished 1.7.19, 1.7.20 and 1.7.21 candidates below, plus:
+
+- A redesign of Today, Settings, History, Health and Compare, with larger text
+  and touch targets and stronger contrast. Settings has six main places and
+  search; old links still work.
+- Optional local glucose alarms for low, urgent low, high, very high and
+  missing readings. Nothing sounds until the user turns them on, and older
+  in-app alert choices keep their behaviour. The alarms are a back-up to the
+  sensor maker's or AAPS alarms. See [glucose alarms](GLUCOSE_ALARMS.md).
+- A read-only AndroidAPS source for the same phone, with optional insulin, carb
+  and settings history from Nightscout. It was tested with AAPS 4.0.0-dev-e on
+  one Pixel phone. See [AAPS local source](AAPS_LOCAL_SOURCE.md).
+- Tarv1s gives short answers first, answers more record questions locally and
+  refuses dosing and treatment requests more firmly.
+- A daily update check, on by default, shows one quiet notification for each
+  new public version. It can be turned off in **About and updates**; see
+  [the privacy notice](../PRIVACY.md#daily-update-check-on-by-default).
+- Lower battery use: the encrypted database reuses one unlocked connection
+  instead of repeating its key derivation for every transaction, and
+  foreground timers pause in the background.
+- Record exports (CSV and a one-page clinic report), source health and a
+  bedside view.
+
+The phone version code is 96, above the AAPS test builds, so the release
+installs in place over them. The Wear companion and its protocol are unchanged
+since 1.7.18; a working installed companion does not need reinstallation.
+Not yet checked across the redesigned screens: very large text, TalkBack and
+light mode. Exact-APK verification is recorded in the GitHub release notes.
+
 ### 1.7.21 candidate: installable over AAPS test builds
+
+Not published; its changes are included in 1.8.0.
 
 This candidate contains the same app changes as the unpublished 1.7.20 draft.
 Only the version changes: the phone version code is now 86, so the release
@@ -48,6 +87,8 @@ removing it or its data. The Wear protocol is unchanged; a working installed
 companion does not need reinstallation.
 
 ### 1.7.20 candidate: battery, anonymous usage counts
+
+Not published; its changes are included in 1.8.0.
 
 This candidate replaces the unpublished 1.7.19 draft and includes all of its
 changes. The glucose service learns a source's reading interval: a
@@ -58,8 +99,8 @@ and alert timing are unchanged. On the emulator with a five-minute source and
 the screen off, background requests and app CPU time fell by about 80%, and
 every reading was fetched within 22 seconds of being available.
 
-Anonymous usage counts are on by default and can be turned off in
-**Settings → Privacy**. The exact contents are listed in
+Anonymous usage counts are on by default and can be turned off in the
+first-run tour or in **Settings → Backup and privacy**. The exact contents are listed in
 [the privacy notice](../PRIVACY.md#anonymous-usage-counts-on-by-default); no
 health data or identifiers are sent. The production dependency audit reports
 no findings. The Wear protocol is unchanged; a working installed companion
@@ -67,6 +108,8 @@ does not need reinstallation. Signed-artifact and owner-phone acceptance are
 still pending.
 
 ### 1.7.19 candidate: cycle tracking and feedback
+
+Not published; its changes are included in 1.8.0.
 
 This candidate adds optional menstrual cycle tracking with a calendar, period
 history, daily flow and symptoms, and encrypted backup support. Imported Health
@@ -248,8 +291,8 @@ the next version; see
 
 ## Know which version you have
 
-Open **Settings → About T1 Arc** for the version, package and source revision.
-**Share build details** shares these without health records or keys.
+Open **Settings → About and updates** for the version, package and source
+revision. **Share build details** shares these without health records or keys.
 
 Repository changes do not alter an installed APK. Each release’s build record
 identifies its source and checksums. **Check for updates** offers compatible
@@ -265,7 +308,7 @@ also use that package and signing identity, so check its version and provenance
 before installing another APK.
 
 The official phone package is `io.github.gregorgregor25.t1arc`; it appears in
-**About T1 Arc** alongside the installed build details.
+**About and updates** alongside the installed build details.
 
 If Android reports a signature conflict, follow the
 [update guide](GETTING_STARTED.md#update-t1-arc). Report problems through

@@ -17,7 +17,9 @@ inspectable.
 
 ## Native colour tokens
 
-The source of truth is `src/theme/theme.tsx`.
+The source of truth is `modules/t1arc-glucose-display/shared/app-colors.json`
+(read by `src/theme/theme.tsx` and the native home-screen widget).
+`tests/theme-contrast.test.ts` enforces WCAG AA for every palette.
 
 | Role | Light | Dark |
 |---|---|---|
@@ -26,9 +28,11 @@ The source of truth is `src/theme/theme.tsx`.
 | Elevated surface | `#FFFFFF` | `#252731` |
 | Primary text | `#1B1D24` | `#F8F5EE` |
 | Secondary text | `#50535E` | `#C4C1BC` |
+| Tertiary text / placeholders | `#63656D` | `#A09FA4` |
+| Input and control outline | `#88837D` | `#787A82` |
 | Navigation / chart accent | `#3156B8` | `#8EA7FF` |
-| Insulin | `#B85A2A` | `#F0A06A` |
-| Positive accent | `#527038` | `#A7C978` |
+| Insulin | `#A04E25` | `#F0A06A` |
+| Positive accent | `#506E37` | `#A7C978` |
 | Low / danger | `#B72D4B` | `#FF8DA2` |
 | High / warning | `#92520B` | `#F2B66E` |
 
@@ -59,18 +63,30 @@ colour.
 - Screen titles: 28–32sp, bold, compact tracking.
 - Card titles: 16–18sp, 700–800 weight.
 - Body: 13–15sp with generous line height.
-- Metadata: 10–12sp, never used for essential actions or safety state.
+- Metadata: 12–13sp (13 preferred for secondary text), never used for
+  essential actions or safety state.
+- Nothing user-facing below 12sp. 11sp is reserved for non-essential chart
+  axis ticks and decorative artwork.
+- Sizes come from `typeScale` in `src/theme/tokens.ts` (caption 12, footnote 13,
+  callout 14, body 15, bodyLarge 16, title 17, titleLarge 20, headline 24,
+  display 32). Keep system font scaling on; cap dense rows at
+  `maxFontSizeMultiplier` 1.6–2.0 rather than disabling scaling.
 - Numbers and units stay together. Use the selected regional glucose,
   measurement and energy formats, and the selected analysis timezone. Never
   hard-code UK units or London time into a shared screen.
 
 ## Spacing and shape
 
-- Base spacing: 4, 8, 16, 24, 32 and 48dp.
-- Minimum interactive target: 48×48dp.
+- Base spacing: 4, 8, 12, 16, 24, 32 and 48dp (`spacing` in
+  `src/theme/tokens.ts`). Cards use 20dp padding and a 16dp gap between cards.
+- Minimum interactive target: 44×44dp; prefer 48dp for primary rows and
+  buttons. Use `touchSlop()` when a control must look smaller.
 - Cards: 22dp radius; nested controls: 10–16dp; pills only for short states.
 - Prefer whitespace and a thin border to heavy shadows.
 - Bottom navigation has at most five destinations and must never cover content.
+  Screens without the tab bar, modals and sheets pad for the system navigation
+  bar inset, and Today reserves room so the floating “+” never covers the last
+  card.
 
 ## Interaction rules
 

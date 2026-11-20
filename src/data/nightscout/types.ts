@@ -41,6 +41,37 @@ export interface NightscoutTreatment {
   notes?: string;
   profile?: string;
   reason?: string;
+  /** AAPS and Nightscout v3 mark withdrawn or edited records as false. */
+  isValid?: boolean;
+  /** AAPS uploads exact durations alongside whole minutes. */
+  durationInMilliseconds?: number | string;
+  /** Combo/extended bolus total; `insulin` is the immediate part. */
+  enteredinsulin?: number | string;
+  splitNow?: number | string;
+  splitExt?: number | string;
+  relative?: number | string;
+  isEmulatingTempBasal?: boolean;
+  /** AAPS bolus type, for example NORMAL, SMB or PRIMING. */
+  type?: string;
+  isSMB?: boolean;
+  targetTop?: number | string;
+  targetBottom?: number | string;
+  units?: string;
+  percentage?: number | string;
+  /** AAPS profile switch: hours the profile is shifted. */
+  timeshift?: number | string;
+  /** AAPS profile switch: profile name without percentage or shift. */
+  originalProfileName?: string;
+  /** AAPS profile switch and running mode: exact milliseconds; 0 means until changed. */
+  originalDuration?: number | string;
+  /** AAPS 3.3+ running mode on "OpenAPS Offline", for example SUSPENDED_BY_USER. */
+  mode?: string;
+  autoForced?: boolean;
+  device?: string;
+  app?: string;
+  pumpId?: number | string;
+  pumpType?: string;
+  pumpSerial?: string;
   [key: string]: unknown;
 }
 

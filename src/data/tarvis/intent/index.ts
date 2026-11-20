@@ -4,3 +4,4 @@ export * from "./resolve";
 export * from "./describe";
 export * from "./clarification";
 export * from "./schema";
+export * from "./rangeFocus";

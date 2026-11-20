@@ -1,5 +1,18 @@
 import { getRuntimeAnalysisTimeZone } from "@/domain/regionalProfileRuntime";
 import { extractTarvisLiterals } from "./literals";
+import { insideRecentWeekPhrase } from "@/data/tarvis/recentWeekPhrase";
+import {
+  detectTarvisTimeInRangeFocus,
+  inferTarvisThresholdUnit,
+  TARVIS_PERSONAL_RANGE_PROFILE_ID,
+  TARVIS_RANGE_FOCUS_METRIC_PATTERNS,
+  TARVIS_STANDARD_RANGE_PROFILE,
+  TARVIS_TIGHT_RANGE_PROFILE,
+  TARVIS_TIME_ABOVE_SOURCE_ID,
+  TARVIS_TIME_BELOW_SOURCE_ID,
+  tarvisConsensusThresholdIn,
+  type TarvisTimeInRangeFocus,
+} from "./rangeFocus";
 import { validateTarvisIntentV1 } from "./schema";
 import {
   IncompleteTarvisIntentResolution,
@@ -26,12 +39,8 @@ import {
   TarvisTemporalScope,
 } from "./types";
 
-const DEFAULT_TARGET_PROFILE: TarvisGlucoseTargetProfile = {
-  id: "standard-cgm-range",
-  unit: "mmol/L",
-  lowBelow: 3.9,
-  highAbove: 10,
-};
+const DEFAULT_TARGET_PROFILE: TarvisGlucoseTargetProfile =
+  TARVIS_STANDARD_RANGE_PROFILE;
 
 const DEFAULT_OVERNIGHT_PROFILE: TarvisOvernightProfile = {
   id: "t1-arc-default-overnight",
@@ -117,6 +126,17 @@ const TYPO_REPLACEMENTS: [RegExp, string][] = [
   [/\b(?:hihgs|higs)\b/g, "highs"],
   [/\b(?:lwo|lwoes)\b/g, "lows"],
   [/\btim[ -]in[ -]range\b/g, "time in range"],
+  // Speech-to-text forms of "time in range": "timing range", "time and
+  // range", "time in rage" and the hyphenated "time-in-range". The spoken
+  // forms are mapped only where they clearly name the metric ("my timing
+  // range", "what's my time and range"), never in "what time and range were
+  // my highs" or "my bolus timing range". "for today" / "for the week" after
+  // the phrase is a period, so it no longer blocks the mapping.
+  [/\btime-in-range\b/g, "time in range"],
+  [
+    /(^|\b(?:my|your|the|what's|whats|what is|was|is|show(?: me)?|compare|tell me|check|see)\s+)(?:timing[ -]range|time[ -](?:and|in)[ -]rage|time[ -]and[ -]range)\b(?!\s+(?:of|were|was|did|are|is|for\s+(?:my|the\s+(?:highs?|lows?|boluse?s?))\b))/g,
+    "$1time in range",
+  ],
   [/\byday\b/g, "yesterday"],
 ];
 
@@ -308,7 +328,8 @@ function productOvernightResolution(
   if (!namedSource) return undefined;
   if (counts.length > 1) {
     return {
-      problem: "More than one completed-night count was requested.",
+      problem:
+        "You asked for more than one number of nights. Please give one, for example 'the last 7 nights'.",
       problemCode: "ambiguous_time_scope",
     };
   }
@@ -334,7 +355,7 @@ function productOvernightResolution(
       count: requestedCount,
       countSource,
       problem:
-        "The overnight profile must contain a non-empty ID and two different valid local clock times.",
+        "Your overnight hours need two different times. Please give the hours you mean, for example 'between 23:00 and 07:00'.",
       problemCode: "invalid_clock_window",
     };
   }
@@ -501,6 +522,19 @@ function extractMetricCandidates(
       /\b(?:time[- ]in[- ]range|tir|percentage\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|percent\s+(?:of\s+time\s+)?(?:was\s+)?in\s+(?:my\s+)?(?:target\s+)?range|(?:what\s+)?(?:percentage|percent)\s+(?:of\s+(?:my\s+)?(?:glucose\s+)?readings?\s+)?(?:(?:was|were|am|is)\s+(?:i\s+)?)?between)\b/,
     ),
   );
+
+  for (const expression of TARVIS_RANGE_FOCUS_METRIC_PATTERNS) {
+    pushCandidate(
+      candidates,
+      candidateFromPattern(
+        originalQuestion,
+        normalizedQuestion,
+        "glucose.time_in_range",
+        "range_distribution",
+        expression,
+      ),
+    );
+  }
 
   const lowReadings = candidateFromPattern(
     originalQuestion,
@@ -822,6 +856,7 @@ function isScopeDuration(
   normalizedQuestion: string,
   duration: TarvisDurationLiteral,
 ) {
+  if (duration.recentLocalWeek) return true;
   const before = durationContext(normalizedQuestion, duration);
   return /(?:\b(?:last|past|previous|during|for|over|in)\s+(?:the\s+)?|\bwithin\s+(?:the\s+)?)$/.test(
     before,
@@ -836,14 +871,30 @@ function scopeFromDuration(
   if (!Number.isInteger(duration.value) || duration.value <= 0) {
     return {
       problem: "ambiguous_time_scope",
-      message: "The requested duration must be a positive whole number.",
+      message:
+        "Please give the number of days as a whole number, for example 'the last 3 days'.",
     };
   }
   if (duration.unit === "month") {
     return {
       problem: "unsupported_time_scope",
       message:
-        "Numbered month windows are not yet supported because their calendar boundaries need to be explicit.",
+        "I can't use a number of months yet, because months have different lengths. Please give dates instead, for example 'from 1 March to 30 April'.",
+    };
+  }
+  if (duration.recentLocalWeek) {
+    return {
+      scope: explicitField(
+        {
+          kind: "recent_local_days",
+          count: duration.value,
+          include: hasClockWindow
+            ? "most_recent_completed_windows"
+            : "through_now",
+        },
+        duration,
+        "The past week means the last 7 local days, including today so far.",
+      ),
     };
   }
   const before = durationContext(normalizedQuestion, duration);
@@ -851,7 +902,8 @@ function scopeFromDuration(
   if (completedDays && duration.unit === "week") {
     return {
       problem: "unsupported_time_scope",
-      message: "Completed calendar weeks are not yet supported; please give exact start and end dates.",
+      message:
+        "I can't count whole calendar weeks yet. Please give dates instead, for example 'from 1 March to 14 March'.",
     };
   }
   const isRolling =
@@ -911,7 +963,8 @@ function resolveTemporalScope(
   if (literals.clockWindows.length > 1) {
     return {
       problem: "ambiguous_clock_time",
-      message: "More than one recurring clock window was found.",
+      message:
+        "You gave more than one time window. I can look at one at a time, for example 'between 06:00 and 07:30'.",
     };
   }
   const clockWindow = literals.clockWindows[0];
@@ -954,7 +1007,8 @@ function resolveTemporalScope(
   ) {
     return {
       problem: "ambiguous_clock_time",
-      message: "The clock window could not be resolved safely.",
+      message:
+        "I couldn't tell which times you mean. Please give a start and an end, for example 'between 06:00 and 07:30'.",
     };
   }
   if (
@@ -968,7 +1022,7 @@ function resolveTemporalScope(
     return {
       problem: "ambiguous_clock_time",
       message:
-        "A standalone clock time cannot be executed as a recurring window; provide explicit start and end bounds.",
+        "I can look at a time window if you give me a start and an end, for example 'between 06:00 and 07:30 today'.",
     };
   }
 
@@ -982,7 +1036,7 @@ function resolveTemporalScope(
     return {
       problem: "ambiguous_clock_time",
       message:
-        "An approximate or one-sided clock filter needs explicit start and end bounds.",
+        "I need exact times rather than an approximate or open-ended time. Please give a start and an end, for example 'between 06:00 and 07:30'.",
     };
   }
 
@@ -992,21 +1046,22 @@ function resolveTemporalScope(
   ) {
     return {
       problem: "unsupported_time_scope",
-      message: "Named weekday and weekend filters are not executable yet.",
+      message:
+        "I can't pick out particular weekdays or weekends yet. I can answer for a whole period, for example 'this week' or 'the last 14 days'.",
     };
   }
   if (hasEventRelativeFilter(normalizedQuestion)) {
     return {
       problem: "ambiguous_time_scope",
       message:
-        "Event-relative filters need an exact supported event timestamp and clock window; the filter was not ignored.",
+        "I can't measure from an event such as a meal or a workout yet. Please give clock times instead, for example 'between 12:00 and 14:00 today'.",
     };
   }
   if (hasUnrepresentedRecordFilterNormalized(normalizedQuestion)) {
     return {
       problem: "ambiguous_time_scope",
       message:
-        "This exclusion is not represented by the executable scope and was not silently discarded.",
+        "I can't separate or leave out particular records in this calculation yet. I can answer for all records in a period. Which period do you want?",
     };
   }
   if (
@@ -1016,7 +1071,7 @@ function resolveTemporalScope(
     return {
       problem: "ambiguous_time_scope",
       message:
-        "That named part of the day needs explicit clock bounds; it was not widened to a whole day.",
+        "Please tell me the hours you mean, for example 'between 18:00 and 22:00 yesterday'. I won't guess them or use the whole day.",
     };
   }
   if (
@@ -1027,7 +1082,7 @@ function resolveTemporalScope(
     return {
       problem: "ambiguous_time_scope",
       message:
-        "Night needs explicit clock bounds or the named overnight definition; it was not widened to a whole day.",
+        "Please tell me the hours you mean by night, for example 'between 23:00 and 07:00', or ask about 'last night'.",
     };
   }
   const namedPeriods: [RegExp, TarvisTemporalScope & { kind: "calendar_period" }][] = [
@@ -1050,6 +1105,16 @@ function resolveTemporalScope(
         match: RegExpExecArray;
         value: TarvisTemporalScope & { kind: "calendar_period" };
       } => entry.match !== null,
+    )
+    // "in the last week" is the recent 7-day window, not the previous
+    // calendar week; that phrase is resolved as a duration instead.
+    .filter(
+      (entry) =>
+        !insideRecentWeekPhrase(
+          normalizedQuestion,
+          entry.match.index,
+          entry.match.index + entry.match[0].length,
+        ),
     );
   // Literal offsets refer to the original question. Metric typo correction can
   // change normalized-string length, so duration context uses an offset-stable
@@ -1068,7 +1133,8 @@ function resolveTemporalScope(
   if (matchedNamed.length > 1) {
     return {
       problem: "ambiguous_time_scope",
-      message: "More than one calendar period was requested.",
+      message:
+        "You mentioned more than one period. I can answer for one period, or compare a period with the one just before it. Which do you want?",
     };
   }
   const comparisonToPrevious =
@@ -1093,7 +1159,8 @@ function resolveTemporalScope(
     } else {
       return {
         problem: "ambiguous_time_scope",
-        message: "More than one non-equivalent duration was requested.",
+        message:
+          "You mentioned more than one period. I can answer for one period, or compare a period with the one just before it. Which do you want?",
       };
     }
   }
@@ -1116,7 +1183,8 @@ function resolveTemporalScope(
     ) {
       return {
         problem: "ambiguous_time_scope",
-        message: "More than one non-equivalent current or comparison duration was requested.",
+        message:
+          "You mentioned more than one period. I can answer for one period, or compare a period with the one just before it. Which do you want?",
       };
     }
     // Validate every repeated period before a named-date equivalence can
@@ -1177,7 +1245,7 @@ function resolveTemporalScope(
       return {
         problem: "ambiguous_time_scope",
         message:
-          "The question combines non-equivalent time scopes; choose one exact period.",
+          "You mentioned more than one period. I can answer for one period, or compare a period with the one just before it. Which do you want?",
       };
     }
   }
@@ -1198,7 +1266,8 @@ function resolveTemporalScope(
     if (!rangeCue || absoluteDates.length > 2) {
       return {
         problem: "ambiguous_time_scope",
-        message: "The requested calendar dates do not form one clear range.",
+        message:
+          "I couldn't tell which dates you mean. Please give one date, or a start and an end, for example 'from 1 March to 14 March'.",
       };
     }
     const first = absoluteDates[0]!;
@@ -1206,7 +1275,8 @@ function resolveTemporalScope(
     if (first.date > second.date) {
       return {
         problem: "ambiguous_time_scope",
-        message: "The end date is earlier than the start date.",
+        message:
+          "The end date is before the start date. Please give the earlier date first, for example 'from 1 March to 14 March'.",
       };
     }
     return {
@@ -1246,13 +1316,13 @@ function resolveTemporalScope(
       return {
         problem: "ambiguous_time_scope",
         message:
-          "The requested number of nights must be a positive whole number.",
+          "Please give the number of nights as a whole number, for example 'the last 7 nights'.",
       };
     }
     if (productOvernight.count > 366) {
       return {
         problem: "unsupported_time_scope",
-        message: "At most 366 completed overnight windows can be calculated.",
+        message: "I can look at up to 366 nights at a time. Please ask for fewer nights.",
       };
     }
     return {
@@ -1411,13 +1481,171 @@ function comparisonField(
   );
 }
 
+interface TargetThresholdContext {
+  focus?: TarvisTimeInRangeFocus | null;
+  personalProfile?: TarvisGlucoseTargetProfile;
+}
+
+function profileRangeThresholds(
+  profile: TarvisGlucoseTargetProfile,
+  note: string,
+): TarvisIntentField<TarvisGlucoseThreshold>[] {
+  const provenance = {
+    kind: "profile" as const,
+    sourceText: profile.id,
+    sourceStart: null,
+    sourceEnd: null,
+    turnId: null,
+    note,
+  };
+  return [
+    {
+      value: {
+        operator: "gte",
+        value: profile.lowBelow,
+        unit: profile.unit,
+        role: "range_lower",
+      },
+      provenance,
+    },
+    {
+      value: {
+        operator: "lte",
+        value: profile.highAbove,
+        unit: profile.unit,
+        role: "range_upper",
+      },
+      provenance,
+    },
+  ];
+}
+
+/**
+ * Thresholds for a named range ("tight", "my range") or a one-sided time share
+ * ("time below 3"). A one-sided share is calculated as a range whose other
+ * bound is the standard range limit, so the requested share is the part below
+ * the lower bound or above the upper bound. Returns null when the question
+ * cannot be represented exactly; the ordinary rules then apply.
+ */
+function focusedRangeThresholds(
+  focus: TarvisTimeInRangeFocus,
+  explicitThresholds: ReturnType<typeof metricThresholdLiterals>,
+  personalProfile: TarvisGlucoseTargetProfile | undefined,
+): TarvisIntentField<TarvisGlucoseThreshold>[] | null {
+  if (focus.kind === "tight") {
+    if (explicitThresholds.length > 0) return null;
+    return profileRangeThresholds(
+      TARVIS_TIGHT_RANGE_PROFILE,
+      "Tight range 3.9–7.8 mmol/L (70–140 mg/dL) named in the question.",
+    );
+  }
+  if (focus.kind === "personal") {
+    if (explicitThresholds.length > 0 || !personalProfile) return null;
+    return profileRangeThresholds(
+      { ...personalProfile, id: TARVIS_PERSONAL_RANGE_PROFILE_ID },
+      "Your range: the In range band from glucose display settings.",
+    );
+  }
+  if (explicitThresholds.length > 1) return null;
+  const literal = explicitThresholds[0];
+  const below = focus.kind === "below";
+  let bound: TarvisIntentField<TarvisGlucoseThreshold>;
+  let unit: TarvisGlucoseThreshold["unit"];
+  if (literal) {
+    const directionMatches = below
+      ? literal.operator === "lt" || literal.operator === "lte"
+      : literal.operator === "gt" || literal.operator === "gte";
+    if (!directionMatches) return null;
+    unit = inferTarvisThresholdUnit(literal.value, literal.unit);
+    const operator: TarvisGlucoseThreshold["operator"] = below
+      ? literal.operator === "lt"
+        ? "gte"
+        : "gt"
+      : literal.operator === "gt"
+        ? "lte"
+        : "lt";
+    bound = explicitField(
+      {
+        operator,
+        value: literal.value,
+        unit,
+        role: below ? "range_lower" : "range_upper",
+      },
+      literal,
+      literal.unit
+        ? undefined
+        : `Unit inferred as ${unit} from the size of the number.`,
+    );
+  } else if (focus.presetMmolL !== null) {
+    unit = "mmol/L";
+    bound = {
+      value: {
+        operator: below ? "gte" : "lte",
+        value: focus.presetMmolL,
+        unit,
+        role: below ? "range_lower" : "range_upper",
+      },
+      provenance: {
+        kind: "profile",
+        sourceText: TARVIS_STANDARD_RANGE_PROFILE.id,
+        sourceStart: null,
+        sourceEnd: null,
+        turnId: null,
+        note: "Consensus threshold named in the question.",
+      },
+    };
+  } else {
+    return null;
+  }
+  const complement: TarvisIntentField<TarvisGlucoseThreshold> = {
+    value: {
+      operator: below ? "lte" : "gte",
+      value: tarvisConsensusThresholdIn(
+        below
+          ? TARVIS_STANDARD_RANGE_PROFILE.highAbove
+          : TARVIS_STANDARD_RANGE_PROFILE.lowBelow,
+        unit,
+      ),
+      unit,
+      role: below ? "range_upper" : "range_lower",
+    },
+    provenance: {
+      kind: "derived",
+      sourceText: below
+        ? TARVIS_TIME_BELOW_SOURCE_ID
+        : TARVIS_TIME_ABOVE_SOURCE_ID,
+      sourceStart: null,
+      sourceEnd: null,
+      turnId: null,
+      note: below
+        ? "Upper bound from the standard range; the answer reports the share below the lower bound."
+        : "Lower bound from the standard range; the answer reports the share above the upper bound.",
+    },
+  };
+  const [lower, upper] = below ? [bound, complement] : [complement, bound];
+  return lower.value.value < upper.value.value ? [lower, upper] : null;
+}
+
 function targetThresholds(
   metrics: TarvisIntentField<TarvisMetric>[],
   literals: ReturnType<typeof extractTarvisLiterals>,
   profile: TarvisGlucoseTargetProfile,
+  context: TargetThresholdContext = {},
 ): TarvisIntentField<TarvisGlucoseThreshold>[] {
   const metricValues = new Set(metrics.map((metric) => metric.value));
   const explicitThresholds = metricThresholdLiterals(literals);
+  if (
+    context.focus &&
+    metrics.length === 1 &&
+    metrics[0]!.value === "glucose.time_in_range"
+  ) {
+    const focused = focusedRangeThresholds(
+      context.focus,
+      explicitThresholds,
+      context.personalProfile,
+    );
+    if (focused) return focused;
+  }
   if (explicitThresholds.length > 0 && metrics.length === 1) {
     const metric = metrics[0]!.value;
     return explicitThresholds.map((literal) => {
@@ -1575,6 +1803,12 @@ function thresholdValidationProblem(
   return null;
 }
 
+/** "glucose.standard_deviation" -> "standard deviation", for replies. */
+function plainMetricName(metric: string) {
+  const name = (metric.split(".").at(-1) ?? metric).replace(/_/g, " ");
+  return name === "gmi" ? "GMI" : name;
+}
+
 function clarification(
   code: Extract<
     TarvisCapabilityOutcome,
@@ -1641,7 +1875,7 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "empty_question",
-        "No question was provided.",
+        "There was no question.",
         "What would you like to know about your glucose data?",
       ),
     );
@@ -1657,8 +1891,8 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "ambiguous_negation",
-        "The metric appears to be negated rather than selected.",
-        "Which metric should I calculate?",
+        "I couldn't tell which number you want.",
+        "Which number do you want, for example average glucose or time in range?",
       ),
     );
   }
@@ -1692,13 +1926,13 @@ export function resolveTarvisIntent(
     // of sending a partial set of requested statistics to a model.
     compoundProblem = unsupported(
       "unsupported_metric",
-      "The question requests an additional nutrient or episode-duration statistic that is not supported by this calculation. Please ask for the supported values separately.",
+      "Part of that question asks for a nutrient or for how long episodes lasted, which I can't calculate here yet. Please ask for each number on its own.",
     );
   }
   if (unconsumedMetric) {
     compoundProblem ??= unsupported(
       "unsupported_compound_question",
-      `The question also requests ${unconsumedMetric}, but its relationship to the other calculation was not unambiguous.`,
+      `You also asked about ${plainMetricName(unconsumedMetric)}, and I couldn't tell how it fits with the rest. Please ask about it on its own.`,
     );
   }
 
@@ -1717,7 +1951,7 @@ export function resolveTarvisIntent(
   } else if (domains.length > 1) {
     compoundProblem ??= unsupported(
       "unsupported_compound_question",
-      "This exact calculation spans several types of health records.",
+      "That needs several kinds of record at once, which I can't combine in one calculation yet. Try one at a time, for example 'insulin today' or 'carbs today'.",
     );
   }
 
@@ -1732,7 +1966,7 @@ export function resolveTarvisIntent(
   } else if (operations.size > 1) {
     compoundProblem ??= unsupported(
       "unsupported_compound_question",
-      "The question combines metrics that need different calculations.",
+      "Those numbers need different calculations, which I can't combine in one answer yet. Please ask for one at a time, for example 'average glucose today'.",
     );
   }
 
@@ -1749,7 +1983,8 @@ export function resolveTarvisIntent(
         literals,
         unsupported(
           "unsupported_time_scope",
-          scopeResolution.message ?? "That time scope is not supported.",
+          scopeResolution.message ??
+            "I can't use that time period yet. Please give dates, for example 'from 1 March to 14 March'.",
         ),
       );
     }
@@ -1758,10 +1993,10 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         scopeResolution.problem,
-        scopeResolution.message ?? "The time scope is ambiguous.",
+        scopeResolution.message ?? "I couldn't tell which period you mean.",
         scopeResolution.problem === "ambiguous_clock_time"
           ? "Please give both times with a.m./p.m. or in 24-hour time."
-          : "Which exact period should I use?",
+          : "Which period do you want, for example 'today' or 'the last 7 days'?",
       ),
     );
   }
@@ -1798,10 +2033,19 @@ export function resolveTarvisIntent(
   }
 
   const profile = options.targetProfile ?? DEFAULT_TARGET_PROFILE;
+  const thresholdContext: TargetThresholdContext = {
+    focus: detectTarvisTimeInRangeFocus(normalizedQuestion),
+    personalProfile: options.personalTargetProfile,
+  };
   const explicitMetricThresholds = metricThresholdLiterals(literals);
   if (compoundProblem) {
     if (explicitMetricThresholds.length === 0) {
-      draft.thresholds = targetThresholds(draft.metrics, literals, profile);
+      draft.thresholds = targetThresholds(
+        draft.metrics,
+        literals,
+        profile,
+        thresholdContext,
+      );
     }
     return incomplete(draft, literals, compoundProblem);
   }
@@ -1811,7 +2055,7 @@ export function resolveTarvisIntent(
       literals,
       unsupported(
         "unsupported_compound_question",
-        "Explicit thresholds in a multi-metric question cannot yet be bound to each metric without ambiguity.",
+        "I can't apply your own limits to several numbers in one question yet. Please ask for one number at a time.",
       ),
     );
   }
@@ -1829,12 +2073,17 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "ambiguous_metric",
-        "More than one threshold was supplied for a single low/high calculation.",
-        "Which one threshold should I use?",
+        "You gave more than one limit for lows or highs.",
+        "Which one limit should I use?",
       ),
     );
   }
-  draft.thresholds = targetThresholds(draft.metrics, literals, profile);
+  draft.thresholds = targetThresholds(
+    draft.metrics,
+    literals,
+    profile,
+    thresholdContext,
+  );
 
   if (draft.metrics.length === 0) {
     return incomplete(
@@ -1842,8 +2091,8 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "missing_metric",
-        "No supported metric was stated or safely inherited.",
-        "Should I calculate average glucose, low episodes, high episodes, or time in range?",
+        "Which number do you want? For example average glucose, time in range, lows, highs, insulin or carbs.",
+        "Which number do you want?",
       ),
     );
   }
@@ -1853,8 +2102,8 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "ambiguous_metric",
-        "The requested metric has no clear health-data domain.",
-        "Which reading or health-data type do you mean?",
+        "I couldn't tell which kind of record you mean.",
+        "Which kind do you mean, for example glucose, insulin or carbs?",
       ),
     );
   }
@@ -1867,7 +2116,7 @@ export function resolveTarvisIntent(
       literals,
       unsupported(
         "unsupported_metric",
-        `${unsupportedMetric.value} was recognised exactly but is not locally executable yet.`,
+        `I understood that you want ${plainMetricName(unsupportedMetric.value)}, but I can't calculate it on the phone yet.`,
       ),
     );
   }
@@ -1882,7 +2131,7 @@ export function resolveTarvisIntent(
       clarification(
         "invalid_threshold",
         invalidThreshold,
-        "Please provide the exact valid threshold or range for that metric.",
+        "Please give a valid limit for that number.",
       ),
     );
   }
@@ -1892,8 +2141,8 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "ambiguous_metric",
-        "The requested calculation is ambiguous.",
-        "What calculation should I perform?",
+        "I couldn't tell what to work out.",
+        "Do you want an average, a count or a total?",
       ),
     );
   }
@@ -1920,8 +2169,8 @@ export function resolveTarvisIntent(
       literals,
       clarification(
         "missing_time_scope",
-        "No time period was stated or safely inherited.",
-        "Which dates or period should I use?",
+        "Which period do you want? For example today, yesterday or the last 7 days.",
+        "Which period do you want?",
       ),
     );
   }
@@ -1931,7 +2180,7 @@ export function resolveTarvisIntent(
       literals,
       unsupported(
         "unsupported_comparison",
-        "Only comparison with the immediately preceding equal-length period is executable in this foundation.",
+        "I can only compare a period with the one just before it, for example this week with last week.",
       ),
     );
   }
@@ -2119,7 +2368,10 @@ export function resolveTarvisCompoundIntents(
     const boundThresholds = thresholdsByMetric.get(candidate.metric) ?? [];
     let thresholds = targetThresholds([metric], {
       ...literals, durations: [], thresholds: boundThresholds,
-    }, options.targetProfile ?? DEFAULT_TARGET_PROFILE);
+    }, options.targetProfile ?? DEFAULT_TARGET_PROFILE, {
+      focus: detectTarvisTimeInRangeFocus(checked.intent.normalizedQuestion),
+      personalProfile: options.personalTargetProfile,
+    });
     if (!options.targetProfile && boundThresholds.length === 0) {
       thresholds = thresholds.map((threshold) => {
         const family = threshold.value.role === "low" || threshold.value.role === "range_lower"

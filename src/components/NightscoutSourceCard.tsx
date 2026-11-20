@@ -259,10 +259,12 @@ export function NightscoutSourceCard() {
       setTokenVisible(false);
       setSecretVisible(false);
       setEditing(false);
-      setLatest({
-        mmolL: reading.mmolL,
-        timestamp: reading.timestamp,
-      });
+      // No reading means AAPS on this phone supplies glucose.
+      setLatest(
+        reading
+          ? { mmolL: reading.mmolL, timestamp: reading.timestamp }
+          : undefined,
+      );
       setIobCob(
         connection.includeIobCob
           ? await loadNightscoutIobCobSnapshot(connection).catch(
@@ -435,7 +437,7 @@ export function NightscoutSourceCard() {
               {saved.accessToken
                 ? 'read-only token protected on this phone'
                 : saved.apiSecret
-                  ? 'legacy API secret protected on this phone'
+                  ? 'API secret protected on this phone'
                   : 'public read access'}
             </Text>
             {latest ? (
@@ -477,6 +479,7 @@ export function NightscoutSourceCard() {
             <Pressable
               accessibilityRole="button"
               onPress={retryLoad}
+              style={styles.textAction}
             >
               <Text style={[styles.secondaryText, { color: colors.primary }]}>
                 Retry saved connection
@@ -692,7 +695,7 @@ export function NightscoutSourceCard() {
           styles.input,
           {
             backgroundColor: colors.surfaceMuted,
-            borderColor: colors.border,
+            borderColor: colors.controlBorder,
             borderRadius: radius.md,
             color: colors.text,
           },
@@ -744,7 +747,7 @@ export function NightscoutSourceCard() {
         </Pressable>
       </View>
       <Text style={[styles.label, { color: colors.text }]}>
-        Legacy API secret (optional)
+        API secret (optional)
       </Text>
       <View
         style={[
@@ -757,7 +760,7 @@ export function NightscoutSourceCard() {
         ]}
       >
         <TextInput
-          accessibilityLabel="Nightscout legacy API secret"
+          accessibilityLabel="Nightscout API secret"
           autoCapitalize="none"
           autoCorrect={false}
           onChangeText={setApiSecret}
@@ -791,9 +794,9 @@ export function NightscoutSourceCard() {
       </View>
       {saved && !sameBaseUrl && !token && !apiSecret ? (
         <Text style={[styles.toggleDetail, { color: colors.textSecondary }]}>
-          The address is different. Enter that Nightscout address’s token or API
-          secret if it is not public; T1 Arc will never carry a saved credential
-          to another path or origin.
+          The address is different. If this site is not public, enter its token
+          or API secret. T1 Arc never sends a saved token or secret to a
+          different address.
         </Text>
       ) : null}
       <View style={[styles.toggleRow, { borderColor: colors.border }]}>
@@ -802,8 +805,8 @@ export function NightscoutSourceCard() {
             Read IOB and COB
           </Text>
           <Text style={[styles.toggleDetail, { color: colors.textSecondary }]}>
-            Also check Nightscout’s Pebble endpoint for insulin and carbs on
-            board.
+            Also read insulin and carbs on board, if your looping app sends
+            them to Nightscout.
           </Text>
         </View>
         <Switch
@@ -885,6 +888,7 @@ export function NightscoutSourceCard() {
 }
 
 const styles = StyleSheet.create({
+  textAction: { minHeight: 44, justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -910,8 +914,8 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   success: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
     marginTop: 7,
   },
@@ -934,13 +938,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   historyBody: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 3,
   },
   historyError: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 6,
   },
   historyActions: {
@@ -950,27 +954,27 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   historyButton: {
-    minHeight: 42,
+    minHeight: 44,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   pauseButton: {
-    minHeight: 42,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   historyButtonText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
   label: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '700',
     marginTop: 16,
     marginBottom: 6,
@@ -1000,8 +1004,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   help: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 8,
   },
   toggleRow: {
@@ -1014,10 +1018,10 @@ const styles = StyleSheet.create({
   },
   toggleCopy: { flex: 1 },
   toggleTitle: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  toggleDetail: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  toggleDetail: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   error: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 10,
   },
   primaryButton: {
@@ -1048,8 +1052,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   secondaryText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -1060,8 +1064,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cancelText: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: '700',
   },
   loadIndicator: {

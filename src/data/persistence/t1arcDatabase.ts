@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
+import { AAPS_STATUS_OBSERVATIONS_CREATE_SQL } from '@/data/aaps/schema';
 
 import {
   ensureGlucoseReadingDeviceIdentity,
@@ -13,7 +14,9 @@ import {
 } from './databaseStartupPolicy';
 import { createPriorityTransactionScheduler } from './priorityTransactionScheduler';
 import { HEALTH_CONNECT_IDENTITY_INDEX_SQL } from './healthConnectIdentityIndex';
-import { retrySqliteBusy } from './sqliteBusyRetry';
+import { THERAPY_STATE_PREDECESSOR_INDEX_SQL } from './therapyStatePredecessorIndex';
+import { createReusableConnection } from './reusableConnection';
+import { isSqliteBusyError, retrySqliteBusy } from './sqliteBusyRetry';
 import { pruneRetainedGlookoSources } from '@/data/glooko/glookoSourceRetention';
 import { repairHevyWorkoutContextOwnership } from '@/data/hevy/contextOwnership';
 import { backfillNativeFoodLogContextNutrition } from '@/data/food/foodLogContextBackfill';
@@ -415,6 +418,8 @@ async function openAndMigrate() {
     );
 
     ${GLUCOSE_READINGS_CREATE_SQL}
+
+    ${AAPS_STATUS_OBSERVATIONS_CREATE_SQL}
 
     CREATE INDEX IF NOT EXISTS idx_glucose_timestamp
       ON glucose_readings(timestamp_ms);
@@ -975,6 +980,7 @@ async function openAndMigrate() {
   // Additive, idempotent index; run after any legacy table reconstruction.
   // Existing rows and portable provider-identity semantics are unchanged.
   await database.execAsync(HEALTH_CONNECT_IDENTITY_INDEX_SQL);
+  await database.execAsync(THERAPY_STATE_PREDECESSOR_INDEX_SQL);
   await ensureColumn(
     database,
     'glucose_readings',
@@ -1149,26 +1155,46 @@ export function openT1ArcDatabase() {
 }
 
 /**
- * Expo's exclusive transaction helper opens a second SQLite connection.
- * SQLCipher keys are connection-specific, so T1 Arc must key that connection
- * before beginning the transaction.
+ * Transactions use their own SQLite connection, separate from the shared
+ * reader. SQLCipher keys are connection-specific and keying runs PBKDF2, so
+ * one keyed writer connection is kept and reused instead of keying a new
+ * connection for every transaction. It is kept only after COMMIT, a
+ * successful ROLLBACK, or a busy BEGIN that never started a transaction.
  */
+async function openKeyedWriterConnection() {
+  const key = await getOrCreateDatabaseKey();
+  const connection = await SQLite.openDatabaseAsync(DATABASE_NAME, {
+    useNewConnection: true,
+  });
+  try {
+    await connection.execAsync(`
+      PRAGMA key = '${key}';
+    `);
+    return connection;
+  } catch (error) {
+    await connection.closeAsync().catch(() => undefined);
+    throw error;
+  }
+}
+
+const writerConnection = createReusableConnection(
+  openKeyedWriterConnection,
+  (connection) => connection.closeAsync(),
+);
+
 async function runT1ArcTransaction<T>(
   task: (transaction: SQLite.SQLiteDatabase) => Promise<T>,
 ) {
-  const key = await getOrCreateDatabaseKey();
   return retrySqliteBusy(async (remainingBudgetMs) => {
-    const transaction = await SQLite.openDatabaseAsync(DATABASE_NAME, {
-      useNewConnection: true,
-    });
+    const transaction = await writerConnection.take();
     let began = false;
+    let reusable = false;
     try {
       const attemptBusyTimeoutMs = Math.max(
         1,
         Math.min(2_000, Math.floor(remainingBudgetMs)),
       );
       await transaction.execAsync(`
-        PRAGMA key = '${key}';
         PRAGMA busy_timeout = ${attemptBusyTimeoutMs};
         PRAGMA foreign_keys = ON;
         BEGIN IMMEDIATE;
@@ -1177,15 +1203,24 @@ async function runT1ArcTransaction<T>(
       const result = await task(transaction);
       await transaction.execAsync('COMMIT');
       began = false;
+      reusable = true;
       return result;
     } catch (error) {
       if (began) {
-        await transaction.execAsync('ROLLBACK').catch(() => undefined);
+        reusable = await transaction.execAsync('ROLLBACK').then(
+          () => true,
+          () => false,
+        );
         began = false;
+      } else {
+        // A busy BEGIN IMMEDIATE leaves no transaction open. Any other
+        // failure before BEGIN (for example a key error) discards the
+        // connection so the retry or next transaction keys a fresh one.
+        reusable = isSqliteBusyError(error);
       }
       throw error;
     } finally {
-      await transaction.closeAsync().catch(() => undefined);
+      await writerConnection.release(transaction, reusable);
     }
   }, { maxWaitMs: DATABASE_BUSY_TIMEOUT_MS });
 }
@@ -1300,6 +1335,8 @@ export async function withT1ArcSanitizedEraseTransaction<T>(
   await openT1ArcDatabase();
   const key = await getOrCreateDatabaseKey();
   return transactionScheduler.schedule('normal', async () => {
+    // Do not keep pages cached from before the erase in an idle writer.
+    await writerConnection.discardIdle();
     const result = await retrySqliteBusy(async (remainingBudgetMs) => {
       const transaction = await openKeyedPrivateConnection(
         key,

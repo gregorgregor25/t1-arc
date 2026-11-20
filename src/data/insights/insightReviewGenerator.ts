@@ -16,6 +16,11 @@ import { buildInsightReport } from '@/domain/insights';
 import { hasInsightReviewEvidence } from '@/domain/insightPersistence';
 import { TimelineData, TimeRange } from '@/domain/models';
 import {
+  reconcileBasalSources,
+  reconcileBolusSources,
+  reconcileContextSources,
+} from '@/domain/insulinSourceReconciliation';
+import {
   addDays,
   dayRange,
   toDateKey,
@@ -72,11 +77,13 @@ async function loadStoredTimeline(
     context,
   ] = await Promise.all([
     glucoseStore.getReadings(range),
-    healthStore.getBasalDeliveries(range),
-    healthStore.getBolusDeliveries(range),
+    healthStore.getBasalDeliveries(range).then(reconcileBasalSources),
+    healthStore
+      .getBolusDeliveries(range)
+      .then((records) => reconcileBolusSources(records).boluses),
     healthStore.getDailyInsulinTotals(range),
     healthStore.getPumpStateIntervals(range),
-    healthStore.getContextEvents(range),
+    healthStore.getContextEvents(range).then(reconcileContextSources),
   ]);
   return {
     range,

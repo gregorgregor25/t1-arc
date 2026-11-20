@@ -19,13 +19,13 @@
   },
   "cyan": {
     "label": "Cyan",
-    "light": "#087F99",
+    "light": "#077188",
     "dark": "#65D2E7",
     "aod": "#65D2E7"
   },
   "green": {
     "label": "Green",
-    "light": "#087A5C",
+    "light": "#087659",
     "dark": "#69D5AC",
     "aod": "#69D5AC"
   },

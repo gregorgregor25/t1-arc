@@ -2,7 +2,7 @@
 
 Choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
 The images below show real Wear OS emulator renders with synthetic data.
-Start in **Settings → Watch & watch faces** on the phone. The guided installer
+Start in **Settings → Watch** on the phone. The guided installer
 installs the bundled companion once. Supported Wear OS 6 watches can then choose
 any of the five included faces without downloading separate APKs.
 [Watch setup](../WATCH_SETUP.md) explains older watches and optional manual downloads.

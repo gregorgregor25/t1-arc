@@ -1597,7 +1597,7 @@ export function GlookoImportCard() {
                     { color: colors.textSecondary },
                   ]}
                 >
-                  Export timezone (IANA)
+                  Time zone of the export, for example Europe/London
                 </Text>
                 <TextInput
                   accessibilityHint="For example Europe/London, America/New_York or Asia/Tokyo"
@@ -1615,7 +1615,7 @@ export function GlookoImportCard() {
                       backgroundColor: colors.surface,
                       borderColor:
                         manualTimeZoneValid || manualSettingsLocked
-                          ? colors.border
+                          ? colors.controlBorder
                           : colors.danger,
                       color: colors.text,
                       opacity: manualSettingsLocked ? 0.72 : 1,
@@ -1628,7 +1628,7 @@ export function GlookoImportCard() {
                     accessibilityLiveRegion="polite"
                     style={[styles.manualImportError, { color: colors.danger }]}
                   >
-                    Enter a valid IANA timezone before choosing a file.
+                    Enter a time zone in the form Region/City, for example Europe/London, before choosing a file.
                   </Text>
                 ) : null}
                 <Text
@@ -2058,8 +2058,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   importInterpretation: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 2,
   },
   metrics: {

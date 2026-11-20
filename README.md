@@ -155,8 +155,10 @@ established installation.
 
 ## A look at the app
 
-The phone screenshots show the current app in dark mode with the creator’s own
-records, shared with permission. Watch previews use clearly labelled example data.
+The phone screenshots show T1 Arc 1.7 in dark mode with the creator’s own
+records, shared with permission. Version 1.8 redesigned Today, Settings and
+History, so some screens now look different. Watch previews use clearly
+labelled example data.
 
 <table>
   <tr>
@@ -192,6 +194,9 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
   timeline.
 - Connect to LibreLinkUp, Dexcom Share, Nightscout, Medtrum EasyFollow, xDrip,
   compatible glucose notifications and Glooko.
+- Read glucose, IOB and COB from AndroidAPS on the same phone, without the
+  internet. T1 Arc only reads; it never sends anything to AAPS or the pump. See
+  [AAPS local source](docs/AAPS_LOCAL_SOURCE.md).
 - Keep source timestamps and provenance instead of flattening everything into
   one unexplained total.
 - Store supported health history in a local encrypted database.
@@ -228,14 +233,18 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
 
 - Optional persistent notification with lock-screen privacy controls.
 - Home-screen widget.
+- Optional glucose alarms for low, urgent low, high, very high and missing
+  readings. They are a back-up: keep your sensor maker's or AAPS alarms on
+  too. See [glucose alarms](docs/GLUCOSE_ALARMS.md).
+- A bedside view for checking glucose at night.
 - Optional always-on display service.
 - Experimental, opt-in Android Auto glance. Follow the [Android Auto setup guide](https://t1arc.com/android-auto/).
 
 The Wear OS companion brings glucose to your wrist. On supported Wear OS 6
 watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
 Browse the [watch collection](docs/design/WATCH_FACE_COLLECTION.md#the-collection).
-In independent APK builds with the guided installer, open **Settings → Watch &
-watch faces → Set up my watch**. The phone carries the matching companion and
+In independent APK builds with the guided installer, open **Settings → Watch →
+Set up my watch**. The phone carries the matching companion and
 guides you through the watch's one-time debugging authorisation and installation.
 See [Watch setup](docs/WATCH_SETUP.md) for compatibility and installation.
 Prefer a web page? Follow the [step-by-step watch guide](https://t1arc.com/watch/).
@@ -301,7 +310,11 @@ path.
 - Connections go directly to the service selected by the user.
 - Anonymous usage counts (app version and how many days in a week the app
   was opened or monitoring, with no identifiers or health data) are on by
-  default and can be turned off in Settings → Privacy.
+  default and can be turned off in the first-run tour or in Settings → Backup
+  and privacy.
+- A daily update check is on by default. It asks GitHub whether a newer public
+  version exists, sends no health data or identifiers, and can be turned off in
+  Settings → About and updates.
 - Encrypted portable backups exclude credentials, browser cookies and API keys.
 - Demo records are synthetic, temporary and kept separate from personal data.
 - Public bug reports must use synthetic fixtures and redacted screenshots.

@@ -1,4 +1,4 @@
-const { withAppBuildGradle } = require('expo/config-plugins');
+const { withAndroidManifest, withAppBuildGradle } = require('expo/config-plugins');
 
 const PHONE_APPLICATION_ID = 'io.github.gregorgregor25.t1arc';
 const DEFAULT_CONFIG_MARKER =
@@ -7,6 +7,9 @@ const DEBUG_MARKER =
   '            // @generated T1 Arc debug application identity';
 const RELEASE_MARKER =
   '            // @generated T1 Arc release application identity';
+/** Manifest placeholder filled per build type by t1ArcVariantAppLabel. */
+const APP_LABEL_PLACEHOLDER = '${t1ArcAppLabel}';
+const DEFAULT_APP_LABEL = '@string/app_name';
 
 function insertBuildTypePolicy(contents, buildType, marker, policy) {
   if (contents.includes(marker)) return contents;
@@ -56,7 +59,8 @@ function injectT1ArcApplicationId(contents) {
     DEBUG_MARKER,
     `${DEBUG_MARKER}
             applicationIdSuffix t1ArcDebugApplicationIdSuffix
-            resValue "string", "t1arc_application_id", t1ArcVariantApplicationId(t1ArcPhoneApplicationId, "debug")`,
+            resValue "string", "t1arc_application_id", t1ArcVariantApplicationId(t1ArcPhoneApplicationId, "debug")
+            manifestPlaceholders["t1ArcAppLabel"] = t1ArcVariantAppLabel("debug")`,
   );
   next = insertBuildTypePolicy(
     next,
@@ -66,13 +70,43 @@ function injectT1ArcApplicationId(contents) {
             if (t1ArcReleaseApplicationIdSuffix != null) {
                 applicationIdSuffix t1ArcReleaseApplicationIdSuffix
             }
-            resValue "string", "t1arc_application_id", t1ArcVariantApplicationId(t1ArcPhoneApplicationId, "release")`,
+            resValue "string", "t1arc_application_id", t1ArcVariantApplicationId(t1ArcPhoneApplicationId, "release")
+            manifestPlaceholders["t1ArcAppLabel"] = t1ArcVariantAppLabel("release")`,
   );
 
   return next;
 }
 
+/**
+ * Points the application and launcher labels at the per-build-type
+ * placeholder, so development and private-test installs show "T1 Arc Dev".
+ * Only the Expo default label is replaced; a deliberate custom label is kept.
+ */
+function applyT1ArcAppLabel(manifest) {
+  const application = manifest?.manifest?.application?.[0];
+  if (!application) {
+    throw new Error('T1 Arc could not locate the Android application element.');
+  }
+  const labelled = [application, ...(application.activity ?? [])];
+  for (const element of labelled) {
+    const attributes = element.$ ?? {};
+    if (
+      element === application
+        ? attributes['android:label'] === undefined ||
+          attributes['android:label'] === DEFAULT_APP_LABEL
+        : attributes['android:label'] === DEFAULT_APP_LABEL
+    ) {
+      element.$ = { ...attributes, 'android:label': APP_LABEL_PLACEHOLDER };
+    }
+  }
+  return manifest;
+}
+
 function withT1ArcApplicationId(config) {
+  config = withAndroidManifest(config, (androidConfig) => {
+    androidConfig.modResults = applyT1ArcAppLabel(androidConfig.modResults);
+    return androidConfig;
+  });
   return withAppBuildGradle(config, (androidConfig) => {
     if (androidConfig.modResults.language !== 'groovy') {
       throw new Error(
@@ -88,3 +122,4 @@ function withT1ArcApplicationId(config) {
 
 module.exports = withT1ArcApplicationId;
 module.exports.injectT1ArcApplicationId = injectT1ArcApplicationId;
+module.exports.applyT1ArcAppLabel = applyT1ArcAppLabel;

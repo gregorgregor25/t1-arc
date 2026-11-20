@@ -100,6 +100,12 @@ export async function fetchChatGptResponse(accessToken: string, original: Record
     return response;
   } catch (error) {
     if (error instanceof ChatGptTransportError) throw error;
+    // The installed bridge uses the same code for a refusal and for a failed
+    // stream. Only this fixed, locally authored message identifies a refusal.
+    if (error && typeof error === "object" && "code" in error && "message" in error &&
+        error.code === "ERR_CHATGPT_STREAM_REJECTED" && error.message === "ChatGPT declined this answer.") {
+      return { status: "completed", output: [{ content: [{ type: "refusal" }] }] };
+    }
     throw connectionError(error);
   } finally {
     signal?.removeEventListener("abort", cancel);

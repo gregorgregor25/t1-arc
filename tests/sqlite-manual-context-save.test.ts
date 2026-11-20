@@ -237,6 +237,31 @@ describe('atomic manual context save insight invalidation', () => {
     expect(await store.getPersonalObservations('site-change')).toEqual([]);
   });
 
+  it('stores a meter reading only as a manual context note, never as a glucose reading', async () => {
+    const timestamp = 1_750_000_000_000;
+    const event = createManualContextEvent(
+      { kind: 'meter-glucose', timestamp, glucoseMmolL: 5.4, enteredUnit: 'mmolL' },
+      { id: 'meter', recordedAt: timestamp + 1_000 },
+    );
+    await store.saveManualContext(event, { insightInvalidation: 'mark-dirty' });
+    expect(count(sqlite, 'context_notes')).toBe(1);
+    // Alarms, the current glucose card, statistics, widget, notification and
+    // watch all read glucose_readings; a meter reading never reaches it.
+    expect(count(sqlite, 'glucose_readings')).toBe(0);
+    expect(count(sqlite, 'context_events')).toBe(0);
+    expect(count(sqlite, 'insulin_bolus')).toBe(0);
+    expect(sqlite.prepare('SELECT * FROM context_notes WHERE id = ?').get('meter')).toMatchObject({
+      source_id: 't1arc-manual',
+      origin: 'manual',
+      start_ms: timestamp,
+      category: 'other',
+      glucose_mmol_l: 5.4,
+      observation_json: null,
+      sensor_started: null,
+      recorded_at_ms: timestamp + 1_000,
+    });
+  });
+
   it('keeps extra-injection identity across edits and deletes only the manual dose', async () => {
     const event = createManualInsulinDelivery({ timestamp: 1750000000000, units: 3, insulinType: 'rapid-acting', additionalToPump: true }, { id: 'extra' });
     await store.saveManualInsulin(event);

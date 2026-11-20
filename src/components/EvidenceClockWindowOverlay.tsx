@@ -550,7 +550,7 @@ export function EvidenceClockWindowOverlay({
                 />
                 <SvgText
                   fill={colors.textTertiary}
-                  fontSize={9}
+                  fontSize={11}
                   x={LEFT + plotWidth + 7}
                   y={y(tick) + 3}
                 >
@@ -572,7 +572,7 @@ export function EvidenceClockWindowOverlay({
                 />
                 <SvgText
                   fill={colors.primary}
-                  fontSize={8}
+                  fontSize={11}
                   fontWeight="800"
                   textAnchor="end"
                   x={LEFT + plotWidth - 3}
@@ -632,15 +632,15 @@ export function EvidenceClockWindowOverlay({
                     fill: colors.surface,
                     key: `${window.id}-label-marker`,
                     marker: visual.marker,
-                    radius: 6.5,
+                    radius: 8,
                   })}
                   <SvgText
                     fill={visual.color}
-                    fontSize={7.5}
+                    fontSize={11}
                     fontWeight="800"
                     textAnchor="middle"
                     x={x(finalPoint.minute)}
-                    y={y(finalPoint.mmolL) + 2.6}
+                    y={y(finalPoint.mmolL) + 3.8}
                   >
                     {index + 1}
                   </SvgText>
@@ -685,7 +685,7 @@ export function EvidenceClockWindowOverlay({
                 />
                 <SvgText
                   fill={colors.textTertiary}
-                  fontSize={9}
+                  fontSize={11}
                   textAnchor={
                     index === 0
                       ? 'start'
@@ -702,8 +702,8 @@ export function EvidenceClockWindowOverlay({
             ))}
             <SvgText
               fill={colors.textTertiary}
-              fontSize={8.5}
-              letterSpacing={0.4}
+              fontSize={11}
+              letterSpacing={0.2}
               textAnchor="middle"
               x={LEFT + plotWidth / 2}
               y={bottom + 39}
@@ -891,12 +891,12 @@ const styles = StyleSheet.create({
   },
   coverageText: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    lineHeight: 15,
+    lineHeight: 16,
   },
   unitText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -927,14 +927,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyDetail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 4,
     textAlign: 'center',
   },
   emptyMissing: {
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -950,14 +950,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   legendIndex: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '900',
-    lineHeight: 13,
+    lineHeight: 16,
   },
   legendText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    lineHeight: 14,
+    lineHeight: 16,
   },
   notes: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
   },
   noteText: {
     flex: 1,
-    fontSize: 10,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

@@ -5,9 +5,11 @@ import { StyleSheet, View } from "react-native";
 
 import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
+import { BedsideGlucoseView } from "@/components/BedsideGlucoseView";
 import { CombinedTimeline } from "@/components/CombinedTimeline";
 import { ContextEventList } from "@/components/ContextEventList";
-import { CurrentGlucoseCard } from "@/components/CurrentGlucoseCard";
+import { CurrentGlucoseCard, NowTherapyStateChips } from "@/components/CurrentGlucoseCard";
+import { nowTherapyStateLines, therapyStateRouteActivity } from "@/components/nowCardPresentation";
 import { ErrorCard } from "@/components/ErrorCard";
 import { FoodLoggerCard } from "@/components/FoodLoggerCard";
 import { LoadingCard } from "@/components/LoadingCard";
@@ -23,7 +25,14 @@ import {
 import { SafetyNote } from "@/components/SafetyNote";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { TodayGlanceCard } from "@/components/TodayGlanceCard";
+import { describeAapsInsulinProvenance } from "@/domain/aapsInsulinProvenance";
+import { useAapsInsulinContext } from "@/hooks/useAapsInsulinContext";
+import { useTherapyStateRouteTimes } from "@/hooks/useTherapyStateRouteTimes";
+import { useNightscoutCardEstimates } from "@/hooks/useNightscoutCardEstimates";
+import { NIGHTSCOUT_SOURCE_ID } from "@/data/nightscout/types";
 import { SensorChangeStatus } from '@/components/SensorChangeStatus';
+import { DeviceAgeChips } from '@/components/DeviceAgeChips';
+import { OvernightSummaryCard } from '@/components/OvernightSummaryCard';
 import { GmiCard } from '@/components/GmiCard';
 import { ConnectionSummary } from '@/components/ConnectionSummary';
 import { FOOD_LOG_SOURCE_ID } from "@/data/food/foodLogRepository";
@@ -31,16 +40,26 @@ import type { FoodLog } from "@/data/food/types";
 import { MANUAL_CONTEXT_SOURCE_ID, isManualKetoneEvent } from "@/data/manualContext";
 import { calculateGlucoseStats } from "@/domain/stats";
 import { createHistoryRangeSelection } from '@/domain/historySelection';
-import { summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
-import { dayRange } from "@/domain/time";
+import { hasInsulinDeliveryEvidence, summarizeInsulinRange } from "@/domain/timelineInsulinSummary";
+import { addDays, dayRange, formatDate } from "@/domain/time";
+import { connectionSettingsTarget } from "@/domain/connectionSummary";
+import { sourceSettingsRouteParams } from "@/navigation/sourceNavigation";
+import { insightComparisonForHistoryView } from "@/domain/insightRanges";
 import { assessGlucoseTrend } from "@/domain/trend";
 import { useLatestData, useTimeline } from "@/hooks/useTimeline";
+import { useAapsCardSnapshot } from "@/hooks/useAapsCardSnapshot";
 import { paddedContextRange } from "@/domain/timelineContextLoading";
 import { useFoodLogs } from "@/hooks/useFoodLogs";
 import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
 import type { HealthContextEvent } from "@/domain/models";
 import type { RootTabParamList } from "@/navigation/AppNavigator";
 import { useDataContext } from "@/providers/DataProvider";
+import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
+import { laggingDataStamps } from "@/domain/dataThrough";
+import {
+  FLOATING_BUTTON_CLEARANCE,
+  FLOATING_BUTTON_MARGIN,
+} from "@/theme/tokens";
 
 type TodayRange = "4h" | "8h" | "12h" | "24h";
 const RANGE_HOURS: Record<TodayRange, number> = {
@@ -54,12 +73,14 @@ const CONTEXT_PADDING_MS = 45 * 60_000;
 export function TodayScreen() {
   const route = useRoute<RouteProp<RootTabParamList, "Today">>();
   const navigation = useNavigation<NavigationProp<RootTabParamList, "Today">>();
-  const { deleteManualContext, now, ownerIdentity, refreshData, sourceError, syncing, today } =
+  const { dataMode, deleteManualContext, now, ownerIdentity, refreshData, repository, revision, sourceError, syncing, today } =
     useDataContext();
+  const { defaults: regional } = useRegionalProfile();
   const [rangeChoice, setRangeChoice] = useState<TodayRange>("4h");
   const [trendDetailsRequest, setTrendDetailsRequest] = useState(0);
   const [foodLaunchRequest, setFoodLaunchRequest] = useState(0);
   const [contextLaunchRequest, setContextLaunchRequest] = useState(0);
+  const [bedsideVisible, setBedsideVisible] = useState(false);
   const [logLauncherVisible, setLogLauncherVisible] = useState(false);
   const [initialContextKind, setInitialContextKind] =
     useState<ManualContextKind>("meal");
@@ -94,21 +115,40 @@ export function TodayScreen() {
   );
   const dailyHealth = useDailyHealthMetrics(dayRange(today, now));
   const latest = useLatestData();
+  const aaps = useAapsCardSnapshot(dataMode === 'live', repository, revision);
+  const aapsInsulin = useAapsInsulinContext(dataMode === 'live', revision);
+  const therapyStateRoutes = useTherapyStateRouteTimes(dataMode === 'live', ownerIdentity, revision);
+  const aapsSelected = aaps.kind === 'aaps';
+  // Never attach a prior session's independently loaded glucose to new estimates.
+  const cardReading = aapsSelected ? aaps.reading
+    : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
+      ? undefined : latest.reading;
   const heroRange = useMemo(() => {
     const end = latest.reading?.timestamp ?? now;
     return { start: end - 4 * 3_600_000, end: end + 1 };
   }, [latest.reading?.timestamp, now]);
   const heroTimeline = useTimeline(heroRange, `today:${today}:hero`);
+  const cardHistory = aapsSelected ? aaps.history : heroTimeline.data?.glucose;
   const glucoseSource = latest.sources.find(
     (source) => source.label === "Glucose",
   );
-  const insulinSource = todayTimeline.data?.sources.find(
-    (source) => source.label === "Insulin",
+  const cardSource = aapsSelected ? {
+    id: 'aaps-local', label: 'Glucose', detail: 'AndroidAPS local',
+    freshness: 'missing' as const, origin: 'live' as const, isLive: true,
+  } : glucoseSource;
+  // Nightscout users see the same combined card when their looping system
+  // reports IOB or COB through Nightscout, labelled with that provenance.
+  const nightscoutEstimates = useNightscoutCardEstimates(
+    dataMode === 'live' && !aapsSelected && latest.reading?.sourceId === NIGHTSCOUT_SOURCE_ID,
+    revision,
   );
+  const aapsEstimates = aapsSelected ? { context: aaps.context }
+    : dataMode === 'live' && latest.reading?.sourceId === 'aaps-local' && aaps.kind !== 'other'
+      ? { unavailable: aaps.kind === 'unavailable' } : nightscoutEstimates;
   const trendAssessment = useMemo(
     () =>
-      assessGlucoseTrend(latest.reading, selectedTimeline.data?.glucose ?? []),
-    [latest.reading, selectedTimeline.data?.glucose],
+      assessGlucoseTrend(cardReading, aapsSelected ? aaps.history : selectedTimeline.data?.glucose ?? []),
+    [cardReading, aapsSelected, aaps, selectedTimeline.data?.glucose],
   );
 
   useEffect(() => {
@@ -143,6 +183,16 @@ export function TodayScreen() {
     }
   }
 
+  function checkGlucoseConnection() {
+    // Opens the settings page of the source the card's reading came from,
+    // or source health when that source has no page of its own (AAPS).
+    const target = cardReading ? connectionSettingsTarget(cardReading.sourceId) : undefined;
+    navigation.navigate(
+      "Sources",
+      target ? sourceSettingsRouteParams(target) : { ...sourceSettingsRouteParams(), panel: "source-health" },
+    );
+  }
+
   function addFromTimeline(timestamp: number, kind: "meal" | "note") {
     setTimelineActionError(undefined);
     setEditingContext(undefined);
@@ -166,7 +216,7 @@ export function TodayScreen() {
         return;
       }
       if (foodHistory.error) {
-        setTimelineActionError(`Meal details are unavailable. ${foodHistory.error}`);
+        setTimelineActionError("Meal details could not be loaded just now. Try again in a moment.");
         return;
       }
       const log = foodHistory.logs.find((item) => item.contextEventId === event.id);
@@ -191,26 +241,90 @@ export function TodayScreen() {
         todayTimeline.data.dailyInsulinTotals,
       )
     : undefined;
+  const insulinProvenance = todayTimeline.data
+    ? describeAapsInsulinProvenance({
+        selectedSourceId: aapsInsulin.selectedSourceId,
+        nightscoutFill: aapsInsulin.nightscoutFill,
+        basal: todayTimeline.data.basal,
+        boluses: todayTimeline.data.boluses,
+        range: dayRange(today, now),
+      })
+    : undefined;
+  const todayMenuActions = useMemo(
+    () => [{
+      label: 'Bedside view',
+      detail: 'Large glucose, arrow and age on a dim black screen',
+      icon: 'moon-outline' as const,
+      onPress: () => setBedsideVisible(true),
+    }, {
+      label: 'Compare periods',
+      detail: 'Last 7 complete days with the 7 days before',
+      icon: 'git-compare-outline' as const,
+      onPress: () => navigation.navigate("Insights", {
+        comparison: {
+          ...insightComparisonForHistoryView(7, addDays(today, -1), addDays(today, -1)),
+          request: `today:${Date.now()}`,
+        },
+      }),
+    }],
+    [navigation, today],
+  );
+  const insulinThrough = todayTimeline.data
+    ? laggingDataStamps(
+        { ...todayTimeline.data, range: dayRange(today, now) },
+        now,
+        regional,
+        ["insulin"],
+      )[0]?.text
+    : undefined;
   const todayKetones =
     todayTimeline.data?.context.filter(isManualKetoneEvent) ?? [];
+  // Recorded AAPS states active now ("Activity target until 11:30"). Each
+  // state is trusted as current only while the route that delivered it is
+  // working: a recent Nightscout treatment sync for Nightscout copies, and
+  // AAPS treatments or glucose received on this phone for local copies.
+  const therapyStateLines = useMemo(() => {
+    const data = todayTimeline.data;
+    if (!data?.therapyStates?.length) return [];
+    const activity = therapyStateRouteActivity({
+      now,
+      // States are read up to the end of the loaded day; an old load is stale too.
+      readThrough: data.range.end,
+      nightscoutTreatmentSyncAt: therapyStateRoutes.nightscoutTreatmentSyncAt,
+      aapsLocalTreatmentsReceivedAt: therapyStateRoutes.aapsLocalTreatmentsReceivedAt,
+      aapsLocalReadingAt: cardReading?.sourceId === "aaps-local" ? cardReading.timestamp : undefined,
+      aapsLocalTreatmentRouteOn: therapyStateRoutes.aapsLocalTreatmentRouteOn,
+    });
+    return nowTherapyStateLines(data.therapyStates, now, activity);
+  }, [cardReading, now, therapyStateRoutes, todayTimeline.data]);
 
   return (
     <View style={styles.screen}>
       <AppScreen
         title="Today"
+        subtitle={formatDate(today)}
         quietHeader
+        bottomClearance={FLOATING_BUTTON_CLEARANCE}
         refreshing={syncing}
         onRefresh={() => void refreshData()}
-        trailing={<AppMenuButton />}
+        trailing={<AppMenuButton screenActions={todayMenuActions} />}
       >
+        <BedsideGlucoseView
+          visible={bedsideVisible}
+          onClose={() => setBedsideVisible(false)}
+          reading={cardReading}
+          trend={trendAssessment.direction}
+          now={now}
+        />
         {latest.loading && !latest.reading ? (
           <LoadingCard label="Loading saved glucose…" />
         ) : (
           <CurrentGlucoseCard
             trendDetailsRequest={trendDetailsRequest}
-            history={heroTimeline.data?.glucose}
-            reading={latest.reading}
-            source={glucoseSource}
+            history={cardHistory}
+            reading={cardReading}
+            aapsEstimates={aapsEstimates}
+            source={cardSource}
             now={now}
             trendAssessment={trendAssessment}
             onChooseSource={() =>
@@ -219,15 +333,44 @@ export function TodayScreen() {
                 source: undefined,
               })
             }
+            onCheckConnection={checkGlucoseConnection}
+            onLogHypoTreatment={() => chooseLogEntry("hypo-treatment")}
+            onLogMeterReading={() => chooseLogEntry("meter-glucose")}
           />
         )}
-        <SensorChangeStatus sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)} onRecord={() => chooseLogEntry('sensor-start')} />
-        <ConnectionSummary sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]} />
+        {/* Checks shrink to chips under Now until they need attention. */}
+        <View style={styles.chips}>
+          <NowTherapyStateChips lines={therapyStateLines} />
+          <SensorChangeStatus
+            onRecord={() => chooseLogEntry('sensor-start')}
+            showRecordAction={false}
+            sourceId={latest.reading?.sourceId ?? (glucoseSource?.isLive ? glucoseSource.id : undefined)}
+          />
+          <DeviceAgeChips onRecordSensorChange={() => chooseLogEntry('sensor-start')} />
+          <ConnectionSummary
+            insulinThrough={insulinThrough}
+            sources={[...latest.sources, ...(todayTimeline.data?.sources ?? [])]}
+          />
+        </View>
         {latest.error || sourceError ? (
           <View style={styles.latestError}>
-            <ErrorCard message={latest.error ?? sourceError!} />
+            {latest.error ? (
+              <ErrorCard
+                details={latest.error}
+                message="Your saved readings are still here. Pull down to refresh, or tap Try again."
+                onRetry={() => void refreshData()}
+                title="Current glucose could not be refreshed"
+              />
+            ) : (
+              <ErrorCard
+                message={sourceError!}
+                onRetry={() => void refreshData()}
+                title="A data connection needs attention"
+              />
+            )}
           </View>
         ) : null}
+        <OvernightSummaryCard />
 
         <TodayGlanceCard
           events={todayTimeline.data?.context ?? []}
@@ -235,8 +378,11 @@ export function TodayScreen() {
           glucoseLabel={`Last ${RANGE_HOURS[rangeChoice]} hours`}
           health={dailyHealth.metrics}
           insulin={insulinSummary?.stats}
-          insulinAvailable={insulinSource?.freshness !== "missing"}
+          insulinAvailable={Boolean(todayTimeline.data && hasInsulinDeliveryEvidence(todayTimeline.data))}
+          insulinProvenance={insulinProvenance}
+          insulinThrough={insulinThrough}
           range={dayRange(today, now)}
+          gmi={<GmiCard variant="inline" />}
           onOpenTimeInRange={() =>
             navigation.navigate("History", {
               focus: "glucose",
@@ -253,10 +399,14 @@ export function TodayScreen() {
           }
         />
 
-        <GmiCard />
         <View style={styles.timeline}>
           {selectedTimeline.error ? (
-            <ErrorCard message={selectedTimeline.error} />
+            <ErrorCard
+              details={selectedTimeline.error}
+              message="Your records are safe on this phone. Tap Try again, or pull down to refresh."
+              onRetry={selectedTimeline.reload}
+              title="The timeline could not be loaded"
+            />
           ) : selectedTimeline.loading || !selectedTimeline.data ? (
             <LoadingCard label="Loading timeline…" />
           ) : (
@@ -284,12 +434,17 @@ export function TodayScreen() {
             </View>
           )}
         </View>
-        {timelineActionError ? <ErrorCard message={timelineActionError} /> : null}
+        {timelineActionError ? (
+          <ErrorCard message={timelineActionError} title="That entry could not be opened" />
+        ) : null}
 
         {todayTimeline.error ? (
           <View style={styles.ketones}>
             <ErrorCard
-              message={`Saved ketone readings are temporarily unavailable. ${todayTimeline.error}`}
+              details={todayTimeline.error}
+              message="Your ketone readings are still saved. Try again in a moment."
+              onRetry={todayTimeline.reload}
+              title="Saved ketone readings could not be loaded"
             />
           </View>
         ) : todayTimeline.loading && !todayTimeline.data ? (
@@ -346,6 +501,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
+  chips: {
+    marginTop: 12,
+    gap: 10,
+  },
   latestError: {
     marginTop: 12,
   },
@@ -359,7 +518,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   floatingButton: {
-    right: 18,
-    bottom: 18,
+    right: FLOATING_BUTTON_MARGIN,
+    bottom: FLOATING_BUTTON_MARGIN,
   },
 });

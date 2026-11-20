@@ -50,12 +50,12 @@ is deliberately conservative and does not merge on title alone.
 
 ## User flow
 
-Settings → Health and insulin → Hevy opens a focused source page. The user can:
+Settings → Health and insulin data → Hevy opens a focused source page. The user can:
 
 1. Open the information disclosure for setup context.
-2. Enter the key and choose **Test, connect and import**.
+2. Enter the key and choose **Connect Hevy**.
 3. Review stored count, protected-key state and last successful sync.
-4. Choose **Sync new and changed workouts** after another Hevy workout.
+4. Choose **Check now** after another Hevy workout.
 5. Disconnect or remove imported workouts as separate actions.
 
 Connection and workout import have been checked with a real Hevy account.

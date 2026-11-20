@@ -2,10 +2,16 @@
 
 ## Start with onboarding
 
-The tour explains the local-first data model, regional settings, source
-connections and the limits of the app. You can explore the synthetic demo
-without connecting a real provider. Demo records stay separate from personal
-history. A fresh app launch returns to the private live-data view.
+The tour explains the local-first data model, source connections and the
+limits of the app. Its last step asks three quick things: your glucose unit
+(saved only when you tap a choice), a reminder that glucose alerts start
+switched off with a button to alert settings, and whether to share anonymous
+usage counts. Nothing on that step is switched on for you. You can replay the
+tour from **Settings > Help, feedback and tour**.
+
+You can explore the synthetic demo without connecting a real provider. Demo
+records stay separate from personal history. A fresh app launch returns to the
+private live-data view.
 
 T1 Arc does not calculate insulin doses or replace the official display for a
 CGM or pump.
@@ -42,6 +48,22 @@ Choose **Edit** beside **At a glance** to move your priorities up or down. Today
 shows the first three with available data. A priority without records is skipped,
 not replaced with zero. **Use default order** restores the original order.
 
+Small chips beside the glucose area show **Sensor day N** and **Site N days**
+(hours on the first day) from your recorded sensor and site changes, and from
+imported AAPS or Nightscout "Site Change", "Sensor Change" and "Sensor Start"
+events. Ages are elapsed time, so a clock change does not add or remove a day.
+Tap a chip to see which record it came from. For the sensor chip you can set an
+optional expected life of 10, 14 or 15 days to show "day 8 of 10". The chips
+create no reminders or notifications and are hidden when there is no record
+from the last 30 days.
+
+Between 05:00 and 12:00, a **Last night** card summarises the night: 00:00–06:00,
+or your night alert hours when night alerts are on. It shows sensor coverage,
+time in each band, the lowest and highest values with their times, low episodes
+and any alarms recorded by a connected device. Below 70% coverage it shows only
+"Not enough sensor data overnight to summarise". Close it with **×** to hide it
+until the next night.
+
 If a connection needs attention, open its small status row to see the last
 available record time and a route to connection settings. An ordinary delay in a
 successful history import is not presented as a broken connection.
@@ -71,6 +93,22 @@ History supports day, 3-day, 7-day and 30-day views. Use the arrows or date
 picker to move through time. Glucose and insulin remain on separate scales and
 each imported record keeps its source and timestamp.
 
+The **Time in ranges** card shows the share of observed sensor time in each
+consensus band, plus time in the standard range (3.9–10.0 mmol/L), the tight
+range (3.9–7.8 mmol/L) and your own **In range** band. **More statistics**
+shows the Glycemia Risk Index. **Compare with previous period** opens Insights
+for the same period. See [Glucose statistics](GLUCOSE_STATISTICS.md) for how
+each figure is calculated.
+
+**Share or export** sits below the Time in ranges card. **Copy summary as text**
+opens Android's share menu (choose Copy to paste it elsewhere) with the period,
+sensor coverage, the five glucose bands, the tight range and your own range
+(labelled as your setting), average glucose, GMI or the reason it is not shown,
+standard deviation, coefficient of variation and insulin totals with their source
+and "records through" time. **Share or export files** opens the export options
+described under [Exports](#exports). When synced records lag, a "records through"
+line appears above the summary.
+
 For an entry you recorded manually, open its edit form to correct it or choose
 **Delete entry**. Deletion asks for confirmation and cannot be undone. This
 control does not remove records imported from a connected provider.
@@ -87,8 +125,9 @@ records. T1 Arc imports only the record types you allow. Availability depends on
 the apps and records on your phone.
 
 The Health tab shows daily summaries and seven-day trends. For chosen sources,
-freshness and import status by data type, open **Settings > Health Connect** and
-expand its data options. **View imported data** opens the underlying records.
+freshness and import status by data type, open
+**Settings > Health and insulin data > Health Connect** and expand its data
+options. **View imported data** opens the underlying records.
 Older-history permission is optional because recent records can work without it.
 
 Choose **Edit view** to hide sections you do not want to see. This does not
@@ -106,7 +145,10 @@ packet goes directly to the selected provider only after the user taps Send.
 Read the [Tarv1s connection guide](TARV1S_BYOK.md) before enabling either route.
 
 Starter questions reflect records available in the app. You can still ask in
-your own words. For a personal answer, **View calculation and records** opens
+your own words. **Summarise a period** gives a template summary of today, last
+night or the last 7, 14 or 30 days without any AI connection. Each answer that
+uses your records shows a fixed **Calculated from** line with the dates, number
+of glucose readings, sensor coverage and range used. For a personal answer, **View calculation and records** opens
 supporting details; important gaps and limitations remain visible in the answer.
 If an import has daily basal totals but no detailed delivery history, Tarv1s can
 summarise those totals while explaining that it cannot locate the delivery by
@@ -152,10 +194,18 @@ item from the notebook does not remove its conversation or health records.
 
 ## Insights
 
-In the Tarv1s tab, choose **Insights** at the top to review recent periods.
-Coverage appears beside each observation. An association is a pattern worth
+In the Tarv1s tab, choose **Compare periods** at the top, or **Compare periods**
+from the menu on Today or History, to review recent periods of
+3, 7, 14, 30 or 90 days. Coverage appears beside each observation, and each
+time-in-range figure names its range. An association is a pattern worth
 reviewing, not proof that one event caused another. The app should withhold a
-claim when coverage is too weak. Choose **Tarv1s** to return to questions.
+claim when coverage is too weak. Choose **Ask** to return to questions.
+
+**Steadiest day** names the day in the period with the highest standard time in
+range, among days with at least 70% sensor coverage, for example "Highest time
+in range: Tue 12 Nov, 86%". Days with equal figures are all named. **Yesterday
+vs today so far** compares today with the same clock hours yesterday and is
+withheld when either has under 70% coverage.
 
 **Weekly evidence review** lets you choose the review day and time and turn its
 notification on or off. It uses local records, without an AI provider request. Android
@@ -165,24 +215,71 @@ contains no glucose value or health conclusion.
 ## Data freshness
 
 Glooko and other imported records can arrive later than the original event.
-Check the record time as well as the last successful refresh. See
+Check the record time as well as the last successful refresh. **Source
+health**, under **Settings > Glucose source > Recent checks and history**, shows
+each source's newest record and any gaps in the last 24 hours. See
 [how current each source is](DATA_FRESHNESS.md) before interpreting a partial day.
+
+## Exports
+
+Choose 14, 30 or 90 days or All, then:
+
+- **Glucose readings (CSV)**: one row per reading with local and UTC times, the
+  time zone, the value in mmol/L and mg/dL and the source of each reading;
+- **Insulin, carbohydrate and treatment records (CSV)**: boluses, basal records,
+  daily insulin totals and logged carbohydrate, each with its source;
+- **Clinic report (HTML)**: one page with the summary, a **Typical day** chart, a
+  daily overview (the last 14 days of longer periods) and insulin and
+  carbohydrate totals with their sources. Sections without records are left out.
+  Open the saved file in a browser and print to PDF.
+
+Before each export T1 Arc reminds you that the file is **not encrypted**, contains
+health data and leaves T1 Arc once you save or share it. Android's save dialog
+lets you choose where it goes. The same options are in **Settings > Backup and
+privacy > Export records**.
 
 ## Settings
 
-Settings contains:
+The gear at the top of each main screen opens Settings directly. Type in
+**Search settings** to find a setting by name, for example "target range",
+"backup" or "alarm"; choosing a result opens that page and, where there is one,
+the right panel.
 
-- source connections;
-- region, locale and measurement units;
-- glucose display, alerts, notification, widget and lock-screen choices;
-- Health Connect and activity sources;
-- encrypted backup, restore and local-data controls;
-- **About T1 Arc**, with build details and links to source code and licences.
+Settings is grouped in this order:
 
-The overview starts with connection shortcuts. Open **Region and services**
-for country and unit preferences. The close button stays at the top while you
-scroll. Android Back returns from a detail page to all settings, then to the
-previous app screen.
+1. **Is everything working?** (glucose, alarm and backup status).
+2. Six main places: **Glucose source**, **Alarms**, **Phone, widget and car**,
+   **Watch**, **Health and insulin data** and **Backup and privacy**.
+3. **More settings**: **Notifications and reminders**, **Units and region**,
+   **Appearance, ranges and colours**, **Tarv1s and diabetes profile**,
+   **Help, feedback and tour**, **About and updates** and **Advanced and
+   experimental** (features still being tested).
+
+**Glucose source** holds the glucose connections (AAPS on this phone, xDrip+,
+Another app's notification, LibreLinkUp, Dexcom Share, Nightscout and Medtrum
+EasyFollow), **Recent checks and history** (source health), **Automatic
+updates** and **Which source do I need?**. **Health and insulin data** holds
+Health Connect, Glooko, Hevy, Strava, food totals and **Cycle tracking**.
+**Help, feedback and tour** holds **Share feedback**, **Help and support** and
+the tour. **Tarv1s and diabetes profile** holds the Tarv1s connection and
+**Diabetes profile**.
+
+Dexcom and Medtrum are marked **Not yet tested with a real account**. They
+follow the providers' published behaviour and pass automated tests, but have
+not been checked with a real account. Please report what you find.
+
+If Today has no glucose yet, **Connect a source** opens Settings, with
+**Glucose source** first. The close button stays at the top while you scroll.
+Android Back goes up one level at a time, for example from **Dexcom Share** to
+**Glucose source**, then to all settings, then to the previous app screen.
+
+### Units and region
+
+The glucose unit (mmol/L or mg/dL) is at the top. **More options** holds the
+region preset, country, number and date formats, measurements, energy unit,
+calendar time zone and clinical guidance. Country and home time zone open a
+searchable list. If the phone's system cannot provide that list, type the time
+zone instead, for example Europe/London.
 
 Android keeps final control over notification, accessibility, lock-screen and
 Health Connect permissions. T1 Arc opens the relevant system page where Android
@@ -190,9 +287,13 @@ does not allow an app to grant its own permission.
 
 ### Display and alerts
 
-Open **Display and alerts** for appearance, the persistent notification,
-lock-screen display, glucose alerts and home-screen widget. Watch setup is under
-**Settings > Watch & watch faces**; see [Watch setup](WATCH_SETUP.md).
+**Glucose ranges** (your target range, low and high levels and their colours)
+and the app theme are in **Settings > Appearance, ranges and colours**. The
+persistent notification, lock-screen display and home-screen widget are in
+**Settings > Phone, widget and car**; glucose alerts are in **Settings >
+Alarms**. The experimental always-on display overlay and Android Auto glance are
+in **Settings > Advanced and experimental**. Watch setup is under
+**Settings > Watch**; see [Watch setup](WATCH_SETUP.md).
 These are separate choices. See [Display and alerts](DISPLAY_AND_ALERTS.md) for
 setup, test alerts and Android permission limits.
 
@@ -205,18 +306,38 @@ not convert a carbohydrate ratio.
 
 ### Anonymous usage counts
 
-**Settings > Privacy > Share anonymous usage counts** is on by default. It sends
+**Settings > Backup and privacy > Share anonymous usage counts** is on by
+default, and new users see the same switch on the tour's last step. It sends
 one small message a day and a weekly count of the days the app was opened or
 monitoring, with the app version, and nothing that identifies you or your
 health records. Turning it off stops sending and deletes the local activity
 history. See [Anonymous usage counts](../PRIVACY.md#anonymous-usage-counts-on-by-default).
 
+### Advanced and experimental
+
+**Settings > Advanced and experimental** collects features that are still
+being tested and may not work on every phone or car:
+
+- **Glucose on always-on display**, an optional overlay on the locked dark
+  screen. It uses the glucose notification, so turn on **Keep glucose visible**
+  in **Phone, widget and car** first;
+- **Experimental Android Auto glance**.
+
+Development builds also show an earlier test-app migration tool here. Your
+records do not depend on anything on this page.
+
 ### Check for an APK update
 
-Open **About T1 Arc**, then **Check for updates**. This is a manual check against
-the official GitHub repository. It does not send health records or automatically
-download or install anything. If the check cannot reach GitHub, your installed
-app and records are unchanged; you can try again later.
+Open **About and updates**, then **Check for updates**. This checks the official
+GitHub repository. It does not send health records or automatically download or
+install anything. If the check cannot reach GitHub, your installed app and
+records are unchanged; you can try again later.
+
+**Tell me when an update is out** is on by default. T1 Arc then runs the same
+check once a day and shows one quiet notification for each new version, if
+Android notifications are allowed. Tapping it opens this page with the release
+notes. Test builds never check automatically. See the
+[privacy notice](../PRIVACY.md#daily-update-check-on-by-default).
 
 When an update is offered, review **What's changed**, make an encrypted backup,
 then choose **Open release and download**. Android asks before installing and

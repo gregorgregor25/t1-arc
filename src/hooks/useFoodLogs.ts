@@ -11,6 +11,12 @@ interface FoodLogSnapshot {
   error?: string;
 }
 
+/**
+ * Shared empty list, so screens that memoise on `logs` keep stable props while
+ * food logs are loading or unavailable (for example in demo mode).
+ */
+const NO_FOOD_LOGS: FoodLog[] = [];
+
 export function foodLogRangeKey(range: TimeRange) {
   return `${range.start}:${range.end}`;
 }
@@ -76,7 +82,7 @@ export function useFoodLogs(range: TimeRange, selectionKey?: string) {
   }, [dataMode, requestKey, revision]);
 
   return {
-    logs: visibleSnapshot?.logs ?? [],
+    logs: visibleSnapshot?.logs ?? NO_FOOD_LOGS,
     loading: dataMode === "live" && visibleSnapshot === undefined,
     error: visibleSnapshot?.error,
   };

@@ -12,7 +12,7 @@ silently move an existing cloud account to another host.
 
 ## Set the app profile
 
-Open **Settings**, then **Region and services**.
+Open **Settings**, then **Units and region**.
 
 Choose a preset, country, locale, glucose unit and other measurement choices.
 Automatic options follow the Android device where possible. Manual choices stay
@@ -55,22 +55,24 @@ their source and timestamp.
 ## Add activity from Strava or Hevy
 
 For Strava, first enable its Health Connect connection in the Strava Android
-app. In T1 Arc, open **Settings > Strava**, then **Open Health Connect settings**
-and allow the relevant exercise records. The status changes after a Strava
-activity reaches Health Connect. It does not prove that every past activity
-has been copied.
+app. In T1 Arc, open **Settings > Health and insulin data > Strava**, then
+**Open Health Connect settings** and allow the relevant exercise records. The
+status changes after a Strava activity reaches Health Connect. It does not
+prove that every past activity has been copied.
 
-For Hevy, open **Settings > Hevy** and enter your own Hevy API key. T1 Arc imports
-strength-workout detail directly. Matching Health Connect and Hevy workouts
-are reconciled so a workout can keep the health context and the exercise detail
-without being counted twice. No Hevy key is needed for the separate Strava route.
+For Hevy, open **Settings > Health and insulin data > Hevy** and enter your own
+Hevy API key. T1 Arc imports strength-workout detail directly. Matching Health
+Connect and Hevy workouts are reconciled so a workout can keep the health
+context and the exercise detail without being counted twice. No Hevy key is
+needed for the separate Strava route.
 
 ## File imports and pump reports
 
-For Dexcom export history, open **Settings > Dexcom** and the Clarity import
-section. Choose the export's date order and timezone before selecting its CSV,
-review the preview, then confirm the import. Share provides the current source;
-Clarity is a separate historical import, not a live reading.
+For Dexcom export history, open **Settings > Glucose source > Dexcom Share**
+and its **Older history (optional)** section. Choose the export's date order
+and timezone before selecting its CSV, review the preview, then confirm the
+import. Share provides the current source; Clarity is a separate historical
+import, not a live reading.
 
 Glooko also accepts manual ZIP/CSV imports and supported Daily Overview reports.
 Use the timezone and date order of the export, not a guess based on where the

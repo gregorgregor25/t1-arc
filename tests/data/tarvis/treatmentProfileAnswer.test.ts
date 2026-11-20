@@ -53,7 +53,7 @@ describe("Tarv1s treatment-profile answer", () => {
     const unreadable = treatmentProfileLoadFailureAnswer();
 
     expect(absent.headline).toBe("No saved carb-ratio profile");
-    expect(absent.answer).toContain("Settings → Diabetes profile");
+    expect(absent.answer).toContain("Settings → Tarv1s and diabetes profile");
     expect(unreadable.headline).toContain("could not read");
     expect(unreadable.answer).toContain("did not use the saved ratio");
     expect(unreadable.limitations).toContain("No AI provider request was made.");

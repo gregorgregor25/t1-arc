@@ -110,6 +110,85 @@ describe("evidence-backed insights", () => {
     expect(doseAnswer.answer).toContain("will not recommend doses");
   });
 
+  it("withholds a zero-insulin conclusion when an old importer has no recent delivery evidence", async () => {
+    const now = Date.parse("2026-07-26T10:00:00+01:00");
+    const today = toDateKey(now);
+    const recentStart = dayRange(addDays(today, -7), now).start;
+    const previousStart = dayRange(addDays(today, -14), now).start;
+    const recentEnd = dayRange(today, now).start;
+    const repository = createDemoRepository(now);
+    const [loadedRecent, loadedPrevious] = await Promise.all([
+      repository.getTimeline({ start: recentStart, end: recentEnd }),
+      repository.getTimeline({ start: previousStart, end: recentStart }),
+    ]);
+    const staleInsulinSource: TimelineData['sources'][number] = {
+      id: 'glooko', label: 'Insulin', detail: 'Last imported earlier',
+      freshness: 'stale', origin: 'imported', isLive: false,
+    };
+    const recent: TimelineData = {
+      ...loadedRecent,
+      basal: [], boluses: [], dailyInsulinTotals: [],
+      sources: [staleInsulinSource],
+    };
+    const previous: TimelineData = {
+      ...loadedPrevious,
+      sources: [staleInsulinSource],
+    };
+
+    const report = buildInsightReport(recent, previous, now);
+
+    expect(report.ready).toBe(true);
+    expect(report.current.insulinUnits).toBeNull();
+    expect(report.current.insulinUnitsPerDay).toBeUndefined();
+    expect(report.current.basalUnitsPerDay).toBeUndefined();
+    expect(report.current.bolusUnitsPerDay).toBeUndefined();
+    expect(report.previous.insulinUnits).toBeGreaterThan(0);
+    expect(report.findings.some((finding) => finding.id === 'insulin-change'))
+      .toBe(false);
+  });
+
+  it("keeps explicitly reported zero daily insulin totals as measured zero", async () => {
+    const now = Date.parse("2026-07-26T10:00:00+01:00");
+    const today = toDateKey(now);
+    const recentStartDate = addDays(today, -7);
+    const previousStartDate = addDays(today, -14);
+    const recentStart = dayRange(recentStartDate, now).start;
+    const previousStart = dayRange(previousStartDate, now).start;
+    const recentEnd = dayRange(today, now).start;
+    const repository = createDemoRepository(now);
+    const [loadedRecent, loadedPrevious] = await Promise.all([
+      repository.getTimeline({ start: recentStart, end: recentEnd }),
+      repository.getTimeline({ start: previousStart, end: recentStart }),
+    ]);
+    const dailyTotals = (startDate: ReturnType<typeof toDateKey>, prefix: string, units: number) =>
+      Array.from({ length: 7 }, (_, index) => {
+        const dateKey = addDays(startDate, index);
+        const day = dayRange(dateKey, now);
+        return {
+          id: `${prefix}-${index}`, sourceId: 'glooko-export',
+          sourceDeviceId: 'historical-pdm', dateKey,
+          timestamp: day.end - 1,
+          totalUnits: units, basalUnits: units, bolusUnits: 0,
+        };
+      });
+    const recent: TimelineData = {
+      ...loadedRecent, basal: [], boluses: [],
+      dailyInsulinTotals: dailyTotals(recentStartDate, 'recent-zero', 0),
+    };
+    const previous: TimelineData = {
+      ...loadedPrevious, basal: [], boluses: [],
+      dailyInsulinTotals: dailyTotals(previousStartDate, 'previous-ten', 10),
+    };
+
+    const report = buildInsightReport(recent, previous, now);
+
+    expect(report.current.insulinUnits).toBe(0);
+    expect(report.current.insulinUnitsPerDay).toBe(0);
+    expect(report.previous.insulinUnitsPerDay).toBe(10);
+    expect(report.findings.find((finding) => finding.id === 'insulin-change')
+      ?.evidence[0]?.recordIds).toEqual(recent.dailyInsulinTotals?.map((total) => total.id));
+  });
+
   it("normalises daily context and insulin by London calendar days across BST", async () => {
     const now = Date.parse("2026-04-02T10:00:00+01:00");
     const repository = createDemoRepository(now);

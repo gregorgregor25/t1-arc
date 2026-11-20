@@ -238,8 +238,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   activeBadge: {
@@ -248,13 +248,13 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   activeText: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '800',
     letterSpacing: 0.55,
   },
   preview: { marginTop: 16 },
-  previewLabel: { fontSize: 9, textAlign: 'right', marginTop: 8 },
+  previewLabel: { fontSize: 12, textAlign: 'right', marginTop: 8 },
   detail: {
     fontSize: 13,
     lineHeight: 19,
@@ -275,14 +275,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   fallback: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 9,
     textAlign: 'center',
   },
   message: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginTop: 10,
   },
 });

@@ -116,11 +116,16 @@ describe("Tarv1s production request coordinator", () => {
     expect(result.source).toBe("safety");
   });
 
-  it("keeps an ambiguous ratio question on the conservative safety route", () => {
-    const result = plan("What is my carb ratio?");
-    expect(result.kind).toBe("answer");
-    if (result.kind !== "answer") throw new Error("Expected safety answer");
-    expect(result.source).toBe("safety");
+  // Round 4: reading a stored value back is a record lookup, not advice, so
+  // "What is my carb ratio?" is no longer refused (the reviewer listed it as an
+  // over-refusal, like "What is my basal rate?"). Any change to it still is.
+  it("lets a stored ratio lookup through but refuses a ratio change", () => {
+    const lookup = plan("What is my carb ratio?");
+    expect(lookup.kind === "answer" && lookup.source === "safety").toBe(false);
+    const change = plan("What should my carb ratio be?");
+    expect(change.kind).toBe("answer");
+    if (change.kind !== "answer") throw new Error("Expected safety answer");
+    expect(change.source).toBe("safety");
   });
 
   it.each([
@@ -706,7 +711,7 @@ describe("Tarv1s production request coordinator", () => {
     expect(result.kind).toBe("answer");
     if (result.kind !== "answer") throw new Error("Expected clarification");
     expect(result.source).toBe("capability");
-    expect(result.answer.answer).toContain("exclusion");
+    expect(result.answer.answer).toContain("leave out particular records");
   });
 
   it("keeps a hypothetical clinical definition on the record-free education route", () => {

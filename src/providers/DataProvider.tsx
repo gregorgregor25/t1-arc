@@ -13,6 +13,11 @@ import {
 import { AppState, Linking } from "react-native";
 
 import T1ArcGlucoseDisplay from "../../modules/t1arc-glucose-display";
+import { stopAapsLocalSourceForDemoInTransaction } from "@/data/aaps/localAapsSource";
+import {
+  loadNightscoutImportPolicy,
+  nightscoutHistoryImporterForPolicy,
+} from "@/data/aaps/aapsTreatmentFill";
 import T1ArcGlookoExport from "../../modules/t1arc-glooko-export";
 import T1ArcNotificationSource from "../../modules/t1arc-notification-source";
 import {
@@ -87,8 +92,19 @@ import {
 } from "@/data/glucoseAlerts/glucoseAlertPreferences";
 import {
   getHealthConnectDataBounds,
+  HEALTH_CONNECT_APP_OPEN_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS,
   syncHealthConnectIfDue,
 } from "@/data/healthConnect/healthConnectRepository";
+import {
+  createAppBackgroundAbort,
+  nightscoutHistoryStoredRecords,
+  REFRESH_SIDE_JOB_DIAGNOSTICS,
+  runSourceThenSideJobs,
+  startRefreshIndicatorWatchdog,
+  type RefreshSideJob,
+  type RefreshSideJobName,
+} from "@/providers/refreshSideJobs";
 import { generateInsightReviewIfDue } from "@/data/insights/insightReviewGenerator";
 import {
   requestPostCommitInsightRefresh,
@@ -110,6 +126,7 @@ import {
   syncHevyIfDue,
 } from "@/data/hevy/sync";
 import { clearInsightReviewPreferences } from "@/data/insights/insightReviewPreferences";
+import { clearTodayCardPreferences } from "@/data/todayCardPreferences";
 import { clearBackupStatus } from "@/data/backup/backupStatus";
 import { DiabetesRepository } from "@/data/contracts";
 import { DexcomShareGlucoseSource } from "@/data/dexcomShare/DexcomShareGlucoseSource";
@@ -192,6 +209,7 @@ import {
   clearNightscoutHistoryState,
   loadNightscoutHistoryState,
   saveNightscoutHistoryState,
+  seedNightscoutHistoryWithSourceLease,
 } from "@/data/nightscout/historyStateStore";
 import { syncNightscoutHistoryIfDue } from "@/data/nightscout/historySync";
 import {
@@ -227,6 +245,7 @@ import {
 import {
   ImportedSourceDeleteResult,
   ImportWriteResult,
+  MemoryHealthRecordStore,
   StoredImportSourceSummary,
 } from "@/data/persistence/HealthRecordStore";
 import { openT1ArcDatabase } from "@/data/persistence/t1arcDatabase";
@@ -262,6 +281,7 @@ import {
   publishVerifiedLibreSnapshotImmediately,
 } from "@/providers/libreRepositoryActivation";
 import { nextPresentationClock } from "@/providers/presentationClock";
+import { startForegroundInterval } from "@/hooks/foregroundInterval";
 
 interface DataContextValue {
   repository?: DiabetesRepository;
@@ -282,7 +302,8 @@ interface DataContextValue {
   glookoReportSyncing: boolean;
   glookoBackgroundSyncAvailable: boolean;
   refreshData(): Promise<void>;
-  reloadSources(): Promise<void>;
+  /** `refreshNow` reads sources straight after the reload, visibly. */
+  reloadSources(options?: SourceReloadOptions): Promise<void>;
   setDataMode(mode: DataMode): Promise<void>;
   activateLibreSnapshot(
     snapshot: LibreLinkUpSnapshot,
@@ -290,7 +311,10 @@ interface DataContextValue {
     writeLease: LocalDataWriteLease,
     sourceWriteLease: SourceConnectionWriteLease,
   ): Promise<void>;
-  connectNightscout(connection: NightscoutConnection): Promise<GlucoseReading>;
+  /** Resolves without a reading when AAPS on this phone supplies glucose. */
+  connectNightscout(
+    connection: NightscoutConnection,
+  ): Promise<GlucoseReading | undefined>;
   disconnectNightscout(): Promise<void>;
   connectDexcomShare(
     connection: DexcomShareConnection,
@@ -415,6 +439,29 @@ interface RepositoryState {
   tarvisOwnerSources: TarvisDatasetOwnerSource[];
 }
 
+/** Options for reloading sources after a settings change. */
+export interface SourceReloadOptions {
+  /** Read the sources straight away instead of on the next delayed pass. */
+  refreshNow?: boolean;
+}
+
+/**
+ * Gives a new Nightscout connection a 14-day history target so the last two
+ * weeks of treatments are stored without a manual backfill. Best effort: a
+ * failure here must not undo a verified connection.
+ */
+async function seedNightscoutHistoryOnConnect(
+  sourceWriteLease: SourceConnectionWriteLease,
+) {
+  await seedNightscoutHistoryWithSourceLease(
+    sourceWriteLease,
+    "connected",
+  ).catch((error: unknown) => {
+    if (isLocalDataWriteSupersededError(error)) throw error;
+    return undefined;
+  });
+}
+
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
 export function DataProvider({ children }: PropsWithChildren) {
@@ -425,6 +472,10 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
   const [revision, setRevision] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  // Set when a source was connected or its import choice changed. The next
+  // repository (re)configuration runs a visible full pass at once instead of
+  // waiting for the delayed silent pass. Cleared only when that pass starts.
+  const sourceChangeRefreshPending = useRef(false);
   const [glookoSyncing, setGlookoSyncing] = useState(false);
   const [glookoSyncState, setGlookoSyncState] = useState<GlookoSyncState>(
     DEFAULT_GLOOKO_SYNC_STATE,
@@ -601,6 +652,14 @@ export function DataProvider({ children }: PropsWithChildren) {
           // Capture before SecureStore credentials. Every source created below
           // carries this exact generation through its eventual DB commits.
           writeLease ??= await acquireLocalDataWriteLease();
+          if (requestedMode === "demo") {
+            // Reconcile immediately on a demo configuration, including a
+            // resumed configuration after process death. The later save-mode
+            // transaction repeats this under the writer lock to close races.
+            await withLocalDataWriteLeaseTransaction(writeLease, () =>
+              stopAapsLocalSourceForDemoInTransaction(writeLease!),
+            );
+          }
           const [
             libreOwned,
             nightscoutOwned,
@@ -682,9 +741,12 @@ export function DataProvider({ children }: PropsWithChildren) {
                 )
               : [];
 
-          await withLocalDataWriteLeaseTransaction(writeLease, () =>
-            saveDataMode(mode),
-          );
+          await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+            if (mode === "demo") {
+              await stopAapsLocalSourceForDemoInTransaction(writeLease!);
+            }
+            await saveDataMode(mode);
+          });
           // Publish the verified owner and local repository before registering
           // optional background jobs or scanning historical bounds. Live chat
           // must not wait on those tasks to open its saved conversations.
@@ -806,7 +868,9 @@ export function DataProvider({ children }: PropsWithChildren) {
   const observeLatestStoredGlucose = useCallback(async () => {
     if (repositoryState.mode !== "live") return false;
     try {
-      const reading = await glucoseHistoryStore.current.getLatestReading();
+      // Use the same explicit source scope as Today and the native display.
+      // A newer cached cloud row must not mask a fresh local AAPS update.
+      const reading = await repositoryState.repository?.getLatestGlucose();
       return observeGlucoseReadingForPublication(
         glucosePublicationWatermark.current,
         reading,
@@ -816,7 +880,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       // user's glucose history having been removed.
       return false;
     }
-  }, [repositoryState.mode]);
+  }, [repositoryState.mode, repositoryState.repository]);
 
   const publishLatestStoredGlucose = useCallback(async () => {
     if (!(await observeLatestStoredGlucose())) return false;
@@ -824,6 +888,32 @@ export function DataProvider({ children }: PropsWithChildren) {
     setRevision((value) => value + 1);
     return true;
   }, [observeLatestStoredGlucose]);
+
+  // The "Checking…" indicator must never stay on: if a refresh has not ended
+  // it within a minute, clear it anyway and leave a diagnostic name.
+  const indicatorWatchdogs = useRef(new Set<() => void>());
+  const startIndicatorWatchdog = useCallback(() => {
+    const watchdogs = indicatorWatchdogs.current;
+    let stopAndForget: () => void = () => undefined;
+    const stop = startRefreshIndicatorWatchdog(() => {
+      watchdogs.delete(stopAndForget);
+      recordDiagnostic('refresh_watchdog');
+      setSyncing(false);
+    });
+    stopAndForget = () => {
+      watchdogs.delete(stopAndForget);
+      stop();
+    };
+    watchdogs.add(stopAndForget);
+    return stopAndForget;
+  }, []);
+  useEffect(() => {
+    const watchdogs = indicatorWatchdogs.current;
+    return () => {
+      for (const stop of [...watchdogs]) stop();
+      watchdogs.clear();
+    };
+  }, []);
 
   const performRefresh = useCallback(
     (visible: boolean, includeHealthConnect = true): Promise<void> => {
@@ -837,6 +927,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       if (libreActivationInFlight.current) {
         return publishBeforeRefresh.then(() => undefined);
       }
+      let stopIndicatorWatchdog: () => void = () => undefined;
       const runRefresh = async () => {
         // An explicit pass queued behind a silent one must not delay a
         // LibreLinkUp account activation that started while it waited.
@@ -845,70 +936,159 @@ export function DataProvider({ children }: PropsWithChildren) {
           return;
         }
         recordDiagnostic('refresh_started');
+        const refreshStartedAt = Date.now();
         const publishedBefore = await publishBeforeRefresh;
         if (visible) setSyncing(true);
         let shouldInvalidate = visible || publishedBefore;
         let shouldPublishAtEnd = visible;
+        let glucoseDisplayUpdated = false;
+        // Slow side jobs stop when the person leaves the app; the background
+        // job and the next app open continue from where they stopped.
+        const backgroundStop = createAppBackgroundAbort(AppState);
+        // Set once the Health Connect job starts. The pass can end before the
+        // job does (for example when the source step throws), so the stop
+        // signal must keep listening until the job itself settles.
+        let healthSyncSettled: Promise<void> | undefined;
+        const runSideJobs =
+          repositoryState.mode === "live" && includeHealthConnect;
+        const sideJobs: RefreshSideJob<RefreshSideJobName>[] = runSideJobs
+          ? [
+              {
+                name: "health_sync",
+                // A visible refresh may check Health Connect again after a
+                // few minutes; an automatic app-open pass at most every 30.
+                run: () => {
+                  const job = syncHealthConnectIfDue(
+                    Date.now(),
+                    visible
+                      ? HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS
+                      : HEALTH_CONNECT_APP_OPEN_SYNC_INTERVAL_MS,
+                    undefined,
+                    { signal: backgroundStop.signal, allowWindowCheck: true },
+                  );
+                  healthSyncSettled = job.then(
+                    () => undefined,
+                    () => undefined,
+                  );
+                  return job;
+                },
+              },
+              {
+                name: "insight_review",
+                run: () => generateInsightReviewIfDue(),
+              },
+              {
+                name: "history_sync",
+                run: () =>
+                  syncConfiguredNightscoutHistoryIfDue(
+                    glucoseHistoryStore.current,
+                  ),
+              },
+            ]
+          : [];
         try {
-          const [repositoryRefresh, healthConnectRefresh] =
-            await Promise.allSettled([
-              // A visible refresh is the user's explicit request, so remote
-              // sources fetch even when their next reading is not yet due.
-              // The glucose-only lane is always a silent periodic check.
+          const { sideJobs: sideJobResults } = await runSourceThenSideJobs({
+            // A visible refresh is the user's explicit request, so remote
+            // sources fetch even when their next reading is not yet due.
+            // The glucose-only lane is always a silent periodic check.
+            source: () =>
               includeHealthConnect
                 ? repository.refresh(visible ? { force: true } : undefined)
                 : (repository.refreshGlucose?.() ?? repository.refresh()),
-              repositoryState.mode === "live" && includeHealthConnect
-                ? syncHealthConnectIfDue()
-                : Promise.resolve(undefined),
-              repositoryState.mode === "live" && includeHealthConnect
-                ? generateInsightReviewIfDue()
-                : Promise.resolve(undefined),
-              repositoryState.mode === "live" && includeHealthConnect
-                ? syncConfiguredNightscoutHistoryIfDue(
-                    glucoseHistoryStore.current,
-                  )
-                : Promise.resolve(undefined),
-            ]);
-          if (repositoryRefresh.status === "rejected") {
-            throw repositoryRefresh.reason;
-          }
-          if (healthConnectRefresh.status === 'rejected') recordDiagnostic('health_refresh_failed');
-          const glucoseChanged = await observeLatestStoredGlucose();
+            sideJobs,
+            onSideJobEvent: (name, phase) =>
+              recordDiagnostic(REFRESH_SIDE_JOB_DIAGNOSTICS[name][phase]),
+            // The indicator ends with the source refresh. Side jobs keep
+            // running inside this lane pass, so coalescing is unchanged.
+            onSourceSettled: async (repositoryRefresh) => {
+              let sourceStored = false;
+              try {
+                if (repositoryRefresh.status === "rejected") {
+                  throw repositoryRefresh.reason;
+                }
+                const glucoseChanged = await observeLatestStoredGlucose();
+                shouldInvalidate = shouldInvalidate || glucoseChanged;
+                shouldPublishAtEnd = shouldPublishAtEnd || glucoseChanged;
+                // A full pass can store insulin, carbs and pump events
+                // without a new glucose reading, so screens re-read even on
+                // a silent pass. Glucose display conditions stay unchanged.
+                sourceStored = includeHealthConnect;
+                setRepositoryState((state) =>
+                  state.sourceError === undefined
+                    ? state
+                    : { ...state, sourceError: undefined },
+                );
+              } catch (error) {
+                const sourceError =
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to refresh data.";
+                recordDiagnostic('refresh_failed');
+                setRepositoryState((state) =>
+                  state.sourceError === sourceError
+                    ? state
+                    : { ...state, sourceError },
+                );
+              } finally {
+                try {
+                  if (
+                    repositoryState.mode === "live" &&
+                    (shouldInvalidate || sourceStored)
+                  ) {
+                    await refreshEarliestLiveDate();
+                  }
+                  if (repositoryState.mode === "live" && shouldInvalidate) {
+                    glucoseDisplayUpdated = true;
+                    await updateGlucoseDisplayFromHistory().catch(
+                      () => undefined,
+                    );
+                  }
+                } finally {
+                  recordDiagnostic('refresh_finished');
+                  if (shouldPublishAtEnd || sourceStored) {
+                    setNow(Date.now());
+                    setRevision((value) => value + 1);
+                  }
+                  stopIndicatorWatchdog();
+                  if (visible) setSyncing(false);
+                }
+              }
+            },
+          });
+          const healthConnectRefresh = sideJobResults.find(
+            (job) => job.name === "health_sync",
+          );
+          if (healthConnectRefresh?.status === 'rejected') recordDiagnostic('health_refresh_failed');
           const healthConnectRan =
-            healthConnectRefresh.status === "fulfilled" &&
+            healthConnectRefresh?.status === "fulfilled" &&
             healthConnectRefresh.value !== undefined;
-          shouldInvalidate =
-            shouldInvalidate || glucoseChanged || healthConnectRan;
-          shouldPublishAtEnd =
-            shouldPublishAtEnd || glucoseChanged || healthConnectRan;
-          setRepositoryState((state) =>
-            state.sourceError === undefined
-              ? state
-              : { ...state, sourceError: undefined },
+          const historyRefresh = sideJobResults.find(
+            (job) => job.name === "history_sync",
           );
-        } catch (error) {
-          const sourceError =
-            error instanceof Error ? error.message : "Unable to refresh data.";
-          recordDiagnostic('refresh_failed');
-          setRepositoryState((state) =>
-            state.sourceError === sourceError
-              ? state
-              : { ...state, sourceError },
-          );
-        } finally {
-          try {
-            if (repositoryState.mode === "live" && shouldInvalidate) {
-              await refreshEarliestLiveDate();
+          const historyStored =
+            historyRefresh?.status === "fulfilled" &&
+            nightscoutHistoryStoredRecords(
+              historyRefresh.value,
+              refreshStartedAt,
+            );
+          if (
+            repositoryState.mode === "live" &&
+            (healthConnectRan || historyStored)
+          ) {
+            await refreshEarliestLiveDate();
+            // Health Connect can add glucose; refresh the display once if the
+            // source phase did not already do it.
+            if (healthConnectRan && !glucoseDisplayUpdated) {
               await updateGlucoseDisplayFromHistory().catch(() => undefined);
             }
-          } finally {
-            recordDiagnostic('refresh_finished');
-            if (shouldPublishAtEnd) {
-              setNow(Date.now());
-              setRevision((value) => value + 1);
-            }
-            if (visible) setSyncing(false);
+            setNow(Date.now());
+            setRevision((value) => value + 1);
+          }
+        } finally {
+          if (healthSyncSettled) {
+            void healthSyncSettled.then(() => backgroundStop.dispose());
+          } else {
+            backgroundStop.dispose();
           }
         }
       };
@@ -917,11 +1097,13 @@ export function DataProvider({ children }: PropsWithChildren) {
       // Show progress at once, including while an explicit pass waits for a
       // silent one to settle.
       if (visible) setSyncing(true);
+      if (visible) stopIndicatorWatchdog = startIndicatorWatchdog();
       const refresh = foregroundRefreshes.run(
         includeHealthConnect ? "full" : "glucose",
         runRefresh,
         { explicit: visible },
       );
+      void refresh.then(stopIndicatorWatchdog, stopIndicatorWatchdog);
       // A coalesced caller must still publish a newly stored native reading.
       return Promise.all([publishBeforeRefresh, refresh]).then(() => undefined);
     },
@@ -932,6 +1114,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       refreshEarliestLiveDate,
       repositoryState.mode,
       repositoryState.repository,
+      startIndicatorWatchdog,
     ],
   );
 
@@ -949,6 +1132,29 @@ export function DataProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
+    if (!repositoryState.ready || repositoryState.mode !== "live") return;
+    // Native intake persists and forwards glucose even when React is asleep.
+    // Coalesce status bursts before draining that queue into encrypted history
+    // and refreshing the visible phone cards. Resume/polling handles missed events.
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const subscription = T1ArcGlucoseDisplay.addListener("onAapsReading", () => {
+      if (AppState.currentState !== "active" || pending !== undefined) return;
+      pending = setTimeout(() => {
+        pending = undefined;
+        void refreshGlucoseSilently().then(() => {
+          // An AAPS status can change IOB/COB while its glucose is unchanged.
+          setNow(Date.now());
+          setRevision((value) => value + 1);
+        });
+      }, 250);
+    });
+    return () => {
+      if (pending !== undefined) clearTimeout(pending);
+      subscription.remove();
+    };
+  }, [refreshGlucoseSilently, repositoryState.mode, repositoryState.ready]);
+
+  useEffect(() => {
     const reconcileClock = () => {
       const observedAt = Date.now();
       setNow((previous) => nextPresentationClock(previous, observedAt));
@@ -959,8 +1165,12 @@ export function DataProvider({ children }: PropsWithChildren) {
         void publishLatestStoredGlucose();
       }
     };
-    const clockInterval = setInterval(reconcileClock, 15_000);
-    return () => clearInterval(clockInterval);
+    // Ages on screen update every 15 seconds while visible. The timer stops
+    // in the background, where headless sync keeps JavaScript awake, and the
+    // clock catches up as soon as the app is active again.
+    return startForegroundInterval(reconcileClock, 15_000, AppState, {
+      runOnResume: true,
+    });
   }, [publishLatestStoredGlucose]);
 
   useEffect(() => {
@@ -968,7 +1178,14 @@ export function DataProvider({ children }: PropsWithChildren) {
     // Let initial SQLite reads paint the app before a potentially large
     // Health Connect import starts writing to the same on-device database.
     if (AppState.currentState === "active") {
-      void refreshGlucoseSilently();
+      if (sourceChangeRefreshPending.current) {
+        // A source was just connected or changed: read it now, visibly, so
+        // its records appear without leaving the app.
+        sourceChangeRefreshPending.current = false;
+        void refreshData();
+      } else {
+        void refreshGlucoseSilently();
+      }
     }
     const initialHealthRefresh = setTimeout(() => {
       if (AppState.currentState === "active") {
@@ -978,7 +1195,7 @@ export function DataProvider({ children }: PropsWithChildren) {
     // Native foreground glucose sync owns the short catch-up cadence. The UI
     // only polls once a minute while active so it cannot duplicate headless
     // work or keep importing data after the app moves to the background.
-    const refreshInterval = setInterval(() => {
+    const stopRefreshInterval = startForegroundInterval(() => {
       // Frequent glucose polling must not also scan Health Connect, saved
       // insights, and Nightscout history. Those slower jobs run after the
       // initial paint, on app resume, and on explicit refresh.
@@ -998,17 +1215,18 @@ export function DataProvider({ children }: PropsWithChildren) {
           else if (action === "read-stored") await publishLatestStoredGlucose();
         })();
       }
-    }, 60_000);
+    }, 60_000, AppState);
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshSilently();
     });
     return () => {
       clearTimeout(initialHealthRefresh);
-      clearInterval(refreshInterval);
+      stopRefreshInterval();
       subscription.remove();
     };
   }, [
     publishLatestStoredGlucose,
+    refreshData,
     refreshGlucoseSilently,
     refreshSilently,
     repositoryState.ready,
@@ -1050,9 +1268,12 @@ export function DataProvider({ children }: PropsWithChildren) {
     };
   }, [refreshEarliestLiveDate, repositoryState.mode, repositoryState.ready]);
 
-  const reloadSources = useCallback(async () => {
+  const reloadSources = useCallback(async (options?: SourceReloadOptions) => {
     const generation = localDataChangeGeneration.current;
     const writeLease = await acquireLocalDataWriteLease();
+    if (options?.refreshNow && repositoryState.mode === "live") {
+      sourceChangeRefreshPending.current = true;
+    }
     if (repositoryState.mode === "live") {
       await generateInsightReviewIfDue(Date.now(), 0, writeLease).catch(
         (error) => {
@@ -1069,6 +1290,9 @@ export function DataProvider({ children }: PropsWithChildren) {
     async (mode: DataMode, operationLease?: LocalDataWriteLease) => {
       const writeLease = operationLease ?? (await acquireLocalDataWriteLease());
       await withLocalDataWriteLeaseTransaction(writeLease, async () => {
+        if (mode === "demo") {
+          await stopAapsLocalSourceForDemoInTransaction(writeLease);
+        }
         setRepositoryState((state) => ({ ...state, ready: false }));
         await saveDataMode(mode);
       });
@@ -1148,6 +1372,33 @@ export function DataProvider({ children }: PropsWithChildren) {
   const connectNightscout = useCallback(
     async (connection: NightscoutConnection) => {
       const writeLease = await acquireLocalDataWriteLease();
+      const policy = await loadNightscoutImportPolicy(writeLease);
+      if (!policy.importGlucose) {
+        // AAPS on this phone supplies glucose. Verify the site with a
+        // treatment read only, so no Nightscout glucose is fetched or stored.
+        const candidate = await beginNightscoutConnectionChange(writeLease);
+        await new NightscoutTreatmentImporter(
+          connection,
+          new MemoryHealthRecordStore(),
+        ).refresh();
+        const sourceWriteLease = await activateNightscoutConnection(
+          candidate,
+          connection,
+          verifiedSourceActivationOptions({
+            sourceId: NIGHTSCOUT_SOURCE_ID,
+            readings: [],
+            clearHealthRecordsOnIdentityChange: true,
+          }),
+        );
+        await seedNightscoutHistoryOnConnect(sourceWriteLease);
+        sourceChangeRefreshPending.current = true;
+        await changeDataMode("live", writeLease);
+        await assertSourceConnectionActivationCurrent(
+          sourceWriteLease,
+          candidate.changeGeneration,
+        );
+        return undefined;
+      }
       const candidate = await beginNightscoutConnectionChange(writeLease);
       const glucoseStore = new MemoryGlucoseHistoryStore();
       const source = new NightscoutGlucoseSource(
@@ -1179,7 +1430,9 @@ export function DataProvider({ children }: PropsWithChildren) {
           clearHealthRecordsOnIdentityChange: true,
         }),
       );
+      await seedNightscoutHistoryOnConnect(sourceWriteLease);
       await refreshEarliestLiveDate(() => true, writeLease);
+      sourceChangeRefreshPending.current = true;
       await changeDataMode("live", writeLease);
       await updateGlucoseDisplayFromHistoryWithLease(
         writeLease,
@@ -1303,7 +1556,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       const latest = await source.getLatestReading();
       if (!latest) {
         throw new Error(
-          "The xDrip endpoint connected, but it did not return a glucose reading.",
+          "T1 Arc reached xDrip, but xDrip has no glucose reading to share yet.",
         );
       }
       const readings = await source.getReadings({
@@ -1387,25 +1640,31 @@ export function DataProvider({ children }: PropsWithChildren) {
         lastError: undefined,
       };
       await saveNightscoutHistoryState(started, sourceWriteLease);
-      const source = new NightscoutGlucoseSource(
+      const treatments = new NightscoutTreatmentImporter(
         connection,
-        glucoseHistoryStore.current.withSourceWriteLease(sourceWriteLease),
-        fetch,
-        Date.now,
-        new NightscoutTreatmentImporter(
-          connection,
-          healthRecordStore.current.withSourceWriteLease(sourceWriteLease),
-        ),
-        undefined,
-        undefined,
-        writeLease,
-        sourceWriteLease,
+        healthRecordStore.current.withSourceWriteLease(sourceWriteLease),
       );
-      const result = await syncNightscoutHistoryIfDue(
-        source,
-        now,
-        sourceWriteLease,
+      // While AAPS supplies glucose, older history reads treatments only.
+      const importer = nightscoutHistoryImporterForPolicy(
+        await loadNightscoutImportPolicy(writeLease),
+        {
+          glucoseAndTreatments: new NightscoutGlucoseSource(
+            connection,
+            glucoseHistoryStore.current.withSourceWriteLease(sourceWriteLease),
+            fetch,
+            Date.now,
+            treatments,
+            undefined,
+            undefined,
+            writeLease,
+            sourceWriteLease,
+          ),
+          treatments,
+        },
       );
+      const result = importer
+        ? await syncNightscoutHistoryIfDue(importer, now, sourceWriteLease)
+        : started;
       await refreshEarliestLiveDate(() => true, writeLease);
       await withLocalDataWriteLeaseTransaction(writeLease, async () => {
         setNow(Date.now());
@@ -1738,11 +1997,11 @@ export function DataProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!repositoryState.ready) return;
     void runAutomaticGlookoSync();
-    const foregroundInterval = setInterval(() => {
+    const stopForegroundInterval = startForegroundInterval(() => {
       if (AppState.currentState === "active") {
         void runAutomaticGlookoSync();
       }
-    }, GLOOKO_FOREGROUND_CHECK_INTERVAL_MS);
+    }, GLOOKO_FOREGROUND_CHECK_INTERVAL_MS, AppState);
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void runAutomaticGlookoSync();
     });
@@ -1752,7 +2011,7 @@ export function DataProvider({ children }: PropsWithChildren) {
       }
     });
     return () => {
-      clearInterval(foregroundInterval);
+      stopForegroundInterval();
       subscription.remove();
       linkSubscription.remove();
     };
@@ -2480,6 +2739,7 @@ export function DataProvider({ children }: PropsWithChildren) {
             saveGlucoseAlertPreferences({ ...alerts, enabled: false }),
             resetGlucoseAlertState(),
             clearInsightReviewPreferences(),
+            clearTodayCardPreferences(),
             clearBackupStatus(),
           ]);
 

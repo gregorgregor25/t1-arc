@@ -175,6 +175,8 @@ export interface TarvisDurationLiteral extends TarvisSourceSpan {
   value: number;
   unit: "minute" | "hour" | "day" | "week" | "month";
   number: TarvisNumberLiteral;
+  /** "the past week": the last 7 local calendar days including today. */
+  recentLocalWeek?: true;
 }
 
 export interface TarvisDateLiteral extends TarvisSourceSpan {
@@ -324,5 +326,10 @@ export interface ResolveTarvisIntentOptions {
   timezone?: string;
   history?: readonly TarvisIntentHistoryEntry[];
   targetProfile?: TarvisGlucoseTargetProfile;
+  /**
+   * The user's own "In range" band. Used only when the question names it
+   * ("time in my range"); plain "time in range" keeps the standard range.
+   */
+  personalTargetProfile?: TarvisGlucoseTargetProfile;
   overnightProfile?: TarvisOvernightProfile;
 }

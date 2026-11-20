@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { StyleSheet, View } from "react-native";
 
-import { AppScreen, SectionHeading } from "@/components/AppScreen";
+import { AppScreen } from "@/components/AppScreen";
 import { AppMenuButton } from "@/components/AppMenuButton";
 import { DateNavigator } from "@/components/DateNavigator";
-import { FeatureEntry } from '@/components/FeatureEntry';
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorCard } from "@/components/ErrorCard";
 import { HealthMetricCards } from "@/components/HealthMetricCards";
 import { LoadingCard } from "@/components/LoadingCard";
 import { LabResultsCard } from '@/components/LabResultsCard';
 import { SafetyNote } from "@/components/SafetyNote";
+import { ListGroup, ListRow } from "@/components/ui";
 import { addDays, DateKey, dayRange } from "@/domain/time";
 import { useDailyHealthMetrics } from "@/hooks/useDailyHealthMetrics";
 import { useHealthTrend } from "@/hooks/useHealthTrend";
@@ -67,11 +67,15 @@ export function HealthScreen() {
     <>
       <AppScreen
         title="Health"
+        subtitle={
+          hasHealthCards
+            ? "Tap a measure to explore the day and its seven-day trend."
+            : undefined
+        }
         refreshing={syncing}
         onRefresh={() => void refreshData()}
         trailing={<AppMenuButton />}
       >
-        <FeatureEntry title="Cycle tracking" detail="Log periods, symptoms and your cycle history" icon="calendar-outline" onPress={() => navigation.navigate('Cycle')} />
         <DateNavigator
           date={selectedDate}
           canGoBack={selectedDate > earliestDate}
@@ -85,16 +89,17 @@ export function HealthScreen() {
           isToday={selectedDate === today}
         />
 
-        <SectionHeading
-          title="Health at a glance"
-          detail={
-            hasHealthCards
-              ? "Tap a card to explore the day and its seven-day trend."
-              : undefined
-          }
-        />
+        <View style={styles.dateGap} />
         {dailyError ? (
-          <ErrorCard message={dailyError} />
+          <ErrorCard
+            details={dailyError}
+            message="Your health records are still saved on this phone. Tap Try again, or pull down to refresh."
+            onRetry={() => {
+              dailyHealth.reload();
+              healthTrend.reload();
+            }}
+            title="Health data could not be loaded"
+          />
         ) : !dailyHealth.metrics || healthTrend.loading ? (
           <LoadingCard label="Loading health data…" />
         ) : (
@@ -137,7 +142,16 @@ export function HealthScreen() {
           </View>
         )}
 
-        <LabResultsCard />
+        <View style={styles.endRows}>
+          <LabResultsCard />
+          <ListGroup>
+            <ListRow
+              detail="Log periods, symptoms and your cycle history"
+              onPress={() => navigation.navigate('Cycle')}
+              title="Cycle tracking"
+            />
+          </ListGroup>
+        </View>
         <View style={styles.safety}>
           <SafetyNote />
         </View>
@@ -153,6 +167,13 @@ const styles = StyleSheet.create({
   empty: {
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+  },
+  dateGap: {
+    height: 12,
+  },
+  endRows: {
+    marginTop: 24,
+    gap: 12,
   },
   safety: {
     marginTop: 14,

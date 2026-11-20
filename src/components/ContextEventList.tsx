@@ -16,11 +16,12 @@ import { HealthContextEvent, TimelineData } from "@/domain/models";
 import {
   contextNoteCategoryLabel,
   contextNoteDisplayTitle,
+  contextNoteDisplayDetail,
 } from "@/domain/contextNotes";
 import { mealNutritionSummary } from "@/domain/mealNutrition";
 import { toDateKey } from "@/domain/time";
 import { rangeSpansMultipleDates } from "@/domain/timelinePresentation";
-import { formatRegionalNumber, formatWeight } from "@/domain/regionalFormat";
+import { formatGlucose, formatRegionalNumber, formatWeight } from "@/domain/regionalFormat";
 import { useAppTheme } from "@/theme/theme";
 import { useRegionalProfile } from "@/providers/RegionalProfileProvider";
 
@@ -29,7 +30,7 @@ import { healthMetricIntervalPresentation } from "./healthMetrics/presentation";
 
 function eventPresentation(
   event: HealthContextEvent,
-  regional: Parameters<typeof formatWeight>[1],
+  regional: Parameters<typeof formatWeight>[1] & Parameters<typeof formatGlucose>[1],
 ) {
   const ketone = manualKetoneDraftFromEvent(event);
   if (ketone) {
@@ -85,7 +86,7 @@ function eventPresentation(
               ? ("radio-outline" as const)
               : ("document-text-outline" as const),
         detail: event.detail
-          ? `${contextNoteCategoryLabel(event.category)} · ${event.detail}`
+          ? `${contextNoteCategoryLabel(event.category)} · ${contextNoteDisplayDetail(event, regional)}`
           : contextNoteCategoryLabel(event.category),
       };
   }
@@ -387,8 +388,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   eyebrow: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 1,
   },
@@ -398,8 +399,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   badge: {
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: "800",
     letterSpacing: 0.7,
   },
@@ -438,13 +439,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   detail: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 1,
   },
   time: {
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 17,
     fontVariant: ["tabular-nums"],
     textAlign: "right",
   },
@@ -454,14 +455,14 @@ const styles = StyleSheet.create({
     maxWidth: 128,
   },
   endTime: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontVariant: ["tabular-nums"],
     textAlign: "right",
   },
   more: {
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: "700",
   },
   moreButton: {

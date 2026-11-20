@@ -1,12 +1,18 @@
 import { formatRegionalNumber } from '@/domain/regionalFormat';
+import type {
+  T1ArcRegionalDefaults,
+  T1ArcRegionalProfile,
+} from '@/domain/regionalProfile';
 import { getRuntimeRegionalDefaults } from '@/domain/regionalProfileRuntime';
 
-export const ONBOARDING_WALKTHROUGH_VERSION = 1;
+/** Version 2 added the final setup step; saved version-1 progress restarts. */
+export const ONBOARDING_WALKTHROUGH_VERSION = 2;
 
-export type OnboardingFinishDestination = "Today" | "Sources";
+/** "Alerts" finishes setup and opens glucose alert settings (still off). */
+export type OnboardingFinishDestination = "Today" | "Sources" | "Alerts";
 
 export type OnboardingTourStepId =
-  "today" | "log" | "context" | "tarvis" | "control";
+  "today" | "log" | "context" | "tarvis" | "control" | "setup";
 
 export interface OnboardingTourStep {
   id: OnboardingTourStepId;
@@ -59,8 +65,17 @@ export const ONBOARDING_TOUR_STEPS: readonly OnboardingTourStep[] = [
     eyebrow: "YOUR DATA, YOUR CHOICE",
     title: "Connect only what helps.",
     detail:
-      "Choose the services you already use. T1 Arc keeps local records encrypted and gives you clear pause, backup and delete controls.",
+      "T1 Arc keeps your health records encrypted on this phone, and they leave it only when you choose to share them.",
     tip: "Nothing is connected by this tour. You decide what to enable, one source at a time.",
+    nextLabel: "Next",
+  },
+  {
+    id: "setup",
+    eyebrow: "BEFORE YOU START",
+    title: "A few quick choices.",
+    detail:
+      "You can change any of these later in Settings.",
+    tip: "Nothing on this page is switched on for you.",
     nextLabel: "Finish",
   },
 ] as const;
@@ -94,4 +109,22 @@ export function onboardingDestinationDataMode(
   destination: OnboardingFinishDestination,
 ) {
   return destination === "Today" ? "demo" : "live";
+}
+
+export const TOUR_GLUCOSE_UNIT_OPTIONS = [
+  { label: "mmol/L", value: "mmolL" },
+  { label: "mg/dL", value: "mgDl" },
+] as const;
+
+/**
+ * The unit preselected in the tour: the saved choice, or the unit already
+ * resolved from the phone's region when the saved setting is automatic.
+ */
+export function tourGlucoseUnitChoice(
+  profile: Pick<T1ArcRegionalProfile, "glucoseUnit">,
+  defaults: Pick<T1ArcRegionalDefaults, "glucoseUnit">,
+): "mmolL" | "mgDl" {
+  return profile.glucoseUnit === "automatic"
+    ? defaults.glucoseUnit
+    : profile.glucoseUnit;
 }

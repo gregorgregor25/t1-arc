@@ -65,7 +65,7 @@ function wallClockFormatter(timeZone: string) {
   } catch {
     throw new ZonedWallClockError(
       'invalid',
-      `"${timeZone}" is not a valid IANA time zone.`,
+      `T1 Arc does not recognise the time zone "${timeZone}". Use the form Region/City, for example Europe/London.`,
     );
   }
 }

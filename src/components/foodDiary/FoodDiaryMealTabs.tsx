@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   detail: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
 });

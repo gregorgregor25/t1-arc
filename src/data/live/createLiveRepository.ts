@@ -2,6 +2,12 @@ import {
   CombinedDiabetesRepository,
   GlucoseSource,
 } from '@/data/contracts';
+import { AapsGlucoseSource } from '@/data/aaps/AapsGlucoseSource';
+import { drainAapsLocalTreatments } from '@/data/aaps/localAapsTreatments';
+import {
+  gateNightscoutTreatments,
+  loadNightscoutImportPolicy,
+} from '@/data/aaps/aapsTreatmentFill';
 import { DirectLibreLinkUpSource } from '@/data/libreLinkUp/DirectLibreLinkUpSource';
 import { DexcomShareGlucoseSource } from '@/data/dexcomShare/DexcomShareGlucoseSource';
 import { DexcomShareConnection } from '@/data/dexcomShare/types';
@@ -10,6 +16,7 @@ import { MedtrumConnection } from '@/data/medtrum/types';
 import { LibreLinkUpCredentials } from '@/data/libreLinkUp/types';
 import { NightscoutGlucoseSource } from '@/data/nightscout/NightscoutGlucoseSource';
 import { NightscoutTreatmentImporter } from '@/data/nightscout/NightscoutTreatmentImporter';
+import { saveNightscoutTreatmentSyncAt } from '@/data/nightscout/secureStore';
 import { NightscoutConnection } from '@/data/nightscout/types';
 import { SqliteGlucoseHistoryStore } from '@/data/persistence/SqliteGlucoseHistoryStore';
 import { SqliteHealthRecordStore } from '@/data/persistence/SqliteHealthRecordStore';
@@ -43,12 +50,22 @@ export function createLiveRepository(
   const healthRecords = new SqliteHealthRecordStore(writeLease);
   const glucoseHistory = new SqliteGlucoseHistoryStore(writeLease);
   const notificationSource = new NotificationGlucoseSource(glucoseHistory);
-  const glucoseSources: GlucoseSource[] = [notificationSource];
-  const nightscoutHealthRecords = sourceWriteLeases.nightscout
-    ? healthRecords.withSourceWriteLease(sourceWriteLeases.nightscout)
+  const glucoseSources: GlucoseSource[] = [notificationSource, new AapsGlucoseSource(glucoseHistory)];
+  const nightscoutWriteLease = sourceWriteLeases.nightscout;
+  const nightscoutHealthRecords = nightscoutWriteLease
+    ? healthRecords.withSourceWriteLease(nightscoutWriteLease)
     : undefined;
-  const nightscoutTreatments = nightscout && nightscoutHealthRecords
-    ? new NightscoutTreatmentImporter(nightscout, nightscoutHealthRecords)
+  const nightscoutTreatments = nightscout && nightscoutHealthRecords && nightscoutWriteLease
+    ? gateNightscoutTreatments(
+        new NightscoutTreatmentImporter(
+          nightscout,
+          nightscoutHealthRecords,
+          fetch,
+          Date.now,
+          (at) => saveNightscoutTreatmentSyncAt(at, nightscoutWriteLease),
+        ),
+        () => loadNightscoutImportPolicy(writeLease),
+      )
     : undefined;
   if (credentials && sourceWriteLeases.libre) {
     glucoseSources.push(
@@ -102,8 +119,14 @@ export function createLiveRepository(
     );
   }
   return new CombinedDiabetesRepository(
-    new CompositeGlucoseSource(glucoseSources, glucoseHistory),
-    new ImportedInsulinSource(healthRecords, nightscoutTreatments),
+    new CompositeGlucoseSource(glucoseSources, glucoseHistory, async () => {
+      const { getSelectedGlucoseSourceState } = await import('@/data/aaps/localAapsSource');
+      return getSelectedGlucoseSourceState();
+    }),
+    new ImportedInsulinSource(healthRecords, nightscoutTreatments, [
+      // AAPS treatments received on this phone; a no-op unless AAPS is selected.
+      { refresh: () => drainAapsLocalTreatments(healthRecords) },
+    ]),
     new StoredContextSource(healthRecords),
   );
 }

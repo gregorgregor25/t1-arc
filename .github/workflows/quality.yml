@@ -107,7 +107,7 @@ jobs:
           T1ARC_EXPOSURE_STAGE: bundle
         run: |
           chmod +x gradlew
-          ./gradlew :app:createBundleReleaseJsAndAssets --no-build-cache --no-daemon
+          bash ../scripts/ci-guarded-android-bundle.sh
       - name: Verify dependency exposure evidence
         run: |
           node scripts/verify-dependency-exposure.mjs \
@@ -212,6 +212,9 @@ jobs:
             exit 1
           fi
           grep -q "refuses an implicitly debug-signed release APK" signing-policy.log
+      - name: Remove the CI Maven Central mirror
+        if: always() && env.T1ARC_CI_CENTRAL_MIRROR_ENABLED == '1'
+        run: rm -f -- "${GRADLE_USER_HOME:-$HOME/.gradle}/init.d/t1arc-ci-central-mirror.init.gradle"
 
   archived-node-services:
     runs-on: ubuntu-24.04

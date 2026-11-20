@@ -196,8 +196,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   today: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "800",
     letterSpacing: 0.9,
     marginTop: 2,

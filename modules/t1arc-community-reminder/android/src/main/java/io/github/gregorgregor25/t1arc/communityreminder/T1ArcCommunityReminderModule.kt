@@ -37,5 +37,11 @@ class T1ArcCommunityReminderModule : Module() {
     AsyncFunction("markPermissionRequestedAsync") {
       CommunityReminder.markPermissionRequested(requireNotNull(appContext.reactContext))
     }
+    AsyncFunction("showUpdateNotificationAsync") { version: String ->
+      UpdateNotice.show(requireNotNull(appContext.reactContext), version)
+    }
+    AsyncFunction("cancelUpdateNotificationAsync") {
+      UpdateNotice.cancel(requireNotNull(appContext.reactContext))
+    }
   }
 }

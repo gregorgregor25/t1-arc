@@ -54,6 +54,47 @@ The notification:
 - opens T1 Arc for inspection;
 - never offers dosing or pump-setting actions.
 
+## Insulin and carbs on board
+
+When the glucose source reports them, the notification and widget show
+insulin on board and carbs on board beside glucose, for example
+`IOB 1.35 U · COB 20 g`. T1 Arc never calculates these values. It shows what
+AAPS, or the looping system that uploads to Nightscout, reported.
+
+- **Sources.** AAPS estimates are stored natively by the AAPS status receiver,
+  from the same broadcast as AAPS glucose. Nightscout estimates come from the
+  existing Nightscout IOB/COB fetch: after a Nightscout reading is published,
+  the display coordinator sends the saved estimate through
+  `updateOnBoardEstimateForWriteEpochAsync`. That call uses the same privacy
+  epoch and source-selection fence as glucose and cannot replace an AAPS
+  estimate. It is skipped when the value, epoch and selection are unchanged.
+- **Provenance.** Each estimate carries its source. It is shown only beside
+  glucose from the same source, epoch and selection, so Nightscout values never
+  sit next to Libre or AAPS glucose. The expanded notification says
+  "Calculated by AAPS" or "Calculated by your looping system via Nightscout".
+  The Today card uses the same wording.
+- **Missing, negative and zero values.** A value the source did not report is
+  left out, never shown as zero. Negative IOB and zero COB are values and are
+  shown.
+- **Age.** The estimate keeps its own report time, separate from the glucose
+  timestamp. After 12 minutes it shows its own age, such as
+  `· 25 min ago`, in the warning colour on the widget. After 60 minutes, or
+  more than 2 minutes in the future, it is not shown. An AAPS status that
+  changes only IOB or COB updates the notification at the next one-minute
+  re-age.
+- **Storage.** The latest estimate is encrypted with the same Android Keystore
+  key as the glucose snapshot. It is cleared with the snapshot, when no reading
+  is available, and on privacy erase. Nightscout's IOB/COB connection option
+  still controls whether it is fetched at all.
+- **Lock screen.** If **Show value on lock screen** is off, the redacted
+  public notification carries no IOB or COB, just as it carries no glucose.
+- **Setting.** **Show insulin and carbs on board** (on by default) hides the
+  estimates on the notification and widget without changing what is stored or
+  what Today shows. It is not included in portable preference backups.
+- **Watch.** The Wear OS contract below is unchanged and carries no IOB or COB.
+  Showing them on the watch would need a later, optional companion update; the
+  current companion keeps working with this phone version.
+
 The foreground service is started only from the user's in-app control. It uses
 Android's `specialUse` type because an indefinite personal glucose display and
 collector does not fit another foreground-service category. Its sync cadence
@@ -88,6 +129,13 @@ follows the source's reading cadence:
   keep five-minute mode. A check that finds the previous sync still
   running is retried 20 seconds later. Changing source forgets the learned
   cadence.
+- **AAPS local** pushes each status to T1 Arc, and the receiver starts a sync
+  when glucose is new or corrected. The collector therefore does not use the
+  schedules above for AAPS: it syncs only when an alert check is due, and
+  otherwise at most every 15 minutes after the last new reading, which also
+  drains any statuses left in the encrypted buffer. A sync that finds the
+  previous one still running is not retried early, because that sync drains
+  the same buffer. See [AAPS local source](AAPS_LOCAL_SOURCE.md#battery).
 - Glucose alert evaluation tells the service the earliest time a repeat,
   stale transition or retry of an unshown alert could become due, and saving
   alert settings asks for a prompt check. The service brings its next sync
@@ -124,6 +172,17 @@ ongoing foreground importance and sort its own notifications, but it cannot
 guarantee placement above another app such as ChatGPT or GDH. A
 high-importance alert channel would add intrusive heads-up behaviour and is
 reserved for explicit glucose alerts, not the quiet persistent status surface.
+
+## Background timers in the app
+
+Screens that poll while visible use `startForegroundInterval`
+(`src/hooks/foregroundInterval.ts`). It stops the timer when the app goes to
+the background and restarts it when the app is active again, optionally with
+an immediate refresh. Headless sync keeps JavaScript running in the
+background, so a timer that only skipped its work would still wake the phone.
+This covers the AAPS card and AAPS source card (30 seconds), the presentation
+clock (15 seconds), the foreground glucose refresh (60 seconds), the Glooko
+check and the Nightscout Today card estimate (30 seconds).
 
 ## Always-on display
 

@@ -28,6 +28,7 @@ import { runExclusiveLocalDataMutation } from '@/data/privacy/localDataMutationC
 import { LOCAL_DATA_WRITE_EPOCH_KEY } from '@/data/privacy/localDataWriteEpoch';
 import { NOTEBOOK_STORAGE_KEY } from '@/domain/personalNotebook';
 import { DISPLAY_PREFERENCES_STORAGE_KEY, DEFAULT_DISPLAY_PREFERENCES } from '@/domain/displayPreferences';
+import { GLUCOSE_READINGS_CREATE_SQL } from '@/data/persistence/glucoseReadingIdentitySchema';
 
 const mocks = vi.hoisted(() => {
   const metadata = new Map<string, string>();
@@ -383,6 +384,7 @@ function streamedNotificationBackup(rows: Record<string, any>[], sourceVersion =
   const sourceCounts = { ...backup.manifest.counts } as Record<string, number>;
   if (sourceVersion < 20) delete sourceCounts.food_photos;
   if (sourceVersion < 22) { delete sourceCounts.cycle_periods; delete sourceCounts.cycle_days; }
+  if (sourceVersion < 23) delete sourceCounts.aaps_status_observations;
   const manifest = encoder.encode(JSON.stringify({ ...backup.manifest, counts: sourceCounts, version: sourceVersion }));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('notification_source_events');
   const uri = `file:///notification-restore-${mocks.files.size}.container`;
@@ -418,6 +420,7 @@ function streamedPortableConversationMigration(value: string) {
   delete legacyCounts.food_photos;
   delete legacyCounts.cycle_periods;
   delete legacyCounts.cycle_days;
+  delete legacyCounts.aaps_status_observations;
   const manifest = encoder.encode(JSON.stringify({ ...document.manifest, counts: legacyCounts, version: 16 }));
   const payload = encoder.encode(JSON.stringify(row));
   const tableIndex = BACKUP_TABLE_NAMES.indexOf('portable_app_state');
@@ -577,6 +580,7 @@ function streamedVersionedBackup(options: {
   backup.manifest.version = options.version;
   if (options.version < 20) delete backup.manifest.counts.food_photos;
   if (options.version < 22) { delete backup.manifest.counts.cycle_periods; delete backup.manifest.counts.cycle_days; }
+  if (options.version < 23) delete backup.manifest.counts.aaps_status_observations;
   if (options.version < 13) {
     delete backup.manifest.counts.hevy_workouts;
   }
@@ -628,6 +632,64 @@ describe('health backup additive merge', () => {
     mocks.withT1ArcReadSnapshot.mockClear();
     mocks.pruneRetainedGlookoSources.mockClear();
     mocks.backfillLegacyGlookoMeterContextNotes.mockClear();
+  });
+
+  it('keeps another phone\'s restored AAPS reading out of a selected local AAPS feed', async () => {
+    const sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(GLUCOSE_READINGS_CREATE_SQL);
+    sqlite.exec(`CREATE TABLE source_sync_state (
+      source_id TEXT NOT NULL PRIMARY KEY, last_attempt_at_ms INTEGER,
+      last_success_at_ms INTEGER, last_error_code TEXT,
+      last_error_message TEXT, record_count INTEGER NOT NULL DEFAULT 0
+    )`);
+    sqlite.prepare(`INSERT INTO glucose_readings (
+      id, source_id, timestamp_ms, received_at_ms, mmol_l, trend, quality
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      'aaps-local:1730000000000', 'aaps-local', 1_730_000_000_000,
+      1_730_000_001_000, 6.2, 'flat', 'measured',
+    );
+    const backup = emptyBackup();
+    backup.tables.glucose_readings = [{
+      id: 'aaps-local:1730000300000', source_id: 'aaps-local',
+      timestamp_ms: 1_730_000_300_000, received_at_ms: 1_730_000_301_000,
+      mmol_l: 7.8, trend: 'up', quality: 'measured',
+      source_factory_timestamp: null, source_local_timestamp: null,
+      timestamp_discrepancy_minutes: null, imported_at_ms: null,
+      source_file: null, source_row: null, source_device_id: null,
+    }];
+    backup.tables.source_sync_state = [{
+      source_id: 'aaps-local', last_attempt_at_ms: 1_730_000_301_000,
+      last_success_at_ms: 1_730_000_301_000,
+      last_error_code: null, last_error_message: null, record_count: 1,
+    }];
+    backup.manifest.counts.glucose_readings = 1;
+    backup.manifest.counts.source_sync_state = 1;
+    backup.manifest.totalRecords = 2;
+    const originalRun = mocks.database.runAsync.getMockImplementation()!;
+    mocks.database.runAsync.mockImplementation(async (query: string, ...parameters: unknown[]) => {
+      if (query.includes('INTO "glucose_readings"') || query.includes('INTO "source_sync_state"')) {
+        const result = sqlite.prepare(query).run(...(parameters as SQLInputValue[]));
+        return { changes: Number(result.changes), lastInsertRowId: Number(result.lastInsertRowid) };
+      }
+      return originalRun(query, ...parameters);
+    });
+    try {
+      await mergeHealthBackup(validateHealthBackupDocument(backup));
+      const selected = sqlite.prepare(`SELECT id, mmol_l FROM glucose_readings
+        WHERE source_id = 'aaps-local' ORDER BY timestamp_ms DESC LIMIT 1`).get();
+      expect(selected).toEqual({ id: 'aaps-local:1730000000000', mmol_l: 6.2 });
+      expect(sqlite.prepare(`SELECT id, source_id, source_device_id FROM glucose_readings
+        WHERE source_id = 'aaps-restored'`).get()).toEqual({
+        id: 'aaps-restored:aaps-local:1730000300000',
+        source_id: 'aaps-restored',
+        source_device_id: 'restored:aaps-local:1730000300000:',
+      });
+      expect(sqlite.prepare('SELECT source_id FROM source_sync_state').get())
+        .toEqual({ source_id: 'aaps-restored' });
+    } finally {
+      mocks.database.runAsync.mockImplementation(originalRun);
+      sqlite.close();
+    }
   });
 
   it.each(['legacy', 'stream'] as const)('recovers disconnected source identity from the %s manifest', async kind => {

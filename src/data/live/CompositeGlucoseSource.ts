@@ -1,9 +1,15 @@
 import { GlucoseRefreshOptions, GlucoseSource } from '@/data/contracts';
+import { AAPS_HISTORICAL_SOURCE_ID, AAPS_RESTORED_SOURCE_ID } from '@/data/aaps/types';
 import { GLOOKO_CGM_SOURCE_ID } from '@/data/import/glookoCsv';
 import { DEXCOM_CGM_SOURCE_ID } from '@/data/import/dexcomClarityCsv';
 import { NOTIFICATION_SOURCE_ID } from '@/data/notification/types';
 import { GlucoseHistoryStore } from '@/data/persistence/GlucoseHistoryStore';
 import { glucoseFreshness } from '@/domain/freshness';
+import {
+  summarizeExactDuplicates,
+  type SourceDuplicateSummary,
+  type SourceHealthSourceInput,
+} from '@/domain/sourceHealth';
 import {
   DataSourceStatus,
   GlucoseReading,
@@ -11,6 +17,25 @@ import {
 } from '@/domain/models';
 
 export const COMPOSITE_GLUCOSE_SOURCE_ID = 't1arc-live-glucose';
+
+export type GlucoseSourceSelection =
+  | string
+  | undefined
+  | { sourceId?: string; generation?: number };
+
+function normalizedSelection(value: GlucoseSourceSelection) {
+  return typeof value === 'object' && value !== null
+    ? value
+    : { sourceId: value };
+}
+
+function sameSelection(
+  left: ReturnType<typeof normalizedSelection>,
+  right: ReturnType<typeof normalizedSelection>,
+) {
+  return left.sourceId === right.sourceId &&
+    left.generation === right.generation;
+}
 
 function latestTimestamp(values: (number | undefined)[]) {
   const timestamps = values.filter(
@@ -27,16 +52,42 @@ export class CompositeGlucoseSource implements GlucoseSource {
   private statusSnapshot?: DataSourceStatus;
   private refreshGeneration = 0;
   private readonly priority = new Map<string, number>();
+  private activeSourceId?: string;
+  private activeSelection: ReturnType<typeof normalizedSelection> = {};
 
   constructor(
     private readonly sources: GlucoseSource[],
     private readonly history: GlucoseHistoryStore,
+    private readonly selectedSource?: () => Promise<GlucoseSourceSelection>,
   ) {
     sources.forEach((source, index) => {
       this.priority.set(source.sourceId, index);
     });
     this.priority.set(DEXCOM_CGM_SOURCE_ID, sources.length);
     this.priority.set(GLOOKO_CGM_SOURCE_ID, sources.length + 1);
+    this.priority.set(AAPS_RESTORED_SOURCE_ID, sources.length + 2);
+    this.priority.set(AAPS_HISTORICAL_SOURCE_ID, sources.length + 3);
+  }
+
+  private async resolveSelectedSource() {
+    const selected = normalizedSelection(await this.selectedSource?.());
+    if (!sameSelection(this.activeSelection, selected)) {
+      this.activeSelection = selected;
+      this.activeSourceId = selected.sourceId;
+      this.statusSnapshot = undefined;
+      this.refreshGeneration += 1;
+    }
+    return selected;
+  }
+
+  private async selectionStillCurrent(expected: ReturnType<typeof normalizedSelection>) {
+    return sameSelection(expected, await this.resolveSelectedSource());
+  }
+
+  private configuredSourcesFor(selected: string | undefined) {
+    return selected === undefined
+      ? this.sources
+      : this.sources.filter((source) => source.sourceId === selected);
   }
 
   async refresh(options?: GlucoseRefreshOptions): Promise<void> {
@@ -51,15 +102,17 @@ export class CompositeGlucoseSource implements GlucoseSource {
     this.statusSnapshot = undefined;
     this.refreshInFlightForced = options?.force === true;
     this.refreshInFlight = (async () => {
+      const selection = await this.resolveSelectedSource();
+      const selected = selection.sourceId;
       const results = await Promise.allSettled(
-        this.sources.map((source) => source.refresh?.(options)),
+        this.configuredSourcesFor(selected).map((source) => source.refresh?.(options)),
       );
       const failure = results.find(
         (result): result is PromiseRejectedResult =>
           result.status === 'rejected',
       );
       if (failure) {
-        const bounds = await this.history.getBounds();
+        const bounds = await this.history.getBounds(selected);
         if (bounds.count === 0) throw failure.reason;
       }
     })().finally(() => {
@@ -77,14 +130,22 @@ export class CompositeGlucoseSource implements GlucoseSource {
   async getReadings(range: TimeRange) {
     // Rendering is cache-first. Explicit repository refresh lanes own all
     // network work, so a slow/offline source can never hide saved history.
-    const readings = await this.history.getReadings(range);
+    const selection = await this.resolveSelectedSource();
+    const selected = selection.sourceId;
+    if (selected === 'none') return [];
+    const readings = await this.history.getReadings(range, selected);
+    if (!(await this.selectionStillCurrent(selection))) return [];
     return this.selectReadings(readings);
   }
 
   /** Shared by Today and native display publication. */
   selectReadings(readings: GlucoseReading[]) {
+    if (this.activeSourceId === 'none') return [];
+    const scoped = this.activeSourceId === undefined
+      ? readings
+      : readings.filter((reading) => reading.sourceId === this.activeSourceId);
     return this.preferLiveOverHistoricalDuplicates(
-      this.preferOneReadingPerExactTimestamp(readings),
+      this.preferOneReadingPerExactTimestamp(scoped),
     );
   }
 
@@ -93,6 +154,13 @@ export class CompositeGlucoseSource implements GlucoseSource {
   }
 
   private async getLatestReadingFromHistory() {
+    const selection = await this.resolveSelectedSource();
+    const selected = selection.sourceId;
+    if (selected === 'none') return undefined;
+    if (selected !== undefined) {
+      const reading = await this.history.getLatestReading(selected);
+      return await this.selectionStillCurrent(selection) ? reading : undefined;
+    }
     const liveReadings = (
       await Promise.all(
         this.sources.map((source) =>
@@ -100,14 +168,17 @@ export class CompositeGlucoseSource implements GlucoseSource {
         ),
       )
     ).filter((reading): reading is GlucoseReading => Boolean(reading));
-    return liveReadings.sort((a, b) => b.timestamp - a.timestamp)[0] ??
-      this.history.getLatestReading();
+    const latest = liveReadings.sort((a, b) => b.timestamp - a.timestamp)[0] ??
+      await this.history.getLatestReading();
+    return await this.selectionStillCurrent(selection) ? latest : undefined;
   }
 
   private async readStatusSnapshot(now: number): Promise<DataSourceStatus> {
+    const selected = (await this.resolveSelectedSource()).sourceId;
+    const configured = this.configuredSourcesFor(selected);
     const [statuses, latest, bounds] = await Promise.all([
       Promise.all(
-        this.sources.map((source) =>
+        configured.map((source) =>
           source.getStatus(now).catch(
             (): DataSourceStatus => ({
               id: source.sourceId,
@@ -121,7 +192,7 @@ export class CompositeGlucoseSource implements GlucoseSource {
         ),
       ),
       this.getLatestReadingFromHistory(),
-      this.history.getBounds(),
+      this.history.getBounds(selected === 'none' ? 'none' : selected),
     ]);
     const active =
       statuses.find((status) => status.id === latest?.sourceId) ??
@@ -133,7 +204,9 @@ export class CompositeGlucoseSource implements GlucoseSource {
     const latestIsImported =
       latest !== undefined &&
       (latest.sourceId === GLOOKO_CGM_SOURCE_ID ||
-        latest.sourceId === DEXCOM_CGM_SOURCE_ID);
+        latest.sourceId === DEXCOM_CGM_SOURCE_ID ||
+        latest.sourceId === AAPS_RESTORED_SOURCE_ID ||
+        latest.sourceId === AAPS_HISTORICAL_SOURCE_ID);
     const latestError = statuses.find((status) => status.errorCode);
     const noConfiguredSource =
       !latest &&
@@ -150,7 +223,7 @@ export class CompositeGlucoseSource implements GlucoseSource {
           ? 'Historical glucose · encrypted local history'
         : active?.isLive
         ? 'Connected source · encrypted local history'
-        : active?.detail ?? 'No glucose source is ready',
+        : active?.detail ?? (selected === 'none' ? 'No glucose source selected' : 'No glucose source is ready'),
       freshness:
         hasCurrentSource && latest
           ? 'current'
@@ -173,6 +246,7 @@ export class CompositeGlucoseSource implements GlucoseSource {
     // Status is also a cache-only observation. It must not wait for an active
     // source request before allowing the saved glucose value to render.
 
+    const selection = await this.resolveSelectedSource();
     if (!this.statusSnapshot) {
       if (!this.statusReadInFlight) {
         const generation = this.refreshGeneration;
@@ -201,12 +275,23 @@ export class CompositeGlucoseSource implements GlucoseSource {
     const freshness = glucoseFreshness(dataThrough, now);
     const latestIsImported =
       latest?.sourceId === GLOOKO_CGM_SOURCE_ID ||
-      latest?.sourceId === DEXCOM_CGM_SOURCE_ID;
+      latest?.sourceId === DEXCOM_CGM_SOURCE_ID ||
+      latest?.sourceId === AAPS_RESTORED_SOURCE_ID ||
+      latest?.sourceId === AAPS_HISTORICAL_SOURCE_ID;
     const origin = latest
       ? latestIsImported
         ? 'imported'
         : 'live'
       : snapshot.origin;
+    if (!(await this.selectionStillCurrent(selection))) {
+      return {
+        ...snapshot,
+        freshness: 'missing',
+        dataThrough: undefined,
+        detail: 'Glucose source changed; refreshing',
+        isLive: false,
+      };
+    }
     return freshness === snapshot.freshness &&
       dataThrough === snapshot.dataThrough &&
       snapshot.origin === origin
@@ -217,6 +302,61 @@ export class CompositeGlucoseSource implements GlucoseSource {
           freshness,
           origin,
         };
+  }
+
+  /**
+   * Cache-only source health: each configured source's stored sync status,
+   * its record times in the window, and exact-timestamp duplicates that the
+   * display resolves by source priority.
+   */
+  async getSourceHealth(
+    window: TimeRange,
+    now: number,
+  ): Promise<{ sources: SourceHealthSourceInput[]; duplicates: SourceDuplicateSummary[] }> {
+    const selection = await this.resolveSelectedSource();
+    const configured = this.configuredSourcesFor(selection.sourceId);
+    const [statuses, readings, bounds] = await Promise.all([
+      Promise.all(
+        configured.map((source) =>
+          source.getStatus(now).catch(
+            (): DataSourceStatus => ({
+              id: source.sourceId,
+              label: source.sourceId,
+              detail: 'Source unavailable',
+              freshness: 'missing',
+              origin: 'live',
+              isLive: false,
+            }),
+          ),
+        ),
+      ),
+      selection.sourceId === 'none'
+        ? Promise.resolve([] as GlucoseReading[])
+        : this.history.getReadings(window),
+      Promise.all(configured.map((source) => this.history.getBounds(source.sourceId))),
+    ]);
+    if (!(await this.selectionStillCurrent(selection))) {
+      return { sources: [], duplicates: [] };
+    }
+    const sources = configured.map((source, index): SourceHealthSourceInput => ({
+      kind: 'glucose',
+      status: statuses[index]!,
+      recentRecords: readings
+        .filter((reading) => reading.sourceId === source.sourceId)
+        .map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+      ...(bounds[index]?.earliest === undefined
+        ? {}
+        : { earliestRecordAt: bounds[index]!.earliest }),
+    }));
+    // A single selected source shows only its own readings, so nothing is
+    // chosen between sources.
+    const duplicates = selection.sourceId === undefined
+      ? summarizeExactDuplicates(
+          readings.map(({ timestamp, sourceId }) => ({ timestamp, sourceId })),
+          (sourceId) => this.priority.get(sourceId) ?? Number.MAX_SAFE_INTEGER,
+        )
+      : [];
+    return { sources, duplicates };
   }
 
   private preferOneReadingPerExactTimestamp(
@@ -241,6 +381,8 @@ export class CompositeGlucoseSource implements GlucoseSource {
     const importedSources = new Set([
       GLOOKO_CGM_SOURCE_ID,
       DEXCOM_CGM_SOURCE_ID,
+      AAPS_RESTORED_SOURCE_ID,
+      AAPS_HISTORICAL_SOURCE_ID,
     ]);
     const live = readings.filter(
       (reading) => !importedSources.has(reading.sourceId),

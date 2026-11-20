@@ -177,6 +177,25 @@ async function reconcileGlucoseAlertsOperation(
   trend: TrendDirection,
   now: number,
 ) {
+  // Once explicitly configured, Android owns evaluation and episode timing.
+  // Do not let this legacy JS runtime cancel or duplicate its notifications.
+  // A failed ownership check also fails closed instead of starting two owners.
+  if (await T1ArcGlucoseDisplay.reconcileGlucoseAlarmAsync?.()) {
+    // The native engine schedules its own repeat and stale timers. Clear any
+    // check left by this JS engine so the collector does not keep waking for it.
+    await publishNextAlertCheck(undefined);
+    return {
+      preferences: await loadGlucoseAlertPreferences(),
+      evaluation: {
+        zone: 'normal' as const,
+        shouldCancelExisting: false,
+        shouldNotify: false,
+        nextState: DEFAULT_GLUCOSE_ALERT_STATE,
+      },
+      notified: false,
+      nativeOwned: true,
+    };
+  }
   const [preferences, previous] = await Promise.all([
     loadGlucoseAlertPreferences(),
     loadAlertState(),

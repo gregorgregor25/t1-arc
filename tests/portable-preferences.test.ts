@@ -39,17 +39,20 @@ function adapter(): PortablePreferenceAdapter {
     getStepGoal: vi.fn(async () => 8_500),
     getTreatmentProfile: vi.fn(async () => null),
     getRegionalProfile: vi.fn(async () => DEFAULT_REGIONAL_PROFILE),
+    getGlucoseAlarms: vi.fn(async () => null),
     setGlucoseAppearance: vi.fn(async () => undefined),
     setLockScreenVisible: vi.fn(async () => undefined),
     setAodPosition: vi.fn(async () => undefined),
     setAodSize: vi.fn(async () => undefined),
     setWeeklyReviewEnabled: vi.fn(async () => undefined),
     setWeeklyReviewTiming: vi.fn(async () => undefined),
+    disarmGlucoseAlarms: vi.fn(async () => undefined),
     setGlucoseAlerts: vi.fn(async () => undefined),
     setThemePreference: vi.fn(async () => undefined),
     setStepGoal: vi.fn(async () => undefined),
     setTreatmentProfile: vi.fn(async () => undefined),
     setRegionalProfile: vi.fn(async () => undefined),
+    setGlucoseAlarms: vi.fn(async () => ({ notices: [] })),
   };
 }
 
@@ -83,6 +86,7 @@ describe('portable preferences', () => {
       healthGoals: { dailyStepGoal: 8_500 },
       treatmentProfile: null,
       regionalProfile: DEFAULT_REGIONAL_PROFILE,
+      glucoseAlarms: null,
     });
     expect(JSON.stringify(result)).not.toMatch(
       /credential|password|cookie|token|email/i,
@@ -114,13 +118,15 @@ describe('portable preferences', () => {
       highThresholdMmolL: 14,
       staleEnabled: true,
       repeatMinutes: 60,
-    });
+    }, { fullAlarmChoicesFollow: false });
+    expect(destination.disarmGlucoseAlarms).toHaveBeenCalledOnce();
     expect(destination.setThemePreference).toHaveBeenCalledWith('dark');
     expect(destination.setStepGoal).toHaveBeenCalledWith(8_500);
     expect(destination.setTreatmentProfile).toHaveBeenCalledWith(null);
     expect(destination.setRegionalProfile).toHaveBeenCalledWith(
       DEFAULT_REGIONAL_PROFILE,
     );
+    expect(destination.setGlucoseAlarms).not.toHaveBeenCalled();
     expect(Object.keys(destination)).not.toContain('setEnabled');
     expect(Object.keys(destination)).not.toContain('requestPermission');
   });
@@ -152,6 +158,7 @@ describe('portable preferences', () => {
       healthGoals: { dailyStepGoal: null },
       treatmentProfile: null,
       regionalProfile: DEFAULT_REGIONAL_PROFILE,
+      glucoseAlarms: null,
     };
     expect(() =>
       validatePortablePreferences({ ...valid, accessToken: 'secret' }),
@@ -266,6 +273,7 @@ describe('portable preferences', () => {
       healthGoals: { dailyStepGoal: null },
       treatmentProfile: null,
       regionalProfile: DEFAULT_REGIONAL_PROFILE,
+      glucoseAlarms: null,
     };
 
     expect(() =>

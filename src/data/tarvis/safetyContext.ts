@@ -1,3 +1,4 @@
+import { safeNormalize } from "./textNormalise";
 import type { TarvisConversationTurn } from "./types";
 
 type SafetyContext =
@@ -63,9 +64,7 @@ const SPOKEN_NUMERIC_REPLY =
   /^(?:(?:mine|they|it|the reading)\s+(?:is|are|reads?|shows?)\s+)?((?:zero|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:point|dot|decimal|comma)\s+(?:oh|nought|naught|zero|one|two|three|four|five|six|seven|eight|nine)(?:\s+(?:oh|nought|naught|zero|one|two|three|four|five|six|seven|eight|nine))*|and\s+a\s+half))(?:\s+(?:now|right now|currently|at the moment))?[.!]?$/i;
 
 function normalise(text: string) {
-  return text
-    .trim()
-    .normalize("NFKC")
+  return safeNormalize(text.trim(), "NFKC")
     .replace(/[’‘]/g, "'")
     .replace(/\s+/g, " ");
 }

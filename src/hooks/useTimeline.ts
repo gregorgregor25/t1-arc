@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiabetesRepository } from "@/data/contracts";
 import { loadTimelineWithContext } from "@/domain/timelineContextLoading";
@@ -79,6 +79,15 @@ export function useTimeline(
     loading: true,
     owner: repository,
   }));
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => {
+    setState((previous) => ({
+      ...previous,
+      loading: previous.data === undefined,
+      error: undefined,
+    }));
+    setAttempt((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -115,9 +124,10 @@ export function useTimeline(
     return () => {
       active = false;
     };
-  }, [contextPaddingMs, rangeKey, repository, revision]);
+  }, [attempt, contextPaddingMs, rangeKey, repository, revision]);
 
-  return timelineStateForRange(state, rangeKey, repository);
+  const visible = timelineStateForRange(state, rangeKey, repository);
+  return useMemo(() => ({ ...visible, reload }), [reload, visible]);
 }
 
 export interface LatestState {

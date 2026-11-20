@@ -1,3 +1,38 @@
+import type { DailyMetricRecord } from '@/domain/dailyHealthMetrics';
+import type { EvidenceReference } from '@/domain/insights';
+import type { HealthContextEvent } from '@/domain/models';
+
+/** Saved nearby-record windows are context, not a calculation's input list. */
+export function evidenceInspectorRecordPresentation(
+  evidence: EvidenceReference | undefined,
+  view: 'visual' | 'records',
+  selectedEventKind?: HealthContextEvent['kind'],
+) {
+  const nearby = Boolean(evidence?.id.startsWith('context-window:') &&
+    !evidence.calculation && !evidence.visualization);
+  return {
+    heading: nearby ? 'RECORDS AROUND THIS EVENT' : 'EXACT CALCULATION INPUTS',
+    title: nearby ? 'Nearby records' : 'No hidden evidence',
+    explanation: nearby
+      ? 'The saved record list includes the selected event and its surrounding context.'
+      : 'Every saved record used for this answer is shown below.',
+    resolvedLabel: nearby ? 'LOADED' : 'SHOWN',
+    totalLabel: nearby ? 'IN WINDOW' : 'USED',
+    includeWeightRecords: !nearby || view === 'records' || selectedEventKind === 'weight',
+  };
+}
+
+export function referencedHealthRecordsForView(
+  records: DailyMetricRecord[],
+  recordIds: readonly string[],
+  includeWeightRecords: boolean,
+) {
+  const requested = new Set(recordIds);
+  return records.filter((record) =>
+    requested.has(record.id) && (includeWeightRecords || record.kind !== 'weight'),
+  );
+}
+
 export function evidenceResolutionValue(
   resolution: { resolved: number } | undefined,
   failed = false,

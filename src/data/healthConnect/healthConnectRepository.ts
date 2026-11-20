@@ -17,8 +17,9 @@ import {
   buildHealthConnectExternalIdFilter,
   healthConnectParentRecordIds,
   HEALTH_CONNECT_RECORD_KINDS_BY_CATEGORY,
-  reconcileHealthConnectWindowInTransaction,
-  resolveAndPromoteHealthConnectRecordId,
+  healthConnectRecordUnchanged,
+  reconcileHealthConnectWindowRetainingInTransaction,
+  resolveHealthConnectRecordIdentities,
 } from './healthConnectReconciliation';
 import {
   chooseAutomaticHealthConnectSource,
@@ -37,6 +38,15 @@ import {
 } from '@/data/privacy/localDataWriteEpoch';
 import { HealthContextEvent } from '@/domain/models';
 import {
+  HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_WINDOW_CHECK_SPAN_MS,
+  healthConnectSyncDue,
+  healthConnectSyncShouldStop,
+  healthConnectWindowCheckDue,
+  type HealthConnectSyncControl,
+} from './healthConnectSyncPolicy';
+
+import {
   advanceHealthConnectSyncProgress,
   beginHealthConnectSyncProgress,
   completeHealthConnectSyncCategory,
@@ -44,16 +54,31 @@ import {
   setHealthConnectSyncCategory,
 } from './healthConnectSyncProgress';
 
-const INCREMENTAL_OVERLAP_MS = 7 * 24 * 60 * 60 * 1000;
+export {
+  HEALTH_CONNECT_APP_OPEN_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_BACKGROUND_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_BACKGROUND_TIME_BUDGET_MS,
+  HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS,
+  HEALTH_CONNECT_WINDOW_CHECK_INTERVAL_MS,
+  HEALTH_CONNECT_WINDOW_CHECK_SPAN_MS,
+  healthConnectSyncDue,
+  healthConnectSyncShouldStop,
+  healthConnectWindowCheckDue,
+  type HealthConnectSyncControl,
+} from './healthConnectSyncPolicy';
+
 const MAX_PAGES_PER_CATEGORY = 10_000;
 const MAX_CHANGE_PAGES_PER_CATEGORY = 10_000;
 // Health Connect can return 500 normalized records in one native page (and a
 // sampled record can expand further). Keeping that whole page inside one
 // BEGIN IMMEDIATE held the only SQLite writer for minutes on a real phone,
-// starving the latency-critical glucose commit. Each batch remains atomic,
-// while the page token advances only after every batch has completed.
-export const HEALTH_CONNECT_WRITE_BATCH_SIZE = 25;
-const FOREGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+// starving the latency-critical glucose commit. Each batch remains atomic and
+// now costs a few multi-row statements, while the page token advances only
+// after every batch has completed.
+export const HEALTH_CONNECT_WRITE_BATCH_SIZE = 200;
+
+const FOREGROUND_SYNC_INTERVAL_MS = HEALTH_CONNECT_MANUAL_SYNC_INTERVAL_MS;
+const WINDOW_CHECK_STATE_KEY = 'health-connect-window-check-v1';
 const BACKGROUND_STATE_KEY = 'health-connect-background-state-v1';
 // Kept outside portable preferences and never reset, so a configuration fence
 // cannot return to an earlier value after local data is cleared or restored.
@@ -78,6 +103,27 @@ function isHealthConnectConfigurationSupersededError(
   error: unknown,
 ): error is HealthConnectConfigurationSupersededError {
   return error instanceof HealthConnectConfigurationSupersededError;
+}
+
+export class HealthConnectSyncStoppedError extends Error {
+  constructor() {
+    super('Health Connect sync stopped early and will continue next time.');
+    this.name = 'HealthConnectSyncStoppedError';
+  }
+}
+
+function isHealthConnectSyncStoppedError(
+  error: unknown,
+): error is HealthConnectSyncStoppedError {
+  return error instanceof HealthConnectSyncStoppedError;
+}
+
+function assertHealthConnectSyncMayContinue(
+  control: HealthConnectSyncControl | undefined,
+) {
+  if (healthConnectSyncShouldStop(control)) {
+    throw new HealthConnectSyncStoppedError();
+  }
 }
 
 interface PreferenceRow {
@@ -174,6 +220,12 @@ export interface HealthConnectSyncResult {
   sourcesFound: number;
   startedAt: number;
   completedAt: number;
+  /** Counts only (no values), kept so a battery regression is visible. */
+  recordsRead?: number;
+  recordsWritten?: number;
+  recordsUnchanged?: number;
+  /** True when the run stopped early; unfinished categories continue next time. */
+  stoppedEarly?: boolean;
 }
 
 export interface HealthConnectSyncFailure {
@@ -188,6 +240,10 @@ export interface HealthConnectBackgroundState {
   recordsProcessed: number;
   recordsRemoved: number;
   failures: number;
+  /** Rows actually written; unchanged rows are only read. Counts only. */
+  recordsWritten?: number;
+  /** How long the run took, so a slow import is visible in Settings. */
+  durationMs?: number;
 }
 
 function parseHealthConnectConfigurationRevision(value?: string) {
@@ -497,48 +553,47 @@ export async function savePreferredHealthConnectSource(
 
 export async function getHealthConnectOverview(): Promise<HealthConnectOverview> {
   const database = await openT1ArcDatabase();
-  const [bounds, preferences, sync, sources, sourceCategories, backgroundRow] =
-    await Promise.all([
-      database.getFirstAsync<{
-        total: number;
-        earliest: number | null;
-        latest: number | null;
-      }>(
-        `SELECT COUNT(*) AS total, MIN(start_ms) AS earliest,
-         MAX(end_ms) AS latest
-       FROM health_connect_records`,
-      ),
-      loadHealthConnectPreferences(),
-      database.getAllAsync<SyncRow>(
-        `SELECT category, last_attempt_at_ms, last_success_at_ms,
-         data_start_ms, data_through_ms, record_count,
-         last_error_code, last_error_message, changes_token,
-         changes_token_source_package
-       FROM health_connect_sync_state
-       ORDER BY category`,
-      ),
-      database.getAllAsync<SourceRow>(
-        `SELECT s.package_name, s.display_name, s.first_seen_at_ms,
-         s.last_seen_at_ms, COUNT(r.id) AS record_count
-       FROM health_connect_sources s
-       LEFT JOIN health_connect_records r
-         ON r.source_package = s.package_name
-       GROUP BY s.package_name, s.display_name, s.first_seen_at_ms,
-         s.last_seen_at_ms
-       ORDER BY record_count DESC, s.display_name ASC`,
-      ),
-      database.getAllAsync<SourceCategoryRow>(
-        `SELECT source_package AS package_name, kind,
-         COUNT(*) AS record_count, MIN(start_ms) AS data_start_ms,
-         MAX(end_ms) AS data_through_ms
-       FROM health_connect_records
-       GROUP BY source_package, kind`,
-      ),
-      database.getFirstAsync<{ value: string }>(
-        `SELECT value FROM app_metadata WHERE key = ?`,
-        BACKGROUND_STATE_KEY,
-      ),
-    ]);
+  // One query at a time: the three whole-table aggregates must not occupy
+  // three database threads at once. Sync no longer reads this overview.
+  const bounds = await database.getFirstAsync<{
+    total: number;
+    earliest: number | null;
+    latest: number | null;
+  }>(
+    `SELECT COUNT(*) AS total, MIN(start_ms) AS earliest,
+       MAX(end_ms) AS latest
+     FROM health_connect_records`,
+  );
+  const preferences = await loadHealthConnectPreferencesFromDatabase(database);
+  const sync = await database.getAllAsync<SyncRow>(
+    `SELECT category, last_attempt_at_ms, last_success_at_ms,
+       data_start_ms, data_through_ms, record_count,
+       last_error_code, last_error_message, changes_token,
+       changes_token_source_package
+     FROM health_connect_sync_state
+     ORDER BY category`,
+  );
+  const sources = await database.getAllAsync<SourceRow>(
+    `SELECT s.package_name, s.display_name, s.first_seen_at_ms,
+       s.last_seen_at_ms, COUNT(r.id) AS record_count
+     FROM health_connect_sources s
+     LEFT JOIN health_connect_records r
+       ON r.source_package = s.package_name
+     GROUP BY s.package_name, s.display_name, s.first_seen_at_ms,
+       s.last_seen_at_ms
+     ORDER BY record_count DESC, s.display_name ASC`,
+  );
+  const sourceCategories = await database.getAllAsync<SourceCategoryRow>(
+    `SELECT source_package AS package_name, kind,
+       COUNT(*) AS record_count, MIN(start_ms) AS data_start_ms,
+       MAX(end_ms) AS data_through_ms
+     FROM health_connect_records
+     GROUP BY source_package, kind`,
+  );
+  const backgroundRow = await database.getFirstAsync<{ value: string }>(
+    `SELECT value FROM app_metadata WHERE key = ?`,
+    BACKGROUND_STATE_KEY,
+  );
   const categoryStatsByPackage = new Map<
     string,
     Map<HealthConnectCategoryId, HealthConnectSourceCategoryStats>
@@ -634,6 +689,14 @@ function parseHealthConnectBackgroundState(
         typeof parsed.failures === 'number' && Number.isFinite(parsed.failures)
           ? Math.max(0, Math.floor(parsed.failures))
           : 0,
+      ...(typeof parsed.recordsWritten === 'number' &&
+      Number.isFinite(parsed.recordsWritten)
+        ? { recordsWritten: Math.max(0, Math.floor(parsed.recordsWritten)) }
+        : {}),
+      ...(typeof parsed.durationMs === 'number' &&
+      Number.isFinite(parsed.durationMs)
+        ? { durationMs: Math.max(0, Math.floor(parsed.durationMs)) }
+        : {}),
     };
   } catch {
     return undefined;
@@ -747,43 +810,103 @@ function withHealthConnectWriteLease<T>(
   });
 }
 
+// Rows per multi-row statement. The widest statement (context events) binds
+// 20 values per row, so 40 rows stay under SQLite's historical 999 limit.
+const HEALTH_CONNECT_ROWS_PER_STATEMENT = 40;
+
+function rowsPerStatement<T>(rows: T[]) {
+  const chunks: T[][] = [];
+  for (
+    let offset = 0;
+    offset < rows.length;
+    offset += HEALTH_CONNECT_ROWS_PER_STATEMENT
+  ) {
+    chunks.push(rows.slice(offset, offset + HEALTH_CONNECT_ROWS_PER_STATEMENT));
+  }
+  return chunks;
+}
+
+export interface HealthConnectPageWriteResult {
+  contextUpdated: number;
+  recordsWritten: number;
+  recordsUnchanged: number;
+  /** Stored ids confirmed by this read; reconciliation must keep them. */
+  retainedIds: string[];
+}
+
+interface HealthConnectRowToWrite {
+  id: string;
+  record: HealthConnectRecord;
+}
+
+async function writeSourcesInTransaction(
+  database: T1ArcDatabase,
+  sources: HealthConnectSource[],
+  importedAt: number,
+) {
+  const unique = [
+    ...new Map(sources.map((source) => [source.packageName, source])).values(),
+  ];
+  for (const chunk of rowsPerStatement(unique)) {
+    await database.runAsync(
+      `INSERT INTO health_connect_sources (
+           package_name, display_name, first_seen_at_ms, last_seen_at_ms
+         ) VALUES ${chunk.map(() => '(?, ?, ?, ?)').join(', ')}
+         ON CONFLICT(package_name) DO UPDATE SET
+           display_name = excluded.display_name,
+           last_seen_at_ms = excluded.last_seen_at_ms`,
+      ...chunk.flatMap((source) => [
+        source.packageName,
+        source.displayName,
+        importedAt,
+        importedAt,
+      ]),
+    );
+  }
+}
+
 async function writePageInTransaction(
   database: T1ArcDatabase,
   records: HealthConnectRecord[],
   sources: HealthConnectSource[],
   importedAt: number,
-) {
-  let contextUpdated = 0;
+): Promise<HealthConnectPageWriteResult> {
   const sourceLabels = new Map(
     sources.map((source) => [source.packageName, source.displayName]),
   );
-  for (const source of sources) {
-    await database.runAsync(
-      `INSERT INTO health_connect_sources (
-           package_name, display_name, first_seen_at_ms, last_seen_at_ms
-         ) VALUES (?, ?, ?, ?)
-         ON CONFLICT(package_name) DO UPDATE SET
-           display_name = excluded.display_name,
-           last_seen_at_ms = excluded.last_seen_at_ms`,
-      source.packageName,
-      source.displayName,
-      importedAt,
-      importedAt,
-    );
-  }
+  await writeSourcesInTransaction(database, sources, importedAt);
 
-  for (const record of records) {
-    const id = await resolveAndPromoteHealthConnectRecordId(
-      database,
-      record,
-      healthConnectRecordId(record),
-    );
+  const identities = await resolveHealthConnectRecordIdentities(
+    database,
+    records,
+    healthConnectRecordId,
+  );
+  // A provider can repeat a record inside one page. The last copy wins, as it
+  // did when every record was upserted one after another.
+  const rowsById = new Map<string, HealthConnectRowToWrite>();
+  const retainedIds = new Set<string>();
+  records.forEach((record, index) => {
+    const identity = identities[index]!;
+    if (healthConnectRecordUnchanged(record, identity.stored)) {
+      // Unchanged provider version: no record, payload or context rewrite.
+      retainedIds.add(identity.id);
+      return;
+    }
+    rowsById.delete(identity.id);
+    rowsById.set(identity.id, { id: identity.id, record });
+  });
+  const rows = [...rowsById.values()];
+  rows.forEach((row) => retainedIds.delete(row.id));
+
+  for (const chunk of rowsPerStatement(rows)) {
     await database.runAsync(
       `INSERT INTO health_connect_records (
            id, external_id, parent_external_id, kind, source_package,
            start_ms, end_ms, last_modified_ms, recording_method,
            value, unit, payload_json, imported_at_ms, reconciliation_scope
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'current')
+         ) VALUES ${chunk
+           .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'current')")
+           .join(', ')}
          ON CONFLICT(id) DO UPDATE SET
            external_id = excluded.external_id,
            parent_external_id = excluded.parent_external_id,
@@ -796,43 +919,56 @@ async function writePageInTransaction(
            payload_json = excluded.payload_json,
            imported_at_ms = excluded.imported_at_ms,
            reconciliation_scope = 'current'`,
-      id,
-      record.externalId,
-      record.parentExternalId ?? null,
-      record.kind,
-      record.sourcePackage,
-      record.startTimeMs,
-      record.endTimeMs,
-      record.lastModifiedTimeMs,
-      record.recordingMethod,
-      record.value ?? null,
-      record.unit ?? null,
-      JSON.stringify(record),
-      importedAt,
+      ...chunk.flatMap(({ id, record }) => [
+        id,
+        record.externalId,
+        record.parentExternalId ?? null,
+        record.kind,
+        record.sourcePackage,
+        record.startTimeMs,
+        record.endTimeMs,
+        record.lastModifiedTimeMs,
+        record.recordingMethod,
+        record.value ?? null,
+        record.unit ?? null,
+        JSON.stringify(record),
+        importedAt,
+      ]),
     );
+  }
 
+  const notes: Extract<HealthContextEvent, { kind: 'note' }>[] = [];
+  const events: Exclude<HealthContextEvent, { kind: 'note' }>[] = [];
+  for (const { id, record } of rows) {
     const mappedContext = healthConnectRecordToContext(
       record,
       importedAt,
       sourceLabels.get(record.sourcePackage),
     );
-    const context = mappedContext ? { ...mappedContext, id } : undefined;
-    if (!context) continue;
-    if (context.kind === 'note') {
-      await database.runAsync(
-        `INSERT INTO context_notes (
-           id, source_id, origin, start_ms, end_ms, title, category, detail,
-           recorded_at_ms, source_file, source_row
-         ) VALUES (?, ?, 'imported', ?, ?, ?, ?, ?, ?, ?, NULL)
-         ON CONFLICT(id) DO UPDATE SET
-           source_id = excluded.source_id,
-           start_ms = excluded.start_ms,
-           end_ms = excluded.end_ms,
-           title = excluded.title,
-           category = excluded.category,
-           detail = excluded.detail,
-           recorded_at_ms = excluded.recorded_at_ms,
-           source_file = excluded.source_file`,
+    if (!mappedContext) continue;
+    const context = { ...mappedContext, id };
+    if (context.kind === 'note') notes.push(context);
+    else events.push(context);
+  }
+
+  for (const chunk of rowsPerStatement(notes)) {
+    await database.runAsync(
+      `INSERT INTO context_notes (
+         id, source_id, origin, start_ms, end_ms, title, category, detail,
+         recorded_at_ms, source_file, source_row
+       ) VALUES ${chunk
+         .map(() => "(?, ?, 'imported', ?, ?, ?, ?, ?, ?, ?, NULL)")
+         .join(', ')}
+       ON CONFLICT(id) DO UPDATE SET
+         source_id = excluded.source_id,
+         start_ms = excluded.start_ms,
+         end_ms = excluded.end_ms,
+         title = excluded.title,
+         category = excluded.category,
+         detail = excluded.detail,
+         recorded_at_ms = excluded.recorded_at_ms,
+         source_file = excluded.source_file`,
+      ...chunk.flatMap((context) => [
         context.id,
         context.sourceId,
         context.start,
@@ -842,11 +978,11 @@ async function writePageInTransaction(
         context.detail ?? null,
         context.recordedAt ?? importedAt,
         context.sourceFile ?? 'Health Connect',
-      );
-      contextUpdated += 1;
-      continue;
-    }
-    const columns = contextColumns(context);
+      ]),
+    );
+  }
+
+  for (const chunk of rowsPerStatement(events)) {
     await database.runAsync(
       `INSERT INTO context_events (
            id, source_id, origin, kind, start_ms, end_ms, title,
@@ -854,8 +990,12 @@ async function writePageInTransaction(
            fibre_grams, sugars_grams, saturated_fat_grams, activity_type,
            duration_minutes, intensity, quality_percent, kilograms, amount,
            unit, recorded_at_ms, source_file, source_row
-         ) VALUES (?, ?, 'imported', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-           ?, ?, NULL, ?, NULL, NULL, ?, ?, NULL)
+         ) VALUES ${chunk
+           .map(
+             () =>
+               "(?, ?, 'imported', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, NULL)",
+           )
+           .join(', ')}
          ON CONFLICT(id) DO UPDATE SET
            source_id = excluded.source_id,
            start_ms = excluded.start_ms,
@@ -874,61 +1014,94 @@ async function writePageInTransaction(
            intensity = excluded.intensity,
            kilograms = excluded.kilograms,
            recorded_at_ms = excluded.recorded_at_ms`,
-      context.id,
-      context.sourceId,
-      context.kind,
-      context.start,
-      context.end ?? null,
-      context.title,
-      columns.mealType,
-      columns.carbsGrams,
-      columns.energyKcal,
-      columns.proteinGrams,
-      columns.fatGrams,
-      columns.fibreGrams,
-      columns.sugarsGrams,
-      columns.saturatedFatGrams,
-      columns.activityType,
-      columns.durationMinutes,
-      columns.intensity,
-      columns.kilograms,
-      context.recordedAt ?? importedAt,
-      context.sourceFile ?? 'Health Connect',
+      ...chunk.flatMap((context) => {
+        const columns = contextColumns(context);
+        return [
+          context.id,
+          context.sourceId,
+          context.kind,
+          context.start,
+          context.end ?? null,
+          context.title,
+          columns.mealType,
+          columns.carbsGrams,
+          columns.energyKcal,
+          columns.proteinGrams,
+          columns.fatGrams,
+          columns.fibreGrams,
+          columns.sugarsGrams,
+          columns.saturatedFatGrams,
+          columns.activityType,
+          columns.durationMinutes,
+          columns.intensity,
+          columns.kilograms,
+          context.recordedAt ?? importedAt,
+          context.sourceFile ?? 'Health Connect',
+        ];
+      }),
     );
-    contextUpdated += 1;
   }
-  return contextUpdated;
+
+  return {
+    contextUpdated: notes.length + events.length,
+    recordsWritten: rows.length,
+    recordsUnchanged: retainedIds.size,
+    retainedIds: [...retainedIds],
+  };
 }
 
+/**
+ * Writes one native page in bounded transactions. Each transaction first reads
+ * the stored identities for its batch, skips rows whose provider version is
+ * unchanged, and writes the rest with a few multi-row statements, so a
+ * re-read of unchanged history costs reads only.
+ */
 export async function writeHealthConnectPageInBatches(
   records: HealthConnectRecord[],
   sources: HealthConnectSource[],
   importedAt: number,
   writeLease: LocalDataWriteLease,
   expectedConfigurationRevision?: number,
-) {
-  if (records.length === 0 && sources.length === 0) return 0;
-  let contextUpdated = 0;
+  control?: HealthConnectSyncControl,
+): Promise<HealthConnectPageWriteResult> {
+  const total: HealthConnectPageWriteResult = {
+    contextUpdated: 0,
+    recordsWritten: 0,
+    recordsUnchanged: 0,
+    retainedIds: [],
+  };
+  if (records.length === 0 && sources.length === 0) return total;
   // A source-only page still needs one transaction to retain its label.
   const batchCount = Math.max(
     1,
     Math.ceil(records.length / HEALTH_CONNECT_WRITE_BATCH_SIZE),
   );
   for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+    if (batchIndex > 0) assertHealthConnectSyncMayContinue(control);
     const offset = batchIndex * HEALTH_CONNECT_WRITE_BATCH_SIZE;
     const batch = records.slice(
       offset,
       offset + HEALTH_CONNECT_WRITE_BATCH_SIZE,
     );
-    contextUpdated += await withHealthConnectWriteLease(
+    const result = await withHealthConnectWriteLease(
       writeLease,
       (database) =>
-        writePageInTransaction(database, batch, sources, importedAt),
+        writePageInTransaction(
+          database,
+          batch,
+          // Source labels are page-level; write them once per page.
+          batchIndex === 0 ? sources : [],
+          importedAt,
+        ),
       expectedConfigurationRevision,
     );
+    total.contextUpdated += result.contextUpdated;
+    total.recordsWritten += result.recordsWritten;
+    total.recordsUnchanged += result.recordsUnchanged;
+    total.retainedIds.push(...result.retainedIds);
     advanceHealthConnectSyncProgress(batch.length);
   }
-  return contextUpdated;
+  return total;
 }
 
 function saveHealthConnectChangesTokenInTransaction(
@@ -1058,6 +1231,8 @@ interface HealthConnectChangesResult {
   tokenExpired: boolean;
   recordsProcessed: number;
   recordsRemoved: number;
+  recordsWritten: number;
+  recordsUnchanged: number;
   contextUpdated: number;
   contextRemoved: number;
   sources: HealthConnectSource[];
@@ -1070,16 +1245,22 @@ async function applyHealthConnectChanges(
   importedAt: number,
   writeLease: LocalDataWriteLease,
   expectedConfigurationRevision: number,
+  control?: HealthConnectSyncControl,
 ): Promise<HealthConnectChangesResult> {
   let token = initialToken;
   let pages = 0;
   let recordsProcessed = 0;
   let recordsRemoved = 0;
+  let recordsWritten = 0;
+  let recordsUnchanged = 0;
   let contextUpdated = 0;
   let contextRemoved = 0;
   const sources = new Map<string, HealthConnectSource>();
 
   while (true) {
+    // Each committed page already saved its token, so stopping here loses
+    // nothing: the next run resumes from that token.
+    if (pages > 0) assertHealthConnectSyncMayContinue(control);
     const page = await T1ArcHealthConnect.readChangesPageAsync(token);
     if (page.tokenExpired) {
       return {
@@ -1087,6 +1268,8 @@ async function applyHealthConnectChanges(
         tokenExpired: true,
         recordsProcessed,
         recordsRemoved,
+        recordsWritten,
+        recordsUnchanged,
         contextUpdated,
         contextRemoved,
         sources: [...sources.values()],
@@ -1107,25 +1290,38 @@ async function applyHealthConnectChanges(
       writeLease,
       expectedConfigurationRevision,
     );
-    contextUpdated += await writeHealthConnectPageInBatches(
+    // No stop check inside this page: its parents were just removed, so the
+    // page is written completely before its token is saved.
+    const written = await writeHealthConnectPageInBatches(
       page.upserted,
       page.sources,
       importedAt,
       writeLease,
       expectedConfigurationRevision,
     );
+    contextUpdated += written.contextUpdated;
+    recordsWritten += written.recordsWritten;
+    recordsUnchanged += written.recordsUnchanged;
     recordsRemoved += deleted.recordsRemoved;
     contextRemoved += deleted.contextRemoved;
     recordsProcessed += page.upserted.length;
     page.sources.forEach((source) => sources.set(source.packageName, source));
+    const previousToken = token;
     token = page.nextChangesToken;
-    await saveHealthConnectChangesToken(
-      category,
-      token,
-      preferredSourcePackage,
-      writeLease,
-      expectedConfigurationRevision,
-    );
+    // An empty page with an unchanged token needs no write.
+    if (
+      token !== previousToken ||
+      page.upserted.length ||
+      page.deletedRecordIds.length
+    ) {
+      await saveHealthConnectChangesToken(
+        category,
+        token,
+        preferredSourcePackage,
+        writeLease,
+        expectedConfigurationRevision,
+      );
+    }
     pages += 1;
     if (!page.hasMore) break;
     if (pages > MAX_CHANGE_PAGES_PER_CATEGORY) {
@@ -1140,6 +1336,8 @@ async function applyHealthConnectChanges(
     tokenExpired: false,
     recordsProcessed,
     recordsRemoved,
+    recordsWritten,
+    recordsUnchanged,
     contextUpdated,
     contextRemoved,
     sources: [...sources.values()],
@@ -1186,43 +1384,99 @@ interface AuthoritativeHealthConnectChangesToken {
   sourcePackage?: string;
 }
 
+function parseWindowCheckState(value?: string): Record<string, number> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[1] === 'number' && Number.isFinite(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function readWindowCheckState(database: T1ArcDatabase) {
+  const row = await database.getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_metadata WHERE key = ?',
+    WINDOW_CHECK_STATE_KEY,
+  );
+  return parseWindowCheckState(row?.value);
+}
+
 async function markSyncSuccess(
   category: HealthConnectCategoryId,
   completedAt: number,
   writeLease: LocalDataWriteLease,
   expectedConfigurationRevision: number,
   authoritativeChangesToken?: AuthoritativeHealthConnectChangesToken,
+  options: { refreshStats: boolean; windowCheckedAt?: number } = {
+    refreshStats: true,
+  },
 ) {
   const kinds = HEALTH_CONNECT_RECORD_KINDS_BY_CATEGORY[category];
   const placeholders = kinds.map(() => '?').join(', ');
   await withHealthConnectWriteLease(
     writeLease,
     async (database) => {
-      await database.runAsync(
-        `INSERT INTO health_connect_sync_state (
-           category, last_attempt_at_ms, last_success_at_ms,
-           data_start_ms, data_through_ms, record_count
-         )
-         SELECT ?, ?, ?, MIN(start_ms), MAX(end_ms), COUNT(*)
-         FROM health_connect_records WHERE kind IN (${placeholders})
-         ON CONFLICT(category) DO UPDATE SET
-           last_success_at_ms = excluded.last_success_at_ms,
-           data_start_ms = excluded.data_start_ms,
-           data_through_ms = excluded.data_through_ms,
-           record_count = excluded.record_count,
-           last_error_code = NULL,
-           last_error_message = NULL`,
-        category,
-        completedAt,
-        completedAt,
-        ...kinds,
-      );
+      if (options.refreshStats) {
+        await database.runAsync(
+          `INSERT INTO health_connect_sync_state (
+             category, last_attempt_at_ms, last_success_at_ms,
+             data_start_ms, data_through_ms, record_count
+           )
+           SELECT ?, ?, ?, MIN(start_ms), MAX(end_ms), COUNT(*)
+           FROM health_connect_records WHERE kind IN (${placeholders})
+           ON CONFLICT(category) DO UPDATE SET
+             last_success_at_ms = excluded.last_success_at_ms,
+             data_start_ms = excluded.data_start_ms,
+             data_through_ms = excluded.data_through_ms,
+             record_count = excluded.record_count,
+             last_error_code = NULL,
+             last_error_message = NULL`,
+          category,
+          completedAt,
+          completedAt,
+          ...kinds,
+        );
+      } else {
+        // Nothing changed in this category, so the stored range and count
+        // are still right; skip the per-category aggregate scan.
+        await database.runAsync(
+          `INSERT INTO health_connect_sync_state (
+             category, last_attempt_at_ms, last_success_at_ms, record_count
+           ) VALUES (?, ?, ?, 0)
+           ON CONFLICT(category) DO UPDATE SET
+             last_success_at_ms = excluded.last_success_at_ms,
+             last_error_code = NULL,
+             last_error_message = NULL`,
+          category,
+          completedAt,
+          completedAt,
+        );
+      }
       if (authoritativeChangesToken) {
         await saveHealthConnectChangesTokenInTransaction(
           database,
           category,
           authoritativeChangesToken.token,
           authoritativeChangesToken.sourcePackage,
+        );
+      }
+      if (options.windowCheckedAt !== undefined) {
+        const checks = await readWindowCheckState(database);
+        checks[category] = options.windowCheckedAt;
+        await database.runAsync(
+          `INSERT INTO app_metadata (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+          WINDOW_CHECK_STATE_KEY,
+          JSON.stringify(checks),
         );
       }
     },
@@ -1260,6 +1514,7 @@ async function reconcileSuccessfulWindow(
   startTimeMs: number,
   endTimeMs: number,
   importedAt: number,
+  retainedIds: ReadonlySet<string>,
   preferredSourcePackage?: string,
   writeLease?: LocalDataWriteLease,
   expectedConfigurationRevision?: number,
@@ -1268,12 +1523,13 @@ async function reconcileSuccessfulWindow(
   return withHealthConnectWriteLease(
     lease,
     (database) =>
-      reconcileHealthConnectWindowInTransaction(
+      reconcileHealthConnectWindowRetainingInTransaction(
         database,
         category,
         startTimeMs,
         endTimeMs,
         importedAt,
+        retainedIds,
         preferredSourcePackage,
       ),
     expectedConfigurationRevision,
@@ -1367,11 +1623,57 @@ export async function useAutomaticHealthConnectSource(
 
 let healthConnectSyncInFlight: Promise<HealthConnectSyncResult> | undefined;
 
+async function loadHealthConnectSyncStates(
+  database: T1ArcDatabase,
+): Promise<HealthConnectSyncState[]> {
+  const rows = await database.getAllAsync<SyncRow>(
+    `SELECT category, last_attempt_at_ms, last_success_at_ms,
+       data_start_ms, data_through_ms, record_count,
+       last_error_code, last_error_message, changes_token,
+       changes_token_source_package
+     FROM health_connect_sync_state
+     ORDER BY category`,
+  );
+  return rows.map(syncFromRow);
+}
+
+/** True when the last attempt for a category has no success at or after it. */
+export function healthConnectPreviousRunUnfinished(
+  state: Pick<HealthConnectSyncState, 'lastAttemptAt' | 'lastSuccessAt'> | undefined,
+) {
+  if (state?.lastAttemptAt === undefined) return false;
+  return state.lastSuccessAt === undefined || state.lastSuccessAt < state.lastAttemptAt;
+}
+
+/**
+ * Categories that have waited longest go first, so a run stopped by its time
+ * budget cannot starve the same categories every time.
+ */
+export function orderHealthConnectCategoriesForSync(
+  categories: HealthConnectCategoryId[],
+  states: Pick<HealthConnectSyncState, 'category' | 'lastAttemptAt'>[],
+) {
+  const lastAttempt = new Map(
+    states.map((state) => [state.category, state.lastAttemptAt ?? -Infinity]),
+  );
+  return categories
+    .map((category, index) => ({ category, index }))
+    .sort(
+      (left, right) =>
+        (lastAttempt.get(left.category) ?? -Infinity) -
+          (lastAttempt.get(right.category) ?? -Infinity) ||
+        left.index - right.index,
+    )
+    .map((item) => item.category);
+}
+
 async function performHealthConnectSync(options?: {
   categories?: HealthConnectCategoryId[];
   fullHistory?: boolean;
   writeLease?: LocalDataWriteLease;
+  control?: HealthConnectSyncControl;
 }): Promise<HealthConnectSyncResult> {
+  const control = options?.control;
   const writeLease =
     options?.writeLease ?? (await acquireLocalDataWriteLease());
   const startedAt = Date.now();
@@ -1392,34 +1694,52 @@ async function performHealthConnectSync(options?: {
       .filter((category) => category.granted)
       .map((category) => category.id),
   );
-  const categories = requested.filter((category) => fullyGranted.has(category));
-  if (!categories.length) {
+  const grantedCategories = requested.filter((category) =>
+    fullyGranted.has(category),
+  );
+  if (!grantedCategories.length) {
     throw new Error('Allow at least one Health Connect category first.');
   }
 
+  // Only the small sync-state and metadata rows are needed here; the
+  // whole-table overview is not read before or during a sync.
+  const database = await openT1ArcDatabase();
+  const syncStates = await loadHealthConnectSyncStates(database);
+  const windowChecks = await readWindowCheckState(database);
+  const categories = orderHealthConnectCategoriesForSync(
+    grantedCategories,
+    syncStates,
+  );
   beginHealthConnectSyncProgress(categories);
 
-  const overview = await getHealthConnectOverview();
   const stateByCategory = new Map(
-    overview.sync.map((state) => [state.category, state]),
+    syncStates.map((state) => [state.category, state]),
   );
   const preferenceByCategory = new Map(
     preferences.map((preference) => [preference.category, preference]),
   );
   let recordsProcessed = 0;
   let recordsRemoved = 0;
+  let recordsWritten = 0;
+  let recordsUnchanged = 0;
   let contextUpdated = 0;
   let contextRemoved = 0;
+  let stoppedEarly = false;
   const sourcesFound = new Set<string>();
   const successfulCategories: HealthConnectCategoryId[] = [];
+  const sourceChoiceCategories: HealthConnectCategoryId[] = [];
   const failures: HealthConnectSyncFailure[] = [];
 
   for (const category of categories) {
+    if (healthConnectSyncShouldStop(control)) {
+      stoppedEarly = true;
+      break;
+    }
     const attemptedAt = Date.now();
     setHealthConnectSyncCategory(category);
     const prior = stateByCategory.get(category);
-    const preferredSource =
-      preferenceByCategory.get(category)?.preferredSourcePackage;
+    const preference = preferenceByCategory.get(category);
+    const preferredSource = preference?.preferredSourcePackage;
     const priorChangesToken = prior?.changesToken;
     const tokenMatchesSource = Boolean(
       priorChangesToken &&
@@ -1429,6 +1749,10 @@ async function performHealthConnectSync(options?: {
       options?.fullHistory || !prior?.lastSuccessAt || !tokenMatchesSource,
     );
     let fullScanMarkerPersisted = fullHistory;
+    // The previous run for this category started but never finished (stopped
+    // by its time budget, cancelled or failed), so pages it committed may have
+    // left the category totals stale. Recount them when this run succeeds.
+    const previousRunUnfinished = healthConnectPreviousRunUnfinished(prior);
     await markSyncAttempt(
       category,
       attemptedAt,
@@ -1441,6 +1765,8 @@ async function performHealthConnectSync(options?: {
       | undefined;
     let pageToken: string | null = null;
     let pages = 0;
+    let categoryChanged = false;
+    let windowRead = false;
 
     try {
       if (!fullHistory && tokenMatchesSource) {
@@ -1451,14 +1777,19 @@ async function performHealthConnectSync(options?: {
           attemptedAt,
           writeLease,
           configurationRevision,
+          control,
         );
         recordsProcessed += changes.recordsProcessed;
         recordsRemoved += changes.recordsRemoved;
+        recordsWritten += changes.recordsWritten;
+        recordsUnchanged += changes.recordsUnchanged;
         contextUpdated += changes.contextUpdated;
         contextRemoved += changes.contextRemoved;
         changes.sources.forEach((source) =>
           sourcesFound.add(source.packageName),
         );
+        categoryChanged =
+          changes.recordsWritten > 0 || changes.recordsRemoved > 0;
         fullHistory = changes.tokenExpired;
       }
 
@@ -1486,61 +1817,99 @@ async function performHealthConnectSync(options?: {
         };
       }
 
-      const earliestReadableTime = earliestHealthConnectReadableTime({
-        historyGranted: status.historyGranted,
-        attemptedAt,
-        firstAttemptAt: prior?.lastAttemptAt,
-      });
-      const startTimeMs = fullHistory
-        ? earliestReadableTime
-        : Math.max(
-            earliestReadableTime,
-            (prior?.lastSuccessAt ?? attemptedAt) - INCREMENTAL_OVERLAP_MS,
+      // With a valid changes token the feed already reported every edit,
+      // late arrival and deletion, so no window is re-read except the short
+      // daily safety check.
+      const windowCheck =
+        !fullHistory &&
+        healthConnectWindowCheckDue(
+          windowChecks[category],
+          attemptedAt,
+          control?.allowWindowCheck ?? true,
+        );
+      if (fullHistory || windowCheck) {
+        windowRead = true;
+        const earliestReadableTime = earliestHealthConnectReadableTime({
+          historyGranted: status.historyGranted,
+          attemptedAt,
+          firstAttemptAt: prior?.lastAttemptAt,
+        });
+        const startTimeMs = fullHistory
+          ? earliestReadableTime
+          : Math.max(
+              earliestReadableTime,
+              attemptedAt - HEALTH_CONNECT_WINDOW_CHECK_SPAN_MS,
+            );
+        const retainedIds = new Set<string>();
+        do {
+          assertHealthConnectSyncMayContinue(control);
+          const page = await T1ArcHealthConnect.readRecordsPageAsync(
+            category,
+            startTimeMs,
+            attemptedAt,
+            preferredSource ? [preferredSource] : [],
+            pageToken,
           );
-      do {
-        const page = await T1ArcHealthConnect.readRecordsPageAsync(
+          const written = await writeHealthConnectPageInBatches(
+            page.records,
+            page.sources,
+            attemptedAt,
+            writeLease,
+            configurationRevision,
+            control,
+          );
+          contextUpdated += written.contextUpdated;
+          recordsWritten += written.recordsWritten;
+          recordsUnchanged += written.recordsUnchanged;
+          written.retainedIds.forEach((id) => retainedIds.add(id));
+          if (written.recordsWritten > 0) categoryChanged = true;
+          recordsProcessed += page.records.length;
+          page.sources.forEach((source) =>
+            sourcesFound.add(source.packageName),
+          );
+          pageToken = page.nextPageToken;
+          pages += 1;
+          if (pages > MAX_PAGES_PER_CATEGORY) {
+            throw new Error(
+              `Health Connect returned too many pages for ${category}.`,
+            );
+          }
+        } while (pageToken);
+        const reconciled = await reconcileSuccessfulWindow(
           category,
           startTimeMs,
           attemptedAt,
-          preferredSource ? [preferredSource] : [],
-          pageToken,
-        );
-        contextUpdated += await writeHealthConnectPageInBatches(
-          page.records,
-          page.sources,
           attemptedAt,
+          retainedIds,
+          preferredSource,
           writeLease,
           configurationRevision,
         );
-        recordsProcessed += page.records.length;
-        page.sources.forEach((source) => sourcesFound.add(source.packageName));
-        pageToken = page.nextPageToken;
-        pages += 1;
-        if (pages > MAX_PAGES_PER_CATEGORY) {
-          throw new Error(
-            `Health Connect returned too many pages for ${category}.`,
-          );
-        }
-      } while (pageToken);
-      const reconciled = await reconcileSuccessfulWindow(
-        category,
-        startTimeMs,
-        attemptedAt,
-        attemptedAt,
-        preferredSource,
-        writeLease,
-        configurationRevision,
-      );
-      recordsRemoved += reconciled.recordsRemoved;
-      contextRemoved += reconciled.contextRemoved;
+        recordsRemoved += reconciled.recordsRemoved;
+        contextRemoved += reconciled.contextRemoved;
+        if (reconciled.recordsRemoved > 0) categoryChanged = true;
+      }
       await markSyncSuccess(
         category,
         Date.now(),
         writeLease,
         configurationRevision,
         authoritativeChangesToken,
+        {
+          refreshStats: fullHistory || categoryChanged || previousRunUnfinished,
+          windowCheckedAt: windowRead ? attemptedAt : undefined,
+        },
       );
       successfulCategories.push(category);
+      // Re-rank automatic sources only when no source is chosen yet, or at
+      // most once a day with the window read. This keeps the whole-table
+      // source statistics out of every routine sync.
+      if (
+        preference?.preferredSourceMode !== 'manual' &&
+        (!preferredSource || windowRead)
+      ) {
+        sourceChoiceCategories.push(category);
+      }
       completeHealthConnectSyncCategory(category);
     } catch (error) {
       if (
@@ -1548,6 +1917,13 @@ async function performHealthConnectSync(options?: {
         isHealthConnectConfigurationSupersededError(error)
       ) {
         throw error;
+      }
+      if (isHealthConnectSyncStoppedError(error)) {
+        // Every committed batch and change token is kept. A full scan keeps
+        // its durable marker, so the next run restarts it; rows already
+        // stored are then recognised as unchanged and cost reads only.
+        stoppedEarly = true;
+        break;
       }
       // Keep the durable full-scan marker on failure. The clear is idempotent
       // and revision-fenced, including failures returned by a deferred native
@@ -1576,11 +1952,13 @@ async function performHealthConnectSync(options?: {
     }
   }
 
-  await lockHealthConnectSources(
-    successfulCategories,
-    writeLease,
-    configurationRevision,
-  );
+  if (sourceChoiceCategories.length) {
+    await lockHealthConnectSources(
+      sourceChoiceCategories,
+      writeLease,
+      configurationRevision,
+    );
+  }
 
   if (!successfulCategories.length && failures.length) {
     throw new Error(
@@ -1603,6 +1981,10 @@ async function performHealthConnectSync(options?: {
     sourcesFound: sourcesFound.size,
     startedAt,
     completedAt: Date.now(),
+    recordsRead: recordsProcessed,
+    recordsWritten,
+    recordsUnchanged,
+    stoppedEarly,
   };
 }
 
@@ -1610,11 +1992,14 @@ async function performHealthConnectSync(options?: {
  * Serialises manual, foreground and Android background imports. Health Connect
  * can invoke the background task while the app is opening, so sharing the
  * in-flight import prevents duplicate reads and competing database writes.
+ * A caller that joins a run already in progress cannot stop it; only the
+ * caller that started a run passes its control.
  */
 export function syncHealthConnect(options?: {
   categories?: HealthConnectCategoryId[];
   fullHistory?: boolean;
   writeLease?: LocalDataWriteLease;
+  control?: HealthConnectSyncControl;
 }): Promise<HealthConnectSyncResult> {
   if (healthConnectSyncInFlight) {
     return healthConnectSyncInFlight;
@@ -1636,36 +2021,37 @@ export function syncHealthConnect(options?: {
  * Keeps connected health context current when T1 Arc is opened or refreshed.
  * Android may provide the records from Samsung Health, Fitbit, or another
  * source; the selected package and full provenance remain intact.
+ *
+ * "Due" is decided from the small preference and sync-state tables only.
  */
 export async function syncHealthConnectIfDue(
   now = Date.now(),
   minimumIntervalMs = FOREGROUND_SYNC_INTERVAL_MS,
   writeLease?: LocalDataWriteLease,
+  control?: HealthConnectSyncControl,
 ) {
   const status = await getHealthConnectStatus();
   if (status.availability !== 'available') return undefined;
 
-  const overview = await getHealthConnectOverview();
+  const database = await openT1ArcDatabase();
+  const preferences = await loadHealthConnectPreferencesFromDatabase(database);
   const granted = new Set(
     status.categories
       .filter((category) => category.granted)
       .map((category) => category.id),
   );
-  const categories = overview.preferences
+  const categories = preferences
     .filter(
       (preference) => preference.enabled && granted.has(preference.category),
     )
     .map((preference) => preference.category);
   if (!categories.length) return undefined;
 
-  const syncByCategory = new Map(
-    overview.sync.map((state) => [state.category, state]),
-  );
-  const due = categories.some((category) => {
-    const lastAttempt = syncByCategory.get(category)?.lastAttemptAt;
-    return !lastAttempt || now - lastAttempt >= minimumIntervalMs;
-  });
-  if (!due) return undefined;
+  const states = await loadHealthConnectSyncStates(database);
+  if (!healthConnectSyncDue(categories, states, now, minimumIntervalMs)) {
+    return undefined;
+  }
+  if (healthConnectSyncShouldStop(control)) return undefined;
 
-  return syncHealthConnect({ categories, writeLease });
+  return syncHealthConnect({ categories, writeLease, control });
 }

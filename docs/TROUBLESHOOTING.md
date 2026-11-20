@@ -30,7 +30,8 @@ Android version in the report.
 ## A colour or regional option did not change
 
 Some detail screens have their own **Save** button. Save the choice, close the
-screen and reopen it. Confirm that the chosen region, unit or range colour is
+screen and reopen it. On **Units and region**, the glucose unit is at the top
+and the other regional choices are under **More options**. Confirm that the chosen region, unit or range colour is
 still selected before reporting a display problem.
 
 Changing a glucose display unit or region does not rewrite stored health data.
@@ -44,12 +45,16 @@ Android and the phone manufacturer keep final control. Check:
 - the T1 Arc lock-screen visibility choice;
 - battery and background restrictions;
 - **Allow restricted settings** and Accessibility permission if using the
-  optional always-on display.
+  optional always-on display, in **Settings > Advanced and experimental**.
 
 The value can remain hidden until the phone is unlocked. Stale glucose should
 not be presented as current.
 
 ## A source will not connect
+
+Error messages say what happened and what to try. Where an error card shows
+**Details**, open it and copy that text into a bug report; it contains no
+health records. **Try again** reloads the information on that screen.
 
 - Confirm the provider account region, which may differ from the phone region.
 - Confirm the provider's own app or website still accepts the account.
@@ -101,9 +106,10 @@ Open T1 Arc's Health Connect permissions and allow only the record types you
 want to share. Confirm another app has written those records. Recent data can
 work without the optional older-history permission.
 
-In **Settings > Health Connect**, expand the data options to inspect sources
-and **Health refresh** status for each record area. **View imported data** opens
-the saved records. The Health tab presents daily summaries and trends instead.
+In **Settings > Health and insulin data > Health Connect**, expand the data
+options to inspect sources and **Health refresh** status for each record area.
+**View imported data** opens the saved records. The Health tab presents daily
+summaries and trends instead.
 One empty or failed area should not erase data imported from another.
 
 ## Tarv1s rejects an OpenAI key

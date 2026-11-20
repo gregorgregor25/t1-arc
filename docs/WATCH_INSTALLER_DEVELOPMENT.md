@@ -1,7 +1,7 @@
 # Guided companion installer
 
 The independent phone APK can carry the matching signed companion. The six-step
-wizard lives under Settings → Watch & watch faces. It uses local Wi-Fi ADB only
+wizard lives under Settings → Watch. It uses local Wi-Fi ADB only
 for installation. Everyday glucose transport remains the existing Wear Data Layer.
 
 ## Build selection

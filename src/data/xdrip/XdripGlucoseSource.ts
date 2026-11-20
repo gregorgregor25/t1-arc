@@ -26,6 +26,7 @@ import {
   XdripError,
   XdripErrorCode,
 } from './types';
+import { serviceStatusMessage } from '@/domain/serviceMessages';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_CHARACTERS = 1_000_000;
@@ -42,7 +43,7 @@ function errorCode(error: unknown): XdripErrorCode {
 function errorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
-    : 'The xDrip endpoint could not be reached.';
+    : 'T1 Arc could not reach xDrip.';
 }
 
 function payloadEntries(payload: unknown): unknown[] {
@@ -50,7 +51,7 @@ function payloadEntries(payload: unknown): unknown[] {
   if (payload && typeof payload === 'object') return [payload];
   throw new XdripError(
     'invalid-response',
-    'The xDrip endpoint returned an unexpected response.',
+    'xDrip sent a reply T1 Arc does not recognise. Check the xDrip address.',
   );
 }
 
@@ -97,7 +98,7 @@ export class XdripGlucoseSource implements GlucoseSource {
     ]);
     return {
       id: this.sourceId,
-      label: 'xDrip-compatible endpoint',
+      label: 'xDrip or compatible app',
       detail: `${xdripEndpointLabel(this.connection)} · ${
         isLocalXdripConnection(this.connection)
           ? 'on-device read-only glucose'
@@ -130,13 +131,13 @@ export class XdripGlucoseSource implements GlucoseSource {
       } catch {
         throw new XdripError(
           'network',
-          'The xDrip endpoint could not be reached. Check that its web service is running.',
+          'T1 Arc could not reach xDrip. Check that its local web service is switched on.',
         );
       }
       if (!response.ok) {
         throw new XdripError(
           'network',
-          `The xDrip endpoint returned HTTP ${response.status}.`,
+          serviceStatusMessage('xDrip', response.status),
         );
       }
       const advertisedLength = Number(
@@ -148,14 +149,14 @@ export class XdripGlucoseSource implements GlucoseSource {
       ) {
         throw new XdripError(
           'invalid-response',
-          'The xDrip response is larger than T1 Arc accepts.',
+          'xDrip sent more data than T1 Arc can accept at once. Try again in a moment.',
         );
       }
       const body = await response.text();
       if (body.length > MAX_RESPONSE_CHARACTERS) {
         throw new XdripError(
           'invalid-response',
-          'The xDrip response is larger than T1 Arc accepts.',
+          'xDrip sent more data than T1 Arc can accept at once. Try again in a moment.',
         );
       }
 
@@ -165,20 +166,20 @@ export class XdripGlucoseSource implements GlucoseSource {
       } catch {
         throw new XdripError(
           'invalid-response',
-          'The xDrip endpoint did not return readable JSON.',
+          'xDrip sent a reply T1 Arc cannot read. Check the xDrip address.',
         );
       }
       const entries = payloadEntries(payload);
       if (entries.length === 0) {
         throw new XdripError(
           'invalid-response',
-          'The xDrip endpoint returned no glucose readings.',
+          'xDrip is connected but has no glucose readings to share yet.',
         );
       }
       if (entries.length > MAX_READING_COUNT) {
         throw new XdripError(
           'invalid-response',
-          'The xDrip endpoint returned too many readings at once.',
+          'xDrip sent more readings than T1 Arc can accept at once. Try again in a moment.',
         );
       }
 
@@ -208,7 +209,7 @@ export class XdripGlucoseSource implements GlucoseSource {
       if (readings.length === 0) {
         throw new XdripError(
           'invalid-response',
-          'The xDrip response did not contain a usable SGV and millisecond timestamp.',
+          'xDrip sent readings, but none had a glucose value and time T1 Arc can use.',
         );
       }
 

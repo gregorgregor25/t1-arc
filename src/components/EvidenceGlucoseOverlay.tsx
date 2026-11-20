@@ -226,7 +226,7 @@ export function EvidenceGlucoseOverlay({
                 />
                 <SvgText
                   fill={colors.textTertiary}
-                  fontSize={8}
+                  fontSize={11}
                   x={LEFT + plotWidth + 7}
                   y={y(tick) + 3}
                 >
@@ -269,7 +269,7 @@ export function EvidenceGlucoseOverlay({
             {tickMinutes.map((minute, index) => (
               <SvgText
                 fill={colors.textTertiary}
-                fontSize={8}
+                fontSize={11}
                 key={minute}
                 textAnchor={
                   index === 0
@@ -348,8 +348,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   legendText: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
   },
 });

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  loadDisplayableNightscoutIobCobSnapshot,
   loadNightscoutIobCobSnapshot,
+  NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS,
   NIGHTSCOUT_IOB_COB_MAX_AGE_MS,
   saveNightscoutIobCobSnapshot,
 } from '@/data/nightscout/iobCobStore';
@@ -129,6 +131,33 @@ describe('Nightscout IOB and COB snapshot store', () => {
       loadNightscoutIobCobSnapshot(first, now),
     ).resolves.toBeUndefined();
     expect(secure.deleteItemAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reported estimate for glance surfaces for up to an hour', async () => {
+    const now = Date.UTC(2026, 7, 19, 0, 30);
+    const sourceWriteLease = await connect(first);
+    const older = { iobUnits: -0.3, cobGrams: 0, timestamp: now - 30 * 60_000 };
+    await saveNightscoutIobCobSnapshot(first, older, sourceWriteLease);
+    await expect(loadNightscoutIobCobSnapshot(first, now)).resolves.toBeUndefined();
+    await expect(loadDisplayableNightscoutIobCobSnapshot(now)).resolves.toEqual(older);
+    await expect(
+      loadDisplayableNightscoutIobCobSnapshot(
+        older.timestamp + NIGHTSCOUT_IOB_COB_DISPLAY_MAX_AGE_MS + 1,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('shows no glance estimate after the connection changes or IOB/COB is turned off', async () => {
+    const now = Date.UTC(2026, 7, 19, 0, 30);
+    const snapshot = { iobUnits: 1.2, timestamp: now - 60_000 };
+    const firstLease = await connect(first);
+    await saveNightscoutIobCobSnapshot(first, snapshot, firstLease);
+    await connect({ ...first, includeIobCob: false });
+    await expect(loadDisplayableNightscoutIobCobSnapshot(now)).resolves.toBeUndefined();
+
+    const secondLease = await connect(second);
+    await saveNightscoutIobCobSnapshot(first, snapshot, secondLease);
+    await expect(loadDisplayableNightscoutIobCobSnapshot(now)).resolves.toBeUndefined();
   });
 
   it('fails closed on a malformed medically sensitive value', async () => {

@@ -32,6 +32,7 @@ import { getRuntimeRegionalDefaults } from "@/domain/regionalProfileRuntime";
 import { formatDate, formatTime, toDateKey } from "@/domain/time";
 import { useGlucoseAppearance } from "@/providers/GlucoseAppearanceProvider";
 import { useAppTheme } from "@/theme/theme";
+import { useSystemBarInsets } from "@/hooks/useSystemBarInsets";
 
 interface Props {
   onDataChanged?(): Promise<void> | void;
@@ -145,6 +146,7 @@ export function describeMaintainerMigrationImport(
 
 export function MaintainerMigrationCard({ onDataChanged }: Props) {
   const { colors, radius, setMode } = useAppTheme();
+  const insets = useSystemBarInsets();
   const { reload: reloadGlucoseAppearance } = useGlucoseAppearance();
   const [busy, setBusy] = useState<BusyState>("idle");
   const [workingLabel, setWorkingLabel] = useState("");
@@ -578,7 +580,10 @@ export function MaintainerMigrationCard({ onDataChanged }: Props) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalRoot}
+          style={[
+            styles.modalRoot,
+            { paddingTop: 20 + insets.top, paddingBottom: 20 + insets.bottom },
+          ]}
         >
           <Pressable
             accessibilityLabel="Close migration passphrase"
@@ -751,10 +756,10 @@ const styles = StyleSheet.create({
   metrics: { flexDirection: "row", flexWrap: "wrap", rowGap: 12 },
   metric: { width: "33.333%" },
   metricValue: { fontSize: 15, fontWeight: "800" },
-  metricLabel: { fontSize: 11, marginTop: 2 },
+  metricLabel: { fontSize: 12, marginTop: 2 },
   fingerprint: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontSize: 11,
+    fontSize: 12,
   },
   confirmation: { fontSize: 12, lineHeight: 18 },
   actions: { gap: 9 },
@@ -771,7 +776,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: "center",
-    minHeight: 42,
+    minHeight: 44,
     paddingHorizontal: 14,
   },
   secondaryText: { fontSize: 13, fontWeight: "700" },

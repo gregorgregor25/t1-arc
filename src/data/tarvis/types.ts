@@ -145,6 +145,16 @@ export interface TarvisAnswer {
   limitations: string[];
   /** Rich, versioned presentation returned by the direct on-device TARV1S route. */
   directPresentation?: TarvisDirectAnswerPresentation;
+  /**
+   * Local record answers only, built on the phone: the always-visible period
+   * and coverage line of the short answer card. Never taken from model output.
+   */
+  shortContext?: string;
+  /**
+   * Local record answers only: a visible line when coverage, freshness or
+   * conflicting totals change the meaning of the answer.
+   */
+  shortNotice?: string;
 }
 
 export type TarvisDirectAnswerKind =

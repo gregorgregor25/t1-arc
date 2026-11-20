@@ -175,7 +175,8 @@ describe('composite refresh forcing', () => {
     const routine = composite.refresh();
     const coalesced = composite.refresh();
     const forced = composite.refresh({ force: true });
-    await Promise.resolve();
+    // Source selection is resolved asynchronously before sources refresh.
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
     release();
     await Promise.all([routine, coalesced, forced]);
 

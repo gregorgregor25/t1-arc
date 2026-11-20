@@ -270,10 +270,19 @@ describe('Health Connect background registration', () => {
       writeEpoch.acquireLocalDataWriteLease.mock.invocationCallOrder[0],
     ).toBeLessThan(automation.beginAutomationRun.mock.invocationCallOrder[0]!);
     expect(healthConnect.syncHealthConnectIfDue).toHaveBeenCalledWith(
-      undefined,
-      undefined,
+      expect.any(Number),
+      3 * 60 * 60 * 1000,
       lease,
+      expect.objectContaining({
+        allowWindowCheck: false,
+        deadlineAt: expect.any(Number),
+        signal: expect.objectContaining({ aborted: false }),
+      }),
     );
+    const [startedAt, , , control] =
+      healthConnect.syncHealthConnectIfDue.mock.calls[0]!;
+    // The run stops itself well inside Android's 10-minute job limit.
+    expect(control.deadlineAt - startedAt).toBeLessThanOrEqual(4 * 60 * 1000 + 50);
     expect(automation.finishAutomationRun).toHaveBeenCalledWith(
       'run-id',
       expect.objectContaining({ outcome: 'success' }),
@@ -281,6 +290,29 @@ describe('Health Connect background registration', () => {
     );
     expect(healthConnect.saveHealthConnectBackgroundState).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'success' }),
+      lease,
+    );
+  });
+
+  it('records a run stopped by its time budget as partial, not failed', async () => {
+    const lease = { epoch: 5 };
+    writeEpoch.acquireLocalDataWriteLease.mockResolvedValue(lease);
+    healthConnect.syncHealthConnectIfDue.mockResolvedValue({
+      successfulCategories: ['steps'],
+      failures: [],
+      recordsProcessed: 3,
+      recordsRemoved: 0,
+      stoppedEarly: true,
+    });
+
+    await expect(backgroundTask?.()).resolves.toBe(1);
+
+    expect(automation.finishAutomationRun).toHaveBeenCalledWith(
+      'run-id',
+      expect.objectContaining({
+        outcome: 'partial',
+        detail: expect.stringContaining('Stopped early to save battery'),
+      }),
       lease,
     );
   });

@@ -2,6 +2,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { InsulinReconciliation } from '@/domain/dataCompleteness';
+import {
+  formatGlucoseRangeBounds,
+  STANDARD_GLUCOSE_RANGE,
+} from '@/domain/glucoseRanges';
 import { presentInsulinRangeSummary } from '@/domain/insulinSummaryPresentation';
 import type { GlucoseStats, InsulinStats } from '@/domain/models';
 import {
@@ -42,6 +46,7 @@ export function MetabolicSummaryCard({
         glucose.timeAbovePercent
     : 0;
   const insulinPresentation = presentInsulinRangeSummary(summary, label, regional);
+  const standardRange = formatGlucoseRangeBounds(STANDARD_GLUCOSE_RANGE, regional);
   const discrepancy = reconciliation?.differenceUnits ?? 0;
   const timeBelow = glucose
     ? formatRegionalNumber(glucose.timeBelowPercent, regional.locale)
@@ -69,7 +74,7 @@ export function MetabolicSummaryCard({
     <SectionCard
       accessibilityLabel={`Glucose and insulin summary for ${label}. ${
         observedGlucose && glucose
-          ? `Time in range ${timeInRange} percent, average ${formatGlucoseAccessible(glucose.averageMmolL!, regional)}, coverage ${coverage} percent.`
+          ? `Time in standard range ${standardRange} ${timeInRange} percent, average ${formatGlucoseAccessible(glucose.averageMmolL!, regional)}, coverage ${coverage} percent.`
           : 'No observed glucose.'
       } ${
         insulinMissing || !insulin
@@ -111,7 +116,7 @@ export function MetabolicSummaryCard({
               : '—'}
           </Text>
           <Text style={[styles.valueLabel, { color: colors.textSecondary }]}>
-            {observedGlucose ? 'time in range' : 'no observed data'}
+            {observedGlucose ? `in ${standardRange}` : 'no observed data'}
           </Text>
           {observedGlucose && glucose && totalRange > 0 ? (
             <View
@@ -144,7 +149,7 @@ export function MetabolicSummaryCard({
           {observedGlucose && glucose ? (
             <Text style={[styles.detail, { color: colors.textTertiary }]}>
               Below {timeBelow}% · In range{' '}
-              {timeInRange}% · Above {timeAbove}%
+              {timeInRange}% · Above {timeAbove}% (standard range)
             </Text>
           ) : null}
         </View>
@@ -201,19 +206,19 @@ const styles = StyleSheet.create({
   headingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   icon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 17, lineHeight: 22, fontWeight: '800' },
-  subtitle: { marginTop: 1, fontSize: 10, lineHeight: 15 },
-  range: { maxWidth: 94, fontSize: 10, lineHeight: 15, textAlign: 'right' },
+  subtitle: { marginTop: 1, fontSize: 12, lineHeight: 17 },
+  range: { maxWidth: 94, fontSize: 12, lineHeight: 17, textAlign: 'right' },
   columns: { marginTop: 16, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
   column: { flex: 1, minWidth: 0, paddingRight: 12 },
   insulinColumn: { borderLeftWidth: StyleSheet.hairlineWidth, paddingLeft: 16, paddingRight: 0 },
-  columnLabel: { fontSize: 10, lineHeight: 15, fontWeight: '800' },
+  columnLabel: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
   value: { marginTop: 2, fontSize: 30, lineHeight: 36, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.7 },
   unit: { fontSize: 15, fontWeight: '700' },
-  valueLabel: { fontSize: 10, lineHeight: 15 },
+  valueLabel: { fontSize: 12, lineHeight: 17 },
   rangeBar: { height: 6, marginTop: 13, flexDirection: 'row', overflow: 'hidden' },
-  detail: { marginTop: 7, fontSize: 8, lineHeight: 12 },
+  detail: { marginTop: 7, fontSize: 12, lineHeight: 16 },
   insulinRows: { marginTop: 10, gap: 3 },
-  insulinDetail: { fontSize: 10, lineHeight: 15 },
+  insulinDetail: { fontSize: 12, lineHeight: 17 },
   footer: { marginTop: 16, paddingHorizontal: 12, paddingVertical: 10, gap: 3 },
-  footerText: { fontSize: 9, lineHeight: 14 },
+  footerText: { fontSize: 12, lineHeight: 17 },
 });

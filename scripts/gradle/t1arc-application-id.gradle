@@ -6,6 +6,10 @@
  * fork installations on the same device.
  */
 def officialApplicationIdBase = 'io.github.gregorgregor25.t1arc'
+// Launcher names. Development (.dev) and private-test (.sideload) installs
+// say "Dev" so they cannot be mistaken for the production app on a phone.
+def productionAppLabel = 'T1 Arc'
+def developmentAppLabel = 'T1 Arc Dev'
 def debugApplicationIdSuffix = '.dev'
 def privateTestApplicationIdSuffix = '.sideload'
 def forkEnvironmentVariable = 'T1ARC_FORK_APPLICATION_ID_BASE'
@@ -65,6 +69,18 @@ ext.t1ArcVariantApplicationId = { String baseId, String buildType ->
       return releaseApplicationIdSuffix == null
         ? baseId
         : "${baseId}${releaseApplicationIdSuffix}"
+    default:
+      throw new GradleException("Unknown T1 Arc Android build type: ${buildType}")
+  }
+}
+ext.t1ArcVariantAppLabel = { String buildType ->
+  switch (buildType) {
+    case 'debug':
+      return developmentAppLabel
+    case 'release':
+      return releaseApplicationIdSuffix == null
+        ? productionAppLabel
+        : developmentAppLabel
     default:
       throw new GradleException("Unknown T1 Arc Android build type: ${buildType}")
   }

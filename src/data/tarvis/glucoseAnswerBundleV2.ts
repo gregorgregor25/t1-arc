@@ -22,6 +22,10 @@ import {
   type TimeRange,
 } from "@/domain/models";
 import { isIanaTimeZone } from "@/domain/regionalProfile";
+import {
+  GLUCOSE_THRESHOLD_BOUNDARY_RULE,
+  glucoseMeetsThreshold,
+} from "@/domain/glucoseRanges";
 
 export const GLUCOSE_ANSWER_BUNDLE_SCHEMA_VERSION = 2 as const;
 export const GLUCOSE_ANSWER_BUNDLE_IDENTITY_ALGORITHM =
@@ -600,17 +604,26 @@ function thresholdFor(
   return threshold;
 }
 
-function matchesThreshold(value: number, threshold: GlucoseAnswerThresholdV2) {
-  switch (threshold.operator) {
-    case "lt":
-      return value < threshold.value;
-    case "lte":
-      return value <= threshold.value;
-    case "gt":
-      return value > threshold.value;
-    case "gte":
-      return value >= threshold.value;
-  }
+/**
+ * Threshold comparison for a saved claim. Claims whose metric version names
+ * the shared boundary rule use it; claims saved before it existed keep the
+ * exact comparison they were calculated with, so they stay reproducible.
+ */
+export function glucoseAnswerThresholdMatcher(metricVersion: string | undefined) {
+  const shared = metricVersion?.endsWith(`:${GLUCOSE_THRESHOLD_BOUNDARY_RULE}`) === true;
+  return (value: number, threshold: Pick<GlucoseAnswerThresholdV2, "operator" | "value">) => {
+    if (shared) return glucoseMeetsThreshold(value, threshold.operator, threshold.value);
+    switch (threshold.operator) {
+      case "lt":
+        return value < threshold.value;
+      case "lte":
+        return value <= threshold.value;
+      case "gt":
+        return value > threshold.value;
+      case "gte":
+        return value >= threshold.value;
+    }
+  };
 }
 
 function recomputeClaim(
@@ -642,6 +655,9 @@ function recomputeClaim(
     observationGapCapMilliseconds:
       bundle.algorithms.maximumObservedGapMilliseconds,
   });
+  const matchesThreshold = glucoseAnswerThresholdMatcher(
+    bundle.algorithms.metricVersions.find(({ metric }) => metric === claim.metric)?.version,
+  );
   switch (claim.metric) {
     case "glucose.mean":
       // Old conversations retain their original two-decimal claim and hash.
@@ -1141,6 +1157,7 @@ export function assertGlucoseAnswerBundleV2(
     invariant(record.sourceId.trim(), `Record ${record.id} has no source.`);
     invariant(
       [
+        "tripleDown",
         "doubleDown",
         "down",
         "slightDown",
@@ -1148,6 +1165,7 @@ export function assertGlucoseAnswerBundleV2(
         "slightUp",
         "up",
         "doubleUp",
+        "tripleUp",
         "unknown",
       ].includes(record.trend) &&
         (record.quality === "measured" || record.quality === "estimated"),

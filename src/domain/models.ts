@@ -1,3 +1,4 @@
+import type { TherapyStateInterval } from './therapyStates';
 import type { SourceCapability } from './sourceCapabilities';
 
 /** The device's IANA zone is the app's local-time basis. */
@@ -13,6 +14,7 @@ export const TARGET_LOW_MMOL_L = 3.9;
 export const TARGET_HIGH_MMOL_L = 10;
 
 export type TrendDirection =
+  | 'tripleDown'
   | 'doubleDown'
   | 'down'
   | 'slightDown'
@@ -20,6 +22,7 @@ export type TrendDirection =
   | 'slightUp'
   | 'up'
   | 'doubleUp'
+  | 'tripleUp'
   | 'unknown';
 
 export type DataQuality = 'measured' | 'estimated';
@@ -53,7 +56,7 @@ export interface BasalDelivery {
   units: number;
   /** Glooko's delivery label, for example Scheduled. */
   deliveryType?: string;
-  /** Present for percentage-based temporary basal rows. */
+  /** Percentage of the profile rate for a temporary basal (100 means unchanged). */
   percentage?: number;
   /** True when units were derived from rate x duration, not reported directly. */
   unitsEstimated?: boolean;
@@ -76,6 +79,13 @@ export interface BolusDelivery {
   carbRatioGramsPerUnit?: number;
   initialUnits?: number;
   extendedUnits?: number;
+  /**
+   * Read-time only, never stored. Set by source reconciliation when the kept
+   * record comes from a source that does not record AAPS's SMB marking
+   * (Glooko) and a hidden copy of the same delivery from a source that does
+   * (Nightscout, AAPS) says whether it was an SMB.
+   */
+  smbMarking?: { sourceId: string; smb: boolean };
   sourceId: string;
   importedAt?: number;
   sourceFile?: string;
@@ -136,6 +146,8 @@ export interface DataSourceStatus {
   lastAttemptAt?: number;
   lastUpdatedAt?: number;
   dataThrough?: number;
+  /** The earliest stored record from this source, when it is known. */
+  dataFrom?: number;
   recordCount?: number;
   errorCode?: string;
   capabilities?: readonly SourceCapability[];
@@ -149,6 +161,8 @@ export interface TimelineData {
   boluses: BolusDelivery[];
   dailyInsulinTotals?: InsulinDailyTotal[];
   pumpStates?: PumpStateInterval[];
+  /** AAPS temporary targets, profile switches, running modes and suspensions. */
+  therapyStates?: TherapyStateInterval[];
   context: HealthContextEvent[];
   sources: DataSourceStatus[];
 }
@@ -157,9 +171,25 @@ export interface GlucoseStats {
   averageMmolL: number | null;
   standardDeviationMmolL: number | null;
   coefficientOfVariationPercent: number | null;
+  /** Standard range 3.9–10.0 mmol/L (70–180 mg/dL), duration-weighted. */
   timeBelowPercent: number;
   timeInRangePercent: number;
   timeAbovePercent: number;
+  /** Consensus bands: below 3.0, 3.0–3.8, 10.1–13.9 and above 13.9 mmol/L. */
+  timeVeryLowPercent: number;
+  timeLowPercent: number;
+  timeHighPercent: number;
+  timeVeryHighPercent: number;
+  /** Tight range 3.9–7.8 mmol/L (70–140 mg/dL). */
+  timeInTightRangePercent: number;
+  /** The person's own "In range" band, when one was supplied. */
+  personalRange?: {
+    lowerMmolL: number;
+    upperMmolL: number;
+    timeBelowPercent: number;
+    timeInRangePercent: number;
+    timeAbovePercent: number;
+  };
   coveragePercent: number;
   observedMinutes: number;
 }
