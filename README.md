@@ -31,8 +31,11 @@
 
 <p align="center">
   Enjoying T1 Arc? <a href="https://github.com/gregorgregor25/t1-arc">Give the project a star on GitHub</a><br>
-  or <strong><a href="https://ko-fi.com/t1arc">support development on Ko-fi</a></strong>.
-  Both are optional; T1 Arc is free to use.
+  or support development on Ko-fi. Both are optional; T1 Arc is free to use.
+</p>
+
+<p align="center">
+  <a href="https://ko-fi.com/J3Y226OKJS"><img height="36" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com"></a>
 </p>
 
 ## Why I built it
