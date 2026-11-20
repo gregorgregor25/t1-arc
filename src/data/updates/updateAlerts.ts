@@ -5,8 +5,8 @@ import {
   automaticCheckDue,
   installedVersionCode,
   isPublicReleaseVersion,
-  isUpdateAlertState,
   nextAutomaticCheckAt,
+  normalizeUpdateAlertState,
   pendingUpdateFor,
   shouldNotify,
   UPDATE_CHECK_INTERVAL_MS,
@@ -76,14 +76,14 @@ export async function getUpdateAlertsSettingAsync(): Promise<UpdateAlertsSetting
 }
 
 /**
- * Invalid stored content reads as empty. A storage failure throws, so a run
- * stops before it can overwrite what is stored or reach the network.
+ * Invalid stored fields are left out and unreadable content reads as empty.
+ * A storage failure throws, so a run stops before it can overwrite what is
+ * stored or reach the network.
  */
 export async function loadUpdateAlertState(): Promise<UpdateAlertState> {
   const raw = await SecureStore.getItemAsync(UPDATE_ALERTS_STATE_KEY);
   try {
-    const parsed: unknown = JSON.parse(raw ?? 'null');
-    return isUpdateAlertState(parsed) ? parsed : {};
+    return normalizeUpdateAlertState(JSON.parse(raw ?? 'null'));
   } catch {
     return {};
   }
@@ -148,13 +148,25 @@ function savePendingAndClaim(
   });
 }
 
+/**
+ * A mark whose notification never appeared and could not be removed. The next
+ * run removes it before deciding what to announce, so the version is still
+ * announced once storage works again. Kept in memory only.
+ */
+let owedRelease: AnnouncementClaim | undefined;
+
 /** Removes a mark whose notification never appeared, so a later check can try again. */
 async function releaseClaim(claim: AnnouncementClaim): Promise<void> {
-  await enqueue(async () => {
-    const current = await loadUpdateAlertState();
-    if (current.notifiedVersionCode !== claim.versionCode) return;
-    await saveUpdateAlertState(withNotifiedVersionCode(current, claim.previous));
-  }).catch(() => undefined);
+  try {
+    await enqueue(async () => {
+      const current = await loadUpdateAlertState();
+      if (current.notifiedVersionCode !== claim.versionCode) return;
+      await saveUpdateAlertState(withNotifiedVersionCode(current, claim.previous));
+    });
+    if (owedRelease === claim) owedRelease = undefined;
+  } catch {
+    owedRelease = claim;
+  }
 }
 
 async function alertsAllowed(expectedGeneration: number) {
@@ -298,6 +310,8 @@ async function run({
   if (!(await alertsAllowed(startGeneration))) return nextCheck;
 
   const pending: PendingUpdate = { version: result.version, versionCode: result.versionCode, notes: result.notes };
+  // First remove a mark an earlier run could not, so its version is not skipped.
+  if (owedRelease) await releaseClaim(owedRelease);
   // Stops here, without a notification, if the mark cannot be saved.
   const claim = await savePendingAndClaim(startGeneration, pending);
   if (!claim) return nextCheck;

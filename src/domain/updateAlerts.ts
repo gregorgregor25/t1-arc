@@ -78,21 +78,41 @@ function isVersionCode(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-export function isUpdateAlertState(value: unknown): value is UpdateAlertState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const v = value as Record<string, unknown>;
-  const pending = v.pending as Record<string, unknown> | undefined;
-  return (
-    (v.lastCheckedAt === undefined || isTime(v.lastCheckedAt)) &&
-    (v.notifiedVersionCode === undefined || isVersionCode(v.notifiedVersionCode)) &&
-    (pending === undefined ||
-      (typeof pending === 'object' &&
-        pending !== null &&
-        isPublicReleaseVersion(pending.version as string) &&
-        isVersionCode(pending.versionCode) &&
-        typeof pending.notes === 'string' &&
-        pending.notes.length <= MAX_RELEASE_NOTES_LENGTH))
-  );
+/** Shown when a release has no notes, or when stored notes are missing. */
+export const RELEASE_NOTES_FALLBACK = 'Release notes are available on GitHub.';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizePending(value: unknown): PendingUpdate | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.version !== 'string' ||
+    !isPublicReleaseVersion(value.version) ||
+    !isVersionCode(value.versionCode)
+  ) {
+    return undefined;
+  }
+  // Earlier builds stored the release without its notes.
+  const notes =
+    typeof value.notes === 'string' ? value.notes.slice(0, MAX_RELEASE_NOTES_LENGTH) : RELEASE_NOTES_FALLBACK;
+  return { version: value.version, versionCode: value.versionCode, notes };
+}
+
+/**
+ * Stored state with anything invalid left out, field by field. One damaged or
+ * older-format field never resets the daily limit or lets an announced
+ * version be announced again.
+ */
+export function normalizeUpdateAlertState(value: unknown): UpdateAlertState {
+  if (!isRecord(value)) return {};
+  const state: UpdateAlertState = {};
+  if (isTime(value.lastCheckedAt)) state.lastCheckedAt = value.lastCheckedAt;
+  if (isVersionCode(value.notifiedVersionCode)) state.notifiedVersionCode = value.notifiedVersionCode;
+  const pending = normalizePending(value.pending);
+  if (pending) state.pending = pending;
+  return state;
 }
 
 /** The same state with a different (or no) announced version. */

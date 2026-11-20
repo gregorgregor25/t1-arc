@@ -18,9 +18,10 @@ import {
   automaticCheckDue,
   installedVersionCode,
   isPublicReleaseVersion,
-  isUpdateAlertState,
   nextAutomaticCheckAt,
+  normalizeUpdateAlertState,
   pendingUpdateFor,
+  RELEASE_NOTES_FALLBACK,
   shouldNotify,
   UPDATE_CHECK_INTERVAL_MS,
   withNotifiedVersionCode,
@@ -165,16 +166,23 @@ describe('update alert rules', () => {
     for (const code of [null, '', '0', '-1', '8.6', 'abc']) expect(installedVersionCode(code)).toBeUndefined();
   });
 
-  it('rejects malformed stored state', () => {
-    expect(isUpdateAlertState({ lastCheckedAt: NOW, notifiedVersionCode: 96, pending: PENDING_96 })).toBe(true);
-    for (const value of [
-      null, [], 'x', { lastCheckedAt: 'yesterday' }, { notifiedVersionCode: 0 },
-      { pending: { ...PENDING_96, version: '1.7.22-beta' } }, { pending: { version: '1.7.22', notes: '' } }, { pending: null },
-      { pending: { version: '1.7.22', versionCode: 96 } }, { pending: { ...PENDING_96, notes: 7 } },
-      { pending: { ...PENDING_96, notes: 'x'.repeat(4_001) } },
+  it('keeps the valid parts of stored state and leaves out the rest', () => {
+    const full = { lastCheckedAt: NOW, notifiedVersionCode: 96, pending: PENDING_96 };
+    expect(normalizeUpdateAlertState(full)).toEqual(full);
+    for (const value of [null, [], 'x', 7]) expect(normalizeUpdateAlertState(value)).toEqual({});
+    expect(normalizeUpdateAlertState({ lastCheckedAt: 'yesterday', notifiedVersionCode: 96 })).toEqual({ notifiedVersionCode: 96 });
+    expect(normalizeUpdateAlertState({ lastCheckedAt: NOW, notifiedVersionCode: 0 })).toEqual({ lastCheckedAt: NOW });
+    for (const pending of [
+      null, [], { ...PENDING_96, version: '1.7.22-beta' }, { version: '1.7.22', notes: '' }, { ...PENDING_96, versionCode: 0 },
     ]) {
-      expect(isUpdateAlertState(value)).toBe(false);
+      expect(normalizeUpdateAlertState({ lastCheckedAt: NOW, pending })).toEqual({ lastCheckedAt: NOW });
     }
+    // Saved before release notes were stored, or with notes that no longer fit.
+    expect(normalizeUpdateAlertState({ pending: { version: '1.7.22', versionCode: 96 } })).toEqual({
+      pending: { version: '1.7.22', versionCode: 96, notes: RELEASE_NOTES_FALLBACK },
+    });
+    expect(normalizeUpdateAlertState({ pending: { ...PENDING_96, notes: 7 } }).pending?.notes).toBe(RELEASE_NOTES_FALLBACK);
+    expect(normalizeUpdateAlertState({ pending: { ...PENDING_96, notes: 'x'.repeat(4_001) } }).pending?.notes).toHaveLength(4_000);
   });
 });
 
@@ -362,6 +370,55 @@ describe('automatic update check', () => {
     mocks.show.mockResolvedValueOnce(false);
     await run(NOW + 2 * DAY, available('1.7.23', 98)).done;
     expect(storedState()).toMatchObject({ notifiedVersionCode: 96, pending: { version: '1.7.23', versionCode: 98 } });
+  });
+
+  it('still announces a version whose mark could not be removed after Android did not show it', async () => {
+    mocks.show.mockImplementationOnce(async () => {
+      mocks.failWrites = true;
+      return false;
+    });
+    await run(NOW).done;
+    // Storage failed, so the mark is still saved.
+    expect(storedState()).toMatchObject({ notifiedVersionCode: 96 });
+    mocks.failWrites = false;
+    await run(NOW + DAY).done;
+    expect(mocks.show).toHaveBeenCalledTimes(2);
+    expect(mocks.show).toHaveBeenLastCalledWith('1.7.22');
+    expect(storedState()).toMatchObject({ notifiedVersionCode: 96 });
+  });
+
+  it('removes the notification when switched off while it was appearing', async () => {
+    let finishShow: (shown: boolean) => void = () => undefined;
+    mocks.show.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishShow = resolve;
+        }),
+    );
+    const attempt = run(NOW);
+    await settle();
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+    await setUpdateAlertsEnabledAsync(false, notifier);
+    mocks.cancel.mockClear();
+    finishShow(true);
+    await attempt.done;
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+    expect(storedState()).not.toHaveProperty('pending');
+  });
+
+  it('keeps the daily limit and the announced version from state saved without release notes', async () => {
+    // The format written before release notes were stored.
+    mocks.store.set(
+      UPDATE_ALERTS_STATE_KEY,
+      JSON.stringify({ lastCheckedAt: NOW, notifiedVersionCode: 96, pending: { version: '1.7.22', versionCode: 96 } }),
+    );
+    const soon = run(NOW + 60_000);
+    expect(await soon.done).toBe(NOW + DAY);
+    expect(soon.check).not.toHaveBeenCalled();
+    expect(await getPendingUpdateAsync(PUBLIC)).toEqual({ version: '1.7.22', versionCode: 96, notes: RELEASE_NOTES_FALLBACK });
+    await run(NOW + DAY).done;
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(await getPendingUpdateAsync(PUBLIC)).toEqual(PENDING_96);
   });
 
   it('never reaches GitHub or throws when secure storage fails', async () => {

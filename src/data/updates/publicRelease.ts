@@ -1,4 +1,4 @@
-import { MAX_RELEASE_NOTES_LENGTH } from "@/domain/updateAlerts";
+import { MAX_RELEASE_NOTES_LENGTH, RELEASE_NOTES_FALLBACK } from "@/domain/updateAlerts";
 
 export const OFFICIAL_REPOSITORY = "https://github.com/gregorgregor25/t1-arc";
 export const OFFICIAL_PHONE_PACKAGE = "io.github.gregorgregor25.t1arc";
@@ -119,7 +119,7 @@ export async function checkPublicRelease(
       kind: "available", version, versionCode: Number(metadata.versionCode), releaseUrl, apkUrl,
       notes: typeof release.body === "string" && release.body.trim()
         ? release.body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, MAX_RELEASE_NOTES_LENGTH)
-        : "Release notes are available on GitHub.",
+        : RELEASE_NOTES_FALLBACK,
     };
   } catch {
     return { kind: "error", message: controller.signal.aborted
