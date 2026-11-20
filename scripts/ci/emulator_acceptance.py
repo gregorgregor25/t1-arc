@@ -234,11 +234,39 @@ class Device:
                 except ET.ParseError:
                     time.sleep(1)
                     continue
+                if self.dismiss_foreign_dialog(root):
+                    continue
                 if name:
                     (self.layouts / f"{self.counter:02d}-{name}.xml").write_text(xml, encoding="utf-8")
                 return root
             time.sleep(2)
         return None
+
+    def dismiss_foreign_dialog(self, root: ET.Element) -> bool:
+        """Close Android's "isn't responding" or "keeps stopping" dialog for another app.
+
+        The emulator's own apps, such as its launcher, sometimes stall on a
+        slow runner and cover T1 Arc. A dialog about T1 Arc is left alone, so
+        the log check reports it as a failure.
+        """
+        title = next((node.get("text", "") for node in root.iter("node")
+                      if node.get("resource-id") == "android:id/alertTitle"), "")
+        if not title or "T1 Arc" in title:
+            return False
+        if re.search(r"isn.t responding$", title):
+            button = "android:id/aerr_wait"
+        elif re.search(r"keeps stopping$|has stopped$", title):
+            button = "android:id/aerr_close"
+        else:
+            return False
+        for node in root.iter("node"):
+            bounds = self.node_bounds(node) if node.get("resource-id") == button else None
+            if bounds:
+                print(f"Dismissed a system dialog: {title!r}", flush=True)
+                self.shell(f"input tap {(bounds[0] + bounds[2]) // 2} {(bounds[1] + bounds[3]) // 2}", check=False)
+                time.sleep(2)
+                return True
+        return False
 
     def node_bounds(self, node: ET.Element) -> tuple[int, int, int, int] | None:
         bounds = BOUNDS.fullmatch(node.get("bounds", ""))
