@@ -1,0 +1,206 @@
+name: Emulator release acceptance
+
+# Installs the exact signed release APK on a disposable Android emulator:
+# a clean installation, an in-place update over the previous public release,
+# an invented sensor-change record kept across the update, cold launches and
+# a restart. No data source is connected and the network is switched off, so
+# no personal data, accounts or usage counts are involved.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test (a draft or a published release), for example v1.8.0
+        required: true
+        type: string
+      previous_tag:
+        description: Previous public release to update from
+        required: true
+        default: v1.7.18
+        type: string
+      api_level:
+        description: Emulator Android API level (an x86_64 image that can run ARM64 apps)
+        required: true
+        default: '35'
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/emulator-acceptance.yml
+      - scripts/ci/emulator_acceptance.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emulator-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || 'v1.7.18' }}
+  PREVIOUS_TAG: ${{ inputs.previous_tag || 'v1.7.18' }}
+  API_LEVEL: ${{ inputs.api_level || '35' }}
+  EXPECTED_CERT_SHA256: 31babc04082806319b3eb1ed97f437c40d32b6e2eac4463eb485c4b681740f50
+  RESULTS_DIR: emulator-results
+
+jobs:
+  fetch:
+    name: Download and check the signed APKs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Draft release assets are visible only to tokens with write access.
+      # This job checks out no code and runs no project code. It only
+      # downloads release files; it never creates, edits or uploads a release.
+      contents: write
+    steps:
+      - name: Check the inputs
+        run: |
+          for tag in "$RELEASE_TAG" "$PREVIOUS_TAG"; do
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Release tags must look like v1.8.0, not '$tag'."
+              exit 1
+            fi
+          done
+          if [[ ! "$API_LEVEL" =~ ^[0-9]{2}$ ]]; then
+            echo "::error::The API level must be a two-digit number."
+            exit 1
+          fi
+
+      - name: Download the APKs and check their checksums and signer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p apks/new apks/old
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir apks/new \
+            --pattern "T1-Arc-$RELEASE_TAG.apk" \
+            --pattern "T1-Arc-$RELEASE_TAG.apk.sha256" \
+            --pattern "T1-Arc-$RELEASE_TAG.apk.build.json"
+          gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --dir apks/old \
+            --pattern "T1-Arc-$PREVIOUS_TAG.apk" \
+            --pattern "T1-Arc-$PREVIOUS_TAG.apk.sha256" \
+            --pattern "T1-Arc-$PREVIOUS_TAG.apk.build.json"
+          (cd apks/new && sha256sum -c "T1-Arc-$RELEASE_TAG.apk.sha256")
+          (cd apks/old && sha256sum -c "T1-Arc-$PREVIOUS_TAG.apk.sha256")
+          build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          for apk in "apks/new/T1-Arc-$RELEASE_TAG.apk" "apks/old/T1-Arc-$PREVIOUS_TAG.apk"; do
+            # Every signer line must name the production certificate, and only it.
+            certs=$("$build_tools/apksigner" verify --print-certs "$apk" \
+              | sed -n 's/^.*certificate SHA-256 digest: //p' | sort -u)
+            if [ "$certs" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$apk is not signed with the production certificate only (found '$certs')."
+              exit 1
+            fi
+            echo "$(basename "$apk"): production signer confirmed"
+          done
+
+          # Each build record must name the commit its release points to.
+          resolve_commit() {
+            local tag=$1 ref sha
+            if ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>/dev/null); then
+              sha=${ref#* }
+              if [ "${ref%% *}" = tag ]; then
+                sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+              fi
+            else
+              # A draft's tag is created when it is published, so use the commit the draft targets.
+              sha=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)
+            fi
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Could not resolve $tag to a commit (found '$sha')." >&2
+              return 1
+            fi
+            echo "$sha"
+          }
+          release_commit=$(resolve_commit "$RELEASE_TAG")
+          previous_commit=$(resolve_commit "$PREVIOUS_TAG")
+          for entry in "new $RELEASE_TAG $release_commit" "old $PREVIOUS_TAG $previous_commit"; do
+            read -r folder tag commit <<< "$entry"
+            recorded=$(jq -r '.sourceCommit' "apks/$folder/T1-Arc-$tag.apk.build.json")
+            if [ "$recorded" != "$commit" ]; then
+              echo "::error::$tag points to $commit, but its build record names '$recorded'."
+              exit 1
+            fi
+            echo "$tag: build record matches the release commit $commit"
+          done
+          {
+            echo "release_apk_sha256=$(sha256sum "apks/new/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)"
+            echo "previous_apk_sha256=$(sha256sum "apks/old/T1-Arc-$PREVIOUS_TAG.apk" | cut -d ' ' -f 1)"
+            echo "signer_sha256=$EXPECTED_CERT_SHA256"
+            echo "release_commit=$release_commit"
+            echo "previous_commit=$previous_commit"
+          } > apks/apks.txt
+
+      - name: Hand the checked APKs to the emulator job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checked-apks
+          path: apks
+          retention-days: 1
+          if-no-files-found: error
+
+  acceptance:
+    name: Install, update and relaunch on an emulator
+    needs: fetch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Receive the checked APKs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: checked-apks
+          path: apks
+
+      - name: Confirm the APKs are the ones checked
+        run: |
+          set -euo pipefail
+          # The fetch job verified the checksums and signer; confirm nothing changed in transit.
+          (cd apks/new && sha256sum -c "T1-Arc-$RELEASE_TAG.apk.sha256")
+          (cd apks/old && sha256sum -c "T1-Arc-$PREVIOUS_TAG.apk.sha256")
+          grep -qx "release_apk_sha256=$(sha256sum "apks/new/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)" apks/apks.txt
+          grep -qx "previous_apk_sha256=$(sha256sum "apks/old/T1-Arc-$PREVIOUS_TAG.apk" | cut -d ' ' -f 1)" apks/apks.txt
+          mkdir -p "$RESULTS_DIR"
+          mv apks/apks.txt "$RESULTS_DIR/apks.txt"
+
+      - name: Enable hardware acceleration for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the checks on the emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 6000M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: python3 -I scripts/ci/emulator_acceptance.py
+
+      - name: Publish the summary
+        if: always()
+        run: |
+          if [ -f "$RESULTS_DIR/summary.md" ]; then
+            cat "$RESULTS_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The emulator checks did not produce a summary." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload screenshots, screen layouts and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: emulator-acceptance-${{ env.RELEASE_TAG }}-api${{ env.API_LEVEL }}
+          path: ${{ env.RESULTS_DIR }}
+          retention-days: 30
+          if-no-files-found: warn
