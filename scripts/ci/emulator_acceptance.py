@@ -24,6 +24,8 @@ from typing import Callable
 PACKAGE = "io.github.gregorgregor25.t1arc"
 # Bottom tabs present in both the previous and the new release.
 SHARED_TABS = ("History", "Health")
+# Text Today shows for a recorded sensor change while its warm-up runs, in both releases.
+SENSOR_RECORD_LABELS = ("Dexcom G6 warming up", "Readings expected from")
 BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
@@ -417,21 +419,24 @@ class Acceptance:
         device.layout(f"{prefix}-sensor-form")
         root = device.scroll_to("Sensor model:", exact=False)
         device.tap("Sensor model:", root, exact=False)
-        root = device.scroll_to("Other / not sure")
-        device.tap("Other / not sure", root)
+        # A model with a known warm-up: with no glucose source connected, Today
+        # shows a recorded sensor change only while its warm-up is running.
+        # Dexcom G6 warms up for two hours, far longer than this check takes.
+        root = device.scroll_to("Dexcom G6")
+        device.tap("Dexcom G6", root)
         root = device.scroll_to("Save new sensor", max_y=0.97)
         device.tap("Save new sensor", root)
-        device.wait_for(("New sensor recorded at",), 60, exact=False, name=f"{prefix}-sensor-saved")
+        device.wait_for(SENSOR_RECORD_LABELS, 60, exact=False, name=f"{prefix}-sensor-saved")
         device.screenshot(f"{prefix}-sensor-saved")
         device.assert_healthy()
-        return "Saved a sensor change (Other / not sure) and saw it on Today."
+        return "Saved a sensor change (Dexcom G6, two-hour warm-up) and saw it on Today."
 
     def expect_sensor_record(self, prefix: str) -> str:
         device = self.device
         for _ in range(5):
             root = device.layout()
             if root is not None:
-                for label in ("New sensor recorded at", "Sensor and site age"):
+                for label in SENSOR_RECORD_LABELS:
                     if device.locate(root, label, exact=False):
                         device.screenshot(f"{prefix}-sensor-record")
                         device.layout(f"{prefix}-sensor-record")
