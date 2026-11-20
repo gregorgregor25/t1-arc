@@ -27,15 +27,16 @@
   <a href="https://www.reddit.com/r/T1Arc/">Reddit community</a>
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/J3Y226OKJS"><img height="36" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com"></a>
+</p>
+
 > Free to use on Android 8.0 and newer. [Downloads and release support](docs/RELEASE_STATUS.md).
 
 <p align="center">
   Enjoying T1 Arc? <a href="https://github.com/gregorgregor25/t1-arc">Give the project a star on GitHub</a><br>
-  or support development on Ko-fi. Both are optional; T1 Arc is free to use.
-</p>
-
-<p align="center">
-  <a href="https://ko-fi.com/J3Y226OKJS"><img height="36" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Buy Me a Coffee at ko-fi.com"></a>
+  or <strong><a href="https://ko-fi.com/J3Y226OKJS">support development on Ko-fi</a></strong>.
+  Both are optional; T1 Arc is free to use.
 </p>
 
 ## Why I built it
