@@ -85,10 +85,11 @@ jobs:
           (cd apks/old && sha256sum -c "T1-Arc-$PREVIOUS_TAG.apk.sha256")
           build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
           for apk in "apks/new/T1-Arc-$RELEASE_TAG.apk" "apks/old/T1-Arc-$PREVIOUS_TAG.apk"; do
-            cert=$("$build_tools/apksigner" verify --print-certs "$apk" \
-              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
-            if [ "$cert" != "$EXPECTED_CERT_SHA256" ]; then
-              echo "::error::$apk is not signed with the production certificate (found '$cert')."
+            # Every signer line must name the production certificate, and only it.
+            certs=$("$build_tools/apksigner" verify --print-certs "$apk" \
+              | sed -n 's/^.*certificate SHA-256 digest: //p' | sort -u)
+            if [ "$certs" != "$EXPECTED_CERT_SHA256" ]; then
+              echo "::error::$apk is not signed with the production certificate only (found '$certs')."
               exit 1
             fi
             echo "$(basename "$apk"): production signer confirmed"
