@@ -106,6 +106,7 @@ const RECORD_PRESENCE_REQUEST =
 // "the last 3 days") do not match.
 const LATEST_SINGLE_STATE =
   /\b(?:(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\s+(?:(?:activity|exercise|eating[\s-]+soon|hypo|\d{2,3}\s*%)\s+)?(?:temp(?:orary)?[\s-]+targets?|tts?|activity[\s-]+modes?|eating[\s-]+soon(?:[\s-]+modes?)?|hypo[\s-]+modes?|profile\s+switch(?:es)?|loop\s+suspensions?)(?![\w-])|did\s+i\s+last\s+(?:use|set|have|run|start|turn\s+on|activate|switch)\b|(?:the\s+)?last\s+time\s+(?:i|my\s+(?:loop|pump|pod))\b)/i;
+const ASKS_FOR_SEVERAL = /\b(?:all|each|every|both|compar\w*)\b/i;
 const SETTING_ADVICE_REQUEST =
   /\b(?:should|shall|recommend\w*|suggest\w*|advis\w*|what (?:percentage|percent|target|profile) (?:should|to|do)|which (?:percentage|percent|target|profile) (?:should|to|is best)|too (?:low|high|much|little|aggressive))\b/i;
 
@@ -132,7 +133,11 @@ export function parseTherapyStateQuestion(question: string): TherapyStateQuery |
   if (!glucoseOutcome && !listRequest) return undefined;
   const query = therapyStateFamily(question.toLowerCase());
   if (!query) return undefined;
-  const latest = LATEST_SINGLE_STATE.test(question) ? { latest: true as const } : {};
+  const named = LATEST_SINGLE_STATE.exec(question)?.[0];
+  // "all my last temp targets", "compare my last temp targets": the plural
+  // there asks for several, not the most recent one.
+  const latest =
+    named && !(/s$/i.test(named) && ASKS_FOR_SEVERAL.test(question)) ? { latest: true as const } : {};
   return listRequest ? { ...query, mode: "list", ...latest } : { ...query, ...latest };
 }
 
@@ -572,7 +577,9 @@ function buildTherapyStateList({
     lines.push(`• and ${formatTarvisNumber(states.length - shown.length, { maximumFractionDigits: 0 })} more, listed in the evidence.`);
   }
   if (total && states.some((state) => state.endBasis === "open")) {
-    lines.push("At least one had no recorded end, so its length was measured up to the end of the records read.");
+    lines.push(
+      `${states.length === 1 ? "It" : "At least one"} had no recorded end, so its length was measured up to the end of the records read.`,
+    );
   }
   if (
     query.family === "profile-switch" &&
@@ -704,22 +711,21 @@ export function buildTherapyStateAnswer({
   ).size;
   const without = pool(usableComparison);
 
-  const listed = states
-    .slice(-MAX_LISTED_STATES)
-    .map((state) => `• ${describeTherapyState(state, true)}`);
-  const lines: string[] = [
-    query.latest && inPeriod.length > 1
-      ? `The most recent of ${formatTarvisNumber(inPeriod.length, { maximumFractionDigits: 0 })} ${label} AAPS recorded in ${period}, ${duration(during.totalMinutes)} long:`
-      : states.length === 1
-        ? `AAPS recorded one in ${period}, ${duration(during.totalMinutes)} long:`
-        : `AAPS recorded ${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} ${label} in ${period}, ${duration(during.totalMinutes)} in total:`,
-    ...listed,
-  ];
-  if (states.length > MAX_LISTED_STATES) {
-    lines.push(`• and ${formatTarvisNumber(states.length - MAX_LISTED_STATES, { maximumFractionDigits: 0 })} earlier, listed in the evidence.`);
-  }
-  if (states.some((state) => state.endBasis === "open")) {
-    lines.push("At least one had no recorded end, so its length was measured up to the end of the records read.");
+  // One record: the glucose result leads, so the short-answer card shows it
+  // first, and the card label names the record.
+  const single = states.length === 1 ? states[0] : undefined;
+  const lines: string[] = [];
+  if (!single) {
+    lines.push(
+      `AAPS recorded ${formatTarvisNumber(states.length, { maximumFractionDigits: 0 })} ${label} in ${period}, ${duration(during.totalMinutes)} in total:`,
+      ...states.slice(-MAX_LISTED_STATES).map((state) => `• ${describeTherapyState(state, true)}`),
+    );
+    if (states.length > MAX_LISTED_STATES) {
+      lines.push(`• and ${formatTarvisNumber(states.length - MAX_LISTED_STATES, { maximumFractionDigits: 0 })} earlier, listed in the evidence.`);
+    }
+    if (states.some((state) => state.endBasis === "open")) {
+      lines.push("At least one had no recorded end, so its length was measured up to the end of the records read.");
+    }
   }
 
   const duringUsable =
@@ -727,13 +733,14 @@ export function buildTherapyStateAnswer({
     during.coveragePercent >= MIN_WINDOW_COVERAGE_PERCENT;
   let confidence: TarvisAnswer["confidence"] = "limited";
   const evidence: EvidenceReference[] = [stateEvidence];
+  const glucoseLines: string[] = [];
   if (!duringUsable) {
-    lines.push(
-      `Glucose readings covered ${percent(during.coveragePercent)} of that time, so T1 Arc is not summarising glucose during ${states.length === 1 ? "it" : "these periods"}.`,
+    glucoseLines.push(
+      `Glucose readings covered ${percent(during.coveragePercent)} of that time, so T1 Arc is not summarising glucose during ${single ? "it" : "these periods"}.`,
     );
   } else {
-    lines.push(
-      `While ${states.length === 1 ? "it was" : "they were"} active, ${statsSentence(during)}. Glucose coverage: ${percent(during.coveragePercent)} of ${duration(during.totalMinutes)}.`,
+    glucoseLines.push(
+      `While ${single ? "it was" : "they were"} active, ${statsSentence(during)}. Glucose coverage: ${percent(during.coveragePercent)} of ${duration(during.totalMinutes)}.`,
     );
     evidence.push({
       id: "therapy-state-glucose-during",
@@ -744,7 +751,7 @@ export function buildTherapyStateAnswer({
       examples: [],
     });
     if (usableComparison.length >= MIN_MATCHED_WINDOWS) {
-      lines.push(
+      glucoseLines.push(
         `At the same clock times on ${formatTarvisNumber(comparisonDays, { maximumFractionDigits: 0 })} other day${comparisonDays === 1 ? "" : "s"} with ${withoutLabel(query)} recorded, ${statsSentence(without)}. Glucose coverage in those windows: ${percent(without.coveragePercent)}.`,
       );
       confidence =
@@ -760,10 +767,26 @@ export function buildTherapyStateAnswer({
         examples: [],
       });
     } else {
-      lines.push(
+      glucoseLines.push(
         `Only ${formatTarvisNumber(usableComparison.length, { maximumFractionDigits: 0 })} same-clock-time window${usableComparison.length === 1 ? "" : "s"} on other days had none of these settings recorded and enough glucose readings, so T1 Arc is not comparing them.`,
       );
     }
+  }
+  if (single) {
+    const [result, ...comparison] = glucoseLines;
+    const record = describeTherapyState(single, true);
+    lines.push(
+      ...(result ? [result] : []),
+      query.latest && inPeriod.length > 1
+        ? `The most recent of ${formatTarvisNumber(inPeriod.length, { maximumFractionDigits: 0 })} ${label} AAPS recorded in ${period}: ${record}.`
+        : `AAPS recorded only this one in ${period}: ${record}.`,
+      ...(single.endBasis === "open"
+        ? ["It had no recorded end, so its length was measured up to the end of the records read."]
+        : []),
+      ...comparison,
+    );
+  } else {
+    lines.push(...glucoseLines);
   }
   lines.push(OBSERVATION_CAVEAT);
   if (states.some((state) => state.source.sourceId !== "nightscout" && !/sender confirmed/i.test(state.source.sourceFile))) {
@@ -771,7 +794,9 @@ export function buildTherapyStateAnswer({
   }
   return {
     answer: {
-      headline: query.latest ? `Glucose during the latest of your ${label}` : `Glucose during ${label}`,
+      headline: single
+        ? `Glucose during ${therapyStateLabel(single)}, ${formatTherapyStateSpan(single, true)}`
+        : `Glucose during ${label}`,
       answer: lines.join("\n"),
       confidence,
       evidenceIds: evidence.map(({ id }) => id),

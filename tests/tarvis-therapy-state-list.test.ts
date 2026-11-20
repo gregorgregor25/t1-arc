@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { containsTreatmentDirective } from '@/data/tarvis/guardrails';
 import { coordinateTarvisRequest } from '@/data/tarvis/requestCoordinator';
+import { buildTarvisShortAnswer } from '@/data/tarvis/shortAnswer';
 import {
   buildTherapyStateAnswer,
   parseTherapyStateQuestion,
@@ -198,10 +199,16 @@ describe('therapy-state list answers', () => {
     expect(listed.answer.answer).toContain('Mon 18 Nov 11:30: Eating soon temporary target');
     expect(listed.evidence[0]!.recordIds).toEqual(['tt-2']);
 
+    // Glucose question: the result leads, the record follows, the label names it.
     const glucose = buildTherapyStateAnswer({ query: { family: 'temporary-target', latest: true }, range, timeline: data, asOf });
-    expect(glucose.answer.headline).toBe('Glucose during the latest of your temporary targets');
-    expect(glucose.answer.answer.split('\n')[0]).toMatch(/^The most recent of 2 temporary targets AAPS recorded in .*, 1 h long:$/);
+    const glucoseLines = glucose.answer.answer.split('\n');
+    expect(glucose.answer.headline).toBe('Glucose during Eating soon temporary target (target 4.5 mmol/L), Mon 18 Nov 11:30–12:30');
+    expect(glucoseLines[0]).toBe('Glucose readings covered 0% of that time, so T1 Arc is not summarising glucose during it.');
+    expect(glucoseLines[1]).toBe(
+      'The most recent of 2 temporary targets AAPS recorded in the requested period (16 Nov 2030 to 19 Nov 2030, through 15:00): Eating soon temporary target (target 4.5 mmol/L), recorded Mon 18 Nov 11:30–12:30.',
+    );
     expect(glucose.answer.answer).not.toContain('17 Nov');
+    expect(glucose.answer.answer).not.toContain('• ');
     expect(glucose.evidence[0]!.recordIds).toEqual(['tt-2']);
 
     // One record in the period: no "most recent of 1".
@@ -209,8 +216,37 @@ describe('therapy-state list answers', () => {
     const one = buildTherapyStateAnswer({ query: { family: 'temporary-target', mode: 'list', latest: true }, range, timeline: single, asOf });
     expect(one.answer.answer.split('\n')[0]).toBe('1 recorded in 16 Nov 2030 to 19 Nov 2030, through 15:00, 1 h in total:');
     const oneGlucose = buildTherapyStateAnswer({ query: { family: 'temporary-target', latest: true }, range, timeline: single, asOf });
-    expect(oneGlucose.answer.answer.split('\n')[0]).toMatch(/^AAPS recorded one in .*, 1 h long:$/);
+    expect(oneGlucose.answer.answer.split('\n')[1]).toMatch(/^AAPS recorded only this one in the requested period \(.*\): Eating soon temporary target/);
     expect(oneGlucose.answer.answer).not.toMatch(/most recent of|glucose during these periods/);
+  });
+
+  it('keeps the glucose result for one record on the card, not under Details', () => {
+    const target = state({
+      id: 'tt-1', targetReason: 'activity', targetLowMmolL: 8, targetHighMmolL: 8,
+      start: Date.parse('2030-11-18T10:00:00Z'), end: Date.parse('2030-11-18T11:00:00Z'), programmedDurationMs: HOUR,
+    });
+    const glucose = Array.from({ length: (loaded.end - loaded.start) / (5 * MINUTE) }, (_, index) => {
+      const at = loaded.start + index * 5 * MINUTE;
+      return { id: `g-${at}`, sourceId: 'synthetic-cgm', timestamp: at, receivedAt: at, mmolL: 7, trend: 'unknown' as const, quality: 'measured' as const };
+    });
+    const { answer } = buildTherapyStateAnswer({
+      query: { family: 'temporary-target', latest: true }, range, timeline: { ...timeline(loaded, [target]), glucose }, asOf,
+    });
+    const card = buildTarvisShortAnswer({
+      answer, asOf, answerSource: 'local', modelRequestSent: false,
+      settings: { locale: 'en-GB', timeZone: 'UTC', glucoseUnit: 'mmolL' },
+    });
+    expect(card.label).toBe('Glucose during Activity temporary target (target 8.0 mmol/L), Mon 18 Nov 10:00–11:00');
+    expect(card.headline).toMatch(/^While it was active, glucose averaged 7\.0 mmol\/L; 100% of the observed time was /);
+    expect(card.listItems).toEqual([]);
+    expect(card.detailText.join(' ')).toContain('AAPS recorded only this one');
+    expect(card.detailText.join(' ')).toContain('This is an observation from recorded data.');
+  });
+
+  it('keeps the full list when a plural asks for several', () => {
+    expect(parseTherapyStateQuestion('Show all my last temp targets')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Compare my glucose during my last temp targets')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Compare my glucose during my last temp target with other days')?.latest).toBe(true);
   });
 
   it('says when a listed total includes a record with no recorded end', () => {
@@ -222,7 +258,7 @@ describe('therapy-state list answers', () => {
       query: { family: 'loop-mode', group: 'suspended', mode: 'list' }, range, timeline: timeline(loaded, [open]), asOf,
     });
     expect(answer.answer.split('\n')[0]).toContain('3 h in total');
-    expect(answer.answer).toContain('At least one had no recorded end');
+    expect(answer.answer).toContain('It had no recorded end');
   });
 
   it('marks a record that started before the period', () => {
