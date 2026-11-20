@@ -93,10 +93,42 @@ jobs:
             fi
             echo "$(basename "$apk"): production signer confirmed"
           done
+
+          # Each build record must name the commit its release points to.
+          resolve_commit() {
+            local tag=$1 ref sha
+            if ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>/dev/null); then
+              sha=${ref#* }
+              if [ "${ref%% *}" = tag ]; then
+                sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+              fi
+            else
+              # A draft's tag is created when it is published, so use the commit the draft targets.
+              sha=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)
+            fi
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Could not resolve $tag to a commit (found '$sha')." >&2
+              return 1
+            fi
+            echo "$sha"
+          }
+          release_commit=$(resolve_commit "$RELEASE_TAG")
+          previous_commit=$(resolve_commit "$PREVIOUS_TAG")
+          for entry in "new $RELEASE_TAG $release_commit" "old $PREVIOUS_TAG $previous_commit"; do
+            read -r folder tag commit <<< "$entry"
+            recorded=$(jq -r '.sourceCommit' "apks/$folder/T1-Arc-$tag.apk.build.json")
+            if [ "$recorded" != "$commit" ]; then
+              echo "::error::$tag points to $commit, but its build record names '$recorded'."
+              exit 1
+            fi
+            echo "$tag: build record matches the release commit $commit"
+          done
           {
             echo "release_apk_sha256=$(sha256sum "apks/new/T1-Arc-$RELEASE_TAG.apk" | cut -d ' ' -f 1)"
             echo "previous_apk_sha256=$(sha256sum "apks/old/T1-Arc-$PREVIOUS_TAG.apk" | cut -d ' ' -f 1)"
             echo "signer_sha256=$EXPECTED_CERT_SHA256"
+            echo "release_commit=$release_commit"
+            echo "previous_commit=$previous_commit"
           } > apks/apks.txt
 
       - name: Hand the checked APKs to the emulator job

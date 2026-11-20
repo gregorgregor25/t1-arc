@@ -26,6 +26,15 @@ from typing import Callable
 PACKAGE = "io.github.gregorgregor25.t1arc"
 # Bottom tab labels used by recent releases ("Insights" became "Tarv1s").
 TAB_NAMES = ("Today", "History", "Health", "Tarv1s", "Insights")
+# Something only that tab's own screen shows: the large screen title, or the
+# Tarv1s workspace switcher (the tab was called Insights in older builds).
+TAB_MARKERS = {
+    "Today": "Today.",
+    "History": "History.",
+    "Health": "Health.",
+    "Tarv1s": "Tarv1s workspace",
+    "Insights": "Tarv1s workspace",
+}
 # The invented record: a Dexcom G6 sensor change. With no glucose source
 # connected, Today shows a recorded sensor change only while its warm-up runs;
 # a G6 warms up for two hours, far longer than this check takes.
@@ -34,6 +43,8 @@ SENSOR_WARMUP_MINUTES = 120
 SENSOR_TITLE = f"{SENSOR_MODEL} warming up"
 SENSOR_DETAIL_PREFIX = "Readings expected from"
 SENSOR_SAVE = "Save new sensor"
+SENSOR_CHOSEN = f"Sensor model: {SENSOR_MODEL}"
+SENSOR_FORM_PREVIEW = "Readings expected from:"
 BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 TIME_AT_END = re.compile(r"(\d{1,2}):(\d{2})(?: ([ap]m))?$")
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -303,7 +314,7 @@ class Device:
         record only counts once Today is the selected tab and the form's save
         button has gone.
         """
-        if self.selected_tab(root) != "Today" or self.has_label(root, SENSOR_SAVE):
+        if not self.on_tab(root, "Today") or self.has_label(root, SENSOR_SAVE):
             return None
         title = detail = None
         for node in root.iter("node"):
@@ -329,17 +340,24 @@ class Device:
                 raise CheckFailed(f"Did not see {' or '.join(repr(label) for label in labels)} within {timeout} s.")
             time.sleep(2)
 
+    def on_tab(self, root: ET.Element, tab: str) -> bool:
+        """The tab is selected and its own screen is showing, not Today's."""
+        if self.selected_tab(root) != tab or not self.has_label(root, TAB_MARKERS[tab]):
+            return False
+        return tab == "Today" or not self.has_label(root, TAB_MARKERS["Today"])
+
     def wait_for_tab(self, tab: str, timeout: int, *, name: str) -> ET.Element:
         deadline = time.monotonic() + timeout
         while True:
             root = self.layout()
-            if root is not None and self.selected_tab(root) == tab:
+            if root is not None and self.on_tab(root, tab):
                 return root
             self.assert_healthy()
             if time.monotonic() > deadline:
                 self.screenshot(f"{name}-timeout")
                 self.layout(f"{name}-timeout")
-                raise CheckFailed(f"The {tab} tab was not shown as selected within {timeout} s.")
+                raise CheckFailed(f"The {tab} tab was not shown as selected with its own screen "
+                                  f"({TAB_MARKERS[tab]!r}) within {timeout} s.")
             time.sleep(2)
 
     def wait_for_sensor_record(self, timeout: int, *, name: str) -> tuple[str, str]:
@@ -554,8 +572,8 @@ class Acceptance:
         device.assert_healthy()
         if len(visited) < 3:
             raise CheckFailed(f"Only found these tabs: {', '.join(visited) or 'none'}.")
-        return ("Opened " + ", ".join(visited) + "; each became the selected tab with its own screen. "
-                "Returned to Today.")
+        return ("Opened " + ", ".join(visited) + "; each became the selected tab and showed its own screen "
+                "(" + ", ".join(repr(TAB_MARKERS[tab]) for tab in visited) + "). Returned to Today.")
 
     def check_about(self, prefix: str) -> str:
         device = self.device
@@ -591,6 +609,12 @@ class Acceptance:
         device.tap("Sensor model:", root, exact=False)
         root = device.scroll_to(SENSOR_MODEL)
         device.tap(SENSOR_MODEL, root)
+        # The form confirms the choice and previews the expected reading time.
+        _, root = device.wait_for((SENSOR_FORM_PREVIEW,), 30, exact=False, name=f"{prefix}-sensor-model")
+        device.screenshot(f"{prefix}-sensor-model")
+        device.layout(f"{prefix}-sensor-model")
+        if not device.has_label(root, SENSOR_CHOSEN):
+            raise CheckFailed(f"The form did not show {SENSOR_CHOSEN!r} after choosing it.")
         root = device.scroll_to(SENSOR_SAVE, max_y=0.97)
         device.tap(SENSOR_SAVE, root)
         title, detail = device.wait_for_sensor_record(60, name=f"{prefix}-sensor-saved")
