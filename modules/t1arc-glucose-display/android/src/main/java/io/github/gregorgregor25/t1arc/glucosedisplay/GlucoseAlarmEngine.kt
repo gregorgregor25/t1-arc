@@ -510,7 +510,11 @@ internal object T1ArcGlucoseAlarmEngine {
   fun acknowledge(context: Context, id: String): Map<String, Any?> {
     synchronized(lock) {
       val old = currentEpisode(context, id)
-      episode = old.copy(acknowledged = true, lastNotifiedElapsed = SystemClock.elapsedRealtime())
+      val elapsed = SystemClock.elapsedRealtime()
+      val pauseUntilElapsed = lowPauseUntilElapsed(context, elapsed)
+      val pauseUntilWall = pauseUntilElapsed?.let { load(context).optJSONObject("lowPause")?.optLong("untilWall") }
+      // Silencing also ends a snooze still running, so its old end cannot sound again.
+      episode = GlucoseAlarmPolicy.episodeAfterAcknowledge(old, elapsed, pauseUntilElapsed, pauseUntilWall)
       persist(context)
       stopPlaybackLocked(context)
       notificationFingerprint = null

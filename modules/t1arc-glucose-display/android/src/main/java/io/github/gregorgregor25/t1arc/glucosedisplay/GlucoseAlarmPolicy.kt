@@ -330,6 +330,21 @@ internal object GlucoseAlarmPolicy {
         ?.let { current.userSnoozeUntilElapsed ?: current.snoozeUntilElapsed })
   }
 
+  /**
+   * The episode after "Silence this alert". The current burst ends and later
+   * reminders follow the repeat setting from now (urgent low: at least every
+   * 30 minutes). A snooze still running is cleared, so its old end cannot
+   * start another burst and nothing carries into urgent low. A low paused after
+   * a logged hypo treatment is still checked again when that pause ends:
+   * [lowPauseUntilElapsed] and [lowPauseUntilWall] are its end, if one is running.
+   */
+  fun episodeAfterAcknowledge(current: GlucoseAlarmEpisode, elapsedNow: Long, lowPauseUntilElapsed: Long?,
+    lowPauseUntilWall: Long?): GlucoseAlarmEpisode {
+    val recheck = lowPauseUntilElapsed?.takeIf { current.kind == GlucoseAlarmKind.LOW && it > elapsedNow }
+    return current.copy(acknowledged = true, lastNotifiedElapsed = elapsedNow, snoozeUntilElapsed = recheck,
+      snoozeUntilWall = recheck?.let { lowPauseUntilWall }, snoozedAtElapsed = null, userSnoozeUntilElapsed = null)
+  }
+
   fun snoozeUntil(wallNow: Long, elapsedNow: Long, untilWall: Long, kind: GlucoseAlarmKind = GlucoseAlarmKind.LOW): Long {
     val duration = untilWall - wallNow
     require(duration >= 1L) { "Choose a future snooze time." }
