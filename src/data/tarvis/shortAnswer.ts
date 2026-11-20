@@ -284,11 +284,19 @@ function sentences(text: string) {
     .filter(Boolean);
 }
 
-function splitBullets(text: string) {
+/**
+ * Bullet lines become a list. With `singleAfterLead`, one bullet does too
+ * when the line before it introduces it ("The most recent of 8 recorded
+ * in …:"), so a single record is not run into the lead as one long sentence.
+ */
+function splitBullets(text: string, { singleAfterLead = false } = {}) {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const bulletIndexes = lines.flatMap((line, index) => (/^[•\-*]\s+/.test(line) ? [index] : []));
-  if (bulletIndexes.length < 2) return undefined;
-  const first = bulletIndexes[0]!;
+  const first = bulletIndexes[0];
+  if (first === undefined) return undefined;
+  const introducedSingle =
+    singleAfterLead && bulletIndexes.length === 1 && first > 0 && lines[first - 1]!.endsWith(":");
+  if (bulletIndexes.length < 2 && !introducedSingle) return undefined;
   const last = bulletIndexes.at(-1)!;
   return {
     lead: lines.slice(0, first),
@@ -302,8 +310,8 @@ function splitBullets(text: string) {
  * A multi-line answer whose lines are each a record ("Site change: …")
  * becomes a list.
  */
-function splitText(text: string) {
-  const bullets = splitBullets(text);
+function splitText(text: string, singleAfterLead = false) {
+  const bullets = splitBullets(text, { singleAfterLead });
   if (bullets) {
     const lead = bullets.lead.join(" ");
     return {
@@ -425,7 +433,9 @@ export function buildTarvisShortAnswer({
   const text = answer.answer.trim();
   // A reply that asks the user something stays whole, so the question is never hidden.
   const asksBack = text.includes("?") && text.length <= 400 && !splitBullets(text);
-  const split = asksBack ? { headline: text, items: [], rest: [] } : splitText(text);
+  // A one-record list from this phone ("…:\n• record") keeps its record as a
+  // list item. AI-written replies keep the two-bullet rule.
+  const split = asksBack ? { headline: text, items: [], rest: [] } : splitText(text, answerSource === "local");
   const headline = split.headline ?? (split.items.length ? undefined : text);
   // A reply from an AI connection keeps any warning or urgent advice visible;
   // only ordinary explanation folds into Details.

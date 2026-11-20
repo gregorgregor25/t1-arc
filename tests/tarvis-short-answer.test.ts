@@ -116,6 +116,32 @@ describe("short answer first", () => {
     expect(model.listItems).toEqual(["Change A", "Change B"]);
   });
 
+  it("keeps a single introduced record as a list item, not part of the lead", () => {
+    const text = [
+      "The most recent of 8 recorded in 22 Oct 2026 to 20 Nov 2026, through 12:03:",
+      "• Thu 19 Nov 23:42: Synthetic temporary target recorded, 1 h",
+    ].join("\n");
+    const model = buildTarvisShortAnswer({
+      ...local,
+      answer: answer({ headline: "Temporary targets, 22 Oct 2026 to 20 Nov 2026, through 12:03", answer: text }),
+      asOf,
+      settings,
+    });
+    expect(model.headline).toBe("The most recent of 8 recorded in 22 Oct 2026 to 20 Nov 2026, through 12:03:");
+    expect(model.listItems).toEqual(["Thu 19 Nov 23:42: Synthetic temporary target recorded, 1 h"]);
+    expect(model.detailText).toEqual([]);
+
+    // AI-written replies keep the two-bullet rule.
+    const hosted = buildTarvisShortAnswer({
+      answerSource: "hosted",
+      modelRequestSent: true,
+      answer: answer({ headline: "Synthetic", answer: "One point:\n- Synthetic point" }),
+      asOf,
+      settings,
+    });
+    expect(hosted.listItems).toEqual([]);
+  });
+
   it("names rolling whole-day windows and falls back to exact dates", () => {
     expect(tarvisShortPeriod({ start: asOf - 14 * DAY, end: asOf }, asOf, settings)).toBe("last 14 days");
     expect(tarvisShortPeriod({ start: asOf - DAY, end: asOf }, asOf, settings)).toBe("last 24 hours");

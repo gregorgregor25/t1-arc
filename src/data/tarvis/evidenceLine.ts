@@ -128,13 +128,14 @@ function fromReferences(references: readonly EvidenceReference[]): TarvisEvidenc
   if (!usable.length) return undefined;
   const glucose = usable.filter((reference) => GLUCOSE_REFERENCE.test(`${reference.id} ${reference.label}`));
   const selected = glucose.length ? glucose : usable;
+  const records = new Set(selected.flatMap(({ recordIds }) => recordIds)).size;
   return {
     version: 1,
     windows: [{
       start: Math.min(...selected.map(({ range }) => range.start)),
       end: Math.max(...selected.map(({ range }) => range.end)),
-      records: new Set(selected.flatMap(({ recordIds }) => recordIds)).size,
-      ...(glucose.length ? {} : { recordLabel: "records" }),
+      records,
+      ...(glucose.length ? {} : { recordLabel: records === 1 ? "record" : "records" }),
       coveragePercent: null,
     }],
   };

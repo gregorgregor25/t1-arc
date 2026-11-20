@@ -100,10 +100,12 @@ const STATE_LIST_REQUEST =
 const RECORD_PRESENCE_REQUEST =
   /\b(?:any|were there|did i (?:use|have|set|run|start|turn on|activate|switch|change)|did (?:the|my) (?:loop|pump|pod) (?:suspend|stop|disconnect)|(?:was|were) (?:my|the) (?:loop|pump|pod)|have i (?:used|had|set|run|started|switched))\b/i;
 // "my last temp target", "the most recent loop suspension", "when did I last
-// use a temp target": one state, singular. Plurals ("my last temp targets")
-// and periods ("last week", "the last 3 days") do not match.
+// use a temp target": the most recent state. The plural reads the same way,
+// because phone keyboards autocorrect "my last temporary target" to
+// "targets". A count ("my last 3 temp targets") and periods ("last week",
+// "the last 3 days") do not match.
 const LATEST_SINGLE_STATE =
-  /\b(?:(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\s+(?:(?:activity|exercise|eating[\s-]+soon|hypo|\d{2,3}\s*%)\s+)?(?:temp(?:orary)?[\s-]+target|tt|activity[\s-]+mode|eating[\s-]+soon(?:[\s-]+mode)?|hypo[\s-]+mode|profile\s+switch|loop\s+suspension)(?![\w-])|did\s+i\s+last\s+(?:use|set|have|run|start|turn\s+on|activate|switch)\b|(?:the\s+)?last\s+time\s+(?:i|my\s+(?:loop|pump|pod))\b)/i;
+  /\b(?:(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\s+(?:(?:activity|exercise|eating[\s-]+soon|hypo|\d{2,3}\s*%)\s+)?(?:temp(?:orary)?[\s-]+targets?|tts?|activity[\s-]+modes?|eating[\s-]+soon(?:[\s-]+modes?)?|hypo[\s-]+modes?|profile\s+switch(?:es)?|loop\s+suspensions?)(?![\w-])|did\s+i\s+last\s+(?:use|set|have|run|start|turn\s+on|activate|switch)\b|(?:the\s+)?last\s+time\s+(?:i|my\s+(?:loop|pump|pod))\b)/i;
 const SETTING_ADVICE_REQUEST =
   /\b(?:should|shall|recommend\w*|suggest\w*|advis\w*|what (?:percentage|percent|target|profile) (?:should|to|do)|which (?:percentage|percent|target|profile) (?:should|to|is best)|too (?:low|high|much|little|aggressive))\b/i;
 

@@ -51,7 +51,7 @@ describe('therapy-state list questions', () => {
     expect(parseTherapyStateQuestion('Any lows during my temp targets this week?')?.mode).toBeUndefined();
   });
 
-  it('marks a question about one named state as latest, and keeps periods and plurals as they were', () => {
+  it('marks a question about the most recent state as latest, and keeps periods and counts as they were', () => {
     expect(parseTherapyStateQuestion('What was my glucose during my last temporary target?')).toEqual({
       family: 'temporary-target', reason: undefined, latest: true,
     });
@@ -64,12 +64,19 @@ describe('therapy-state list questions', () => {
       family: 'temporary-target', reason: 'activity', latest: true,
     });
     expect(parseTherapyStateQuestion('How was my glucose during my temp targets last week?')?.latest).toBeUndefined();
-    expect(parseTherapyStateQuestion('Show my last temp targets')?.latest).toBeUndefined();
+    // Phone keyboards autocorrect "my last temporary target" to "targets".
+    expect(parseTherapyStateQuestion('What was my glucose during my last temporary targets?')).toEqual({
+      family: 'temporary-target', reason: undefined, latest: true,
+    });
+    expect(parseTherapyStateQuestion('Were there any profile switches in the last 3 days?')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Show my last 3 temp targets')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Show my last few temp targets')?.latest).toBeUndefined();
     expect(parseTherapyStateQuestion('Any temp targets in the last 3 days?')?.latest).toBeUndefined();
   });
 
   it.each([
     'What was my glucose during my last temporary target?',
+    'What was my glucose during my last temporary targets?',
     'When did I last use a temp target?',
   ])('reads "%s" as a record, not as last week', (question) => {
     const asOf = Date.parse('2030-11-19T15:00:00Z');
