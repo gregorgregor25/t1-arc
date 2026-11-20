@@ -13,13 +13,37 @@ const bash = process.platform === 'win32'
   : '/bin/bash';
 const scratch: string[] = [];
 
+const classpathError = "Could not resolve all artifacts for configuration 'classpath'.";
+const includedBuildFailure = [
+  "Error resolving plugin [id: 'com.facebook.react.settings']",
+  classpathError,
+  '> Could not find org.jetbrains.kotlin:kotlin-stdlib:2.2.21.',
+  '  - https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21.pom',
+].join('\n');
+const portalFailure = [
+  classpathError,
+  '> Could not find com.squareup:javapoet:1.13.0.',
+  '  Searched in the following locations:',
+  '    - https://plugins.gradle.org/m2/com/squareup/javapoet/1.13.0/javapoet-1.13.0.pom',
+  '  Required by:',
+  "      settings file 'settings.gradle' > project :gradle-plugin:settings-plugin",
+].join('\n');
+const expoPortalFailure = [
+  classpathError,
+  '> Could not find org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3.',
+  '  Searched in the following locations:',
+  '    - https://plugins.gradle.org/m2/org/jetbrains/kotlinx/kotlinx-serialization-json/1.6.3/kotlinx-serialization-json-1.6.3.pom',
+  '  Required by:',
+  "      settings file 'settings.gradle' > project :expo-gradle-plugin:expo-autolinking-settings-plugin > project :expo-gradle-plugin:expo-autolinking-plugin-shared",
+].join('\n');
+
 function bashPath(path: string) {
   return process.platform === 'win32'
     ? path.replace(/^([A-Za-z]):/, (_, drive: string) => `/${drive.toLowerCase()}`).replaceAll('\\', '/')
     : path;
 }
 
-function runBundle(mode: string) {
+function runBundle(mode: string, failure = includedBuildFailure) {
   const directory = mkdtempSync(join(tmpdir(), 't1arc-gradle-retry-'));
   scratch.push(directory);
   if (mode === 'log-failure' || mode === 'log-and-gradle-failure') {
@@ -40,15 +64,7 @@ fs.appendFileSync(calls, JSON.stringify({
 }) + '\\n');
 if (mode === 'success' || mode === 'log-failure' || (previous === 1 && mode === 'recover')) process.exit(0);
 if (previous === 1) process.exit(51);
-if (mode !== 'unrelated') {
-  console.error("Error resolving plugin [id: 'com.facebook.react.settings']");
-  console.error("Could not resolve all artifacts for configuration 'classpath'.");
-  console.error("> Could not find org.jetbrains.kotlin:kotlin-stdlib:2.2.21.");
-  const host = mode === 'other-repository' ? 'repo.example.test' : 'repo.maven.apache.org';
-  console.error('https://' + host + '/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21.pom');
-} else {
-  console.error('Execution failed for task :app:compileReleaseKotlin.');
-}
+console.error(process.env.T1ARC_FIXTURE_FAILURE);
 process.exit(42);
 `, { mode: 0o755 });
   const result = spawnSync(bash, [bashPath(script)], {
@@ -64,6 +80,7 @@ process.exit(42);
       T1ARC_EXPOSURE_STAGE: 'bundle',
       T1ARC_FIXTURE_DIRECTORY: directory,
       T1ARC_FIXTURE_MODE: mode,
+      T1ARC_FIXTURE_FAILURE: failure,
     },
   });
   expect(result.error).toBeUndefined();
@@ -87,8 +104,12 @@ describe.skipIf(!existsSync(bash))('guarded Android dependency recovery', () => 
     expect(existsSync(join(directory, 'github-env'))).toBe(false);
   });
 
-  it('retries a known missing Central dependency once with identical guarded arguments', () => {
-    const { result, calls, directory } = runBundle('recover');
+  it.each([
+    ['React Native included build', includedBuildFailure],
+    ['React Native root settings plugin', portalFailure],
+    ['Expo root settings plugin', expoPortalFailure],
+  ])('retries a known missing dependency for the %s once with identical guarded arguments', (_, failure) => {
+    const { result, calls, directory } = runBundle('recover', failure);
     expect(result.status).toBe(0);
     expect(calls).toHaveLength(2);
     expect(calls.map((call) => call.mirror)).toEqual([false, true]);
@@ -102,8 +123,15 @@ describe.skipIf(!existsSync(bash))('guarded Android dependency recovery', () => 
     );
   });
 
-  it.each(['unrelated', 'other-repository'])('preserves %s failures without a retry', (mode) => {
-    const { result, calls, directory } = runBundle(mode);
+  it.each([
+    ['unrelated compile error', 'Execution failed for task :app:compileReleaseKotlin.'],
+    ['other Central repository', includedBuildFailure.replace('repo.maven.apache.org', 'repo.example.test')],
+    ['other plugin repository', portalFailure.replace('plugins.gradle.org', 'repo.example.test')],
+    ['unrelated settings plugin', portalFailure.replace(':gradle-plugin:settings-plugin', ':unrelated-plugin')],
+    ['unrecognised module', portalFailure.replaceAll('javapoet', 'missing-library')],
+    ['different configuration', portalFailure.replace(classpathError, "Could not resolve configuration 'compile'.")],
+  ])('preserves the %s failure without a retry', (_, failure) => {
+    const { result, calls, directory } = runBundle('fail', failure);
     expect(result.status).toBe(42);
     expect(calls).toHaveLength(1);
     expect(existsSync(join(directory, 'github-env'))).toBe(false);

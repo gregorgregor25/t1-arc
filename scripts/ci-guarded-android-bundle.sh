@@ -16,25 +16,39 @@ fi
 # A partial log cannot justify a dependency retry.
 if (( pipeline_status[1] != 0 )); then exit "${pipeline_status[1]}"; fi
 
-if ! grep -Fq "Error resolving plugin [id: 'com.facebook.react.settings']" "$log"; then
-  exit "$status"
-fi
 if ! grep -Fq "Could not resolve all artifacts for configuration 'classpath'." "$log"; then
   exit "$status"
 fi
 
-missing_central_dependency=false
-while IFS='|' read -r coordinate pom; do
-  if grep -Fq "> Could not find $coordinate." "$log" &&
-     grep -Fq "https://repo.maven.apache.org/maven2/$pom" "$log"; then
-    missing_central_dependency=true
+missing_published_dependency() {
+  local repository=$1 coordinate group artifact version pom
+  shift
+  for coordinate in "$@"; do
+    IFS=: read -r group artifact version <<< "$coordinate"
+    pom="${group//./\/}/$artifact/$version/$artifact-$version.pom"
+    if grep -Fq "> Could not find $coordinate." "$log" && grep -Fq "$repository/$pom" "$log"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+settings_download_failed() {
+  if grep -Fq "Error resolving plugin [id: 'com.facebook.react.settings']" "$log" &&
+     missing_published_dependency https://repo.maven.apache.org/maven2 \
+       org.jetbrains.kotlin:kotlin-stdlib:2.2.21 org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.1.20 \
+       io.github.java-diff-utils:java-diff-utils:4.15; then
+    return 0
   fi
-done <<'DEPENDENCIES'
-org.jetbrains.kotlin:kotlin-stdlib:2.2.21|org/jetbrains/kotlin/kotlin-stdlib/2.2.21/kotlin-stdlib-2.2.21.pom
-org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.1.20|org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.1.20/kotlin-gradle-plugins-bom-2.1.20.pom
-io.github.java-diff-utils:java-diff-utils:4.15|io/github/java-diff-utils/java-diff-utils/4.15/java-diff-utils-4.15.pom
-DEPENDENCIES
-if [[ "$missing_central_dependency" != true ]]; then exit "$status"; fi
+  # The root settings file consumes the plugins after their included builds compile.
+  grep -Eq "settings file 'settings[.]gradle' > project :(gradle-plugin:settings-plugin|expo-gradle-plugin:expo-autolinking-settings-plugin)( > |$)" "$log" &&
+    missing_published_dependency https://plugins.gradle.org/m2 \
+      org.jetbrains.kotlin:kotlin-stdlib:2.1.20 com.google.code.gson:gson:2.8.9 \
+      com.google.guava:guava:31.0.1-jre com.squareup:javapoet:1.13.0 \
+      org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3
+}
+
+if ! settings_download_failed; then exit "$status"; fi
 
 # Init scripts also reach React Native and Expo's included Gradle builds.
 # The always-run workflow cleanup removes this file before caches are saved.
