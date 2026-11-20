@@ -16,7 +16,7 @@ fi
 # A partial log cannot justify a dependency retry.
 if (( pipeline_status[1] != 0 )); then exit "${pipeline_status[1]}"; fi
 
-if ! grep -Fq "Could not resolve all artifacts for configuration 'classpath'." "$log"; then
+if ! grep -Eq "Could not resolve all (artifacts|dependencies) for configuration 'classpath'[.]" "$log"; then
   exit "$status"
 fi
 
@@ -33,11 +33,16 @@ missing_published_dependency() {
   return 1
 }
 
-settings_download_failed() {
+plugin_download_failed() {
   if grep -Fq "Error resolving plugin [id: 'com.facebook.react.settings']" "$log" &&
      missing_published_dependency https://repo.maven.apache.org/maven2 \
        org.jetbrains.kotlin:kotlin-stdlib:2.2.21 org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.1.20 \
        io.github.java-diff-utils:java-diff-utils:4.15; then
+    return 0
+  fi
+  # The Expo module's project plugin imports its Kotlin BOM through the portal.
+  if grep -Fq "buildscript of project ':expo-module-gradle-plugin' > org.jetbrains.kotlin.jvm:org.jetbrains.kotlin.jvm.gradle.plugin:2.1.20" "$log" &&
+     missing_published_dependency https://plugins.gradle.org/m2 org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.1.20; then
     return 0
   fi
   # The root settings file consumes the plugins after their included builds compile.
@@ -48,7 +53,7 @@ settings_download_failed() {
       org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3
 }
 
-if ! settings_download_failed; then exit "$status"; fi
+if ! plugin_download_failed; then exit "$status"; fi
 
 # Init scripts also reach React Native and Expo's included Gradle builds.
 # The always-run workflow cleanup removes this file before caches are saved.

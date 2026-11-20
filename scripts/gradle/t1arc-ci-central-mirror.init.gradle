@@ -57,6 +57,25 @@ gradle.beforeSettings { settings ->
 }
 
 gradle.settingsEvaluated { settings ->
+    def workspace = System.getenv('GITHUB_WORKSPACE')
+    if (workspace != null) {
+        def workspaceDir = new File(workspace).canonicalFile
+        def expectedExpoPluginDir = new File(workspaceDir,
+            'node_modules/expo-modules-core/expo-module-gradle-plugin')
+        def expoPluginDir = expectedExpoPluginDir.canonicalFile
+        // This npm-owned included build has no settings script to declare Central.
+        // Configure plugin metadata before its Kotlin project plugin is resolved.
+        if (expoPluginDir == expectedExpoPluginDir.absoluteFile &&
+            settings.settingsDir.canonicalFile == expoPluginDir &&
+            !new File(expoPluginDir, 'settings.gradle').exists() &&
+            !new File(expoPluginDir, 'settings.gradle.kts').exists() &&
+            settings.pluginManagement.repositories.empty) {
+            settings.pluginManagement.repositories.maven {
+                url = mirrorUrl
+            }
+            settings.pluginManagement.repositories.gradlePluginPortal()
+        }
+    }
     gradle.beforeProject { project ->
         project.buildscript.configurations.configureEach { configuration ->
             configuration.incoming.beforeResolve {

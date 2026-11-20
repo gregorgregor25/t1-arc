@@ -36,6 +36,17 @@ const expoPortalFailure = [
   '  Required by:',
   "      settings file 'settings.gradle' > project :expo-gradle-plugin:expo-autolinking-settings-plugin > project :expo-gradle-plugin:expo-autolinking-plugin-shared",
 ].join('\n');
+const expoBuildPluginFailure = [
+  "A problem occurred configuring project ':expo-module-gradle-plugin'.",
+  "> Could not resolve all dependencies for configuration 'classpath'.",
+  '   > Could not resolve org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20.',
+  '     Required by:',
+  "         buildscript of project ':expo-module-gradle-plugin' > org.jetbrains.kotlin.jvm:org.jetbrains.kotlin.jvm.gradle.plugin:2.1.20",
+  '         > Could not parse POM https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.1.20/kotlin-gradle-plugin-2.1.20.pom',
+  '            > Could not find org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.1.20.',
+  '              Searched in the following locations:',
+  '                - https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/2.1.20/kotlin-gradle-plugins-bom-2.1.20.pom',
+].join('\n');
 
 function bashPath(path: string) {
   return process.platform === 'win32'
@@ -108,6 +119,7 @@ describe.skipIf(!existsSync(bash))('guarded Android dependency recovery', () => 
     ['React Native included build', includedBuildFailure],
     ['React Native root settings plugin', portalFailure],
     ['Expo root settings plugin', expoPortalFailure],
+    ['Expo module build plugin', expoBuildPluginFailure],
   ])('retries a known missing dependency for the %s once with identical guarded arguments', (_, failure) => {
     const { result, calls, directory } = runBundle('recover', failure);
     expect(result.status).toBe(0);
@@ -130,6 +142,9 @@ describe.skipIf(!existsSync(bash))('guarded Android dependency recovery', () => 
     ['unrelated settings plugin', portalFailure.replace(':gradle-plugin:settings-plugin', ':unrelated-plugin')],
     ['unrecognised module', portalFailure.replaceAll('javapoet', 'missing-library')],
     ['different configuration', portalFailure.replace(classpathError, "Could not resolve configuration 'compile'.")],
+    ['another project using the Kotlin plugin', expoBuildPluginFailure.replaceAll(':expo-module-gradle-plugin', ':example')],
+    ['an Expo module using a private plugin repository', expoBuildPluginFailure.replaceAll('plugins.gradle.org', 'repo.example.test')],
+    ['another Expo plugin dependency', expoBuildPluginFailure.replaceAll('kotlin-gradle-plugins-bom', 'example-bom')],
   ])('preserves the %s failure without a retry', (_, failure) => {
     const { result, calls, directory } = runBundle('fail', failure);
     expect(result.status).toBe(42);
