@@ -9,7 +9,7 @@ export interface InstalledAppIdentity {
 }
 
 export type PublicReleaseCheck =
-  | { kind: "available"; version: string; notes: string; releaseUrl: string; apkUrl: string }
+  | { kind: "available"; version: string; versionCode: number; notes: string; releaseUrl: string; apkUrl: string }
   | { kind: "current"; message: string }
   | { kind: "unavailable" | "incompatible" | "error"; message: string };
 
@@ -39,7 +39,10 @@ async function readJson(response: Response, original: string): Promise<unknown> 
   return JSON.parse(text) as unknown;
 }
 
-/** Manual, unauthenticated check. No health data, credentials or device identifier are sent. */
+/**
+ * Unauthenticated check, run by the About button and by the daily automatic
+ * check (updateAlerts.ts). No health data, credentials or device identifier are sent.
+ */
 export async function checkPublicRelease(
   installed: InstalledAppIdentity,
   options: { fetcher?: typeof fetch; signal?: AbortSignal; timeoutMs?: number } = {},
@@ -98,7 +101,7 @@ export async function checkPublicRelease(
         : "There is no newer public build for this installation. Your installed build may be ahead of the public release." };
     }
     return {
-      kind: "available", version, releaseUrl, apkUrl: `${base}/${apk}`,
+      kind: "available", version, versionCode: Number(metadata.versionCode), releaseUrl, apkUrl: `${base}/${apk}`,
       notes: typeof release.body === "string" && release.body.trim()
         ? release.body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, 4_000)
         : "Release notes are available on GitHub.",

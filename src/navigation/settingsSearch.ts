@@ -308,6 +308,14 @@ const PANEL_ENTRIES: SettingsSearchEntry[] = [
     target: { kind: "source", source: "privacy" },
   },
   {
+    id: "panel:update-alerts",
+    label: "Update alerts",
+    detail: "Get one notification when a new version is out",
+    location: "About T1 Arc",
+    keywords: ["update", "updates", "new version", "release", "upgrade", "notify me"],
+    target: { kind: "source", source: "about" },
+  },
+  {
     id: "screen:tarvis",
     label: "Tarv1s connection and privacy",
     detail: "AI provider connection and privacy",
