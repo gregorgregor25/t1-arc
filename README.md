@@ -239,8 +239,8 @@ were available. [See source timing and recovery steps](docs/DATA_FRESHNESS.md).
 The Wear OS companion brings glucose to your wrist. On supported Wear OS 6
 watches, choose from five faces: Meridian, Chronograph, Atelier, Pace and Summit.
 Browse the [watch collection](docs/design/WATCH_FACE_COLLECTION.md#the-collection).
-In independent APK builds with the guided installer, open **Settings → Watch &
-watch faces → Set up my watch**. The phone carries the matching companion and
+In independent APK builds with the guided installer, open **Settings → Watch →
+Set up my watch**. The phone carries the matching companion and
 guides you through the watch's one-time debugging authorisation and installation.
 See [Watch setup](docs/WATCH_SETUP.md) for compatibility and installation.
 Prefer a web page? Follow the [step-by-step watch guide](https://t1arc.com/watch/).
@@ -310,7 +310,7 @@ path.
   and privacy.
 - A daily update check is on by default. It asks GitHub whether a newer public
   version exists, sends no health data or identifiers, and can be turned off in
-  About T1 Arc.
+  Settings → About and updates.
 - Encrypted portable backups exclude credentials, browser cookies and API keys.
 - Demo records are synthetic, temporary and kept separate from personal data.
 - Public bug reports must use synthetic fixtures and redacted screenshots.

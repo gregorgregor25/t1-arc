@@ -7,7 +7,7 @@ limits of the app. Its last step asks three quick things: your glucose unit
 (saved only when you tap a choice), a reminder that glucose alerts start
 switched off with a button to alert settings, and whether to share anonymous
 usage counts. Nothing on that step is switched on for you. You can replay the
-tour from **Settings > Feedback and more**.
+tour from **Settings > Help, feedback and tour**.
 
 You can explore the synthetic demo without connecting a real provider. Demo
 records stay separate from personal history. A fresh app launch returns to the
@@ -125,8 +125,9 @@ records. T1 Arc imports only the record types you allow. Availability depends on
 the apps and records on your phone.
 
 The Health tab shows daily summaries and seven-day trends. For chosen sources,
-freshness and import status by data type, open **Settings > Health Connect** and
-expand its data options. **View imported data** opens the underlying records.
+freshness and import status by data type, open
+**Settings > Health and insulin data > Health Connect** and expand its data
+options. **View imported data** opens the underlying records.
 Older-history permission is optional because recent records can work without it.
 
 Choose **Edit view** to hide sections you do not want to see. This does not
@@ -215,8 +216,8 @@ contains no glucose value or health conclusion.
 
 Glooko and other imported records can arrive later than the original event.
 Check the record time as well as the last successful refresh. **Source
-health**, under **Data connections** at the top of Settings, shows each
-source's newest record and any gaps in the last 24 hours. See
+health**, under **Settings > Glucose source > Recent checks and history**, shows
+each source's newest record and any gaps in the last 24 hours. See
 [how current each source is](DATA_FRESHNESS.md) before interpreting a partial day.
 
 ## Exports
@@ -246,28 +247,33 @@ the right panel.
 
 Settings is grouped in this order:
 
-1. **Data connections**: **Which source do I need?**, glucose connections
-   (AAPS local, LibreLinkUp, Dexcom, Nightscout, Medtrum, xDrip and
-   Notification source), Health Connect, Glooko, Hevy and Strava, then
-   **Source health**.
-2. **Display, alerts and units**: **Display and alerts**, **Watch & watch
-   faces** and **Region and services**.
-3. **Data and backup**: **Backup and privacy**, then **Automatic updates**.
-4. **Assistant**: Tarv1s and **Diabetes profile**.
-5. **Feedback and more**: **Share feedback**, **Cycle tracking** and the tour.
-6. **Help and information**: **Help and support** and **About T1 Arc**.
-7. **Advanced and experimental**: features still being tested.
+1. **Is everything working?** (glucose, alarm and backup status).
+2. Six main places: **Glucose source**, **Alarms**, **Phone, widget and car**,
+   **Watch**, **Health and insulin data** and **Backup and privacy**.
+3. **More settings**: **Notifications and reminders**, **Units and region**,
+   **Appearance, ranges and colours**, **Tarv1s and diabetes profile**,
+   **Help, feedback and tour**, **About and updates** and **Advanced and
+   experimental** (features still being tested).
+
+**Glucose source** holds the glucose connections (AAPS on this phone, xDrip+,
+Another app's notification, LibreLinkUp, Dexcom Share, Nightscout and Medtrum
+EasyFollow), **Recent checks and history** (source health), **Automatic
+updates** and **Which source do I need?**. **Health and insulin data** holds
+Health Connect, Glooko, Hevy, Strava, food totals and **Cycle tracking**.
+**Help, feedback and tour** holds **Share feedback**, **Help and support** and
+the tour. **Tarv1s and diabetes profile** holds the Tarv1s connection and
+**Diabetes profile**.
 
 Dexcom and Medtrum are marked **Not yet tested with a real account**. They
 follow the providers' published behaviour and pass automated tests, but have
 not been checked with a real account. Please report what you find.
 
-If Today has no glucose yet, **Connect a source** opens Settings with the data
-connections first. The close button stays at the top while you scroll. Android
-Back returns from a detail page to all settings, then to the previous app
-screen.
+If Today has no glucose yet, **Connect a source** opens Settings, with
+**Glucose source** first. The close button stays at the top while you scroll.
+Android Back goes up one level at a time, for example from **Dexcom Share** to
+**Glucose source**, then to all settings, then to the previous app screen.
 
-### Region and services
+### Units and region
 
 The glucose unit (mmol/L or mg/dL) is at the top. **More options** holds the
 region preset, country, number and date formats, measurements, energy unit,
@@ -281,12 +287,13 @@ does not allow an app to grant its own permission.
 
 ### Display and alerts
 
-Open **Display and alerts** for **Glucose ranges** (your target range, low and
-high levels and their colours, at the top of the page), appearance, the
-persistent notification, lock-screen display, glucose alerts and home-screen
-widget. The experimental always-on display overlay and Android Auto glance are
+**Glucose ranges** (your target range, low and high levels and their colours)
+and the app theme are in **Settings > Appearance, ranges and colours**. The
+persistent notification, lock-screen display and home-screen widget are in
+**Settings > Phone, widget and car**; glucose alerts are in **Settings >
+Alarms**. The experimental always-on display overlay and Android Auto glance are
 in **Settings > Advanced and experimental**. Watch setup is under
-**Settings > Watch & watch faces**; see [Watch setup](WATCH_SETUP.md).
+**Settings > Watch**; see [Watch setup](WATCH_SETUP.md).
 These are separate choices. See [Display and alerts](DISPLAY_AND_ALERTS.md) for
 setup, test alerts and Android permission limits.
 
@@ -313,7 +320,7 @@ being tested and may not work on every phone or car:
 
 - **Glucose on always-on display**, an optional overlay on the locked dark
   screen. It uses the glucose notification, so turn on **Keep glucose visible**
-  in **Display and alerts** first;
+  in **Phone, widget and car** first;
 - **Experimental Android Auto glance**.
 
 Development builds also show an earlier test-app migration tool here. Your
@@ -321,7 +328,7 @@ records do not depend on anything on this page.
 
 ### Check for an APK update
 
-Open **About T1 Arc**, then **Check for updates**. This checks the official
+Open **About and updates**, then **Check for updates**. This checks the official
 GitHub repository. It does not send health records or automatically download or
 install anything. If the check cannot reach GitHub, your installed app and
 records are unchanged; you can try again later.

@@ -14,7 +14,7 @@ Distinguish **when T1 Arc checked** from **when the measurement happened**.
 | Notification capture | Readings in supported notifications | Depends on the publishing app, Android notification access and the configured rule. |
 | **Glooko** | **Delayed insulin, pump and glucose history** | **Not live pump status.** Automatic recent-history checks become due about hourly. Records may already be behind when Glooko supplies them; there is no guaranteed fixed delay. |
 | Health Connect | Records another app has written and you allowed T1 Arc to read | Foreground checks become due about every five minutes. A wearable may sync to its own app before that app writes to Health Connect. |
-| Hevy | Saved strength workouts and changes | Automatic checks become due about every 30 minutes. You can also use **Sync new and changed workouts**. |
+| Hevy | Saved strength workouts and changes | Automatic checks become due about every 30 minutes. You can also use **Check now** on the Hevy page. |
 | Manually selected files | History contained in that export | Import a new file for newer data. Import time does not change the dates inside it. |
 
 These are scheduling intervals, not delivery guarantees. Android can defer
@@ -24,8 +24,8 @@ backfills and Glooko reports have their own slower schedules and may finish late
 
 ## Source health
 
-**Settings → Source health** (on the main Settings page, above the connection
-shortcuts) lists each configured source with:
+**Settings → Glucose source → Recent checks and history** lists each configured
+source with:
 
 - the last successful update and the last check, with its result in plain words;
 - the newest record, for example "Records through 14:05";
@@ -68,8 +68,8 @@ records arrive.
 3. If the official app is current but T1 Arc is behind, open that source in
    T1 Arc Settings and use its connection check. Check the account region,
    network/VPN and any visible error.
-4. If it repeats, use **Settings → Help and support → Report a problem** and
-   review the optional technical summary before sending.
+4. If it repeats, use **Settings → Help, feedback and tour → Help and support →
+   Report a problem** and review the optional technical summary before sending.
 
 Current glucose is marked delayed after six minutes and stale after twelve.
 A stale value remains a last-known reading, never a new measurement. Keep the

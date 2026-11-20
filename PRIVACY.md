@@ -147,14 +147,14 @@ data directly from the device to the service the user selected:
   The sign-in does not give T1 Arc access to existing ChatGPT conversations.
   Validated OAuth credentials stay in Android secure storage, outside portable
   backups; a sign-out attempts remote revocation and removes local tokens.
-- **About T1 Arc > Check for updates** makes a manual, unauthenticated request
+- **About and updates > Check for updates** makes a manual, unauthenticated request
   to GitHub for public release and build metadata. It does not send health
   records, provider credentials or a device identifier. GitHub still receives
   ordinary network metadata such as the IP address. Opening the release page
   or downloading an APK uses GitHub and its asset hosts. Nothing downloads or
   installs automatically; Android asks before an update is installed.
 - The same request also runs automatically, at most once a day, while
-  **About T1 Arc > Tell me when an update is out** is on. See
+  **About and updates > Tell me when an update is out** is on. See
   [Daily update check](#daily-update-check-on-by-default).
 - Submitted branded-food text or a barcode, plus selected country/language
   context, can be sent to Open Food Facts. A US barcode miss can trigger the
@@ -183,7 +183,7 @@ This is one of two network flows that are on without the user choosing them;
 the other is [anonymous usage counts](#anonymous-usage-counts-on-by-default).
 It tells people when a new public version is published, including people who
 rarely open the app. It can be turned off at any time in
-**About T1 Arc > Tell me when an update is out**. Existing users get the
+**About and updates > Tell me when an update is out**. Existing users get the
 default unless they turn it off.
 
 - **What is sent.** At most once a day, on an app open or after the phone's
@@ -195,11 +195,11 @@ default unless they turn it off.
   maintainer.
 - **What is shown.** When GitHub lists a newer verified public phone release,
   T1 Arc shows one quiet notification for that version, if Android
-  notifications are allowed. Tapping it opens **About T1 Arc** with the
+  notifications are allowed. Tapping it opens **About and updates** with the
   release notes. Nothing downloads or installs automatically.
 - **What is stored.** The time of the last check, the newest version
   announced, and a newer release the check found with its public release
-  notes, so **About T1 Arc** can show them without asking GitHub again. They
+  notes, so **About and updates** can show them without asking GitHub again. They
   are kept in Android secure storage on the phone and are not part of
   encrypted backups.
 - **Test builds.** Builds whose version has a suffix (for example
@@ -274,8 +274,9 @@ see the device.
 
 ### Voluntary support and Tarv1s response reports
 
-**Settings → Help and support → Report a problem** lets you describe an app
-problem without a GitHub account. You can optionally include a technical summary:
+**Settings → Help, feedback and tour → Help and support → Report a problem**
+lets you describe an app problem without a GitHub account. You can optionally
+include a technical summary:
 app version/build, Android version, device model and predefined technical event
 codes with minute-resolution UTC timestamps. You can inspect the exact report
 before consenting to send or export it. Diagnostic fields do not include readings,

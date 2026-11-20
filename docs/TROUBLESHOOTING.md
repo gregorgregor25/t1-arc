@@ -30,7 +30,7 @@ Android version in the report.
 ## A colour or regional option did not change
 
 Some detail screens have their own **Save** button. Save the choice, close the
-screen and reopen it. On **Region and services**, the glucose unit is at the top
+screen and reopen it. On **Units and region**, the glucose unit is at the top
 and the other regional choices are under **More options**. Confirm that the chosen region, unit or range colour is
 still selected before reporting a display problem.
 
@@ -106,9 +106,10 @@ Open T1 Arc's Health Connect permissions and allow only the record types you
 want to share. Confirm another app has written those records. Recent data can
 work without the optional older-history permission.
 
-In **Settings > Health Connect**, expand the data options to inspect sources
-and **Health refresh** status for each record area. **View imported data** opens
-the saved records. The Health tab presents daily summaries and trends instead.
+In **Settings > Health and insulin data > Health Connect**, expand the data
+options to inspect sources and **Health refresh** status for each record area.
+**View imported data** opens the saved records. The Health tab presents daily
+summaries and trends instead.
 One empty or failed area should not erase data imported from another.
 
 ## Tarv1s rejects an OpenAI key

@@ -31,7 +31,7 @@ Follow the [phone installation guide](GETTING_STARTED.md) and
 - Notifications, widgets, a bedside view, optional glucose alarms and a Wear OS
   companion with five faces.
 - A daily update check, on by default, that can be turned off in
-  **About T1 Arc**.
+  **About and updates**.
 
 See [the main screens](USING_T1_ARC.md), [food logging](FOOD_LOGGING.md),
 [Tarv1s costs and setup](TARV1S_BYOK.md), [data freshness](DATA_FRESHNESS.md),
@@ -62,7 +62,7 @@ the unpublished 1.7.19, 1.7.20 and 1.7.21 candidates below, plus:
 - Tarv1s gives short answers first, answers more record questions locally and
   refuses dosing and treatment requests more firmly.
 - A daily update check, on by default, shows one quiet notification for each
-  new public version. It can be turned off in **About T1 Arc**; see
+  new public version. It can be turned off in **About and updates**; see
   [the privacy notice](../PRIVACY.md#daily-update-check-on-by-default).
 - Lower battery use: the encrypted database reuses one unlocked connection
   instead of repeating its key derivation for every transaction, and
@@ -291,8 +291,8 @@ the next version; see
 
 ## Know which version you have
 
-Open **Settings → About T1 Arc** for the version, package and source revision.
-**Share build details** shares these without health records or keys.
+Open **Settings → About and updates** for the version, package and source
+revision. **Share build details** shares these without health records or keys.
 
 Repository changes do not alter an installed APK. Each release’s build record
 identifies its source and checksums. **Check for updates** offers compatible
@@ -308,7 +308,7 @@ also use that package and signing identity, so check its version and provenance
 before installing another APK.
 
 The official phone package is `io.github.gregorgregor25.t1arc`; it appears in
-**About T1 Arc** alongside the installed build details.
+**About and updates** alongside the installed build details.
 
 If Android reports a signature conflict, follow the
 [update guide](GETTING_STARTED.md#update-t1-arc). Report problems through

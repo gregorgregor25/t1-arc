@@ -1,22 +1,25 @@
 # Display and alerts
 
-Open **Settings > Display and alerts**. Start with the one display you want;
-there is no need to enable every option. Displays show reading age. None
-replaces the official CGM or pump display.
+These choices are in **Settings** under **Phone, widget and car**, **Alarms**,
+**Appearance, ranges and colours**, **Advanced and experimental** and
+**Watch**. Start with the one display you want; there is no need to enable
+every option. Displays show reading age. None replaces the official CGM or
+pump display.
 
 ## Appearance and glucose colours
 
-**App appearance** follows the phone or uses a fixed light or dark theme.
+Open **Settings > Appearance, ranges and colours**. Under **Choose your theme**,
+follow the phone or use a fixed light or dark theme.
 For your target range, low and high levels and their colours, open
-**Glucose ranges** at the top of **Display and alerts**, choose a range and
+**Glucose ranges** at the top of that page, choose a range and
 colour, then press **Save**. The preview uses example values.
 New installations use green for in-range glucose; you can change it. Existing
-saved colour choices are preserved. Display units are chosen separately under **Region and services**. Neither
-choice rewrites stored readings.
+saved colour choices are preserved. Display units are chosen separately under
+**Units and region**. Neither choice rewrites stored readings.
 
 ## Persistent notification and lock screen
 
-Under **Phone and lock screen**, enable **Keep glucose visible** and grant
+Under **Phone, widget and car**, enable **Keep glucose visible** and grant
 Android notification permission when asked. This starts the quiet background
 collector and ongoing notification. It is separate from audible glucose alerts.
 
@@ -57,9 +60,9 @@ not keep the screen awake, so your phone's screen timeout still applies.
 
 ## Glucose alerts
 
-Open **Glucose alerts**, enable **Allow T1 Arc alerts**, then choose low, high
-or stale-reading alerts. After editing numeric thresholds, press **Save
-thresholds**. Stale means the last personal reading is over 12 minutes old.
+Open **Settings > Alarms**, enable **Allow T1 Arc alerts**, then choose low,
+high or stale-reading alerts. After editing numeric thresholds, press **Save
+alert choices**. Stale means the last personal reading is over 12 minutes old.
 Repeat settings control whether an unresolved zone alerts again.
 
 Use each alert's test control to check Android delivery. Its Android channel
@@ -73,8 +76,9 @@ See [Sensor changes](USING_T1_ARC.md#when-you-start-a-new-sensor).
 
 ## Home-screen widget
 
-Open **Home screen widget > Add to home screen**. If the launcher cannot show
-the picker, long-press the home screen, choose **Widgets**, then **T1 Arc**.
+In **Settings > Phone, widget and car**, find **Home-screen glucose** and tap
+**Add to home screen**. If the launcher cannot show the picker, long-press the
+home screen, choose **Widgets**, then **T1 Arc**.
 The settings preview is illustrative, not a live reading.
 
 The widget uses Today's card design: the value and direction, reading age,
@@ -107,7 +111,7 @@ sources** option for this route. Availability also depends on the car and
 Android Auto configuration. It is not a driving safety system; do not interact
 with it while driving.
 
-Open **Settings → Watch & watch faces** for companion setup, connection and face
+Open **Settings → Watch** for companion setup, connection and face
 controls. The independent phone APK bundles the matching companion and installs
 it through the guided steps. On supported Wear OS 6 watches, its five faces are
 also included. See [Watch setup](WATCH_SETUP.md) for older-watch compatibility

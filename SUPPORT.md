@@ -6,10 +6,11 @@ support route for your medical device when making treatment decisions.
 
 ## Installation and everyday use
 
-In the app, open **Settings → Help and support → Report a problem**. Describe
-the steps, expected result and what happened. You can include a small technical
-diagnostic summary, review the exact contents and explicitly consent before
-sending it privately to **support@t1arc.com**. No GitHub account is needed.
+In the app, open **Settings → Help, feedback and tour → Help and support →
+Report a problem**. Describe the steps, expected result and what happened. You
+can include a small technical diagnostic summary, review the exact contents and
+explicitly consent before sending it privately to **support@t1arc.com**. No
+GitHub account is needed.
 Include your email address in your message only if you want a reply; it is not
 attached automatically. Keep the report reference when following up.
 

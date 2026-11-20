@@ -12,7 +12,7 @@ Past Glooko insulin history stays in T1 Arc. If Glooko stops updating after the 
 
 1. Confirm that Juggluco is still supplying fresh glucose to AAPS using Juggluco’s **xDrip broadcast** recipient `info.nightscout.androidaps` and AAPS’s **xDrip+ BG** source. Leave this working setup in place.
 2. In AAPS, open **Config Builder → Synchronization → External Companion Apps** and enable it. This is the name in the verified dev build. Its [broadcast implementation](https://github.com/nightscout/AndroidAPS/blob/c20c2298298d17325ccf010608a26c6a1373e0a5/plugins/sync/src/androidMain/kotlin/app/aaps/plugins/sync/tizen/TizenPlugin.kt) discovers installed receivers; there is no extra Juggluco recipient to add for T1 Arc.
-3. In T1 Arc, open **Settings → AAPS local**, then tap **Use AAPS as glucose source**.
+3. In T1 Arc, open **Settings → Glucose source → AAPS on this phone**, then tap **Use AAPS as glucose source**.
 4. Wait for a new AAPS status update. Compare T1 Arc’s glucose and measurement time with AAPS, then check IOB and COB within the glucose card on **Today**. No notification access, Nightscout login, mobile signal or internet is required for the local phone ingestion path.
 
 When AAPS is selected, its glucose source is exclusive. An old LibreLinkUp value cannot silently replace a missing or stale AAPS value. **Stop using AAPS** leaves no glucose source selected. You can select AAPS again after restoring its feed. The separate LibreLinkUp connection remains available in Settings.
@@ -38,7 +38,7 @@ This route is **off by default** because Android cannot confirm who sent these b
 
 ### From Nightscout: fill switch on the AAPS card
 
-When AAPS is selected, the AAPS card shows **Fill insulin and carb history from my Nightscout site**. It needs a site connected in **Settings → Nightscout**; until then the card offers **Set up Nightscout**. With it on, T1 Arc reads the treatments AAPS uploaded: boluses and SMBs, carbs, temporary basals, extended boluses, profile switches, temporary targets and pump suspensions. It uses the internet and the saved read-only token. Nothing is sent to Nightscout. The choice is erased with other local data. If it was never set, it stays on, which matches how a connected site behaved before this switch existed.
+When AAPS is selected, the AAPS card shows **Fill insulin and carb history from my Nightscout site**. It needs a site connected in **Settings → Glucose source → Nightscout**; until then the card offers **Set up Nightscout**. With it on, T1 Arc reads the treatments AAPS uploaded: boluses and SMBs, carbs, temporary basals, extended boluses, profile switches, temporary targets and pump suspensions. It uses the internet and the saved read-only token. Nothing is sent to Nightscout. The choice is erased with other local data. If it was never set, it stays on, which matches how a connected site behaved before this switch existed.
 
 - While AAPS is selected, the regular refresh, the older-history backfill and the Nightscout connection check all read treatments only. Connecting Nightscout then succeeds without a Nightscout glucose reading.
 - Withdrawn records (`isValid: false`) and priming boluses are kept as raw evidence but not counted. A temporary basal ends when the next one starts or is cancelled. Large ranges are read page by page rather than cut off at 5,000 records.

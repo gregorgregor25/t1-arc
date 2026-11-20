@@ -42,20 +42,21 @@ the synthetic demo if you want to explore without connecting personal data. The 
 fresh app launch returns to the private live-data view, and no example record
 is copied into personal history.
 
-Tap the gear on any main screen to open Settings. Data connections come first;
-if you are not sure which one to use, open **Which source do I need?**. On an
-empty Today screen, **Connect a source** opens the same place.
+Tap the gear on any main screen to open Settings. **Glucose source** comes
+first; if you are not sure which source to use, open it and tap **Which source
+do I need?**. On an empty Today screen, **Connect a source** also opens
+Settings.
 
 Before relying on a live glucose source:
 
-1. choose the glucose unit in **Settings > Region and services**, and the
+1. choose the glucose unit in **Settings > Units and region**, and the
    country and number formats under **More options** on that page;
 2. connect the provider region used by the account;
 3. compare the newest reading and timestamp with the provider's official app;
 4. keep the official medical-device display available.
 
-Your target range and low and high levels are under **Settings > Display and
-alerts > Glucose ranges**.
+Your target range and low and high levels are under
+**Settings > Appearance, ranges and colours > Glucose ranges**.
 
 Some optional display features open Android system settings. The experimental
 always-on display, in **Settings > Advanced and experimental**, can require
@@ -66,8 +67,8 @@ Accessibility can be enabled. T1 Arc cannot approve that permission for itself.
 
 T1 Arc checks the official GitHub repository once a day and shows one quiet
 notification when a new version is published. Turn this off in
-**About T1 Arc > Tell me when an update is out**. You can also open
-**About T1 Arc > Check for updates** at any time. If an update is offered,
+**About and updates > Tell me when an update is out**. You can also open
+**About and updates > Check for updates** at any time. If an update is offered,
 review **What's changed** and open its release page. Nothing downloads or
 installs automatically. You can also watch the repository's Releases or check
 the Releases page yourself.
@@ -95,8 +96,8 @@ bug report with the T1 Arc versions involved and no personal health data.
 
 ## Check which build is installed
 
-Open Settings with the gear and choose **About T1 Arc**, under **Help and
-information**. This shows the version,
+Open Settings with the gear and choose **About and updates**, under **More
+settings**. This shows the version,
 Android package and source revision. **Share build details** copies those
 details into Android's share sheet without including health records or keys.
 
