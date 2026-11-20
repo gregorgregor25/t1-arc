@@ -44,6 +44,16 @@ providers does not silently retry with another service. API use is billed by
 the chosen provider; see the official pricing links in Tarv1s settings. No
 model has a Recommended label in this release.
 
+### 1.8.1: Back button on Android 13 to 15
+
+On Android 13, 14 and 15, the Back button or gesture closed T1 Arc instead of
+going back one screen. 1.7.18 and 1.8.0 behave the same way. 1.8.1 turns off
+Android's predictive back setting, so Back goes to the previous screen on every
+supported Android version. Nothing else changes.
+
+The phone version code is 98. The Wear companion and its protocol are unchanged
+since 1.7.18; a working installed companion does not need reinstallation.
+
 ### 1.8.0: redesign, glucose alarms, AAPS on this phone and update alerts
 
 1.8.0 is the first public release since 1.7.18. It includes every change in
