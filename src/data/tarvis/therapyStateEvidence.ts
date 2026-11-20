@@ -106,7 +106,10 @@ const RECORD_PRESENCE_REQUEST =
 // "the last 3 days") do not match.
 const LATEST_SINGLE_STATE =
   /\b(?:(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\s+(?:(?:activity|exercise|eating[\s-]+soon|hypo|\d{2,3}\s*%)\s+)?(?:temp(?:orary)?[\s-]+targets?|tts?|activity[\s-]+modes?|eating[\s-]+soon(?:[\s-]+modes?)?|hypo[\s-]+modes?|profile\s+switch(?:es)?|loop\s+suspensions?)(?![\w-])|did\s+i\s+last\s+(?:use|set|have|run|start|turn\s+on|activate|switch)\b|(?:the\s+)?last\s+time\s+(?:i|my\s+(?:loop|pump|pod))\b)/i;
-const ASKS_FOR_SEVERAL = /\b(?:all|each|every|both|compar\w*)\b/i;
+// "all my last temp targets", "compare my last temp targets"; not "how did my
+// glucose compare during my last temp targets", which still means the latest.
+const ASKS_FOR_SEVERAL =
+  /\b(?:(?:all|each|every|both)(?:\s+of)?|compar\w*)\s+(?:my|the)\s+(?:very\s+)?(?:last|latest|most\s+recent)\b/i;
 const SETTING_ADVICE_REQUEST =
   /\b(?:should|shall|recommend\w*|suggest\w*|advis\w*|what (?:percentage|percent|target|profile) (?:should|to|do)|which (?:percentage|percent|target|profile) (?:should|to|is best)|too (?:low|high|much|little|aggressive))\b/i;
 
@@ -736,7 +739,7 @@ export function buildTherapyStateAnswer({
   const glucoseLines: string[] = [];
   if (!duringUsable) {
     glucoseLines.push(
-      `Glucose readings covered ${percent(during.coveragePercent)} of that time, so T1 Arc is not summarising glucose during ${single ? "it" : "these periods"}.`,
+      `Glucose readings covered ${percent(during.coveragePercent)} of ${single ? "the time it was active" : "that time"}, so T1 Arc is not summarising glucose during ${single ? "it" : "these periods"}.`,
     );
   } else {
     glucoseLines.push(
@@ -792,11 +795,25 @@ export function buildTherapyStateAnswer({
   if (states.some((state) => state.source.sourceId !== "nightscout" && !/sender confirmed/i.test(state.source.sourceFile))) {
     limitations.push("Some intervals came only from the AAPS broadcast on this phone, and Android did not confirm the sender.");
   }
+  // The card's always-visible line: coverage of the recorded time and whether
+  // other days were compared, rather than the span of all glucose read.
+  const compared = duringUsable && usableComparison.length >= MIN_MATCHED_WINDOWS;
+  const shortContext = [
+    `Glucose coverage ${percent(during.coveragePercent)} of ${duration(during.totalMinutes)}`,
+    ...(duringUsable
+      ? [
+          compared
+            ? `compared with ${formatTarvisNumber(comparisonDays, { maximumFractionDigits: 0 })} other day${comparisonDays === 1 ? "" : "s"}`
+            : "not compared with other days",
+        ]
+      : []),
+  ].join(" · ");
   return {
     answer: {
       headline: single
         ? `Glucose during ${therapyStateLabel(single)}, ${formatTherapyStateSpan(single, true)}`
         : `Glucose during ${label}`,
+      shortContext,
       answer: lines.join("\n"),
       confidence,
       evidenceIds: evidence.map(({ id }) => id),

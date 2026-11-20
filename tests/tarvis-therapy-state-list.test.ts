@@ -203,7 +203,7 @@ describe('therapy-state list answers', () => {
     const glucose = buildTherapyStateAnswer({ query: { family: 'temporary-target', latest: true }, range, timeline: data, asOf });
     const glucoseLines = glucose.answer.answer.split('\n');
     expect(glucose.answer.headline).toBe('Glucose during Eating soon temporary target (target 4.5 mmol/L), Mon 18 Nov 11:30–12:30');
-    expect(glucoseLines[0]).toBe('Glucose readings covered 0% of that time, so T1 Arc is not summarising glucose during it.');
+    expect(glucoseLines[0]).toBe('Glucose readings covered 0% of the time it was active, so T1 Arc is not summarising glucose during it.');
     expect(glucoseLines[1]).toBe(
       'The most recent of 2 temporary targets AAPS recorded in the requested period (16 Nov 2030 to 19 Nov 2030, through 15:00): Eating soon temporary target (target 4.5 mmol/L), recorded Mon 18 Nov 11:30–12:30.',
     );
@@ -238,6 +238,7 @@ describe('therapy-state list answers', () => {
     });
     expect(card.label).toBe('Glucose during Activity temporary target (target 8.0 mmol/L), Mon 18 Nov 10:00–11:00');
     expect(card.headline).toMatch(/^While it was active, glucose averaged 7\.0 mmol\/L; 100% of the observed time was /);
+    expect(card.context).toMatch(/^Glucose coverage 100% of 1 h · compared with \d+ other days$/);
     expect(card.listItems).toEqual([]);
     expect(card.detailText.join(' ')).toContain('AAPS recorded only this one');
     expect(card.detailText.join(' ')).toContain('This is an observation from recorded data.');
@@ -245,7 +246,9 @@ describe('therapy-state list answers', () => {
 
   it('keeps the full list when a plural asks for several', () => {
     expect(parseTherapyStateQuestion('Show all my last temp targets')?.latest).toBeUndefined();
-    expect(parseTherapyStateQuestion('Compare my glucose during my last temp targets')?.latest).toBeUndefined();
+    expect(parseTherapyStateQuestion('Compare glucose during all of my last temp targets')?.latest).toBeUndefined();
+    // "compare" that is not about the records themselves still means the latest.
+    expect(parseTherapyStateQuestion('How did my glucose compare during my last temporary targets?')?.latest).toBe(true);
     expect(parseTherapyStateQuestion('Compare my glucose during my last temp target with other days')?.latest).toBe(true);
   });
 
