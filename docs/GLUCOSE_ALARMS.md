@@ -144,9 +144,11 @@ glucose has recovered. It also ends a snooze that is still running, so the old
 snooze end does not sound again. The chosen repeat interval, counted from the
 silence, controls further reminders while the excursion continues, except that
 urgent low reminds at least every 30 minutes even if reminders are set to
-“Never” or a longer interval. A low paused after a logged hypo treatment is
-still checked again when the pause ends. The active-alert controls say which
-applies. Closing the controls alone does not silence it.
+“Never” or a longer interval. The active-alert controls say which of these
+reminder rules applies. A low paused after a logged hypo treatment is still
+checked again when the pause ends. A silence does not carry over a phone
+restart: if glucose is still out of range, the alert returns once monitoring
+resumes after the first unlock. Closing the controls alone does not silence it.
 Actual alarm playback is bounded to a 60-second burst; previews are separately
 bounded and cannot replace a playing alarm.
 

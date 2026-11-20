@@ -14,15 +14,19 @@ class GlucoseAlarmSilenceTest {
   private val elapsed = 2_000_000L
   private val source = "1:2:aaps"
   private val minute = 60_000L
+  /** Every alert kind switched on. */
   private val config = GlucoseAlarmPolicyConfig(enabled = true, urgentLowEnabled = true, urgentLowThreshold = 3.0,
-    lowThreshold = 3.9)
+    lowThreshold = 3.9, veryHighEnabled = true, veryHighThreshold = 18.0, staleEnabled = true)
   private val never = config.copy(repeatMinutes = 0)
 
-  /** The policy [after] milliseconds from now, with the low pause end the engine would pass then. */
-  private fun evaluate(value: Double, previous: GlucoseAlarmEpisode, config: GlucoseAlarmPolicyConfig, after: Long,
+  /**
+   * The policy [after] milliseconds from now, with the low pause end the engine would pass then.
+   * A null [value] means no current reading.
+   */
+  private fun evaluate(value: Double?, previous: GlucoseAlarmEpisode, config: GlucoseAlarmPolicyConfig, after: Long,
     lowPause: Long? = null) =
-    GlucoseAlarmPolicy.evaluate(config, GlucoseAlarmObservation(value, now + after), previous, source, now + after,
-      elapsed + after, 2, 12 * 60, lowPause)
+    GlucoseAlarmPolicy.evaluate(config, value?.let { GlucoseAlarmObservation(it, now + after) }, previous, source,
+      now + after, elapsed + after, 2, 12 * 60, lowPause)
 
   /** An alert of [kind] that sounded and was then snoozed by the user [snoozedAgo] ago for [length]. */
   private fun snoozed(kind: GlucoseAlarmKind, snoozedAgo: Long, length: Long) = GlucoseAlarmEpisode("episode", kind,
@@ -41,7 +45,8 @@ class GlucoseAlarmSilenceTest {
   }
 
   @Test fun `with reminders set to Never the old snooze end does not sound again`() {
-    for ((kind, value) in listOf(GlucoseAlarmKind.LOW to 3.5, GlucoseAlarmKind.HIGH to 15.0)) {
+    for ((kind, value) in listOf(GlucoseAlarmKind.LOW to 3.5, GlucoseAlarmKind.HIGH to 15.0,
+      GlucoseAlarmKind.VERY_HIGH to 20.0, GlucoseAlarmKind.STALE to null)) {
       // Snoozed for 30 minutes 5 minutes ago, then silenced: the snooze would have ended 25 minutes from now.
       val silenced = silence(snoozed(kind, snoozedAgo = 5 * minute, length = 30 * minute))
       for (after in listOf(25 * minute, 26 * minute, 3 * 60 * minute)) {
@@ -97,6 +102,39 @@ class GlucoseAlarmSilenceTest {
     // Falling to urgent low during the pause alerts at once: the user snooze no longer carries.
     val urgent = evaluate(2.8, silenced, never, after = minute, lowPause = elapsed + 10 * minute)
     assertTrue(urgent.shouldNotify); assertNull(urgent.carriedSnoozeUntilElapsed)
+  }
+
+  @Test fun `a snooze chosen after silencing still sounds when it ends`() {
+    val silenced = silence(snoozed(GlucoseAlarmKind.LOW, snoozedAgo = 5 * minute, length = 30 * minute))
+    // As GlucoseAlarmEngine.snooze records it: 10 minutes after the silence, a 20-minute snooze.
+    val snoozedAt = elapsed + 10 * minute
+    val snoozedAgain = silenced.copy(snoozeUntilElapsed = snoozedAt + 20 * minute, snoozeUntilWall = now + 30 * minute,
+      snoozedAtElapsed = snoozedAt, userSnoozeUntilElapsed = snoozedAt + 20 * minute)
+    assertFalse(evaluate(3.5, snoozedAgain, never, after = 30 * minute - 1).shouldNotify)
+    assertTrue(evaluate(3.5, snoozedAgain, never, after = 30 * minute).shouldNotify)
+  }
+
+  @Test fun `a treatment logged after silencing pauses the low and checks it again when the pause ends`() {
+    val silenced = silence(snoozed(GlucoseAlarmKind.LOW, snoozedAgo = 5 * minute, length = 60 * minute))
+    // 5 minutes after the silence a hypo treatment is logged and low alerts pause for 15 minutes.
+    val pauseEnd = elapsed + 20 * minute
+    val paused = GlucoseAlarmPolicy.episodeAfterHypoPause(silenced, pauseEnd, now + 20 * minute, 2)
+    assertNull(paused.snoozedAtElapsed); assertNull(paused.userSnoozeUntilElapsed)
+    assertFalse(evaluate(3.5, paused, never, after = 20 * minute - 1, lowPause = pauseEnd).shouldNotify)
+    assertTrue(evaluate(3.5, paused, never, after = 20 * minute).shouldNotify)
+    // Urgent low is never paused, and the dropped snooze does not carry into it.
+    val urgent = evaluate(2.8, paused, never, after = 6 * minute, lowPause = pauseEnd)
+    assertTrue(urgent.shouldNotify); assertNull(urgent.carriedSnoozeUntilElapsed)
+  }
+
+  @Test fun `after the phone restarts, a silenced alert sounds again if glucose is still out of range`() {
+    for ((kind, value) in listOf(GlucoseAlarmKind.LOW to 3.5, GlucoseAlarmKind.HIGH to 15.0)) {
+      val silenced = silence(snoozed(kind, snoozedAgo = 5 * minute, length = 30 * minute))
+      // The elapsed clock starts again from zero with the phone; the boot count tells the two apart.
+      val decision = GlucoseAlarmPolicy.evaluate(never, GlucoseAlarmObservation(value, now + 10 * minute), silenced,
+        source, now + 10 * minute, 90_000L, 3, 12 * 60)
+      assertEquals(kind, decision.kind); assertTrue("$kind after a restart", decision.shouldNotify)
+    }
   }
 
   @Test fun `only an ordinary low with a pause still running keeps a check`() {
