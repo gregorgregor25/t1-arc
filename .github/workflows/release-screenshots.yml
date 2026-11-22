@@ -19,6 +19,19 @@ on:
         required: true
         default: '35'
         type: string
+      shot_set:
+        description: Which screens to take (website = the four tab screens only)
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - website
+      demo_clock:
+        description: Optional emulator clock (UTC, for example 11:57) set before the app is opened, so the example data is the same every run
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - ci/release-screenshots
@@ -36,6 +49,8 @@ concurrency:
 env:
   RELEASE_TAG: ${{ inputs.tag || 'v1.8.0' }}
   API_LEVEL: ${{ inputs.api_level || '35' }}
+  SHOT_SET: ${{ inputs.shot_set || 'all' }}
+  DEMO_CLOCK: ${{ inputs.demo_clock || '' }}
   EXPECTED_CERT_SHA256: 31babc04082806319b3eb1ed97f437c40d32b6e2eac4463eb485c4b681740f50
   RESULTS_DIR: screenshot-results
 
@@ -57,6 +72,10 @@ jobs:
           fi
           if [[ ! "$API_LEVEL" =~ ^[0-9]{2}$ ]]; then
             echo "::error::The API level must be a two-digit number."
+            exit 1
+          fi
+          if [[ -n "$DEMO_CLOCK" && ! "$DEMO_CLOCK" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+            echo "::error::The demo clock must look like 11:57, not '$DEMO_CLOCK'."
             exit 1
           fi
 

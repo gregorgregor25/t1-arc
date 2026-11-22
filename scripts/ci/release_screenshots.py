@@ -11,10 +11,19 @@ records question for Tarv1s and an invented food in an unsaved food draft.
 Every screen is saved as an unmodified `adb exec-out screencap -p` PNG plus
 its uiautomator layout, so a screen that went wrong can be fixed without
 guessing. A screen that cannot be reached is reported and the run carries on.
+
+Two optional settings, used for the website's pictures:
+
+- SHOT_SET=website takes only the four tab screens (Today, History, Health
+  and Tarv1s as it opens).
+- DEMO_CLOCK=HH:MM sets the emulator's clock (UTC, today's date) just before
+  the app is first opened. The demo's example data follows the time of day,
+  so a fixed time gives the same readings on every run.
 """
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import os
@@ -42,6 +51,18 @@ RESULTS = Path(os.environ["RESULTS_DIR"])
 APK = Path("apks") / f"T1-Arc-{TAG}.apk"
 LOCALE = "en-GB"
 TIME_ZONE = "Europe/London"
+# "website" takes only the four tab screens; anything else takes the whole list.
+SHOT_SET = "website" if os.environ.get("SHOT_SET", "").strip().lower() == "website" else "all"
+# HH:MM (UTC) to set the emulator's clock to before the app is first opened; empty leaves the clock alone.
+DEMO_CLOCK = os.environ.get("DEMO_CLOCK", "").strip()
+# The demo makes a reading every five minutes and shows it three minutes later,
+# so its newest reading is 3 minutes old when the phone's clock passes a multiple
+# of five minutes and 8 minutes old just before the next one. The app marks a
+# reading "Delayed" once it is more than 6 minutes old: the last two minutes of
+# each five. Today is photographed early in a cycle, while the reading is current.
+DEMO_CYCLE_SECONDS = 300
+TODAY_START_BY_SECONDS = 75
+TODAY_SHOOT_BY_SECONDS = 105
 FICTIONAL_FOOD = {
     "name": "Demo yoghurt bowl",
     "amount": "100",
@@ -296,6 +317,28 @@ def prepare_phone(device: Shots) -> dict:
     return facts
 
 
+def set_clock(device: Shots, clock: str) -> str:
+    """Set the emulator's clock to HH:MM (UTC) on today's date and say what happened.
+
+    Needs the root shell that prepare_phone() asks for. If the clock cannot be
+    set the run carries on at the real time, and the summary says so.
+    """
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", clock):
+        return f"not changed: DEMO_CLOCK must look like 11:57, not {clock!r}"
+    today = time.gmtime()
+    wanted = calendar.timegm((today.tm_year, today.tm_mon, today.tm_mday, int(clock[:2]), int(clock[3:]), 0))
+    # Android must not put the clock back by itself.
+    device.shell("settings put global auto_time 0", check=False)
+    reported = ""
+    for command in (time.strftime("date -u %m%d%H%M%Y.%S", time.gmtime(wanted)), f"date -u @{wanted}"):
+        device.shell(command, check=False)
+        reported = device.shell("date -u +%s", check=False).strip()
+        if reported.isdigit() and 0 <= int(reported) - wanted < 120:
+            return time.strftime("set to %H:%M UTC on %Y-%m-%d before the app was opened", time.gmtime(wanted))
+    seen = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(reported))) if reported.isdigit() else "nothing"
+    return f"could not be set to {clock} UTC (the phone reports {seen}); the real time was used"
+
+
 def clean_status_bar(device: Shots) -> None:
     device.shell("settings put global sysui_demo_allowed 1", check=False)
     commands = [
@@ -355,7 +398,7 @@ class Session:
 
     # Helpers ----------------------------------------------------------
 
-    def go_tab(self, tab: str) -> ET.Element:
+    def go_tab(self, tab: str, *, to_top: bool = True) -> ET.Element:
         device = self.device
         device.hide_keyboard()
         point = self.tabs.get(tab)
@@ -367,7 +410,8 @@ class Session:
             root = device.layout()
             if root is not None and device.selected_tab(root) == tab:
                 time.sleep(2)
-                device.scroll_to_top()
+                if to_top:
+                    device.scroll_to_top()
                 return device.layout() or root
             time.sleep(1.5)
         raise ShotFailed(f"The {tab} tab did not open.")
@@ -410,10 +454,64 @@ class Session:
                 self.tabs[tab] = point
         time.sleep(8)
 
+    def cycle_seconds(self) -> int | None:
+        """Seconds since the phone's clock last passed a multiple of five minutes."""
+        output = self.device.shell("date +%s", check=False).strip()
+        return int(output) % DEMO_CYCLE_SECONDS if output.isdigit() else None
+
+    @staticmethod
+    def reading_is_late(root: ET.Element | None) -> bool:
+        """Whether the screen marks its reading as delayed or stale, or could not be read."""
+        if root is None:
+            return True
+        for node in root.iter("node"):
+            words = normalise(node.get("text", "") + " " + node.get("content-desc", ""))
+            if "delayed" in words or "stale" in words:
+                return True
+        return False
+
     def today(self) -> str:
+        """Today while the demo's newest reading is still current (see DEMO_CYCLE_SECONDS)."""
+        device = self.device
         self.home_today()
         time.sleep(4)
-        return "Today, top of the screen."
+        for _ in range(2):
+            seconds = self.cycle_seconds()
+            if seconds is None:
+                return "Today, top of the screen. The phone's clock could not be read, so the reading may be marked Delayed."
+            if seconds > TODAY_START_BY_SECONDS:
+                wait = DEMO_CYCLE_SECONDS - seconds + 8
+                print(f"    waiting {wait} s for the demo's next reading", flush=True)
+                time.sleep(wait)
+                # Coming back to the app makes it look for a newer reading.
+                self.home_today()
+                time.sleep(4)
+            while True:
+                root = device.layout()
+                seconds = self.cycle_seconds()
+                if seconds is None or seconds > TODAY_SHOOT_BY_SECONDS:
+                    break
+                if not self.reading_is_late(root):
+                    return f"Today, top of the screen, {seconds} s into the demo's five-minute reading cycle."
+                # The app also checks for a newer reading by itself once a minute.
+                time.sleep(6)
+            device.step("today-reading-late")
+        return "Today, top of the screen. The demo's reading was still marked Delayed or Stale."
+
+    def flag_late_reading(self, name: str) -> None:
+        """Mark a shot for checking if its saved layout shows a delayed or stale reading."""
+        result = self.results.get(name, {})
+        layout = self.device.final / f"{name}.xml"
+        if result.get("status") in (None, "failed") or not layout.exists():
+            return
+        try:
+            root = ET.fromstring(layout.read_text(encoding="utf-8"))
+        except ET.ParseError:
+            return
+        if self.reading_is_late(root):
+            result["status"] = "check"
+            result.setdefault("problems", []).append("the reading is marked Delayed or Stale")
+            print(f"    {name}: the reading is marked Delayed or Stale", flush=True)
 
     def history(self) -> str:
         device = self.device
@@ -439,6 +537,12 @@ class Session:
         time.sleep(5)
         device.scroll_to_top()
         return "Compare periods from Today's menu (last 7 complete days with the 7 days before)."
+
+    def tarvis_home(self) -> str:
+        """The Tarv1s tab as it opens, before anything is typed."""
+        self.go_tab("Tarv1s", to_top=False)
+        time.sleep(4)
+        return "Tarv1s tab as it opens, before a question is asked."
 
     def tarvis(self) -> str:
         device = self.device
@@ -568,6 +672,18 @@ class Session:
         device.step("sleep-open")
         return "Health, Sleep."
 
+    def close_sleep(self) -> None:
+        """Leave the Sleep screen. It covers the tabs, so the next screens could not be reached."""
+        device = self.device
+        root = device.layout()
+        point = device.find(root, "Close Sleep")
+        if point:
+            device.tap_point(point)
+        elif root is not None and device.selected_tab(root) is None:
+            device.back()
+        time.sleep(1.5)
+        device.step("sleep-closed")
+
     def settings_home(self) -> str:
         device = self.device
         device.open_link("t1arc://sources")
@@ -648,11 +764,20 @@ class Session:
         device = self.device
         self.first_run()
         self.shot("today", self.today)
+        self.flag_late_reading("today")
+        if SHOT_SET == "website":
+            # The four tab screens only, in the order the website shows them.
+            self.shot("history", self.history)
+            self.shot("health", self.health)
+            self.shot("tarvis-home", self.tarvis_home)
+            return
         self.shot("overnight-summary", self.overnight)
         self.shot("history", self.history)
         self.shot("insights", self.insights)
         self.shot("health", self.health)
         self.shot("sleep", self.sleep)
+        self.close_sleep()
+        self.shot("tarvis-home", self.tarvis_home)
         self.shot("tarvis", self.tarvis)
         if self.results["tarvis"]["status"] != "failed":
             self.shot("tarvis-records", self.tarvis_records)
@@ -699,7 +824,11 @@ def main() -> int:
         device.uninstall()
         device.install(APK, replace=False)
         facts["installed"] = "%s (%s)" % device.installed_version()
+        facts["shotSet"] = SHOT_SET
         device.clear_logcat()
+        if DEMO_CLOCK:
+            facts["clock"] = set_clock(device, DEMO_CLOCK)
+            print(f"Emulator clock: {facts['clock']}", flush=True)
         session = Session(device)
         session.run()
     except (CheckFailed, ShotFailed, subprocess.TimeoutExpired) as error:
@@ -713,7 +842,12 @@ def main() -> int:
         lines = [f"## Release screenshots: T1 Arc {TAG}", "",
                  f"- Emulator: Android {facts.get('release')} (API {facts.get('sdk')}), {facts.get('model')}",
                  f"- Locale {facts.get('locale')}, time zone {facts.get('timeZone')}, {facts.get('night')}, "
-                 f"font scale {facts.get('fontScale')}", f"- Installed: {facts.get('installed')}", ""]
+                 f"font scale {facts.get('fontScale')}", f"- Installed: {facts.get('installed')}"]
+        if facts.get("shotSet") == "website":
+            lines.append("- Screens: the four tab screens only (SHOT_SET=website)")
+        if facts.get("clock"):
+            lines.append(f"- Emulator clock: {facts['clock']}")
+        lines.append("")
         if facts.get("error"):
             lines += [f"**Stopped early:** {facts['error']}", ""]
         lines += ["| Screen | Status | Demo notice | Brightness | Note |", "| --- | --- | --- | --- | --- |"]
