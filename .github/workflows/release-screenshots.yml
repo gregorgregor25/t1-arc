@@ -28,7 +28,7 @@ on:
           - all
           - website
       demo_clock:
-        description: Optional emulator clock (UTC, for example 11:57) set before the app is opened, so the example data is the same every run
+        description: Optional emulator clock (UTC, for example 11:57) set before the app is opened, so runs made on the same date show the same example data (avoid 13:45 to 15:15)
         required: false
         default: ''
         type: string

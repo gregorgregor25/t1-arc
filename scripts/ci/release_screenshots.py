@@ -17,8 +17,12 @@ Two optional settings, used for the website's pictures:
 - SHOT_SET=website takes only the four tab screens (Today, History, Health
   and Tarv1s as it opens).
 - DEMO_CLOCK=HH:MM sets the emulator's clock (UTC, today's date) just before
-  the app is first opened. The demo's example data follows the time of day,
-  so a fixed time gives the same readings on every run.
+  the app is first opened. The demo's example data follows the date and the
+  time of day, so a fixed time gives the same readings on every run made on
+  the same date; take pictures that have to match in one run. Avoid 13:45 to
+  15:15: the demo leaves a 25-minute gap in its readings there, so Today
+  cannot show a current reading. The overnight summary (whole list only) is
+  shown before noon, so use a morning time such as 09:57 for that list.
 """
 
 from __future__ import annotations
@@ -55,6 +59,9 @@ TIME_ZONE = "Europe/London"
 SHOT_SET = "website" if os.environ.get("SHOT_SET", "").strip().lower() == "website" else "all"
 # HH:MM (UTC) to set the emulator's clock to before the app is first opened; empty leaves the clock alone.
 DEMO_CLOCK = os.environ.get("DEMO_CLOCK", "").strip()
+# The emulator's own overlays for the workflow's `profile: pixel_6`: the camera cutout and the
+# taller status bar that goes with it.
+PIXEL_OVERLAYS = ("com.android.internal.emulation.pixel_6", "com.android.systemui.emulation.pixel_6")
 # The demo makes a reading every five minutes and shows it three minutes later,
 # so its newest reading is 3 minutes old when the phone's clock passes a multiple
 # of five minutes and 8 minutes old just before the next one. The app marks a
@@ -305,6 +312,14 @@ def prepare_phone(device: Shots) -> dict:
     device.shell("cmd uimode night yes", check=False)
     # Gesture navigation, as on a current Pixel.
     device.shell("cmd overlay enable com.android.internal.systemui.navbar.gestural", check=False)
+    # The emulator switches on its Pixel 6 screen by itself just after boot, but the restart
+    # above can cut that short, and then the status bar comes out shorter with the clock in
+    # the corner. Apply the overlays here so every run has the same status bar.
+    for overlay in PIXEL_OVERLAYS:
+        device.shell(f"cmd overlay enable-exclusive --user current --category {overlay}", check=False)
+    time.sleep(3)
+    listed = [line.strip() for line in device.shell("cmd overlay list", check=False).splitlines() if "emulation.pixel_6" in line]
+    facts["screenOverlays"] = ", ".join(listed) or "none listed"
     facts["network"] = device.go_offline()
     clean_status_bar(device)
     facts["locale"] = device.prop("persist.sys.locale")
@@ -843,6 +858,8 @@ def main() -> int:
                  f"- Emulator: Android {facts.get('release')} (API {facts.get('sdk')}), {facts.get('model')}",
                  f"- Locale {facts.get('locale')}, time zone {facts.get('timeZone')}, {facts.get('night')}, "
                  f"font scale {facts.get('fontScale')}", f"- Installed: {facts.get('installed')}"]
+        if facts.get("screenOverlays"):
+            lines.append(f"- Pixel 6 screen overlays ([x] means on): {facts['screenOverlays']}")
         if facts.get("shotSet") == "website":
             lines.append("- Screens: the four tab screens only (SHOT_SET=website)")
         if facts.get("clock"):
